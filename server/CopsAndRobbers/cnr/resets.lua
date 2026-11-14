@@ -5,6 +5,7 @@ local Tracker = {}
 Tracker.__index = Tracker
 
 local GRACE_SECONDS = 1.5
+local FOLLOW_UP_SECONDS = 1
 
 function M.atStation(pos, stations, cfg)
   for _, s in ipairs(stations or {}) do
@@ -48,10 +49,16 @@ function Tracker:update(now, car, ctx)
   return allowed, hint
 end
 
+function Tracker:grant(now, seconds)
+  self.graceUntil = math.max(self.graceUntil or now, now + seconds)
+end
+
 function Tracker:consume(now)
-  local legal = self.lastAllowedAt ~= nil and now - self.lastAllowedAt <= GRACE_SECONDS
+  local legal = (self.graceUntil ~= nil and now <= self.graceUntil)
+    or (self.lastAllowedAt ~= nil and now - self.lastAllowedAt <= GRACE_SECONDS)
   self.lastAllowedAt = nil
   self.stillSince = nil
+  if legal then self.graceUntil = math.max(self.graceUntil or now, now + FOLLOW_UP_SECONDS) end
   return legal
 end
 

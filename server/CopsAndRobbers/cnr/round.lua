@@ -6,6 +6,7 @@ local Round = {}
 Round.__index = Round
 
 local PICK_TIMEOUT_SECONDS = 10
+local SETUP_GRACE_SECONDS = 3
 
 local function copy(t)
   local c = {}
@@ -62,6 +63,7 @@ function Round:setupFor(now, pid)
     self.nextCopIndex = self.nextCopIndex + 1
   end
   self.resetTrackers[pid] = resets.new(self.cfg)
+  self.resetTrackers[pid]:grant(now, SETUP_GRACE_SECONDS)
   return {
     kind = "setup", pid = pid, role = role, copIndex = copIndex,
     headStartRemaining = math.max(0, self.startedAt + self.cfg.headStartSeconds - now),
