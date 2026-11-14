@@ -1,0 +1,53 @@
+local leaderboard = require("cnr.leaderboard")
+
+local function run(player, s, model)
+  return {player=player, survivedSeconds=s, map="west_coast_usa", model=model or "pickup", config="x", releasedAt=0, endedAt=s, endReason="caught"}
+end
+
+test("load handles nil and missing runs", function()
+  assertEq(#leaderboard.load(nil).runs, 0)
+  assertEq(#leaderboard.load({}).runs, 0)
+  assertEq(#leaderboard.load({runs={run("a", 1)}}).runs, 1)
+end)
+
+test("add appends", function()
+  local b = leaderboard.load(nil)
+  leaderboard.add(b, run("a", 1))
+  leaderboard.add(b, run("a", 2))
+  assertEq(#b.runs, 2)
+end)
+
+test("best keeps max per player sorted descending", function()
+  local b = leaderboard.load(nil)
+  leaderboard.add(b, run("Reinder", 100))
+  leaderboard.add(b, run("Bob", 300, "etk800"))
+  leaderboard.add(b, run("Reinder", 200))
+  local best = leaderboard.best(b)
+  assertEq(#best, 2)
+  assertEq(best[1].player, "Bob"); assertEq(best[1].survivedSeconds, 300); assertEq(best[1].model, "etk800")
+  assertEq(best[2].player, "Reinder"); assertEq(best[2].survivedSeconds, 200)
+end)
+
+test("best respects limit, default 10", function()
+  local b = leaderboard.load(nil)
+  for i = 1, 12 do leaderboard.add(b, run("p" .. i, i)) end
+  assertEq(#leaderboard.best(b), 10)
+  assertEq(#leaderboard.best(b, 3), 3)
+  assertEq(leaderboard.best(b, 3)[1].player, "p12")
+end)
+
+test("formatTime", function()
+  assertEq(leaderboard.formatTime(272.4), "4:32")
+  assertEq(leaderboard.formatTime(59.99), "0:59")
+  assertEq(leaderboard.formatTime(3725), "62:05")
+  assertEq(leaderboard.formatTime(0), "0:00")
+end)
+
+test("formatTop", function()
+  local b = leaderboard.load(nil)
+  local lines = leaderboard.formatTop(b, 5)
+  assertEq(#lines, 1); assertEq(lines[1], "No runs yet")
+  leaderboard.add(b, run("Reinder", 272.4))
+  lines = leaderboard.formatTop(b, 5)
+  assertEq(lines[1], "1. Reinder 4:32 (pickup, west_coast_usa)")
+end)
