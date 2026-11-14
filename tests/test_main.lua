@@ -307,3 +307,16 @@ test("/cnr color during prep repaints right away", function()
   assertEq(env.chatHas("Car color cleared"), true)
   env.cleanup()
 end)
+
+test("/cnr test starts a cop-only round for the issuer", function()
+  local env = boot()
+  env.call("onChatMessage", 1, "Reinder", "/cnr test")
+  assertEq(env.lastSent("cnr_pickVehicle").pid, 1)
+  env.positions[1] = 0
+  env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  local setups = 0
+  for _, m in ipairs(env.sent) do if m.ev == "cnr_roundSetup" then setups = setups + 1 end end
+  assertEq(setups, 1)
+  assertEq(env.lastSent("cnr_roundSetup").data:find('"role":"cop"', 1, true) ~= nil, true)
+  env.cleanup()
+end)

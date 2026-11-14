@@ -45,6 +45,8 @@ function Round:clear()
   self.resetTrackers = {}
   self.crashDetectors = {}
   self.penalties = {}
+  self.prevCars = {}
+  self.test = false
   self.lastState = {}
   self.nextCopIndex = 1
   self.catchTracker = catch.new(self.cfg)
@@ -55,6 +57,7 @@ function Round:isActive()
 end
 
 function Round:runnerName()
+  if self.test then return "nobody" end
   return self.players[self.runnerId] or tostring(self.runnerId)
 end
 
@@ -86,7 +89,7 @@ function Round:finish(now, reason)
     survivedSeconds = survived, reason = reason,
     explode = self.cfg.explodeOnCatch and reason == "caught",
   }
-  if reason ~= "cancelled" then
+  if reason ~= "cancelled" and not self.test then
     fx[#fx + 1] = { kind = "record", run = {
       player = self:runnerName(), survivedSeconds = survived,
       model = self.vehicle and self.vehicle.model, config = self.vehicle and self.vehicle.config,
@@ -103,30 +106,39 @@ function Round:cancel(now, msg)
   return fx
 end
 
-function Round:start(now, runnerId, issuerId, players)
+function Round:start(now, runnerId, issuerId, players, opts)
   if self:isActive() then
     return { { kind = "reply", pid = issuerId, msg = "A round is already running" } }
   end
   self:clear()
   self.state = "picking"
-  self.runnerId = runnerId
+  self.test = opts and opts.test or false
+  self.runnerId = not self.test and runnerId or nil
   self.issuerId = issuerId
-  self.players = copy(players)
+  self.players = self.test and { [issuerId] = players[issuerId] } or copy(players)
   self.pickStartedAt = now
   return { { kind = "pickVehicle", pid = issuerId } }
 end
 
 function Round:vehiclePicked(now, pid, model, config, players)
   if self.state ~= "picking" or pid ~= self.issuerId then return {} end
-  self.players = copy(players)
-  if not self.players[self.runnerId] then
+  if self.test then
+    self.players = { [pid] = players[pid] or self.players[pid] }
+  else
+    self.players = copy(players)
+  end
+  if not self.test and not self.players[self.runnerId] then
     return self:cancel(now, "Runner left, round cancelled")
   end
   self.state = "prep"
   self.vehicle = { model = model, config = config }
   local fx = {}
   for _, p in ipairs(sortedPids(self.players)) do fx[#fx + 1] = self:setupFor(now, p) end
-  fx[#fx + 1] = { kind = "broadcast", msg = string.format("%s is the runner! Car: %s. Change your paint if you like, then type /cnr go", self:runnerName(), model) }
+  if self.test then
+    fx[#fx + 1] = { kind = "broadcast", msg = "Test round: you are a cop with no runner. Type /cnr go to start" }
+  else
+    fx[#fx + 1] = { kind = "broadcast", msg = string.format("%s is the runner! Car: %s. Change your paint if you like, then type /cnr go", self:runnerName(), model) }
+  end
   return fx
 end
 
@@ -180,7 +192,8 @@ function Round:tick(now, cars, stations)
         if untilTime and now >= untilTime then
           self.penalties[pid] = nil
           fx[#fx + 1] = { kind = "penaltyEnd", pid = pid }
-        elseif not untilTime and self.crashDetectors[pid] and self.crashDetectors[pid]:update(now, cars[pid]) then
+        elseif not untilTime and self.crashDetectors[pid] and self.crashDetectors[pid]:update(now, cars[pid])
+          and crash.atFault(self.prevCars[pid], self:otherCars(pid)) then
           local seconds = self.cfg.crashPenaltySeconds
           self.penalties[pid] = now + seconds
           if self.resetTrackers[pid] then self.resetTrackers[pid]:block(now + seconds) end
@@ -212,14 +225,23 @@ function Round:tick(now, cars, stations)
     end
   end
 
+  self.prevCars = cars
   if caught then
     for _, e in ipairs(self:finish(now, "caught")) do fx[#fx + 1] = e end
   end
   return fx
 end
 
+function Round:otherCars(pid)
+  local list = {}
+  for other, car in pairs(self.prevCars) do
+    if other ~= pid then list[#list + 1] = car end
+  end
+  return list
+end
+
 function Round:playerJoined(now, pid, name)
-  if self.state == "idle" then return {} end
+  if self.state == "idle" or self.test then return {} end
   self.players[pid] = name
   if self.state == "picking" then return {} end
   return { self:setupFor(now, pid) }

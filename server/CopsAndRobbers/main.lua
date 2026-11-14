@@ -154,6 +154,7 @@ local function vidFor(pid)
 end
 
 local function carFor(pid)
+  if pid == nil then return nil end
   local vid = vidFor(pid)
   if not vid then return nil end
   local raw, err = MP.GetPositionRaw(pid, vid)
@@ -227,6 +228,7 @@ end
 local HELP = {
   "/cnr start <name|random> - set up a round with that runner",
   "/cnr go - start the countdown",
+  "/cnr test - practice round as a cop, no runner",
   "/cnr color <#hex|off> - your car color for every round",
   "/cnr stop - cancel the current round",
   "/cnr top - leaderboard",
@@ -250,6 +252,13 @@ function handlers.start(pid, cmd)
   activeVid = {}
   partsBaseline = {}
   applyEffects(current:start(now(), runnerId, pid, players))
+end
+
+function handlers.test(pid)
+  if current:isActive() then return reply(pid, "A round is already running") end
+  activeVid = {}
+  partsBaseline = {}
+  applyEffects(current:start(now(), nil, pid, MP.GetPlayers() or {}, { test = true }))
 end
 
 function handlers.go(pid)
