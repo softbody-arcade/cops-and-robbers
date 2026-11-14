@@ -30,6 +30,10 @@ local roundConfig
 local roundColor
 local penaltyActive = false
 local aiCars = {}
+local statusActive = false
+local chaseStart
+local lastStatusAt = 0
+local infoText
 local runnerServerId
 local pendingPlacement
 local suppressResetUntil = 0
@@ -102,12 +106,14 @@ local function vehicleType(config)
   return model and model.model and model.model.Type
 end
 
-local function pickVehicle(includeMods)
+local function pickVehicle(includeMods, excludedModels)
+  local excluded = { unicycle = true }
+  for _, m in ipairs(excludedModels or {}) do excluded[m] = true end
   local list = core_vehicles.getConfigList(true).configs or {}
   local candidates = {}
   for _, c in ipairs(list) do
     local official = c.Source == "BeamNG - Official"
-    if (official or includeMods) and ALLOWED_TYPES[vehicleType(c)] and c.model_key ~= "unicycle" then
+    if (official or includeMods) and ALLOWED_TYPES[vehicleType(c)] and not excluded[c.model_key] then
       candidates[#candidates + 1] = c
     end
   end
@@ -117,32 +123,35 @@ local function pickVehicle(includeMods)
   return c.model_key, (path:gsub("^/", ""))
 end
 
-local function roadNodeSpots(center, minD, maxD)
+local LINK_STEP = 15
+local MAX_SPAWN_RING = 2000
+
+local function roadSpots(center, minD, maxD)
   local nodes = map.getMap().nodes or {}
   local candidates = {}
+  local function consider(pos, dir)
+    local d = pos:distance(center)
+    if d >= minD and d <= maxD then candidates[#candidates + 1] = { pos = pos, d = d, dir = dir } end
+  end
   for id, n in pairs(nodes) do
-    if n.links and next(n.links) then
-      local d = n.pos:distance(center)
-      if d >= minD and d <= maxD then candidates[#candidates + 1] = { id = id, pos = n.pos, d = d, links = n.links } end
+    for linkId in pairs(n.links or {}) do
+      local other = nodes[linkId]
+      if other and tostring(id) < tostring(linkId) then
+        local delta = other.pos - n.pos
+        local len = delta:length()
+        if len > 1e-3 then
+          local dir = delta / len
+          local steps = math.max(1, math.floor(len / LINK_STEP))
+          for i = 0, steps do consider(n.pos + dir * (len * i / steps), dir) end
+        end
+      end
     end
   end
   table.sort(candidates, function(a, b) return a.d < b.d end)
-  return candidates, nodes
+  return candidates
 end
 
-local function rotationAlongLink(spot, nodes)
-  for linkId in pairs(spot.links) do
-    local other = nodes[linkId]
-    if other then
-      local dir = (other.pos - spot.pos):normalized()
-      return quatFromDir(dir, vec3(0, 0, 1))
-    end
-  end
-  return quat(0, 0, 0, 1)
-end
-
-local function findCopSpot(center, minD, maxD, index)
-  local candidates, nodes = roadNodeSpots(center, minD, maxD)
+local function pickSpot(candidates, index)
   local chosen = {}
   for _, c in ipairs(candidates) do
     local free = true
@@ -151,12 +160,20 @@ local function findCopSpot(center, minD, maxD, index)
     end
     if free then
       chosen[#chosen + 1] = c
-      if #chosen == index then return c.pos, rotationAlongLink(c, nodes) end
+      if #chosen == index then return c end
     end
   end
-  local last = chosen[#chosen]
-  if last then return last.pos, rotationAlongLink(last, nodes) end
   return nil
+end
+
+local function findCopSpot(center, minD, maxD, index)
+  local lo, hi = minD, maxD
+  while true do
+    local spot = pickSpot(roadSpots(center, lo, hi), index)
+    if spot then return spot.pos, quatFromDir(spot.dir, vec3(0, 0, 1)) end
+    if hi >= MAX_SPAWN_RING then return nil end
+    lo, hi = 0, hi * 2
+  end
 end
 
 local function uprightRotation(veh)
@@ -270,7 +287,7 @@ end
 
 local function onPickVehicle(data)
   local d = jsonDecode(data) or {}
-  local model, config = pickVehicle(d.includeMods)
+  local model, config = pickVehicle(d.includeMods, d.excludedModels)
   if not model then
     toast("No vehicles available to pick", 6)
     return
@@ -295,7 +312,11 @@ local function onRoundSetup(data)
   end
 
   local pos, rot
-  if role == "cop" and not d.inPlace then
+  if d.resumePos then
+    local back = vec3(d.resumePos.x, d.resumePos.y, d.resumePos.z)
+    pos, rot = nearestRoad(back)
+    if not pos then pos, rot = back, nil end
+  elseif role == "cop" and not d.inPlace then
     local own = ownVehicle()
     local center = d.runnerPos and vec3(d.runnerPos.x, d.runnerPos.y, d.runnerPos.z) or (own and own:getPosition())
     if center then
@@ -393,10 +414,46 @@ local function onPenaltyEnd(data)
   toast("Penalty over, go!", 3, "cnr_go")
 end
 
+local COMPASS = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
+
+local function compass(from, to)
+  local angle = math.deg(math.atan2(to.x - from.x, to.y - from.y)) % 360
+  return COMPASS[math.floor((angle + 22.5) / 45) % 8 + 1]
+end
+
+local function clearRoute()
+  if core_groundMarkers then pcall(core_groundMarkers.setPath, nil) end
+end
+
+local function onLastSeen(data)
+  local d = jsonDecode(data) or {}
+  if not d.pos then return end
+  local target = vec3(d.pos.x, d.pos.y, d.pos.z)
+  if core_groundMarkers then pcall(core_groundMarkers.setPath, target) end
+  local veh = ownVehicle()
+  if veh then
+    local here = veh:getPosition()
+    infoText = string.format("Runner seen %d m %s", math.floor(here:distance(target) + 0.5), compass(here, target))
+    toast(infoText, 4, "cnr_seen")
+  end
+end
+
+local function onNearestCop(data)
+  local d = jsonDecode(data) or {}
+  if d.dist then infoText = string.format("Nearest cop %d m", math.floor(d.dist + 0.5)) end
+end
+
 local function onNotice(data)
   local d = jsonDecode(data) or {}
   if d.about ~= nil and MPConfig and d.about == MPConfig.getPlayerServerID() then return end
   if d.msg then toast(d.msg, 4, "cnr_notice") end
+end
+
+local function startStatus()
+  statusActive = true
+  chaseStart = clock
+  lastStatusAt = 0
+  infoText = nil
 end
 
 local function onRelease()
@@ -409,6 +466,7 @@ local function onRelease()
   timerEnd = nil
   if frozen then setFreeze(false) end
   if role == "cop" then toast("GO!", 3, "cnr_go") end
+  startStatus()
 end
 local function onState(data)
   local d = jsonDecode(data) or {}
@@ -418,7 +476,7 @@ local function onState(data)
   end
   if d.resetHint and d.resetHint ~= lastHint then
     lastHint = d.resetHint
-    if not penaltyActive then toast(d.resetHint, 3, "cnr_reset") end
+    if not penaltyActive and not statusActive then toast(d.resetHint, 3, "cnr_reset") end
   end
   local p = tonumber(d.catchProgress) or 0
   if p > 0 then
@@ -439,6 +497,9 @@ end
 local function endRound()
   active = false
   role = nil
+  statusActive = false
+  infoText = nil
+  clearRoute()
   removeAICars()
   penaltyActive = false
   timerEnd = nil
@@ -455,7 +516,12 @@ local function onRoundEnd(data)
   local wasRunner = MPConfig and MPConfig.getPlayerServerID() == d.runnerId
   endRound()
   if d.reason == "caught" then
-    toast(string.format("Runner caught! %s survived %s", tostring(d.runnerName), formatTime(d.survivedSeconds)), 8, "cnr_end")
+    local by = (type(d.catchers) == "table" and #d.catchers > 0) and (" by " .. table.concat(d.catchers, ", ")) or ""
+    toast(string.format("Runner caught%s! %s survived %s", by, tostring(d.runnerName), formatTime(d.survivedSeconds)), 8, "cnr_end")
+  elseif d.reason == "called" then
+    toast(string.format("Round ended: %s survived %s", tostring(d.runnerName), formatTime(d.survivedSeconds)), 8, "cnr_end")
+  elseif d.reason == "escaped" then
+    toast(string.format("%s escaped! Survived %s", tostring(d.runnerName), formatTime(d.survivedSeconds)), 8, "cnr_end")
   elseif d.reason == "disconnect" then
     toast(string.format("%s left after %s", tostring(d.runnerName), formatTime(d.survivedSeconds)), 8, "cnr_end")
   else
@@ -528,6 +594,19 @@ local function onUpdate(dtReal)
     end
   end
   if #report > 0 then sendServer("cnr_aiVehicles", { ai = report }) end
+  if statusActive and clock - lastStatusAt >= 1 then
+    lastStatusAt = clock
+    local parts = { formatTime(clock - chaseStart) }
+    if penaltyActive then
+      parts[#parts + 1] = "Penalty"
+    elseif resetAllowed then
+      parts[#parts + 1] = "Reset OK"
+    elseif lastHint then
+      parts[#parts + 1] = lastHint
+    end
+    if infoText then parts[#parts + 1] = infoText end
+    toast(table.concat(parts, "  |  "), 1.5, "cnr_status")
+  end
   if timerEnd then
     local left = math.ceil(timerEnd - clock)
     if left > 0 and left ~= lastCountdown then
@@ -562,6 +641,8 @@ local function onExtensionLoaded()
     AddEventHandler("cnr_penalty", onPenalty)
     AddEventHandler("cnr_setupAI", onSetupAI)
     AddEventHandler("cnr_notice", onNotice)
+    AddEventHandler("cnr_lastSeen", onLastSeen)
+    AddEventHandler("cnr_nearestCop", onNearestCop)
     AddEventHandler("cnr_penaltyEnd", onPenaltyEnd)
     AddEventHandler("cnr_restoreConfig", onRestoreConfig)
     AddEventHandler("cnr_state", onState)
