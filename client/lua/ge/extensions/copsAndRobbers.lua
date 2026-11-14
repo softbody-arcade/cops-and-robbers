@@ -393,6 +393,12 @@ local function onPenaltyEnd(data)
   toast("Penalty over, go!", 3, "cnr_go")
 end
 
+local function onNotice(data)
+  local d = jsonDecode(data) or {}
+  if d.about ~= nil and MPConfig and d.about == MPConfig.getPlayerServerID() then return end
+  if d.msg then toast(d.msg, 4, "cnr_notice") end
+end
+
 local function onRelease()
   for _, car in pairs(aiCars) do
     if car.role == "cop" then
@@ -555,6 +561,7 @@ local function onExtensionLoaded()
     AddEventHandler("cnr_paint", onPaint)
     AddEventHandler("cnr_penalty", onPenalty)
     AddEventHandler("cnr_setupAI", onSetupAI)
+    AddEventHandler("cnr_notice", onNotice)
     AddEventHandler("cnr_penaltyEnd", onPenaltyEnd)
     AddEventHandler("cnr_restoreConfig", onRestoreConfig)
     AddEventHandler("cnr_state", onState)

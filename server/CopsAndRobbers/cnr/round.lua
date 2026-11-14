@@ -1,6 +1,7 @@
 local catch = require("cnr.catch")
 local resets = require("cnr.resets")
 local crash = require("cnr.crash")
+local leaderboard = require("cnr.leaderboard")
 
 local M = {}
 local Round = {}
@@ -96,6 +97,9 @@ function Round:finish(now, reason)
     survivedSeconds = survived, reason = reason,
     explode = self.cfg.explodeOnCatch and reason == "caught",
   }
+  if self.test and reason == "caught" then
+    fx[#fx + 1] = { kind = "broadcast", msg = string.format("Test round: %s caught after %s", self:runnerName(), leaderboard.formatTime(survived)) }
+  end
   if reason ~= "cancelled" and not self.test then
     fx[#fx + 1] = { kind = "record", run = {
       player = self:runnerName(), survivedSeconds = survived,
@@ -239,7 +243,7 @@ function Round:tick(now, cars, stations)
           local seconds = self.cfg.crashPenaltySeconds
           self.penalties[pid] = now + seconds
           if self.resetTrackers[pid] then self.resetTrackers[pid]:block(now + seconds) end
-          fx[#fx + 1] = { kind = "penalty", pid = pid, seconds = seconds }
+          fx[#fx + 1] = { kind = "penalty", pid = pid, seconds = seconds, name = self.players[pid] }
           fx[#fx + 1] = { kind = "broadcast", msg = string.format("%s crashed hard: %gs penalty", self.players[pid], seconds) }
         end
       end

@@ -214,6 +214,7 @@ local function applyEffects(effects)
     elseif e.kind == "runnerGo" then
       send(-1, "cnr_runnerGo", { headStartSeconds = e.headStartSeconds })
     elseif e.kind == "penalty" then
+      send(-1, "cnr_notice", { msg = string.format("%s: crash penalty %gs", tostring(e.name), e.seconds), about = e.pid })
       if round.isAI(e.pid) then
         send(current.issuerId, "cnr_penalty", { seconds = e.seconds, aiId = e.pid })
       else

@@ -342,3 +342,26 @@ test("/cnr test without role shows usage", function()
   assertEq(env.chatHas("Usage: /cnr test <runner|cop>"), true)
   env.cleanup()
 end)
+
+test("penalty is shown on everyone's screen", function()
+  local env = boot()
+  env.startRound()
+  env.go()
+  for _ = 1, 44 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  local raw = MP.GetPositionRaw
+  MP.GetPositionRaw = function(pid, vid)
+    if pid == 2 then return { pos = { 200, 0, 0 }, vel = { 120 / 3.6, 0, 0 } }, "" end
+    return raw(pid, vid)
+  end
+  env.clock = env.clock + 0.25; env.call("cnr_tick")
+  MP.GetPositionRaw = function(pid, vid)
+    if pid == 2 then return { pos = { 201, 0, 0 }, vel = { 0, 0, 0 } }, "" end
+    return raw(pid, vid)
+  end
+  env.clock = env.clock + 0.25; env.call("cnr_tick")
+  local n = env.lastSent("cnr_notice")
+  assertEq(n.pid, -1)
+  assertEq(n.data:find('"msg":"Bob: crash penalty 10s"', 1, true) ~= nil, true)
+  assertEq(n.data:find('"about":2', 1, true) ~= nil, true)
+  env.cleanup()
+end)

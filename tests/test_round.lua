@@ -401,3 +401,26 @@ test("stop ends a test round without record", function()
   assertEq(find(fx, "record"), nil)
   assertEq(find(fx, "roundEnd").reason, "cancelled")
 end)
+
+test("test round catch is announced", function()
+  local r = round.new((config.merge(nil)))
+  r:start(0, nil, 1, {[1]="Reinder"}, {test=true, role="runner"})
+  r:vehiclePicked(1, 1, "pickup", "cfg", {[1]="Reinder"})
+  r:go(2, 1)
+  local a1 = round.AI_FIRST
+  local cars = {[1]=car(0), [a1]=car(5), [a1 - 1]=car(500)}
+  r:tick(5, cars, {}); r:tick(12, cars, {})
+  local fx
+  for i = 1, 40 do
+    fx = r:tick(12 + i * 0.25, cars, {})
+    if find(fx, "roundEnd") then break end
+  end
+  assertEq(find(fx, "broadcast").msg, "Test round: Reinder caught after 0:07")
+end)
+
+test("penalty effect carries the offender name", function()
+  local r = running()
+  r:tick(11.25, {[1]=kmh(0, 80), [2]=kmh(200, 120), [3]=kmh(500, 0)}, {})
+  local fx = r:tick(11.5, {[1]=kmh(0, 80), [2]=kmh(200, 10), [3]=kmh(500, 0)}, {})
+  assertEq(find(fx, "penalty", 2).name, "Bob")
+end)
