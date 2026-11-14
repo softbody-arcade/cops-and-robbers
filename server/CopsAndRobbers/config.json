@@ -1,0 +1,14 @@
+{
+  "headStartSeconds": 7,
+  "resetWaitSeconds": 7,
+  "catchHoldSeconds": 7,
+  "catchRadiusMeters": 10,
+  "catchMaxSpeedKmh": 3,
+  "stillMaxSpeedKmh": 1,
+  "copResetMinDistanceMeters": 1000,
+  "gasStationRadiusMeters": 25,
+  "copSpawnMinMeters": 50,
+  "copSpawnMaxMeters": 150,
+  "explodeOnCatch": false,
+  "includeModVehicles": false
+}
