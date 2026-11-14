@@ -29,6 +29,8 @@ local roundModel
 local roundConfig
 local roundColor
 local penaltyActive = false
+local aiCars = {}
+local runnerServerId
 local pendingPlacement
 local suppressResetUntil = 0
 local lastPose
@@ -203,6 +205,69 @@ local function placeVehicle(model, config, pos, rot, color)
   pendingPlacement = { at = clock + SETUP_DELAY, deadline = clock + PLACEMENT_TIMEOUT, pos = pos, rot = rot }
 end
 
+local function aiCommand(car, cmd)
+  local obj = car.gameId and getObjectByID(car.gameId)
+  if obj then obj:queueLuaCommand(cmd) end
+end
+
+local function setAIFreeze(car, on)
+  car.frozen = on
+  aiCommand(car, "controller.setFreeze(" .. (on and 1 or 0) .. ")")
+end
+
+local function runnerGameId()
+  for _, car in pairs(aiCars) do
+    if car.role == "runner" then return car.gameId end
+  end
+  local veh = getPlayerVehicle(0)
+  return veh and veh:getID()
+end
+
+local function startChase(car)
+  local target = runnerGameId()
+  if not target then return end
+  aiCommand(car, "ai.setTargetObjectID(" .. target .. ")")
+  aiCommand(car, 'ai.setMode("chase")')
+end
+
+local function startFlee(car)
+  local veh = getPlayerVehicle(0)
+  if veh then aiCommand(car, "ai.setTargetObjectID(" .. veh:getID() .. ")") end
+  aiCommand(car, 'ai.setMode("flee")')
+end
+
+local function removeAICars()
+  for _, car in pairs(aiCars) do
+    local obj = car.gameId and getObjectByID(car.gameId)
+    if obj then
+      obj:queueLuaCommand('ai.setMode("disabled")')
+      obj:delete()
+    end
+  end
+  aiCars = {}
+end
+
+local function onSetupAI(data)
+  local d = jsonDecode(data) or {}
+  removeAICars()
+  runnerServerId = d.runnerId
+  local own = ownVehicle()
+  local center = own and own:getPosition()
+  for _, a in ipairs(d.ai or {}) do
+    local pos, rot
+    if center then pos, rot = findCopSpot(center, d.copSpawnMin or 50, d.copSpawnMax or 150, a.index or 1) end
+    local opt = vehicleOptions(d.config, a.color)
+    opt.autoEnterVehicle = false
+    opt.pos, opt.rot = pos, rot
+    local veh = core_vehicles.spawnNewVehicle(d.model, opt)
+    if veh then
+      aiCars[a.id] = { id = a.id, role = a.role, name = a.name, gameId = veh:getID(), frozen = true, reported = false }
+    else
+      toast("Could not spawn " .. tostring(a.name) .. ", is MaxCars high enough?", 6, "cnr_reset")
+    end
+  end
+end
+
 local function onPickVehicle(data)
   local d = jsonDecode(data) or {}
   local model, config = pickVehicle(d.includeMods)
@@ -230,7 +295,7 @@ local function onRoundSetup(data)
   end
 
   local pos, rot
-  if role == "cop" then
+  if role == "cop" and not d.inPlace then
     local own = ownVehicle()
     local center = d.runnerPos and vec3(d.runnerPos.x, d.runnerPos.y, d.runnerPos.z) or (own and own:getPosition())
     if center then
@@ -261,6 +326,12 @@ end
 
 local function onRunnerGo(data)
   local d = jsonDecode(data) or {}
+  for _, car in pairs(aiCars) do
+    if car.role == "runner" then
+      setAIFreeze(car, false)
+      startFlee(car)
+    end
+  end
   if role == "runner" then
     timerEnd = nil
     setFreeze(false)
@@ -291,12 +362,30 @@ end
 
 local function onPenalty(data)
   local d = jsonDecode(data) or {}
+  if d.aiId then
+    local car = aiCars[d.aiId]
+    if car then
+      setAIFreeze(car, true)
+      aiCommand(car, 'ai.setMode("disabled")')
+      toast(tostring(car.name) .. " crashed: penalty", 3, "cnr_reset")
+    end
+    return
+  end
   penaltyActive = true
   setFreeze(true)
   startTimer(tonumber(d.seconds), "Crash penalty")
 end
 
-local function onPenaltyEnd()
+local function onPenaltyEnd(data)
+  local d = jsonDecode(data or "{}") or {}
+  if d.aiId then
+    local car = aiCars[d.aiId]
+    if car then
+      setAIFreeze(car, false)
+      startChase(car)
+    end
+    return
+  end
   penaltyActive = false
   lastHint = nil
   timerEnd = nil
@@ -305,6 +394,12 @@ local function onPenaltyEnd()
 end
 
 local function onRelease()
+  for _, car in pairs(aiCars) do
+    if car.role == "cop" then
+      setAIFreeze(car, false)
+      startChase(car)
+    end
+  end
   timerEnd = nil
   if frozen then setFreeze(false) end
   if role == "cop" then toast("GO!", 3, "cnr_go") end
@@ -338,6 +433,7 @@ end
 local function endRound()
   active = false
   role = nil
+  removeAICars()
   penaltyActive = false
   timerEnd = nil
   roundModel, roundConfig, roundColor = nil, nil, nil
@@ -408,6 +504,24 @@ local function onUpdate(dtReal)
       end
     end
   end
+  local report = {}
+  for _, car in pairs(aiCars) do
+    local obj = car.gameId and getObjectByID(car.gameId)
+    if obj then
+      if not car.reported then
+        local vid = serverVid(obj)
+        if vid then
+          car.reported = true
+          report[#report + 1] = { id = car.id, vid = vid }
+        end
+      end
+      if car.frozen and clock - (car.lastFreeze or 0) >= FREEZE_REASSERT then
+        car.lastFreeze = clock
+        obj:queueLuaCommand("controller.setFreeze(1)")
+      end
+    end
+  end
+  if #report > 0 then sendServer("cnr_aiVehicles", { ai = report }) end
   if timerEnd then
     local left = math.ceil(timerEnd - clock)
     if left > 0 and left ~= lastCountdown then
@@ -440,6 +554,7 @@ local function onExtensionLoaded()
     AddEventHandler("cnr_runnerGo", onRunnerGo)
     AddEventHandler("cnr_paint", onPaint)
     AddEventHandler("cnr_penalty", onPenalty)
+    AddEventHandler("cnr_setupAI", onSetupAI)
     AddEventHandler("cnr_penaltyEnd", onPenaltyEnd)
     AddEventHandler("cnr_restoreConfig", onRestoreConfig)
     AddEventHandler("cnr_state", onState)

@@ -57,7 +57,9 @@ house rules, with every number configurable, so the game itself is the referee.
    for `crashPenaltySeconds` (default 10). Resets are blocked during the penalty and the wait rule starts after it.
    A penalized cop does not count toward a catch. Runner crashes are not penalized. When another car was within
    15 m before the crash, only the car driving into the other is at fault (comparing closing speeds the tick before).
-   `/cnr test` starts a practice round with the issuer as the only cop and no runner; never recorded.
+   `/cnr test runner` (you blue runner, AI cops green/red chase you) and `/cnr test cop` (you green cop, AI blue
+   runner flees, AI red partner cop) are practice rounds against BeamNG AI, never recorded. AI vehicles belong to the
+   issuer and need MaxCars >= 3.
 6. **Round end:** a catch ends the round. Everyone gets a message with the runner's name and survival
    time. Optionally the runner's vehicle explodes (`explodeOnCatch`, default off).
 7. **Choosing the runner:** players pick manually via command, or ask for a random pick.

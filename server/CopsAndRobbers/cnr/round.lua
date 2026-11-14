@@ -7,6 +7,14 @@ local Round = {}
 Round.__index = Round
 
 local PICK_TIMEOUT_SECONDS = 10
+local COLOR_RUNNER = "#1f5fff"
+local COLOR_COPS = { "#20c020", "#e02020" }
+
+M.AI_FIRST = -10
+
+function M.isAI(id)
+  return type(id) == "number" and id <= M.AI_FIRST
+end
 local SETUP_GRACE_SECONDS = 3
 
 local function copy(t)
@@ -57,7 +65,6 @@ function Round:isActive()
 end
 
 function Round:runnerName()
-  if self.test then return "nobody" end
   return self.players[self.runnerId] or tostring(self.runnerId)
 end
 
@@ -111,32 +118,67 @@ function Round:start(now, runnerId, issuerId, players, opts)
     return { { kind = "reply", pid = issuerId, msg = "A round is already running" } }
   end
   self:clear()
-  self.state = "picking"
   self.test = opts and opts.test or false
-  self.runnerId = not self.test and runnerId or nil
+  if self.test then
+    local role = opts.role
+    if role ~= "runner" and role ~= "cop" then
+      self:clear()
+      return { { kind = "reply", pid = issuerId, msg = "Usage: /cnr test <runner|cop>" } }
+    end
+    self.testRole = role
+    self.players = { [issuerId] = players[issuerId] or "You" }
+    local a1, a2 = M.AI_FIRST, M.AI_FIRST - 1
+    if role == "runner" then
+      self.runnerId = issuerId
+      self.players[a1], self.players[a2] = "AI green", "AI red"
+    else
+      self.runnerId = a1
+      self.players[a1], self.players[a2] = "AI blue", "AI red"
+    end
+  else
+    self.runnerId = runnerId
+    self.players = copy(players)
+  end
+  self.state = "picking"
   self.issuerId = issuerId
-  self.players = self.test and { [issuerId] = players[issuerId] } or copy(players)
   self.pickStartedAt = now
   return { { kind = "pickVehicle", pid = issuerId } }
 end
 
 function Round:vehiclePicked(now, pid, model, config, players)
   if self.state ~= "picking" or pid ~= self.issuerId then return {} end
-  if self.test then
-    self.players = { [pid] = players[pid] or self.players[pid] }
-  else
-    self.players = copy(players)
-  end
+  if not self.test then self.players = copy(players) end
   if not self.test and not self.players[self.runnerId] then
     return self:cancel(now, "Runner left, round cancelled")
   end
   self.state = "prep"
   self.vehicle = { model = model, config = config }
   local fx = {}
-  for _, p in ipairs(sortedPids(self.players)) do fx[#fx + 1] = self:setupFor(now, p) end
   if self.test then
-    fx[#fx + 1] = { kind = "broadcast", msg = "Test round: you are a cop with no runner. Type /cnr go to start" }
+    local copColor = 1
+    local function colorFor(id)
+      if id == self.runnerId then return COLOR_RUNNER end
+      local c = COLOR_COPS[copColor]
+      copColor = copColor + 1
+      return c
+    end
+    local own = self:setupFor(now, pid)
+    own.colorHex = colorFor(pid)
+    own.inPlace = true
+    fx[#fx + 1] = own
+    local ai = {}
+    for _, id in ipairs({ M.AI_FIRST, M.AI_FIRST - 1 }) do
+      local e = self:setupFor(now, id)
+      ai[#ai + 1] = { id = id, role = e.role, index = #ai + 1, colorHex = colorFor(id), name = self.players[id] }
+    end
+    fx[#fx + 1] = { kind = "setupAI", pid = pid, ai = ai }
+    if self.testRole == "runner" then
+      fx[#fx + 1] = { kind = "broadcast", msg = "Test round: you are the runner, two AI cops will chase you. Type /cnr go to start" }
+    else
+      fx[#fx + 1] = { kind = "broadcast", msg = "Test round: you are a cop with an AI runner and an AI partner. Type /cnr go to start" }
+    end
   else
+    for _, p in ipairs(sortedPids(self.players)) do fx[#fx + 1] = self:setupFor(now, p) end
     fx[#fx + 1] = { kind = "broadcast", msg = string.format("%s is the runner! Car: %s. Change your paint if you like, then type /cnr go", self:runnerName(), model) }
   end
   return fx

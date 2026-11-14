@@ -23,6 +23,7 @@ local stations = {}
 local activeVid = {}
 local stationsRequested = {}
 local partsBaseline = {}
+local aiVid = {}
 local colorStore = {}
 local serverClock = MP.CreateTimer()
 
@@ -59,7 +60,10 @@ local function now() return serverClock:GetCurrent() end
 
 local function reply(pid, msg) MP.SendChatMessage(pid, PREFIX .. msg) end
 local function broadcast(msg) MP.SendChatMessage(-1, PREFIX .. msg) end
-local function send(pid, event, payload) MP.TriggerClientEvent(pid, event, Util.JsonEncode(payload or {})) end
+local function send(pid, event, payload)
+  if type(pid) ~= "number" or (pid < 0 and pid ~= -1) then return end
+  MP.TriggerClientEvent(pid, event, Util.JsonEncode(payload or {}))
+end
 
 local function loadConfig()
   local raw, corrupt = decodeFile(pluginDir .. "config.json")
@@ -91,9 +95,12 @@ local function saveColors()
   writeFile(colorsPath, Util.JsonPrettify(Util.JsonEncode(colorStore)))
 end
 
-local function colorFor(pid)
-  local c = colors.get(colorStore, MP.GetPlayerName(pid) or "")
+local function colorTable(c)
   return c and { hex = c.hex, r = c.r, g = c.g, b = c.b } or nil
+end
+
+local function colorFor(pid)
+  return colorTable(colors.get(colorStore, MP.GetPlayerName(pid) or ""))
 end
 
 local function roundCarActive()
@@ -155,9 +162,14 @@ end
 
 local function carFor(pid)
   if pid == nil then return nil end
-  local vid = vidFor(pid)
-  if not vid then return nil end
-  local raw, err = MP.GetPositionRaw(pid, vid)
+  local owner, vid = pid, nil
+  if round.isAI(pid) then
+    owner, vid = current.issuerId, aiVid[pid]
+  else
+    vid = vidFor(pid)
+  end
+  if not owner or not vid then return nil end
+  local raw, err = MP.GetPositionRaw(owner, vid)
   if err and err ~= "" or type(raw) ~= "table" then return nil end
   local pos, vel = vec.toVec(raw.pos), vec.toVec(raw.vel)
   if not pos or not vel then return nil end
@@ -183,18 +195,36 @@ local function applyEffects(effects)
         runnerId = current.runnerId, role = e.role, copIndex = e.copIndex,
         model = current.vehicle.model, config = current.vehicle.config,
         phase = e.phase, countdownRemaining = e.countdownRemaining,
-        headStartRemaining = e.headStartRemaining, color = colorFor(e.pid),
+        headStartRemaining = e.headStartRemaining, inPlace = e.inPlace,
+        color = e.colorHex and colorTable((colors.parseHex(e.colorHex))) or colorFor(e.pid),
         runnerPos = runnerCar and runnerCar.pos or nil,
         copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
+      })
+    elseif e.kind == "setupAI" then
+      local list = {}
+      for _, a in ipairs(e.ai) do
+        list[#list + 1] = { id = a.id, role = a.role, index = a.index, name = a.name, color = colorTable((colors.parseHex(a.colorHex))) }
+      end
+      send(e.pid, "cnr_setupAI", {
+        model = current.vehicle.model, config = current.vehicle.config, ai = list,
+        runnerId = current.runnerId, copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
       })
     elseif e.kind == "countdown" then
       send(-1, "cnr_countdown", { seconds = e.seconds })
     elseif e.kind == "runnerGo" then
       send(-1, "cnr_runnerGo", { headStartSeconds = e.headStartSeconds })
     elseif e.kind == "penalty" then
-      send(e.pid, "cnr_penalty", { seconds = e.seconds })
+      if round.isAI(e.pid) then
+        send(current.issuerId, "cnr_penalty", { seconds = e.seconds, aiId = e.pid })
+      else
+        send(e.pid, "cnr_penalty", { seconds = e.seconds })
+      end
     elseif e.kind == "penaltyEnd" then
-      send(e.pid, "cnr_penaltyEnd", {})
+      if round.isAI(e.pid) then
+        send(current.issuerId, "cnr_penaltyEnd", { aiId = e.pid })
+      else
+        send(e.pid, "cnr_penaltyEnd", {})
+      end
     elseif e.kind == "release" then
       send(-1, "cnr_release", {})
     elseif e.kind == "state" then
@@ -206,6 +236,7 @@ local function applyEffects(effects)
       })
       activeVid = {}
       partsBaseline = {}
+      aiVid = {}
     elseif e.kind == "record" then
       local run = e.run
       local endedAt = os.time()
@@ -228,7 +259,7 @@ end
 local HELP = {
   "/cnr start <name|random> - set up a round with that runner",
   "/cnr go - start the countdown",
-  "/cnr test - practice round as a cop, no runner",
+  "/cnr test <runner|cop> - practice round against AI",
   "/cnr color <#hex|off> - your car color for every round",
   "/cnr stop - cancel the current round",
   "/cnr top - leaderboard",
@@ -254,11 +285,13 @@ function handlers.start(pid, cmd)
   applyEffects(current:start(now(), runnerId, pid, players))
 end
 
-function handlers.test(pid)
+function handlers.test(pid, cmd)
   if current:isActive() then return reply(pid, "A round is already running") end
   activeVid = {}
   partsBaseline = {}
-  applyEffects(current:start(now(), nil, pid, MP.GetPlayers() or {}, { test = true }))
+  aiVid = {}
+  local role = cmd.args[1] and cmd.args[1]:lower()
+  applyEffects(current:start(now(), nil, pid, MP.GetPlayers() or {}, { test = true, role = role }))
 end
 
 function handlers.go(pid)
@@ -351,7 +384,7 @@ local function vehicleAllowed(pid, data, isSpawn)
   if not decoded or decoded.jbm ~= current.vehicle.model then return false end
   local pcFile = type(decoded.vcf) == "table" and decoded.vcf.partConfigFilename
   if pcFile and normalizeConfig(pcFile) ~= normalizeConfig(current.vehicle.config) then return false end
-  if isSpawn and firstVid(pid) then return false end
+  if isSpawn and firstVid(pid) and not (current.test and pid == current.issuerId) then return false end
   return true, decoded
 end
 
@@ -366,12 +399,16 @@ local function checkParts(pid, decoded)
   end
 end
 
+local function tracksActive(pid)
+  return current:isActive() and not (current.test and pid == current.issuerId)
+end
+
 function cnrOnVehicleSpawn(pid, vid, data)
   if not vehicleAllowed(pid, data, true) then
     reply(pid, "Only the round car is allowed")
     return 1
   end
-  if current:isActive() then activeVid[pid] = vid end
+  if tracksActive(pid) then activeVid[pid] = vid end
   return 0
 end
 
@@ -381,8 +418,8 @@ function cnrOnVehicleEdited(pid, vid, data)
     reply(pid, "Only the round car is allowed")
     return 1
   end
-  if roundCarActive() and current.players[pid] then checkParts(pid, decoded) end
-  if current:isActive() then activeVid[pid] = vid end
+  if roundCarActive() and current.players[pid] and not (current.test and vid ~= activeVid[pid]) then checkParts(pid, decoded) end
+  if tracksActive(pid) then activeVid[pid] = vid end
   return 0
 end
 
@@ -417,10 +454,21 @@ function cnrOnMyVehicle(pid, data)
   local vid = ok and type(decoded) == "table" and tonumber(decoded.vid)
   if not vid or not current:isActive() then return end
   activeVid[pid] = vid
+  if current.test then return end
   local vehicles = MP.GetPlayerVehicles(pid)
   if type(vehicles) ~= "table" then return end
   for other in pairs(vehicles) do
     if other ~= vid then MP.RemoveVehicle(pid, other) end
+  end
+end
+
+function cnrOnAiVehicles(pid, data)
+  if not current.test or pid ~= current.issuerId then return end
+  local ok, decoded = pcall(Util.JsonDecode, data)
+  if not ok or type(decoded) ~= "table" or type(decoded.ai) ~= "table" then return end
+  for _, a in ipairs(decoded.ai) do
+    local id, vid = tonumber(a.id), tonumber(a.vid)
+    if id and vid and round.isAI(id) and current.players[id] then aiVid[id] = vid end
   end
 end
 
@@ -465,6 +513,7 @@ MP.RegisterEvent("onPlayerDisconnect", "cnrOnPlayerDisconnect")
 MP.RegisterEvent("cnr_vehiclePicked", "cnrOnVehiclePicked")
 MP.RegisterEvent("cnr_stations", "cnrOnStations")
 MP.RegisterEvent("cnr_myVehicle", "cnrOnMyVehicle")
+MP.RegisterEvent("cnr_aiVehicles", "cnrOnAiVehicles")
 MP.RegisterEvent("cnr_tick", "cnrTick")
 MP.CancelEventTimer("cnr_tick")
 MP.CreateEventTimer("cnr_tick", 250)

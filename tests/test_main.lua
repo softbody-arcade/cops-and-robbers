@@ -308,15 +308,37 @@ test("/cnr color during prep repaints right away", function()
   env.cleanup()
 end)
 
-test("/cnr test starts a cop-only round for the issuer", function()
-  local env = boot()
-  env.call("onChatMessage", 1, "Reinder", "/cnr test")
+test("/cnr test runner: AI vehicles are tracked as cops", function()
+  local env = boot({ vehicles = { [1] = { [0] = "x" } } })
+  env.call("onChatMessage", 1, "Reinder", "/cnr test runner")
   assertEq(env.lastSent("cnr_pickVehicle").pid, 1)
   env.positions[1] = 0
   env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
-  local setups = 0
-  for _, m in ipairs(env.sent) do if m.ev == "cnr_roundSetup" then setups = setups + 1 end end
-  assertEq(setups, 1)
-  assertEq(env.lastSent("cnr_roundSetup").data:find('"role":"cop"', 1, true) ~= nil, true)
+  assertEq(env.lastSent("cnr_roundSetup").data:find('"role":"runner"', 1, true) ~= nil, true)
+  assertEq(env.lastSent("cnr_roundSetup").data:find('"hex":"#1f5fff"', 1, true) ~= nil, true)
+  assertEq(env.lastSent("cnr_setupAI").pid, 1)
+  assertEq(env.call("onVehicleSpawn", 1, 1, 'USER:Reinder:1-1:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc"}}'), 0)
+  env.vehicles[1][1] = "y"
+  env.call("cnr_myVehicle", 1, '{"vid":0}')
+  assertEq(#env.removed, 0)
+  env.call("cnr_aiVehicles", 1, '{"ai":[{"id":-10,"vid":1}]}')
+  local raw = MP.GetPositionRaw
+  MP.GetPositionRaw = function(pid, vid)
+    if pid == 1 and vid == 1 then return { pos = { 5, 0, 0 }, vel = { 0, 0, 0 } }, "" end
+    return raw(pid, vid)
+  end
+  env.go()
+  for _ = 1, 90 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  assertEq(env.lastSent("cnr_roundEnd").data:find('"reason":"caught"', 1, true) ~= nil, true)
+  for _, m in ipairs(env.sent) do assertEq(m.pid >= -1, true) end
+  local f = io.open(env.dir .. "data/leaderboard.json")
+  assertEq(f, nil)
+  env.cleanup()
+end)
+
+test("/cnr test without role shows usage", function()
+  local env = boot()
+  env.call("onChatMessage", 1, "Reinder", "/cnr test")
+  assertEq(env.chatHas("Usage: /cnr test <runner|cop>"), true)
   env.cleanup()
 end)
