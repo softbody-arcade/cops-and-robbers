@@ -339,7 +339,7 @@ end)
 test("/cnr test without role shows usage", function()
   local env = boot()
   env.call("onChatMessage", 1, "Reinder", "/cnr test")
-  assertEq(env.chatHas("Usage: /cnr test <runner|cop>"), true)
+  assertEq(env.chatHas('Usage: "/cnr test <runner|cop>"'), true)
   env.cleanup()
 end)
 

@@ -328,7 +328,7 @@ local function onRoundSetup(data)
   local phase = d.phase or "running"
   frozen = phase == "prep" or phase == "countdown" or (phase == "headstart" and role == "cop")
   if phase == "prep" then
-    toast(role == "runner" and "You are the runner! Change your paint if you like, waiting for /cnr go" or "You are a cop! Change your paint if you like, waiting for /cnr go", 8, "cnr_go")
+    toast(role == "runner" and 'You are the runner! Change your paint if you like, waiting for "/cnr go"' or 'You are a cop! Change your paint if you like, waiting for "/cnr go"', 8, "cnr_go")
     timerEnd = nil
   elseif phase == "countdown" then
     startTimer(tonumber(d.countdownRemaining), "Runner starts in")

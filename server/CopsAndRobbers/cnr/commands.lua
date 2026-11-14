@@ -15,7 +15,7 @@ end
 
 function M.matchPlayer(query, players, random, runCounts)
   random = random or math.random
-  if query == nil or query == "" then return nil, "Usage: /cnr start <name|random>" end
+  if query == nil or query == "" then return nil, 'Usage: "/cnr start <name|random|next|again>"' end
   local pids = {}
   for pid in pairs(players) do pids[#pids + 1] = pid end
   table.sort(pids)

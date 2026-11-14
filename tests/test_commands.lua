@@ -48,7 +48,7 @@ end)
 
 test("matchPlayer missing query", function()
   local pid, err = commands.matchPlayer(nil, players)
-  assertEq(pid, nil); assertEq(err, "Usage: /cnr start <name|random>")
+  assertEq(pid, nil); assertEq(err, 'Usage: "/cnr start <name|random|next|again>"')
 end)
 
 test("matchPlayer random returns a member", function()

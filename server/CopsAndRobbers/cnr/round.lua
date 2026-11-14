@@ -131,7 +131,7 @@ function Round:start(now, runnerId, issuerId, players, opts)
     local role = opts.role
     if role ~= "runner" and role ~= "cop" then
       self:clear()
-      return { { kind = "reply", pid = issuerId, msg = "Usage: /cnr test <runner|cop>" } }
+      return { { kind = "reply", pid = issuerId, msg = 'Usage: "/cnr test <runner|cop>"' } }
     end
     self.testRole = role
     self.players = { [issuerId] = players[issuerId] or "You" }
@@ -182,20 +182,20 @@ function Round:vehiclePicked(now, pid, model, config, players)
     end
     fx[#fx + 1] = { kind = "setupAI", pid = pid, ai = ai }
     if self.testRole == "runner" then
-      fx[#fx + 1] = { kind = "broadcast", msg = "Test round: you are the runner, two AI cops will chase you. Type /cnr go to start" }
+      fx[#fx + 1] = { kind = "broadcast", msg = 'Test round: you are the runner, two AI cops will chase you. Type "/cnr go" to start' }
     else
-      fx[#fx + 1] = { kind = "broadcast", msg = "Test round: you are a cop with an AI runner and an AI partner. Type /cnr go to start" }
+      fx[#fx + 1] = { kind = "broadcast", msg = 'Test round: you are a cop with an AI runner and an AI partner. Type "/cnr go" to start' }
     end
   else
     for _, p in ipairs(sortedPids(self.players)) do fx[#fx + 1] = self:setupFor(now, p) end
-    fx[#fx + 1] = { kind = "broadcast", msg = string.format("%s is the runner! Car: %s. Change your paint if you like, then type /cnr go", self:runnerName(), model) }
+    fx[#fx + 1] = { kind = "broadcast", msg = string.format('%s is the runner! Car: %s. Change your paint if you like, then type "/cnr go"', self:runnerName(), model) }
   end
   return fx
 end
 
 function Round:go(now, pid)
   if self.state == "idle" or self.state == "picking" then
-    return { { kind = "reply", pid = pid, msg = "No round set up, use /cnr start <name>" } }
+    return { { kind = "reply", pid = pid, msg = 'No round set up, use "/cnr start <name>"' } }
   end
   if self.state ~= "prep" then
     return { { kind = "reply", pid = pid, msg = "Round already started" } }
@@ -374,7 +374,7 @@ end
 function Round:endCalled(now, pid)
   if self.state ~= "running" then
     if self.state == "idle" then return { { kind = "reply", pid = pid, msg = "No round running" } } end
-    return { { kind = "reply", pid = pid, msg = "The chase has not started, use /cnr stop" } }
+    return { { kind = "reply", pid = pid, msg = 'The chase has not started, use "/cnr stop"' } }
   end
   return self:finish(now, "called")
 end

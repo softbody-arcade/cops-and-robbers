@@ -284,19 +284,18 @@ local function applyEffects(effects)
 end
 
 local HELP = {
-  "/cnr start <name|random|next|again> - set up a round with that runner",
-  "/cnr go - start the countdown",
-  "/cnr test <runner|cop> - practice round against AI",
-  "/cnr reroll - new car during prep",
-  "/cnr end - end the chase and record the time",
-  "/cnr top [cops|all|<map>] - leaderboards",
-  "/cnr set <setting> <value> - change a setting",
-  "/cnr color <#hex|off> - your car color for every round",
-  "/cnr stop - cancel the current round",
-  "/cnr top - leaderboard",
-  "/cnr addstation / removestation - edit this map's gas stations",
-  "/cnr config - show settings",
-  "/cnr reload - reload config.json",
+  '"/cnr start <name|random|next|again>" - set up a round with that runner',
+  '"/cnr go" - start the countdown',
+  '"/cnr reroll" - new car during prep',
+  '"/cnr end" - end the chase and record the time',
+  '"/cnr stop" - cancel the current round',
+  '"/cnr color <#hex|off>" - your car color for every round',
+  '"/cnr test <runner|cop>" - practice round against AI',
+  '"/cnr top [cops|all|<map>]" - leaderboards',
+  '"/cnr set <setting> <value>" - change a setting',
+  '"/cnr config" - show settings',
+  '"/cnr reload" - reload config.json',
+  '"/cnr addstation" / "/cnr removestation" - edit this map\'s gas stations',
 }
 
 local handlers = {}
@@ -342,7 +341,7 @@ function handlers.color(pid, cmd)
   local arg = cmd.args[1]
   if not arg then
     local c = colors.get(colorStore, name)
-    return reply(pid, c and ("Your car color is " .. c.hex) or "No car color set, use /cnr color #ff0000")
+    return reply(pid, c and ("Your car color is " .. c.hex) or 'No car color set, use "/cnr color #ff0000"')
   end
   if arg:lower() == "off" then
     colors.clear(colorStore, name)
@@ -392,7 +391,7 @@ end
 
 function handlers.set(pid, cmd)
   local key, value = cmd.args[1], cmd.rest and cmd.rest:match("^%S+%s+(.+)$")
-  if not key or not value then return reply(pid, "Usage: /cnr set <setting> <value>") end
+  if not key or not value then return reply(pid, 'Usage: "/cnr set <setting> <value>"') end
   if current:isActive() then return reply(pid, "Stop the round before changing settings") end
   local updated, err = config.setValue(rawConfig, key, value)
   if not updated then return reply(pid, err) end
@@ -451,7 +450,7 @@ function cnrOnChatMessage(pid, name, msg)
   if handler then
     handler(pid, cmd)
   else
-    reply(pid, "Unknown command, try /cnr help")
+    reply(pid, 'Unknown command, try "/cnr help"')
   end
   return 1
 end
