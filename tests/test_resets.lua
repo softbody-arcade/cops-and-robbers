@@ -1,0 +1,71 @@
+local config = require("cnr.config")
+local resets = require("cnr.resets")
+
+local cfg = config.merge(nil)
+local function car(x, vx) return {pos={x=x,y=0,z=0}, vel={x=vx or 0,y=0,z=0}} end
+local runnerCtx = {role="runner", stations={}}
+
+test("wait rule needs 7s still", function()
+  local t = resets.new(cfg)
+  local a, h = t:update(0, car(0), runnerCtx); assertEq(a, false); assertEq(h, "Stay still 7s to reset")
+  a, h = t:update(6.9, car(0), runnerCtx); assertEq(a, false); assertEq(h, "Stay still 1s to reset")
+  a, h = t:update(7.0, car(0), runnerCtx); assertEq(a, true); assertEq(h, "Reset available")
+end)
+
+test("moving restarts the wait", function()
+  local t = resets.new(cfg)
+  t:update(0, car(0), runnerCtx)
+  local a, h = t:update(5, car(0, 2), runnerCtx)
+  assertEq(a, false); assertEq(h, "Stop to reset")
+  assertEq((t:update(11, car(0), runnerCtx)), false)
+end)
+
+test("gas station allows immediately when still", function()
+  local t = resets.new(cfg)
+  local ctx = {role="runner", stations={{x=20,y=0,z=0,r=8}}}
+  local a, h = t:update(0, car(0), ctx); assertEq(a, true); assertEq(h, "Reset available (gas station)")
+  assertEq((t:update(1, car(0, 2), ctx)), false)
+end)
+
+test("station radius uses max(25, r+10)", function()
+  assertEq(resets.atStation({x=30,y=0,z=0}, {{x=0,y=0,z=0,r=22}}, cfg), true)
+  assertEq(resets.atStation({x=30,y=0,z=0}, {{x=0,y=0,z=0,r=5}}, cfg), false)
+  assertEq(resets.atStation({x=24,y=0,z=0}, {{x=0,y=0,z=0,r=0}}, cfg), true)
+end)
+
+test("far cop resets while moving, runner cannot", function()
+  local t = resets.new(cfg)
+  local a, h = t:update(0, car(0, 20), {role="cop", runnerPos={x=1000,y=0,z=0}, stations={}})
+  assertEq(a, true); assertEq(h, "Reset available (far from runner)")
+  assertEq((t:update(1, car(0, 20), {role="cop", runnerPos={x=999,y=0,z=0}, stations={}})), false)
+  assertEq((resets.new(cfg):update(0, car(0, 20), {role="runner", runnerPos={x=5000,y=0,z=0}, stations={}})), false)
+end)
+
+test("cop without runner position falls back to normal rules", function()
+  local t = resets.new(cfg)
+  assertEq((t:update(0, car(0, 20), {role="cop", stations={}})), false)
+end)
+
+test("missing car data is not allowed", function()
+  local t = resets.new(cfg)
+  t:update(0, car(0), runnerCtx)
+  local a, h = t:update(7, nil, runnerCtx)
+  assertEq(a, false); assertEq(h, "Stop to reset")
+  assertEq((t:update(8, car(0), runnerCtx)), false)
+end)
+
+test("consume honours 1.5s grace and resets timer", function()
+  local t = resets.new(cfg)
+  t:update(0, car(0), runnerCtx); t:update(7, car(0), runnerCtx); t:update(7.5, car(0, 2), runnerCtx)
+  assertEq(t:consume(8.4), true)
+  assertEq(t:consume(10.1), false)
+  assertEq((t:update(10.2, car(0), runnerCtx)), false)
+end)
+
+test("consume while currently allowed is legal and restarts wait", function()
+  local t = resets.new(cfg)
+  t:update(0, car(0), runnerCtx); t:update(7, car(0), runnerCtx)
+  assertEq(t:consume(7.1), true)
+  assertEq((t:update(7.2, car(0), runnerCtx)), false)
+  assertEq((t:update(14.2, car(0), runnerCtx)), true)
+end)
