@@ -1,0 +1,322 @@
+local M = {}
+
+local LOCKED_ACTIONS = {
+  "recover_vehicle", "recover_vehicle_alt", "recover_to_last_road", "loadHome", "saveHome",
+  "reload_vehicle", "reload_all_vehicles", "reset_all_physics", "vehicle_selector", "parts_selector",
+  "dropPlayerAtCamera", "dropPlayerAtCameraNoReset", "nodegrabberGrab", "switch_next_vehicle",
+  "switch_previous_vehicle", "toggleWalkingMode",
+}
+local RESET_ACTIONS = { "reset_physics" }
+local ALLOWED_TYPES = { Car = true, Truck = true }
+local COP_SPACING = 8
+local SETUP_DELAY = 0.5
+
+local clock = 0
+local active = false
+local role
+local runnerId
+local frozen = false
+local resetAllowed = false
+local lastHint
+local headStartEnd
+local lastCountdown
+local pendingPlacement
+local suppressResetUntil = 0
+
+local function toast(msg, ttl, category)
+  ui_message(msg, ttl or 4, category or "cnr", "directions_car")
+end
+
+local function sendServer(event, payload)
+  if TriggerServerEvent then TriggerServerEvent(event, jsonEncode(payload or {})) end
+end
+
+local function ownVehicle()
+  local veh = getPlayerVehicle(0)
+  if veh and MPVehicleGE and MPVehicleGE.isOwn(veh:getID()) then return veh end
+  return nil
+end
+
+local function setFreeze(on)
+  frozen = on
+  local veh = ownVehicle()
+  if veh then veh:queueLuaCommand("controller.setFreeze(" .. (on and 1 or 0) .. ")") end
+end
+
+local function lockInputs(on)
+  core_input_actionFilter.setGroup("cnr_locked", LOCKED_ACTIONS)
+  core_input_actionFilter.addAction(0, "cnr_locked", on)
+end
+
+local function setResetKey(allowed)
+  core_input_actionFilter.setGroup("cnr_resetKey", RESET_ACTIONS)
+  core_input_actionFilter.addAction(0, "cnr_resetKey", not allowed)
+end
+
+local function unlockAll()
+  lockInputs(false)
+  setResetKey(true)
+end
+
+local function resetIsBound()
+  for _, device in ipairs(core_input_bindings and core_input_bindings.bindings or {}) do
+    for _, b in ipairs(device.contents and device.contents.bindings or {}) do
+      if b.action == "reset_physics" and not b.unused then return true end
+    end
+  end
+  return false
+end
+
+local function vehicleType(config)
+  if config.Type then return config.Type end
+  local model = core_vehicles.getModel(config.model_key)
+  return model and model.model and model.model.Type
+end
+
+local function pickVehicle(includeMods)
+  local list = core_vehicles.getConfigList(true).configs or {}
+  local candidates = {}
+  for _, c in ipairs(list) do
+    local official = c.Source == "BeamNG - Official"
+    if (official or includeMods) and ALLOWED_TYPES[vehicleType(c)] and c.model_key ~= "unicycle" then
+      candidates[#candidates + 1] = c
+    end
+  end
+  if #candidates == 0 then return nil end
+  local c = candidates[math.random(#candidates)]
+  local path = c.pcFilename or ("vehicles/" .. c.model_key .. "/" .. c.key .. ".pc")
+  return c.model_key, (path:gsub("^/", ""))
+end
+
+local function roadNodeSpots(center, minD, maxD)
+  local nodes = map.getMap().nodes or {}
+  local candidates = {}
+  for id, n in pairs(nodes) do
+    if n.links and next(n.links) then
+      local d = n.pos:distance(center)
+      if d >= minD and d <= maxD then candidates[#candidates + 1] = { id = id, pos = n.pos, d = d, links = n.links } end
+    end
+  end
+  table.sort(candidates, function(a, b) return a.d < b.d end)
+  return candidates, nodes
+end
+
+local function rotationAlongLink(spot, nodes)
+  for linkId in pairs(spot.links) do
+    local other = nodes[linkId]
+    if other then
+      local dir = (other.pos - spot.pos):normalized()
+      return quatFromDir(dir, vec3(0, 0, 1))
+    end
+  end
+  return quat(0, 0, 0, 1)
+end
+
+local function findCopSpot(center, minD, maxD, index)
+  local candidates, nodes = roadNodeSpots(center, minD, maxD)
+  local chosen = {}
+  for _, c in ipairs(candidates) do
+    local free = true
+    for _, prev in ipairs(chosen) do
+      if prev.pos:distance(c.pos) < COP_SPACING then free = false break end
+    end
+    if free then
+      chosen[#chosen + 1] = c
+      if #chosen == index then return c.pos, rotationAlongLink(c, nodes) end
+    end
+  end
+  local last = chosen[#chosen]
+  if last then return last.pos, rotationAlongLink(last, nodes) end
+  return nil
+end
+
+local function nearestRoad(pos)
+  local n1, n2 = map.findClosestRoad(pos)
+  if not n1 then return nil end
+  local nodes = map.getMap().nodes
+  local a, b = nodes[n1], nodes[n2]
+  if not a or not b then return nil end
+  return a.pos, quatFromDir((b.pos - a.pos):normalized(), vec3(0, 0, 1))
+end
+
+local function teleport(veh, pos, rot)
+  suppressResetUntil = clock + 2
+  spawn.safeTeleport(veh, pos, rot)
+end
+
+local function placeVehicle(model, config, pos, rot)
+  local veh = ownVehicle()
+  if veh then
+    core_vehicles.replaceVehicle(model, { config = config })
+  else
+    core_vehicles.spawnNewVehicle(model, { config = config })
+  end
+  pendingPlacement = { at = clock + SETUP_DELAY, pos = pos, rot = rot }
+end
+
+local function onPickVehicle(data)
+  local d = jsonDecode(data) or {}
+  local model, config = pickVehicle(d.includeMods)
+  if not model then
+    toast("No vehicles available to pick", 6)
+    return
+  end
+  sendServer("cnr_vehiclePicked", { model = model, config = config })
+end
+
+local function onRoundSetup(data)
+  local d = jsonDecode(data) or {}
+  active = true
+  role = d.role
+  runnerId = d.runnerId
+  resetAllowed = false
+  lastHint = nil
+  lockInputs(true)
+  setResetKey(false)
+  if not resetIsBound() then
+    toast("Bind 'Reset vehicle' to a wheel button to reset during rounds", 10, "cnr_binding")
+  end
+
+  local pos, rot
+  if role == "cop" then
+    local own = ownVehicle()
+    local center = d.runnerPos and vec3(d.runnerPos.x, d.runnerPos.y, d.runnerPos.z) or (own and own:getPosition())
+    if center then
+      pos, rot = findCopSpot(center, d.copSpawnMin or 50, d.copSpawnMax or 150, math.max(d.copIndex or 1, 1))
+    end
+  end
+  placeVehicle(d.model, d.config, pos, rot)
+
+  local remaining = tonumber(d.headStartRemaining) or 0
+  if role == "cop" and remaining > 0 then
+    headStartEnd = clock + remaining
+    lastCountdown = nil
+    pendingPlacement.freeze = true
+  else
+    headStartEnd = nil
+  end
+  if role == "runner" then
+    toast("GO! You are the runner", 5, "cnr_go")
+  end
+end
+
+local function onRelease()
+  headStartEnd = nil
+  if frozen then setFreeze(false) end
+  if role == "cop" then toast("GO!", 3, "cnr_go") end
+end
+
+local function onState(data)
+  local d = jsonDecode(data) or {}
+  if d.resetAllowed ~= resetAllowed then
+    resetAllowed = d.resetAllowed and true or false
+    setResetKey(resetAllowed)
+  end
+  if d.resetHint and d.resetHint ~= lastHint then
+    lastHint = d.resetHint
+    toast(d.resetHint, 3, "cnr_reset")
+  end
+  local p = tonumber(d.catchProgress) or 0
+  if p > 0 then
+    local pct = math.floor(p * 100 + 0.5)
+    if role == "runner" then
+      toast(string.format("BEING CAUGHT %d%%", pct), 1, "cnr_catch")
+    else
+      toast(string.format("HOLDING RUNNER %d%%", pct), 1, "cnr_catch")
+    end
+  end
+end
+
+local function formatTime(seconds)
+  local total = math.floor(seconds or 0)
+  return string.format("%d:%02d", math.floor(total / 60), total % 60)
+end
+
+local function endRound()
+  active = false
+  role = nil
+  headStartEnd = nil
+  pendingPlacement = nil
+  resetAllowed = false
+  if frozen then setFreeze(false) end
+  unlockAll()
+end
+
+local function onRoundEnd(data)
+  local d = jsonDecode(data) or {}
+  local wasRunner = MPConfig and MPConfig.getPlayerServerID() == d.runnerId
+  endRound()
+  if d.reason == "caught" then
+    toast(string.format("Runner caught! %s survived %s", tostring(d.runnerName), formatTime(d.survivedSeconds)), 8, "cnr_end")
+  elseif d.reason == "disconnect" then
+    toast(string.format("%s left after %s", tostring(d.runnerName), formatTime(d.survivedSeconds)), 8, "cnr_end")
+  else
+    toast("Round cancelled", 5, "cnr_end")
+  end
+  if d.explode and wasRunner then
+    local veh = ownVehicle()
+    if veh then veh:queueLuaCommand("fire.explodeVehicle()") end
+  end
+end
+
+local function onRequestStations(data)
+  if not freeroam_facilities then extensions.load("freeroam_facilities") end
+  if not freeroam_gasStations then extensions.load("freeroam_gasStations") end
+  local stations = {}
+  if freeroam_facilities and freeroam_gasStations then
+    for _, f in ipairs(freeroam_facilities.getFacilitiesByType("gasStation") or {}) do
+      local ok, center, radius = pcall(freeroam_gasStations.gasStationCenterRadius, f)
+      if ok and center and center.x == center.x then
+        stations[#stations + 1] = { x = center.x, y = center.y, z = center.z, r = radius or 0 }
+      end
+    end
+  end
+  sendServer("cnr_stations", { map = getCurrentLevelIdentifier(), stations = stations })
+end
+
+local function onUpdate(dtReal)
+  clock = clock + (dtReal or 0)
+  if pendingPlacement and clock >= pendingPlacement.at then
+    local p = pendingPlacement
+    pendingPlacement = nil
+    local veh = ownVehicle()
+    if veh then
+      if p.pos then teleport(veh, p.pos, p.rot) end
+      if p.freeze and headStartEnd and clock < headStartEnd then setFreeze(true) end
+    end
+  end
+  if headStartEnd then
+    local left = math.ceil(headStartEnd - clock)
+    if left > 0 and left ~= lastCountdown then
+      lastCountdown = left
+      toast(string.format("Head start: %ds", left), 1.2, "cnr_go")
+    end
+  end
+end
+
+local function onVehicleResetted(gameVid)
+  if not active or role ~= "cop" or clock < suppressResetUntil then return end
+  local veh = ownVehicle()
+  if not veh or veh:getID() ~= gameVid then return end
+  local pos, rot = nearestRoad(veh:getPosition())
+  if pos then teleport(veh, pos, rot) end
+end
+
+local function onExtensionLoaded()
+  if AddEventHandler then
+    AddEventHandler("cnr_pickVehicle", onPickVehicle)
+    AddEventHandler("cnr_roundSetup", onRoundSetup)
+    AddEventHandler("cnr_release", onRelease)
+    AddEventHandler("cnr_state", onState)
+    AddEventHandler("cnr_roundEnd", onRoundEnd)
+    AddEventHandler("cnr_requestStations", onRequestStations)
+  end
+end
+
+M.onExtensionLoaded = onExtensionLoaded
+M.onExtensionUnloaded = endRound
+M.onClientEndMission = endRound
+M.onUpdate = onUpdate
+M.onVehicleResetted = onVehicleResetted
+
+return M
