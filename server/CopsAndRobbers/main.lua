@@ -6,11 +6,14 @@ local config = require("cnr.config")
 local round = require("cnr.round")
 local leaderboard = require("cnr.leaderboard")
 local commands = require("cnr.commands")
+local colors = require("cnr.colors")
+local tables = require("cnr.tables")
 
 local PREFIX = "[CnR] "
 local dataDir = pluginDir .. "data/"
 local stationsDir = dataDir .. "stations/"
 local leaderboardPath = dataDir .. "leaderboard.json"
+local colorsPath = dataDir .. "colors.json"
 
 local cfg
 local current
@@ -19,6 +22,8 @@ local mapName
 local stations = {}
 local activeVid = {}
 local stationsRequested = {}
+local partsBaseline = {}
+local colorStore = {}
 local serverClock = MP.CreateTimer()
 
 math.randomseed(os.time())
@@ -76,6 +81,23 @@ end
 
 local function saveLeaderboard()
   writeFile(leaderboardPath, Util.JsonPrettify(Util.JsonEncode(board)))
+end
+
+local function loadColors()
+  colorStore = colors.load((decodeFile(colorsPath)))
+end
+
+local function saveColors()
+  writeFile(colorsPath, Util.JsonPrettify(Util.JsonEncode(colorStore)))
+end
+
+local function colorFor(pid)
+  local c = colors.get(colorStore, MP.GetPlayerName(pid) or "")
+  return c and { hex = c.hex, r = c.r, g = c.g, b = c.b } or nil
+end
+
+local function roundCarActive()
+  return current.vehicle ~= nil and current.state ~= "idle" and current.state ~= "picking"
 end
 
 local function stationsPath() return stationsDir .. mapName .. ".json" end
@@ -159,10 +181,15 @@ local function applyEffects(effects)
       send(e.pid, "cnr_roundSetup", {
         runnerId = current.runnerId, role = e.role, copIndex = e.copIndex,
         model = current.vehicle.model, config = current.vehicle.config,
-        headStartRemaining = e.headStartRemaining,
+        phase = e.phase, countdownRemaining = e.countdownRemaining,
+        headStartRemaining = e.headStartRemaining, color = colorFor(e.pid),
         runnerPos = runnerCar and runnerCar.pos or nil,
         copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
       })
+    elseif e.kind == "countdown" then
+      send(-1, "cnr_countdown", { seconds = e.seconds })
+    elseif e.kind == "runnerGo" then
+      send(-1, "cnr_runnerGo", { headStartSeconds = e.headStartSeconds })
     elseif e.kind == "release" then
       send(-1, "cnr_release", {})
     elseif e.kind == "state" then
@@ -173,6 +200,7 @@ local function applyEffects(effects)
         reason = e.reason, explode = e.explode,
       })
       activeVid = {}
+      partsBaseline = {}
     elseif e.kind == "record" then
       local run = e.run
       local endedAt = os.time()
@@ -193,7 +221,9 @@ local function applyEffects(effects)
 end
 
 local HELP = {
-  "/cnr start <name|random> - start a round with that runner",
+  "/cnr start <name|random> - set up a round with that runner",
+  "/cnr go - start the countdown",
+  "/cnr color <#hex|off> - your car color for every round",
   "/cnr stop - cancel the current round",
   "/cnr top - leaderboard",
   "/cnr addstation / removestation - edit this map's gas stations",
@@ -214,7 +244,34 @@ function handlers.start(pid, cmd)
   if not runnerId then return reply(pid, err) end
   requestStations(pid)
   activeVid = {}
+  partsBaseline = {}
   applyEffects(current:start(now(), runnerId, pid, players))
+end
+
+function handlers.go(pid)
+  applyEffects(current:go(now(), pid))
+end
+
+function handlers.color(pid, cmd)
+  local name = MP.GetPlayerName(pid) or ""
+  local arg = cmd.args[1]
+  if not arg then
+    local c = colors.get(colorStore, name)
+    return reply(pid, c and ("Your car color is " .. c.hex) or "No car color set, use /cnr color #ff0000")
+  end
+  if arg:lower() == "off" then
+    colors.clear(colorStore, name)
+    saveColors()
+    return reply(pid, "Car color cleared")
+  end
+  local c, err = colors.parseHex(arg)
+  if not c then return reply(pid, err) end
+  colors.set(colorStore, name, c.hex)
+  saveColors()
+  reply(pid, "Your car color is now " .. c.hex)
+  if roundCarActive() and current.players[pid] then
+    send(pid, "cnr_paint", { color = colorFor(pid) })
+  end
 end
 
 function handlers.stop(pid)
@@ -276,14 +333,24 @@ function cnrOnChatMessage(pid, name, msg)
 end
 
 local function vehicleAllowed(pid, data, isSpawn)
-  if current.state ~= "headstart" and current.state ~= "running" then return true end
-  if not current.players[pid] then return true end
+  if not roundCarActive() or not current.players[pid] then return true end
   local decoded = parseVehicleData(data)
   if not decoded or decoded.jbm ~= current.vehicle.model then return false end
   local pcFile = type(decoded.vcf) == "table" and decoded.vcf.partConfigFilename
   if pcFile and normalizeConfig(pcFile) ~= normalizeConfig(current.vehicle.config) then return false end
   if isSpawn and firstVid(pid) then return false end
-  return true
+  return true, decoded
+end
+
+local function checkParts(pid, decoded)
+  if not decoded or type(decoded.vcf) ~= "table" or decoded.vcf.parts == nil then return end
+  local parts = decoded.vcf.parts
+  if partsBaseline[pid] == nil then
+    partsBaseline[pid] = parts
+  elseif not tables.deepEqual(parts, partsBaseline[pid]) then
+    send(pid, "cnr_restoreConfig", { model = current.vehicle.model, config = current.vehicle.config, color = colorFor(pid) })
+    reply(pid, "Only paint can be changed, your car was reset to the round setup")
+  end
 end
 
 function cnrOnVehicleSpawn(pid, vid, data)
@@ -296,10 +363,12 @@ function cnrOnVehicleSpawn(pid, vid, data)
 end
 
 function cnrOnVehicleEdited(pid, vid, data)
-  if not vehicleAllowed(pid, data, false) then
+  local allowed, decoded = vehicleAllowed(pid, data, false)
+  if not allowed then
     reply(pid, "Only the round car is allowed")
     return 1
   end
+  if roundCarActive() and current.players[pid] then checkParts(pid, decoded) end
   if current:isActive() then activeVid[pid] = vid end
   return 0
 end
@@ -368,6 +437,7 @@ end
 FS.CreateDirectory(stationsDir)
 loadConfig()
 loadLeaderboard()
+loadColors()
 mapName = (tostring(MP.Get(MP.Settings.Map) or ""):match("levels/([^/]+)/")) or "unknown"
 loadStations()
 current = round.new(cfg)

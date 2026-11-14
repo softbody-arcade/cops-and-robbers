@@ -37,6 +37,7 @@ function Round:clear()
   self.issuerId = nil
   self.vehicle = nil
   self.startedAt = nil
+  self.countdownStartedAt = nil
   self.releasedAt = nil
   self.pickStartedAt = nil
   self.players = {}
@@ -64,10 +65,13 @@ function Round:setupFor(now, pid)
   end
   self.resetTrackers[pid] = resets.new(self.cfg)
   self.resetTrackers[pid]:grant(now, SETUP_GRACE_SECONDS)
-  return {
-    kind = "setup", pid = pid, role = role, copIndex = copIndex,
-    headStartRemaining = math.max(0, self.startedAt + self.cfg.headStartSeconds - now),
-  }
+  local e = { kind = "setup", pid = pid, role = role, copIndex = copIndex, phase = self.state }
+  if self.state == "countdown" then
+    e.countdownRemaining = math.max(0, self.countdownStartedAt + self.cfg.runnerCountdownSeconds - now)
+  elseif self.state == "headstart" then
+    e.headStartRemaining = math.max(0, self.startedAt + self.cfg.headStartSeconds - now)
+  end
+  return e
 end
 
 function Round:finish(now, reason)
@@ -114,13 +118,27 @@ function Round:vehiclePicked(now, pid, model, config, players)
   if not self.players[self.runnerId] then
     return self:cancel(now, "Runner left, round cancelled")
   end
-  self.state = "headstart"
+  self.state = "prep"
   self.vehicle = { model = model, config = config }
-  self.startedAt = now
   local fx = {}
   for _, p in ipairs(sortedPids(self.players)) do fx[#fx + 1] = self:setupFor(now, p) end
-  fx[#fx + 1] = { kind = "broadcast", msg = string.format("%s is the runner! Car: %s. Cops released in %gs", self:runnerName(), model, self.cfg.headStartSeconds) }
+  fx[#fx + 1] = { kind = "broadcast", msg = string.format("%s is the runner! Car: %s. Change your paint if you like, then type /cnr go", self:runnerName(), model) }
   return fx
+end
+
+function Round:go(now, pid)
+  if self.state == "idle" or self.state == "picking" then
+    return { { kind = "reply", pid = pid, msg = "No round set up, use /cnr start <name>" } }
+  end
+  if self.state ~= "prep" then
+    return { { kind = "reply", pid = pid, msg = "Round already started" } }
+  end
+  self.state = "countdown"
+  self.countdownStartedAt = now
+  return {
+    { kind = "countdown", seconds = self.cfg.runnerCountdownSeconds },
+    { kind = "broadcast", msg = string.format("Runner starts in %gs", self.cfg.runnerCountdownSeconds) },
+  }
 end
 
 function Round:tick(now, cars, stations)
@@ -131,7 +149,16 @@ function Round:tick(now, cars, stations)
     end
     return fx
   end
-  if self.state == "idle" then return fx end
+  if self.state == "idle" or self.state == "prep" then return fx end
+
+  if self.state == "countdown" then
+    if now - self.countdownStartedAt < self.cfg.runnerCountdownSeconds then return fx end
+    self.state = "headstart"
+    self.startedAt = now
+    for _, tracker in pairs(self.resetTrackers) do tracker:grant(now, SETUP_GRACE_SECONDS) end
+    fx[#fx + 1] = { kind = "runnerGo", headStartSeconds = self.cfg.headStartSeconds }
+    fx[#fx + 1] = { kind = "broadcast", msg = string.format("%s is off! Cops released in %gs", self:runnerName(), self.cfg.headStartSeconds) }
+  end
 
   if self.state == "headstart" and now - self.startedAt >= self.cfg.headStartSeconds then
     self.state = "running"

@@ -32,7 +32,10 @@ house rules, with every number configurable, so the game itself is the referee.
 ## The rules (as decided by the group)
 
 1. **Vehicle:** each round a random vehicle + config is picked; everyone (runner and cops) drives that exact vehicle and config. Any vehicle can be picked (see "Vehicle pool").
-2. **Head start:** the runner starts immediately; cops are frozen for `headStartSeconds`.
+2. **Start flow (revised 2026-11-14):** `/cnr start <name>` gives everyone the round car, frozen in place (prep,
+   no timer). During prep only paint may change (parts/tuning changes are reverted). `/cnr go` starts a
+   `runnerCountdownSeconds` (default 3) countdown, then the runner is released and cops stay frozen for
+   `headStartSeconds`. `/cnr color <#hex|off>` stores a per-player primary color applied to every round car.
 3. **Resets** are only allowed when one of these holds:
    - **Gas station:** the vehicle is within a gas station area and fully stopped.
    - **Wait:** anywhere, after staying stopped for `resetWaitSeconds` continuously. Moving restarts the countdown.

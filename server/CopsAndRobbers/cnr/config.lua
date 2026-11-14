@@ -2,6 +2,7 @@ local M = {}
 
 M.DEFAULTS = {
   headStartSeconds = 7,
+  runnerCountdownSeconds = 3,
   resetWaitSeconds = 7,
   catchHoldSeconds = 7,
   catchRadiusMeters = 10,

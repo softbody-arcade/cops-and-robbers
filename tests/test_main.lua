@@ -7,6 +7,74 @@ local function encode(v)
   return tostring(v)
 end
 
+function decodeJson(str)
+  local pos = 1
+  local function ws() pos = str:find("%S", pos) or #str + 1 end
+  local value
+  local function stringValue()
+    local out = {}
+    pos = pos + 1
+    while true do
+      local c = str:sub(pos, pos)
+      if c == "" then error("bad json") end
+      if c == '"' then pos = pos + 1 break end
+      if c == "\\" then pos = pos + 1; c = str:sub(pos, pos) end
+      out[#out + 1] = c
+      pos = pos + 1
+    end
+    return table.concat(out)
+  end
+  function value()
+    ws()
+    local c = str:sub(pos, pos)
+    if c == "{" then
+      local t = {}
+      pos = pos + 1; ws()
+      if str:sub(pos, pos) == "}" then pos = pos + 1 return t end
+      while true do
+        ws()
+        if str:sub(pos, pos) ~= '"' then error("bad json") end
+        local k = stringValue()
+        ws()
+        if str:sub(pos, pos) ~= ":" then error("bad json") end
+        pos = pos + 1
+        t[k] = value()
+        ws()
+        local d = str:sub(pos, pos)
+        pos = pos + 1
+        if d == "}" then return t end
+        if d ~= "," then error("bad json") end
+      end
+    elseif c == "[" then
+      local t = {}
+      pos = pos + 1; ws()
+      if str:sub(pos, pos) == "]" then pos = pos + 1 return t end
+      while true do
+        t[#t + 1] = value()
+        ws()
+        local d = str:sub(pos, pos)
+        pos = pos + 1
+        if d == "]" then return t end
+        if d ~= "," then error("bad json") end
+      end
+    elseif c == '"' then
+      return stringValue()
+    elseif str:sub(pos, pos + 3) == "true" then pos = pos + 4 return true
+    elseif str:sub(pos, pos + 4) == "false" then pos = pos + 5 return false
+    elseif str:sub(pos, pos + 3) == "null" then pos = pos + 4 return nil
+    else
+      local num = str:match("^-?%d+%.?%d*[eE]?[-+]?%d*", pos)
+      if not num or num == "" then error("bad json") end
+      pos = pos + #num
+      return tonumber(num)
+    end
+  end
+  local v = value()
+  ws()
+  if pos <= #str then error("bad json") end
+  return v
+end
+
 local function boot(opts)
   opts = opts or {}
   local env = { sent = {}, chats = {}, events = {}, timers = {}, removed = {}, logs = {}, clock = 0, positions = {} }
@@ -41,13 +109,7 @@ local function boot(opts)
   }
   _G.Util = {
     JsonEncode = encode,
-    JsonDecode = function(s)
-      if not s:match("^%s*[{%[]") or s:find(",%s*}") then error("bad json") end
-      local t = {}
-      for k, v in s:gmatch('"([%w_]+)"%s*:%s*"([^"]*)"') do t[k] = v end
-      for k, v in s:gmatch('"([%w_]+)"%s*:%s*(%-?[%d%.]+)') do t[k] = tonumber(v) end
-      return t
-    end,
+    JsonDecode = function(s) return decodeJson(s) end,
     JsonPrettify = function(s) return s end,
   }
   _G.FS = {
@@ -85,6 +147,7 @@ local function boot(opts)
     env.positions[1], env.positions[2] = 0, 5
     env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
   end
+  function env.go() env.call("onChatMessage", 1, "Reinder", "/cnr go") end
   function env.cleanup() os.execute("rm -rf '" .. env.dir .. "'") end
   return env
 end
@@ -132,7 +195,10 @@ test("full round over main wiring", function()
   local setup = env.lastSent("cnr_roundSetup")
   assertEq(setup.data:find('"runnerId":1', 1, true) ~= nil, true)
   assertEq(env.call("onVehicleSpawn", 1, 3, '1:Reinder:1-3:{"jbm":"etk800"}'), 1)
-  for _ = 1, 70 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.go()
+  assertEq(env.lastSent("cnr_countdown") ~= nil, true)
+  for _ = 1, 90 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  assertEq(env.lastSent("cnr_runnerGo") ~= nil, true)
   assertEq(env.lastSent("cnr_release") ~= nil, true)
   assertEq(env.chatHas("Runner caught! Reinder survived"), true)
   assertEq(env.chatHas("1. Reinder"), true)
@@ -147,6 +213,19 @@ test("edit in real pid-vid format with round car is allowed", function()
   env.startRound()
   assertEq(env.call("onVehicleEdited", 1, 0, '1-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc","parts":{"a":"b"}},"pro":"0"}'), 0)
   assertEq(env.call("onVehicleEdited", 1, 0, '1-0:{"jbm":"etk800","vcf":{"parts":{}}}'), 1)
+  env.cleanup()
+end)
+
+test("parts change after baseline restores the round config", function()
+  local env = boot()
+  env.startRound()
+  env.call("onVehicleEdited", 1, 0, '1-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc","parts":{"engine":"v8"}}}')
+  env.sent = {}
+  assertEq(env.call("onVehicleEdited", 1, 0, '1-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc","parts":{"engine":"v8"}}}'), 0)
+  assertEq(env.lastSent("cnr_restoreConfig"), nil)
+  assertEq(env.call("onVehicleEdited", 1, 0, '1-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc","parts":{"engine":"v12"}}}'), 0)
+  assertEq(env.lastSent("cnr_restoreConfig").pid, 1)
+  assertEq(env.chatHas("Only paint can be changed"), true)
   env.cleanup()
 end)
 
@@ -171,7 +250,8 @@ test("reset of a non-active vehicle is ignored", function()
   local env = boot({ vehicles = { [1] = { [0] = "x", [1] = "y" }, [2] = { [0] = "x" } } })
   env.startRound()
   env.call("cnr_myVehicle", 1, '{"vid":1}')
-  env.clock = 10
+  env.go()
+  for _ = 1, 28 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
   env.call("onVehicleReset", 1, 0, "")
   assertEq(env.chatHas("reset illegally"), false)
   env.call("onVehicleReset", 1, 1, "")
@@ -196,5 +276,34 @@ test("addstation saves file", function()
   local f = io.open(env.dir .. "data/stations/west_coast_usa.json")
   assertEq(f ~= nil, true)
   if f then f:close() end
+  env.cleanup()
+end)
+
+test("/cnr color saves per player and goes into setup", function()
+  local env = boot()
+  env.call("onChatMessage", 1, "Reinder", "/cnr color #ff0000")
+  assertEq(env.chatHas("Your car color is now #ff0000"), true)
+  env.call("onChatMessage", 1, "Reinder", "/cnr color #zz")
+  assertEq(env.chatHas("Use a hex color like #ff0000"), true)
+  env.startRound()
+  local setups = {}
+  for _, m in ipairs(env.sent) do if m.ev == "cnr_roundSetup" then setups[m.pid] = m.data end end
+  assertEq(setups[1]:find('"hex":"#ff0000"', 1, true) ~= nil, true)
+  assertEq(setups[2]:find('"hex"', 1, true), nil)
+  local f = io.open(env.dir .. "data/colors.json")
+  assertEq(f ~= nil, true)
+  if f then f:close() end
+  env.cleanup()
+end)
+
+test("/cnr color during prep repaints right away", function()
+  local env = boot()
+  env.startRound()
+  env.call("onChatMessage", 2, "Bob", "/cnr color 00ff00")
+  local m = env.lastSent("cnr_paint")
+  assertEq(m.pid, 2)
+  assertEq(m.data:find('"hex":"#00ff00"', 1, true) ~= nil, true)
+  env.call("onChatMessage", 2, "Bob", "/cnr color off")
+  assertEq(env.chatHas("Car color cleared"), true)
   env.cleanup()
 end)

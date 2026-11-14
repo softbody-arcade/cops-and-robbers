@@ -2,11 +2,12 @@ local M = {}
 
 local LOCKED_ACTIONS = {
   "recover_vehicle", "recover_vehicle_alt", "recover_to_last_road", "loadHome", "saveHome",
-  "reload_vehicle", "reload_all_vehicles", "reset_all_physics", "vehicle_selector", "parts_selector",
+  "reload_vehicle", "reload_all_vehicles", "reset_all_physics", "vehicle_selector",
   "dropPlayerAtCamera", "dropPlayerAtCameraNoReset", "nodegrabberGrab", "switch_next_vehicle",
   "switch_previous_vehicle", "toggleWalkingMode",
 }
 local RESET_ACTIONS = { "reset_physics" }
+local PARTS_ACTIONS = { "parts_selector" }
 local ALLOWED_TYPES = { Car = true, Truck = true }
 local COP_SPACING = 8
 local SETUP_DELAY = 0.5
@@ -21,8 +22,12 @@ local runnerId
 local frozen = false
 local resetAllowed = false
 local lastHint
-local headStartEnd
+local timerEnd
+local timerLabel
 local lastCountdown
+local roundModel
+local roundConfig
+local roundColor
 local pendingPlacement
 local suppressResetUntil = 0
 local lastPose
@@ -58,9 +63,25 @@ local function setResetKey(allowed)
   core_input_actionFilter.addAction(0, "cnr_resetKey", not allowed)
 end
 
+local function setPartsMenu(allowed)
+  core_input_actionFilter.setGroup("cnr_parts", PARTS_ACTIONS)
+  core_input_actionFilter.addAction(0, "cnr_parts", not allowed)
+end
+
 local function unlockAll()
   lockInputs(false)
   setResetKey(true)
+  setPartsMenu(true)
+end
+
+local function startTimer(seconds, label)
+  if seconds and seconds > 0 then
+    timerEnd = clock + seconds
+    timerLabel = label
+    lastCountdown = nil
+  else
+    timerEnd = nil
+  end
 end
 
 local function resetIsBound()
@@ -163,12 +184,20 @@ local function teleport(veh, pos, rot)
   spawn.safeTeleport(veh, pos, rot)
 end
 
-local function placeVehicle(model, config, pos, rot)
+local function vehicleOptions(config, color)
+  local opt = { config = config }
+  if color and color.r then
+    opt.paint = createVehiclePaint({ x = color.r, y = color.g, z = color.b, w = 1 })
+  end
+  return opt
+end
+
+local function placeVehicle(model, config, pos, rot, color)
   local veh = ownVehicle()
   if veh then
-    core_vehicles.replaceVehicle(model, { config = config })
+    core_vehicles.replaceVehicle(model, vehicleOptions(config, color))
   else
-    core_vehicles.spawnNewVehicle(model, { config = config })
+    core_vehicles.spawnNewVehicle(model, vehicleOptions(config, color))
   end
   pendingPlacement = { at = clock + SETUP_DELAY, deadline = clock + PLACEMENT_TIMEOUT, pos = pos, rot = rot }
 end
@@ -188,11 +217,13 @@ local function onRoundSetup(data)
   active = true
   role = d.role
   runnerId = d.runnerId
+  roundModel, roundConfig, roundColor = d.model, d.config, d.color
   resetAllowed = false
   lastHint = nil
   lastPose = nil
   lockInputs(true)
   setResetKey(false)
+  setPartsMenu(d.phase == "prep")
   if not resetIsBound() then
     toast("Bind 'Reset vehicle' to a wheel button to reset during rounds", 10, "cnr_binding")
   end
@@ -205,27 +236,63 @@ local function onRoundSetup(data)
       pos, rot = findCopSpot(center, d.copSpawnMin or 50, d.copSpawnMax or 150, math.max(d.copIndex or 1, 1))
     end
   end
-  placeVehicle(d.model, d.config, pos, rot)
+  placeVehicle(d.model, d.config, pos, rot, d.color)
 
-  local remaining = tonumber(d.headStartRemaining) or 0
-  if role == "cop" and remaining > 0 then
-    headStartEnd = clock + remaining
-    lastCountdown = nil
-    pendingPlacement.freeze = true
+  local phase = d.phase or "running"
+  frozen = phase == "prep" or phase == "countdown" or (phase == "headstart" and role == "cop")
+  if phase == "prep" then
+    toast(role == "runner" and "You are the runner! Change your paint if you like, waiting for /cnr go" or "You are a cop! Change your paint if you like, waiting for /cnr go", 8, "cnr_go")
+    timerEnd = nil
+  elseif phase == "countdown" then
+    startTimer(tonumber(d.countdownRemaining), "Runner starts in")
+  elseif phase == "headstart" then
+    startTimer(tonumber(d.headStartRemaining), "Cops released in")
   else
-    headStartEnd = nil
+    timerEnd = nil
   end
+end
+
+local function onCountdown(data)
+  local d = jsonDecode(data) or {}
+  setPartsMenu(false)
+  startTimer(tonumber(d.seconds), "Runner starts in")
+end
+
+local function onRunnerGo(data)
+  local d = jsonDecode(data) or {}
   if role == "runner" then
-    toast("GO! You are the runner", 5, "cnr_go")
+    timerEnd = nil
+    setFreeze(false)
+    toast("GO! Run!", 4, "cnr_go")
+  else
+    startTimer(tonumber(d.headStartSeconds), "Cops released in")
   end
+end
+
+local function repaintInPlace(color)
+  local veh = ownVehicle()
+  if not veh or not roundModel then return end
+  roundColor = color
+  placeVehicle(roundModel, roundConfig, veh:getPosition(), uprightRotation(veh), color)
+end
+
+local function onPaint(data)
+  local d = jsonDecode(data) or {}
+  repaintInPlace(d.color)
+end
+
+local function onRestoreConfig(data)
+  local d = jsonDecode(data) or {}
+  roundModel, roundConfig = d.model or roundModel, d.config or roundConfig
+  toast("Only paint can be changed, car reset to the round setup", 5, "cnr_reset")
+  repaintInPlace(d.color or roundColor)
 end
 
 local function onRelease()
-  headStartEnd = nil
+  timerEnd = nil
   if frozen then setFreeze(false) end
   if role == "cop" then toast("GO!", 3, "cnr_go") end
 end
-
 local function onState(data)
   local d = jsonDecode(data) or {}
   if d.resetAllowed ~= resetAllowed then
@@ -255,7 +322,8 @@ end
 local function endRound()
   active = false
   role = nil
-  headStartEnd = nil
+  timerEnd = nil
+  roundModel, roundConfig, roundColor = nil, nil, nil
   pendingPlacement = nil
   resetAllowed = false
   lastPose = nil
@@ -304,7 +372,7 @@ local function onUpdate(dtReal)
     if veh and vid then
       pendingPlacement = nil
       if p.pos then teleport(veh, p.pos, p.rot) end
-      if p.freeze and headStartEnd and clock < headStartEnd then setFreeze(true) end
+      if frozen then setFreeze(true) end
       sendServer("cnr_myVehicle", { vid = vid })
     elseif clock >= p.deadline then
       pendingPlacement = nil
@@ -317,17 +385,19 @@ local function onUpdate(dtReal)
       if not lastPose or pos:distance(lastPose.pos) <= POSE_JUMP then
         lastPose = { pos = pos, rot = uprightRotation(veh) }
       end
-      if frozen and headStartEnd and clock < headStartEnd and clock - lastFreezeAssert >= FREEZE_REASSERT then
+      if frozen and clock - lastFreezeAssert >= FREEZE_REASSERT then
         lastFreezeAssert = clock
         veh:queueLuaCommand("controller.setFreeze(1)")
       end
     end
   end
-  if headStartEnd then
-    local left = math.ceil(headStartEnd - clock)
+  if timerEnd then
+    local left = math.ceil(timerEnd - clock)
     if left > 0 and left ~= lastCountdown then
       lastCountdown = left
-      toast(string.format("Head start: %ds", left), 1.2, "cnr_go")
+      toast(string.format("%s %d", timerLabel, left), 1.2, "cnr_go")
+    elseif left <= 0 then
+      timerEnd = nil
     end
   end
 end
@@ -349,6 +419,10 @@ local function onExtensionLoaded()
     AddEventHandler("cnr_pickVehicle", onPickVehicle)
     AddEventHandler("cnr_roundSetup", onRoundSetup)
     AddEventHandler("cnr_release", onRelease)
+    AddEventHandler("cnr_countdown", onCountdown)
+    AddEventHandler("cnr_runnerGo", onRunnerGo)
+    AddEventHandler("cnr_paint", onPaint)
+    AddEventHandler("cnr_restoreConfig", onRestoreConfig)
     AddEventHandler("cnr_state", onState)
     AddEventHandler("cnr_roundEnd", onRoundEnd)
     AddEventHandler("cnr_requestStations", onRequestStations)
