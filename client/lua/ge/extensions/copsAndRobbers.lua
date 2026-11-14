@@ -28,6 +28,7 @@ local lastCountdown
 local roundModel
 local roundConfig
 local roundColor
+local penaltyActive = false
 local pendingPlacement
 local suppressResetUntil = 0
 local lastPose
@@ -290,12 +291,14 @@ end
 
 local function onPenalty(data)
   local d = jsonDecode(data) or {}
+  penaltyActive = true
   setFreeze(true)
   startTimer(tonumber(d.seconds), "Crash penalty")
-  toast("You crashed too hard! Penalty", 3, "cnr_reset")
 end
 
 local function onPenaltyEnd()
+  penaltyActive = false
+  lastHint = nil
   timerEnd = nil
   setFreeze(false)
   toast("Penalty over, go!", 3, "cnr_go")
@@ -314,7 +317,7 @@ local function onState(data)
   end
   if d.resetHint and d.resetHint ~= lastHint then
     lastHint = d.resetHint
-    toast(d.resetHint, 3, "cnr_reset")
+    if not penaltyActive then toast(d.resetHint, 3, "cnr_reset") end
   end
   local p = tonumber(d.catchProgress) or 0
   if p > 0 then
@@ -335,6 +338,7 @@ end
 local function endRound()
   active = false
   role = nil
+  penaltyActive = false
   timerEnd = nil
   roundModel, roundConfig, roundColor = nil, nil, nil
   pendingPlacement = nil
