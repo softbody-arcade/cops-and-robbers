@@ -200,7 +200,7 @@ test("full round over main wiring", function()
   for _ = 1, 90 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
   assertEq(env.lastSent("cnr_runnerGo") ~= nil, true)
   assertEq(env.lastSent("cnr_release") ~= nil, true)
-  assertEq(env.chatHas("Runner caught! Reinder survived"), true)
+  assertEq(env.chatHas("Runner caught by Bob! Reinder survived"), true)
   assertEq(env.chatHas("1. Reinder"), true)
   local f = io.open(env.dir .. "data/leaderboard.json")
   assertEq(f ~= nil, true)
@@ -363,5 +363,112 @@ test("penalty is shown on everyone's screen", function()
   assertEq(n.pid, -1)
   assertEq(n.data:find('"msg":"Bob: crash penalty 10s"', 1, true) ~= nil, true)
   assertEq(n.data:find('"about":2', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+local function runToChase(env)
+  env.startRound()
+  env.go()
+  for _ = 1, 44 do env.clock = env.clock + 0.25; env.positions[2] = 900; env.call("cnr_tick") end
+end
+
+test("color during the chase does not repaint", function()
+  local env = boot()
+  runToChase(env)
+  env.sent = {}
+  env.call("onChatMessage", 1, "Reinder", "/cnr color #ff0000")
+  assertEq(env.lastSent("cnr_paint"), nil)
+  assertEq(env.chatHas("applies from the next round"), true)
+  env.cleanup()
+end)
+
+test("test round events reach only the issuer", function()
+  local env = boot({ vehicles = { [1] = { [0] = "x" } } })
+  env.sent = {}
+  env.chats = {}
+  env.call("onChatMessage", 1, "Reinder", "/cnr test cop")
+  env.positions[1] = 0
+  env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  env.go()
+  for _ = 1, 50 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.call("onChatMessage", 1, "Reinder", "/cnr stop")
+  for _, m in ipairs(env.sent) do
+    if m.ev ~= "cnr_roundEnd" or not m.data:find("cancelled") then assertEq(m.pid, 1, m.ev) end
+  end
+  for _, c in ipairs(env.chats) do assertEq(c[1], 1, c[2]) end
+  env.cleanup()
+end)
+
+test("/cnr start cancels a running test round", function()
+  local env = boot()
+  env.call("onChatMessage", 1, "Reinder", "/cnr test cop")
+  env.call("onChatMessage", 2, "Bob", "/cnr start bob")
+  assertEq(env.lastSent("cnr_pickVehicle").pid, 2)
+  env.cleanup()
+end)
+
+test("/cnr end records the run", function()
+  local env = boot()
+  runToChase(env)
+  env.call("onChatMessage", 2, "Bob", "/cnr end")
+  assertEq(env.chatHas("Round ended: Reinder survived"), true)
+  local f = io.open(env.dir .. "data/leaderboard.json")
+  assertEq(f ~= nil, true)
+  if f then f:close() end
+  env.cleanup()
+end)
+
+test("/cnr set validates, saves and reloads", function()
+  local env = boot()
+  env.call("onChatMessage", 1, "Reinder", "/cnr set headStartSeconds 12")
+  assertEq(env.chatHas("headStartSeconds = 12"), true)
+  local saved = assert(io.open(env.dir .. "config.json")):read("*a")
+  assertEq(saved:find('"headStartSeconds":12', 1, true) ~= nil, true)
+  env.call("onChatMessage", 1, "Reinder", "/cnr set catchRadiusMeters -1")
+  assertEq(env.chatHas("Invalid value for catchRadiusMeters: -1"), true)
+  env.cleanup()
+end)
+
+test("/cnr top variants", function()
+  local env = boot()
+  env.call("onChatMessage", 1, "Reinder", "/cnr top cops")
+  assertEq(env.chatHas("No catches yet"), true)
+  env.call("onChatMessage", 1, "Reinder", "/cnr top all")
+  assertEq(env.chatHas("No runs yet"), true)
+  env.cleanup()
+end)
+
+test("/cnr start next and again", function()
+  local env = boot()
+  env.call("onChatMessage", 1, "Reinder", "/cnr start next")
+  env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  assertEq(env.chatHas("Bob is the runner"), true)
+  env.call("onChatMessage", 1, "Reinder", "/cnr stop")
+  env.call("onChatMessage", 1, "Reinder", "/cnr start next")
+  env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  assertEq(env.chatHas("Reinder is the runner"), true)
+  env.call("onChatMessage", 1, "Reinder", "/cnr stop")
+  env.chats = {}
+  env.call("onChatMessage", 2, "Bob", "/cnr start again")
+  env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  assertEq(env.chatHas("Reinder is the runner"), true)
+  env.cleanup()
+end)
+
+test("last seen goes to cops, nearest cop to the runner", function()
+  local env = boot({ config = '{"lastSeenIntervalSeconds": 5}' })
+  runToChase(env)
+  env.sent = {}
+  for _ = 1, 24 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  local seen, nearest = env.lastSent("cnr_lastSeen"), env.lastSent("cnr_nearestCop")
+  assertEq(seen.pid, 2)
+  assertEq(nearest.pid, 1)
+  env.cleanup()
+end)
+
+test("pick request carries the excluded models", function()
+  local env = boot()
+  env.call("onChatMessage", 2, "Bob", "/cnr start rein")
+  assertEq(env.lastSent("cnr_pickVehicle").data:find("citybus", 1, true) ~= nil, true)
   env.cleanup()
 end)

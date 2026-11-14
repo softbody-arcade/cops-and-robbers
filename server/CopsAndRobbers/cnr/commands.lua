@@ -13,13 +13,25 @@ function M.parse(msg)
   return { name = name, args = args, rest = rest }
 end
 
-function M.matchPlayer(query, players, random)
+function M.matchPlayer(query, players, random, runCounts)
   random = random or math.random
   if query == nil or query == "" then return nil, "Usage: /cnr start <name|random>" end
   local pids = {}
   for pid in pairs(players) do pids[#pids + 1] = pid end
   table.sort(pids)
   local q = query:lower()
+  if q == "next" then
+    if #pids == 0 then return nil, "No players online" end
+    local best, bestCount, bestName
+    for _, pid in ipairs(pids) do
+      local name = players[pid]
+      local count = (runCounts or {})[name] or 0
+      if not best or count < bestCount or (count == bestCount and name < bestName) then
+        best, bestCount, bestName = pid, count, name
+      end
+    end
+    return best
+  end
   if q == "random" then
     if #pids == 0 then return nil, "No players online" end
     return pids[random(#pids)]

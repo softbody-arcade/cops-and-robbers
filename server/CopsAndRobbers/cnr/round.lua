@@ -2,6 +2,7 @@ local catch = require("cnr.catch")
 local resets = require("cnr.resets")
 local crash = require("cnr.crash")
 local leaderboard = require("cnr.leaderboard")
+local vec = require("cnr.vec")
 
 local M = {}
 local Round = {}
@@ -55,6 +56,8 @@ function Round:clear()
   self.crashDetectors = {}
   self.penalties = {}
   self.prevCars = {}
+  self.leftPlayers = {}
+  self.lastSeenAt = nil
   self.test = false
   self.lastState = {}
   self.nextCopIndex = 1
@@ -92,9 +95,10 @@ end
 function Round:finish(now, reason)
   local fx = {}
   local survived = self.releasedAt and (now - self.releasedAt) or 0
+  local catchers = reason == "caught" and self.catchers or {}
   fx[#fx + 1] = {
     kind = "roundEnd", runnerId = self.runnerId, runnerName = self:runnerName(),
-    survivedSeconds = survived, reason = reason,
+    survivedSeconds = survived, reason = reason, catchers = catchers,
     explode = self.cfg.explodeOnCatch and reason == "caught",
   }
   if self.test and reason == "caught" then
@@ -104,7 +108,7 @@ function Round:finish(now, reason)
     fx[#fx + 1] = { kind = "record", run = {
       player = self:runnerName(), survivedSeconds = survived,
       model = self.vehicle and self.vehicle.model, config = self.vehicle and self.vehicle.config,
-      releasedAt = self.releasedAt, endedAt = now, endReason = reason,
+      releasedAt = self.releasedAt, endedAt = now, endReason = reason, catchers = catchers,
     } }
   end
   self:clear()
@@ -157,6 +161,7 @@ function Round:vehiclePicked(now, pid, model, config, players)
   end
   self.state = "prep"
   self.vehicle = { model = model, config = config }
+  self.nextCopIndex = 1
   local fx = {}
   if self.test then
     local copColor = 1
@@ -225,6 +230,7 @@ function Round:tick(now, cars, stations)
   if self.state == "headstart" and now - self.startedAt >= self.cfg.headStartSeconds then
     self.state = "running"
     self.releasedAt = now
+    self.lastSeenAt = now
     fx[#fx + 1] = { kind = "release" }
     fx[#fx + 1] = { kind = "broadcast", msg = "Cops released!" }
   end
@@ -244,7 +250,6 @@ function Round:tick(now, cars, stations)
           self.penalties[pid] = now + seconds
           if self.resetTrackers[pid] then self.resetTrackers[pid]:block(now + seconds) end
           fx[#fx + 1] = { kind = "penalty", pid = pid, seconds = seconds, name = self.players[pid] }
-          fx[#fx + 1] = { kind = "broadcast", msg = string.format("%s crashed hard: %gs penalty", self.players[pid], seconds) }
         end
       end
     end
@@ -253,12 +258,23 @@ function Round:tick(now, cars, stations)
       if pid ~= self.runnerId and cars[pid] and not self.penalties[pid] then cops[#cops + 1] = cars[pid] end
     end
     progress, caught = self.catchTracker:update(now, runnerCar, cops)
+    if caught then self.catchers = self:copsNear(runnerCar, cars) end
+    local interval = self.cfg.lastSeenIntervalSeconds
+    if not caught and interval > 0 and runnerCar and now - self.lastSeenAt >= interval - 1e-9 then
+      self.lastSeenAt = now
+      local nearest
+      for _, car in ipairs(cops) do
+        local d = vec.dist(runnerCar.pos, car.pos)
+        if not nearest or d < nearest then nearest = d end
+      end
+      fx[#fx + 1] = { kind = "lastSeen", pos = runnerCar.pos, nearestCop = nearest }
+    end
   end
 
   local runnerPos = runnerCar and runnerCar.pos
   for _, pid in ipairs(sortedPids(self.players)) do
     local tracker = self.resetTrackers[pid]
-    if tracker then
+    if tracker and (self.state == "running" or pid == self.runnerId) then
       local role = pid == self.runnerId and "runner" or "cop"
       local allowed, hint = tracker:update(now, cars[pid], { role = role, runnerPos = runnerPos, stations = stations })
       local p = roundTo(progress, 0.05)
@@ -272,10 +288,27 @@ function Round:tick(now, cars, stations)
   end
 
   self.prevCars = cars
+  local limit = self.cfg.roundTimeLimitSeconds
   if caught then
     for _, e in ipairs(self:finish(now, "caught")) do fx[#fx + 1] = e end
+  elseif self.state == "running" and limit > 0 and now - self.releasedAt >= limit - 1e-9 then
+    for _, e in ipairs(self:finish(now, "escaped")) do fx[#fx + 1] = e end
   end
   return fx
+end
+
+function Round:copsNear(runnerCar, cars)
+  local names = {}
+  if not runnerCar or not runnerCar.pos then return names end
+  for pid, name in pairs(self.players) do
+    local car = cars[pid]
+    if pid ~= self.runnerId and car and car.pos and not self.penalties[pid]
+      and vec.dist(runnerCar.pos, car.pos) <= self.cfg.catchRadiusMeters then
+      names[#names + 1] = name
+    end
+  end
+  table.sort(names)
+  return names
 end
 
 function Round:otherCars(pid)
@@ -290,7 +323,19 @@ function Round:playerJoined(now, pid, name)
   if self.state == "idle" or self.test then return {} end
   self.players[pid] = name
   if self.state == "picking" then return {} end
-  return { self:setupFor(now, pid) }
+  local setup = self:setupFor(now, pid)
+  local fx = { setup }
+  local left = self.leftPlayers[name]
+  if left then
+    self.leftPlayers[name] = nil
+    setup.resumePos = left.pos
+    if left.penaltyUntil and left.penaltyUntil > now then
+      self.penalties[pid] = left.penaltyUntil
+      self.resetTrackers[pid]:block(left.penaltyUntil)
+      fx[#fx + 1] = { kind = "penalty", pid = pid, seconds = left.penaltyUntil - now, name = name }
+    end
+  end
+  return fx
 end
 
 function Round:playerLeft(now, pid)
@@ -299,8 +344,13 @@ function Round:playerLeft(now, pid)
     if self.state == "running" then return self:finish(now, "disconnect") end
     return self:cancel(now, "Runner left, round cancelled")
   end
-  if self.state == "picking" and pid == self.issuerId then
+  if (self.state == "picking" or self.test) and pid == self.issuerId then
     return self:cancel(now, "Round cancelled")
+  end
+  local name = self.players[pid]
+  local prev = self.prevCars[pid]
+  if self.state == "running" or self.state == "headstart" then
+    self.leftPlayers[name] = { pos = prev and prev.pos, penaltyUntil = self.penalties[pid] }
   end
   self.players[pid] = nil
   self.resetTrackers[pid] = nil
@@ -320,11 +370,47 @@ function Round:vehicleReset(now, pid)
   return { { kind = "broadcast", msg = string.format("%s reset illegally", self.players[pid] or tostring(pid)) } }
 end
 
+function Round:endCalled(now, pid)
+  if self.state ~= "running" then
+    if self.state == "idle" then return { { kind = "reply", pid = pid, msg = "No round running" } } end
+    return { { kind = "reply", pid = pid, msg = "The chase has not started, use /cnr stop" } }
+  end
+  return self:finish(now, "called")
+end
+
+function Round:reroll(now, pid)
+  if self.state ~= "prep" then
+    return { { kind = "reply", pid = pid, msg = "You can only reroll during prep" } }
+  end
+  self.state = "picking"
+  self.issuerId = pid
+  self.pickStartedAt = now
+  return {
+    { kind = "pickVehicle", pid = pid },
+    { kind = "broadcast", msg = "Picking a new car..." },
+  }
+end
+
 function Round:stop(now, issuerId)
   if self.state == "idle" then
     return { { kind = "reply", pid = issuerId, msg = "No round running" } }
   end
   return self:cancel(now, "Round cancelled")
+end
+
+for _, name in ipairs({ "start", "vehiclePicked", "go", "tick", "playerJoined", "playerLeft", "vehicleReset", "stop", "endCalled", "reroll" }) do
+  local method = Round[name]
+  Round[name] = function(self, ...)
+    local issuer = self.test and self.issuerId
+    local fx = method(self, ...)
+    issuer = issuer or (self.test and self.issuerId)
+    if issuer then
+      for _, e in ipairs(fx) do
+        if e.pid == nil and e.to == nil then e.to = issuer end
+      end
+    end
+    return fx
+  end
 end
 
 return M

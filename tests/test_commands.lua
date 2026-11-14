@@ -60,3 +60,9 @@ test("matchPlayer random with no players", function()
   local pid, err = commands.matchPlayer("random", {})
   assertEq(pid, nil); assertEq(err, "No players online")
 end)
+
+test("matchPlayer next picks whoever ran least", function()
+  local counts = {Reinder=2, Bob=0, ReinderAlt=1}
+  assertEq(commands.matchPlayer("next", players, nil, counts), 2)
+  assertEq(commands.matchPlayer("next", {[1]="A", [2]="B"}, nil, {}), 1)
+end)

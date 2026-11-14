@@ -4,6 +4,8 @@ local M = {}
 local Tracker = {}
 Tracker.__index = Tracker
 
+local DRAIN_FACTOR = 2
+
 function M.new(cfg)
   return setmetatable({ cfg = cfg, hold = 0, lastNow = nil }, Tracker)
 end
@@ -23,11 +25,12 @@ function Tracker:isHeld(runner, cops)
 end
 
 function Tracker:update(now, runner, cops)
+  local dt = self.lastNow and (now - self.lastNow) or 0
+  self.lastNow = now
   if self:isHeld(runner, cops or {}) then
-    if self.lastNow then self.hold = self.hold + (now - self.lastNow) end
-    self.lastNow = now
+    self.hold = self.hold + dt
   else
-    self:reset()
+    self.hold = math.max(0, self.hold - DRAIN_FACTOR * dt)
   end
   local need = self.cfg.catchHoldSeconds
   local caught = self.hold >= need - 1e-9

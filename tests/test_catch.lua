@@ -26,13 +26,13 @@ test("moving faster than 3 km/h breaks hold", function()
   local t = catch.new(cfg)
   for i = 0, 20 do t:update(i*0.25, car(0), {car(5)}) end
   local p = t:update(5.5, car(0, 1), {car(5)})
-  assertEq(p, 0)
+  assertNear(p, 4/7, 1e-9)
 end)
 
 test("cop beyond 10 m breaks hold", function()
   local t = catch.new(cfg)
   for i = 0, 20 do t:update(i*0.25, car(0), {car(5)}) end
-  assertEq((t:update(5.5, car(0), {car(10.5)})), 0)
+  assertNear((t:update(5.5, car(0), {car(10.5)})), 4/7, 1e-9)
 end)
 
 test("any one cop in range counts", function()
@@ -46,10 +46,10 @@ test("no cops means no hold", function()
   assertEq((t:update(0, car(0), {})), 0)
 end)
 
-test("missing runner data resets", function()
+test("missing runner data drains", function()
   local t = catch.new(cfg)
   for i = 0, 20 do t:update(i*0.25, car(0), {car(5)}) end
-  assertEq((t:update(5.5, nil, {car(5)})), 0)
+  assertNear((t:update(5.5, nil, {car(5)})), 4/7, 1e-9)
 end)
 
 test("reset clears hold", function()
@@ -57,4 +57,19 @@ test("reset clears hold", function()
   for i = 0, 20 do t:update(i*0.25, car(0), {car(5)}) end
   t:reset()
   assertEq((t:update(5.5, car(0), {car(5)})), 0)
+end)
+
+test("hold drains at twice the fill rate and stops at zero", function()
+  local t = catch.new(cfg)
+  for i = 0, 20 do t:update(i*0.25, car(0), {car(5)}) end
+  assertNear((t:update(6, car(0, 20), {car(5)})), 3/7, 1e-9)
+  assertEq((t:update(9, car(0, 20), {car(5)})), 0)
+end)
+
+test("short break does not wipe the catch", function()
+  local t = catch.new(cfg); local c
+  for i = 0, 20 do t:update(i*0.25, car(0), {car(5)}) end
+  t:update(5.25, car(0, 5), {car(5)})
+  for i = 1, 10 do _, c = t:update(5.25 + i*0.25, car(0), {car(5)}) end
+  assertEq(c, true)
 end)

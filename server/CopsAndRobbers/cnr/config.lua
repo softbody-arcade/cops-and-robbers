@@ -16,9 +16,29 @@ M.DEFAULTS = {
   includeModVehicles = false,
   crashSpeedLossKmh = 50,
   crashPenaltySeconds = 10,
+  roundTimeLimitSeconds = 0,
+  lastSeenIntervalSeconds = 30,
+  excludedModels = { "citybus", "us_semi", "md_series", "percheron", "rockbouncer" },
 }
 
 local strictlyPositive = { catchHoldSeconds = true, catchRadiusMeters = true, crashSpeedLossKmh = true }
+
+local function copyList(t)
+  local c = {}
+  for i, v in ipairs(t) do c[i] = v end
+  return c
+end
+
+local function validList(v)
+  if type(v) ~= "table" then return false end
+  local n = 0
+  for _ in pairs(v) do n = n + 1 end
+  if n ~= #v then return false end
+  for _, item in ipairs(v) do
+    if type(item) ~= "string" then return false end
+  end
+  return true
+end
 
 local function validNumber(key, v)
   if type(v) ~= "number" or v ~= v or v == math.huge or v == -math.huge then return false end
@@ -32,7 +52,14 @@ function M.merge(raw)
   for key, default in pairs(M.DEFAULTS) do
     local v = raw[key]
     if v == nil then
-      cfg[key] = default
+      cfg[key] = type(default) == "table" and copyList(default) or default
+    elseif type(default) == "table" then
+      if validList(v) then
+        cfg[key] = copyList(v)
+      else
+        cfg[key] = copyList(default)
+        warnings[#warnings + 1] = string.format("%s must be a list of names, using the default", key)
+      end
     elseif type(default) == "boolean" then
       if type(v) == "boolean" then
         cfg[key] = v
@@ -60,6 +87,36 @@ function M.merge(raw)
     cfg.copSpawnMaxMeters = cfg.copSpawnMinMeters
   end
   return cfg, warnings
+end
+
+local function parseValue(default, text)
+  if type(default) == "boolean" then
+    local t = text:lower()
+    if t == "true" or t == "on" or t == "yes" then return true end
+    if t == "false" or t == "off" or t == "no" then return false end
+    return nil
+  elseif type(default) == "table" then
+    local list = {}
+    for item in text:gmatch("[^,%s]+") do list[#list + 1] = item end
+    return list
+  end
+  return tonumber(text)
+end
+
+function M.setValue(raw, key, text)
+  local default = M.DEFAULTS[key]
+  if default == nil then return nil, "Unknown setting " .. tostring(key) end
+  local value = parseValue(default, tostring(text or ""))
+  local invalid = "Invalid value for " .. key .. ": " .. tostring(text)
+  if value == nil then return nil, invalid end
+  local updated = {}
+  for k, v in pairs(raw or {}) do updated[k] = v end
+  updated[key] = value
+  local _, warnings = M.merge(updated)
+  for _, w in ipairs(warnings) do
+    if w:find(key, 1, true) == 1 then return nil, invalid end
+  end
+  return updated
 end
 
 return M

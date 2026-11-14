@@ -24,6 +24,9 @@ local activeVid = {}
 local stationsRequested = {}
 local partsBaseline = {}
 local aiVid = {}
+local runCounts = {}
+local lastRunnerName
+local rawConfig = {}
 local colorStore = {}
 local serverClock = MP.CreateTimer()
 
@@ -68,6 +71,7 @@ end
 local function loadConfig()
   local raw, corrupt = decodeFile(pluginDir .. "config.json")
   if corrupt then log("config.json is not valid JSON, using defaults") end
+  rawConfig = type(raw) == "table" and raw or {}
   local warnings
   cfg, warnings = config.merge(raw)
   for _, w in ipairs(warnings) do log("config: " .. w) end
@@ -186,16 +190,23 @@ local function applyEffects(effects)
     if e.kind == "reply" then
       reply(e.pid, e.msg)
     elseif e.kind == "broadcast" then
-      broadcast(e.msg)
+      if e.to then reply(e.to, e.msg) else broadcast(e.msg) end
     elseif e.kind == "pickVehicle" then
-      send(e.pid, "cnr_pickVehicle", { includeMods = cfg.includeModVehicles })
+      send(e.pid, "cnr_pickVehicle", { includeMods = cfg.includeModVehicles, excludedModels = cfg.excludedModels })
     elseif e.kind == "setup" then
+      if e.role == "runner" and not current.test then
+        local name = MP.GetPlayerName(e.pid)
+        if name then
+          runCounts[name] = (runCounts[name] or 0) + 1
+          lastRunnerName = name
+        end
+      end
       local runnerCar = carFor(current.runnerId)
       send(e.pid, "cnr_roundSetup", {
         runnerId = current.runnerId, role = e.role, copIndex = e.copIndex,
         model = current.vehicle.model, config = current.vehicle.config,
         phase = e.phase, countdownRemaining = e.countdownRemaining,
-        headStartRemaining = e.headStartRemaining, inPlace = e.inPlace,
+        headStartRemaining = e.headStartRemaining, inPlace = e.inPlace, resumePos = e.resumePos,
         color = e.colorHex and colorTable((colors.parseHex(e.colorHex))) or colorFor(e.pid),
         runnerPos = runnerCar and runnerCar.pos or nil,
         copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
@@ -210,11 +221,11 @@ local function applyEffects(effects)
         runnerId = current.runnerId, copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
       })
     elseif e.kind == "countdown" then
-      send(-1, "cnr_countdown", { seconds = e.seconds })
+      send(e.to or -1, "cnr_countdown", { seconds = e.seconds })
     elseif e.kind == "runnerGo" then
-      send(-1, "cnr_runnerGo", { headStartSeconds = e.headStartSeconds })
+      send(e.to or -1, "cnr_runnerGo", { headStartSeconds = e.headStartSeconds })
     elseif e.kind == "penalty" then
-      send(-1, "cnr_notice", { msg = string.format("%s: crash penalty %gs", tostring(e.name), e.seconds), about = e.pid })
+      send(current.test and current.issuerId or -1, "cnr_notice", { msg = string.format("%s: crash penalty %gs", tostring(e.name), e.seconds), about = e.pid })
       if round.isAI(e.pid) then
         send(current.issuerId, "cnr_penalty", { seconds = e.seconds, aiId = e.pid })
       else
@@ -227,17 +238,26 @@ local function applyEffects(effects)
         send(e.pid, "cnr_penaltyEnd", {})
       end
     elseif e.kind == "release" then
-      send(-1, "cnr_release", {})
+      send(e.to or -1, "cnr_release", {})
     elseif e.kind == "state" then
       send(e.pid, "cnr_state", { resetAllowed = e.resetAllowed, resetHint = e.resetHint, catchProgress = e.catchProgress })
     elseif e.kind == "roundEnd" then
-      send(-1, "cnr_roundEnd", {
+      send(e.to or -1, "cnr_roundEnd", {
         runnerId = e.runnerId, runnerName = e.runnerName, survivedSeconds = e.survivedSeconds,
-        reason = e.reason, explode = e.explode,
+        reason = e.reason, explode = e.explode, catchers = e.catchers,
       })
       activeVid = {}
       partsBaseline = {}
       aiVid = {}
+    elseif e.kind == "lastSeen" then
+      for pid in pairs(current.players) do
+        if pid ~= current.runnerId and not round.isAI(pid) then
+          send(pid, "cnr_lastSeen", { pos = e.pos })
+        end
+      end
+      if not round.isAI(current.runnerId) and e.nearestCop then
+        send(current.runnerId, "cnr_nearestCop", { dist = e.nearestCop })
+      end
     elseif e.kind == "record" then
       local run = e.run
       local endedAt = os.time()
@@ -247,20 +267,30 @@ local function applyEffects(effects)
       leaderboard.add(board, run)
       local ok, err = pcall(saveLeaderboard)
       if not ok then log("failed to save leaderboard: " .. tostring(err)) end
+      local t = leaderboard.formatTime(run.survivedSeconds)
       if run.endReason == "caught" then
-        broadcast(string.format("Runner caught! %s survived %s", run.player, leaderboard.formatTime(run.survivedSeconds)))
+        local by = (run.catchers and #run.catchers > 0) and (" by " .. table.concat(run.catchers, ", ")) or ""
+        broadcast(string.format("Runner caught%s! %s survived %s", by, run.player, t))
+      elseif run.endReason == "called" then
+        broadcast(string.format("Round ended: %s survived %s", run.player, t))
+      elseif run.endReason == "escaped" then
+        broadcast(string.format("%s escaped! Survived %s", run.player, t))
       else
-        broadcast(string.format("%s disconnected after %s", run.player, leaderboard.formatTime(run.survivedSeconds)))
+        broadcast(string.format("%s disconnected after %s", run.player, t))
       end
-      for _, line in ipairs(leaderboard.formatTop(board, 5)) do broadcast(line) end
+      for _, line in ipairs(leaderboard.formatTop(board, 5, mapName)) do broadcast(line) end
     end
   end
 end
 
 local HELP = {
-  "/cnr start <name|random> - set up a round with that runner",
+  "/cnr start <name|random|next|again> - set up a round with that runner",
   "/cnr go - start the countdown",
   "/cnr test <runner|cop> - practice round against AI",
+  "/cnr reroll - new car during prep",
+  "/cnr end - end the chase and record the time",
+  "/cnr top [cops|all|<map>] - leaderboards",
+  "/cnr set <setting> <value> - change a setting",
   "/cnr color <#hex|off> - your car color for every round",
   "/cnr stop - cancel the current round",
   "/cnr top - leaderboard",
@@ -276,9 +306,17 @@ function handlers.help(pid)
 end
 
 function handlers.start(pid, cmd)
+  if current:isActive() and current.test then
+    applyEffects(current:stop(now(), current.issuerId))
+  end
   if current:isActive() then return reply(pid, "A round is already running") end
   local players = MP.GetPlayers() or {}
-  local runnerId, err = commands.matchPlayer(cmd.rest, players)
+  local query = cmd.rest
+  if query and query:lower() == "again" then
+    if not lastRunnerName then return reply(pid, "No previous runner yet") end
+    query = lastRunnerName
+  end
+  local runnerId, err = commands.matchPlayer(query, players, nil, runCounts)
   if not runnerId then return reply(pid, err) end
   requestStations(pid)
   activeVid = {}
@@ -315,9 +353,13 @@ function handlers.color(pid, cmd)
   if not c then return reply(pid, err) end
   colors.set(colorStore, name, c.hex)
   saveColors()
-  reply(pid, "Your car color is now " .. c.hex)
-  if roundCarActive() and current.players[pid] then
+  if current.state == "prep" and current.players[pid] then
+    reply(pid, "Your car color is now " .. c.hex)
     send(pid, "cnr_paint", { color = colorFor(pid) })
+  elseif roundCarActive() then
+    reply(pid, "Your car color is now " .. c.hex .. " (applies from the next round)")
+  else
+    reply(pid, "Your car color is now " .. c.hex)
   end
 end
 
@@ -327,8 +369,39 @@ function handlers.stop(pid)
   if not wasActive then send(-1, "cnr_roundEnd", { reason = "cancelled" }) end
 end
 
-function handlers.top(pid)
-  for _, line in ipairs(leaderboard.formatTop(board, 10)) do reply(pid, line) end
+function handlers.top(pid, cmd)
+  local arg = cmd.args[1] and cmd.args[1]:lower()
+  local lines
+  if arg == "cops" then
+    lines = leaderboard.formatTopCops(board, 10)
+  elseif arg == "all" then
+    lines = leaderboard.formatTop(board, 10)
+  else
+    lines = leaderboard.formatTop(board, 10, arg or mapName)
+  end
+  for _, line in ipairs(lines) do reply(pid, line) end
+end
+
+handlers["end"] = function(pid)
+  applyEffects(current:endCalled(now(), pid))
+end
+
+function handlers.reroll(pid)
+  applyEffects(current:reroll(now(), pid))
+end
+
+function handlers.set(pid, cmd)
+  local key, value = cmd.args[1], cmd.rest and cmd.rest:match("^%S+%s+(.+)$")
+  if not key or not value then return reply(pid, "Usage: /cnr set <setting> <value>") end
+  if current:isActive() then return reply(pid, "Stop the round before changing settings") end
+  local updated, err = config.setValue(rawConfig, key, value)
+  if not updated then return reply(pid, err) end
+  writeFile(pluginDir .. "config.json", Util.JsonPrettify(Util.JsonEncode(updated)))
+  loadConfig()
+  current = round.new(cfg)
+  local shown = cfg[key]
+  if type(shown) == "table" then shown = table.concat(shown, ", ") end
+  reply(pid, key .. " = " .. tostring(shown))
 end
 
 function handlers.addstation(pid)
@@ -357,7 +430,11 @@ function handlers.config(pid)
   local keys = {}
   for k in pairs(cfg) do keys[#keys + 1] = k end
   table.sort(keys)
-  for _, k in ipairs(keys) do reply(pid, k .. " = " .. tostring(cfg[k])) end
+  for _, k in ipairs(keys) do
+    local v = cfg[k]
+    if type(v) == "table" then v = table.concat(v, ", ") end
+    reply(pid, k .. " = " .. tostring(v))
+  end
 end
 
 function handlers.reload(pid)
@@ -395,8 +472,13 @@ local function checkParts(pid, decoded)
   if partsBaseline[pid] == nil then
     partsBaseline[pid] = parts
   elseif not tables.deepEqual(parts, partsBaseline[pid]) then
-    send(pid, "cnr_restoreConfig", { model = current.vehicle.model, config = current.vehicle.config, color = colorFor(pid) })
-    reply(pid, "Only paint can be changed, your car was reset to the round setup")
+    if current.state == "prep" then
+      send(pid, "cnr_restoreConfig", { model = current.vehicle.model, config = current.vehicle.config, color = colorFor(pid) })
+      reply(pid, "Only paint can be changed, your car was reset to the round setup")
+    else
+      broadcast(string.format("%s changed parts during the round", MP.GetPlayerName(pid) or tostring(pid)))
+      partsBaseline[pid] = parts
+    end
   end
 end
 
