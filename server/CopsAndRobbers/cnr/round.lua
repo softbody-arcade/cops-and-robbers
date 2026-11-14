@@ -1,5 +1,6 @@
 local catch = require("cnr.catch")
 local resets = require("cnr.resets")
+local crash = require("cnr.crash")
 
 local M = {}
 local Round = {}
@@ -42,6 +43,8 @@ function Round:clear()
   self.pickStartedAt = nil
   self.players = {}
   self.resetTrackers = {}
+  self.crashDetectors = {}
+  self.penalties = {}
   self.lastState = {}
   self.nextCopIndex = 1
   self.catchTracker = catch.new(self.cfg)
@@ -65,6 +68,7 @@ function Round:setupFor(now, pid)
   end
   self.resetTrackers[pid] = resets.new(self.cfg)
   self.resetTrackers[pid]:grant(now, SETUP_GRACE_SECONDS)
+  self.crashDetectors[pid] = crash.new(self.cfg)
   local e = { kind = "setup", pid = pid, role = role, copIndex = copIndex, phase = self.state }
   if self.state == "countdown" then
     e.countdownRemaining = math.max(0, self.countdownStartedAt + self.cfg.runnerCountdownSeconds - now)
@@ -170,9 +174,24 @@ function Round:tick(now, cars, stations)
   local runnerCar = cars[self.runnerId]
   local progress, caught = 0, false
   if self.state == "running" then
+    for _, pid in ipairs(sortedPids(self.players)) do
+      if pid ~= self.runnerId then
+        local untilTime = self.penalties[pid]
+        if untilTime and now >= untilTime then
+          self.penalties[pid] = nil
+          fx[#fx + 1] = { kind = "penaltyEnd", pid = pid }
+        elseif not untilTime and self.crashDetectors[pid] and self.crashDetectors[pid]:update(now, cars[pid]) then
+          local seconds = self.cfg.crashPenaltySeconds
+          self.penalties[pid] = now + seconds
+          if self.resetTrackers[pid] then self.resetTrackers[pid]:block(now + seconds) end
+          fx[#fx + 1] = { kind = "penalty", pid = pid, seconds = seconds }
+          fx[#fx + 1] = { kind = "broadcast", msg = string.format("%s crashed hard: %gs penalty", self.players[pid], seconds) }
+        end
+      end
+    end
     local cops = {}
     for pid in pairs(self.players) do
-      if pid ~= self.runnerId and cars[pid] then cops[#cops + 1] = cars[pid] end
+      if pid ~= self.runnerId and cars[pid] and not self.penalties[pid] then cops[#cops + 1] = cars[pid] end
     end
     progress, caught = self.catchTracker:update(now, runnerCar, cops)
   end
@@ -217,6 +236,8 @@ function Round:playerLeft(now, pid)
   end
   self.players[pid] = nil
   self.resetTrackers[pid] = nil
+  self.crashDetectors[pid] = nil
+  self.penalties[pid] = nil
   self.lastState[pid] = nil
   return {}
 end
@@ -224,7 +245,10 @@ end
 function Round:vehicleReset(now, pid)
   local tracker = self.resetTrackers[pid]
   if (self.state ~= "headstart" and self.state ~= "running") or not tracker then return {} end
-  if tracker:consume(now) then return {} end
+  if tracker:consume(now) then
+    if self.crashDetectors[pid] then self.crashDetectors[pid]:reset() end
+    return {}
+  end
   return { { kind = "broadcast", msg = string.format("%s reset illegally", self.players[pid] or tostring(pid)) } }
 end
 

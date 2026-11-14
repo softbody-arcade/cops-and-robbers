@@ -14,9 +14,11 @@ M.DEFAULTS = {
   copSpawnMaxMeters = 150,
   explodeOnCatch = false,
   includeModVehicles = false,
+  crashSpeedLossKmh = 50,
+  crashPenaltySeconds = 10,
 }
 
-local strictlyPositive = { catchHoldSeconds = true, catchRadiusMeters = true }
+local strictlyPositive = { catchHoldSeconds = true, catchRadiusMeters = true, crashSpeedLossKmh = true }
 
 local function validNumber(key, v)
   if type(v) ~= "number" or v ~= v or v == math.huge or v == -math.huge then return false end

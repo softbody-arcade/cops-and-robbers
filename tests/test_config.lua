@@ -15,6 +15,8 @@ test("merge fills defaults", function()
   assertEq(c.copSpawnMaxMeters, 150)
   assertEq(c.explodeOnCatch, false)
   assertEq(c.includeModVehicles, false)
+  assertEq(c.crashSpeedLossKmh, 50)
+  assertEq(c.crashPenaltySeconds, 10)
   assertEq(#w, 0)
 end)
 

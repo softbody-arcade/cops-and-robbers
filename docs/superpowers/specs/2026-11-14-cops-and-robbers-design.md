@@ -53,6 +53,9 @@ house rules, with every number configurable, so the game itself is the referee.
    continuously. If either condition breaks, the hold timer resets to zero.
 5. **Survival clock:** starts when the head start ends and cops are released, and stops at the catch.
    No catch can happen during the head start. The head start does not count toward the score.
+5b. **Crash penalty (added 2026-11-14):** a cop losing `crashSpeedLossKmh` (default 50) within 0.5 s is frozen
+   for `crashPenaltySeconds` (default 10). Resets are blocked during the penalty and the wait rule starts after it.
+   A penalized cop does not count toward a catch. Runner crashes are not penalized.
 6. **Round end:** a catch ends the round. Everyone gets a message with the runner's name and survival
    time. Optionally the runner's vehicle explodes (`explodeOnCatch`, default off).
 7. **Choosing the runner:** players pick manually via command, or ask for a random pick.

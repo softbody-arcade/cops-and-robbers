@@ -288,6 +288,19 @@ local function onRestoreConfig(data)
   repaintInPlace(d.color or roundColor)
 end
 
+local function onPenalty(data)
+  local d = jsonDecode(data) or {}
+  setFreeze(true)
+  startTimer(tonumber(d.seconds), "Crash penalty")
+  toast("You crashed too hard! Penalty", 3, "cnr_reset")
+end
+
+local function onPenaltyEnd()
+  timerEnd = nil
+  setFreeze(false)
+  toast("Penalty over, go!", 3, "cnr_go")
+end
+
 local function onRelease()
   timerEnd = nil
   if frozen then setFreeze(false) end
@@ -422,6 +435,8 @@ local function onExtensionLoaded()
     AddEventHandler("cnr_countdown", onCountdown)
     AddEventHandler("cnr_runnerGo", onRunnerGo)
     AddEventHandler("cnr_paint", onPaint)
+    AddEventHandler("cnr_penalty", onPenalty)
+    AddEventHandler("cnr_penaltyEnd", onPenaltyEnd)
     AddEventHandler("cnr_restoreConfig", onRestoreConfig)
     AddEventHandler("cnr_state", onState)
     AddEventHandler("cnr_roundEnd", onRoundEnd)

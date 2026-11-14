@@ -278,3 +278,49 @@ test("resets during prep and countdown are not judged", function()
   assertEq(find(r:vehicleReset(103.5, 2), "broadcast"), nil)
   assertEq(find(r:vehicleReset(107, 2), "broadcast").msg, "Bob reset illegally")
 end)
+
+local function running()
+  local r = started()
+  r:tick(4, stillCars(), {}); r:tick(11, stillCars(), {})
+  return r
+end
+
+local function kmh(x, v) return {pos={x=x,y=0,z=0}, vel={x=v/3.6,y=0,z=0}} end
+
+test("cop crash gives a penalty and freezes", function()
+  local r = running()
+  r:tick(11.25, {[1]=kmh(0, 80), [2]=kmh(200, 120), [3]=kmh(500, 0)}, {})
+  local fx = r:tick(11.5, {[1]=kmh(0, 80), [2]=kmh(200, 10), [3]=kmh(500, 0)}, {})
+  local p = find(fx, "penalty", 2)
+  assertEq(p.seconds, 10)
+  assertEq(find(fx, "broadcast").msg, "Bob crashed hard: 10s penalty")
+  assertEq(find(fx, "state", 2).resetHint, "Crash penalty 10s")
+  fx = r:tick(21.5, {[1]=kmh(0, 80), [2]=kmh(200, 0), [3]=kmh(500, 0)}, {})
+  assertEq(find(fx, "penaltyEnd", 2) ~= nil, true)
+end)
+
+test("runner crash has no penalty", function()
+  local r = running()
+  r:tick(11.25, {[1]=kmh(0, 120), [2]=kmh(200, 0), [3]=kmh(500, 0)}, {})
+  local fx = r:tick(11.5, {[1]=kmh(0, 0), [2]=kmh(200, 0), [3]=kmh(500, 0)}, {})
+  assertEq(find(fx, "penalty"), nil)
+end)
+
+test("penalized cop does not count toward a catch", function()
+  local r = running()
+  r:tick(11.25, {[1]=kmh(0, 0), [2]=kmh(5, 100), [3]=kmh(500, 0)}, {})
+  r:tick(11.5, {[1]=kmh(0, 0), [2]=kmh(5, 0), [3]=kmh(500, 0)}, {})
+  local fx
+  for i = 1, 36 do
+    fx = r:tick(11.5 + i * 0.25, {[1]=kmh(0, 0), [2]=kmh(5, 0), [3]=kmh(500, 0)}, {})
+    assertEq(find(fx, "roundEnd"), nil)
+  end
+end)
+
+test("no crash detection before cops are released", function()
+  local r = started()
+  r:tick(4, stillCars(), {})
+  r:tick(4.25, {[1]=kmh(0, 0), [2]=kmh(200, 120), [3]=kmh(500, 0)}, {})
+  local fx = r:tick(4.5, {[1]=kmh(0, 0), [2]=kmh(200, 0), [3]=kmh(500, 0)}, {})
+  assertEq(find(fx, "penalty"), nil)
+end)

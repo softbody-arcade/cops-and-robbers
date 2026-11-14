@@ -11,5 +11,7 @@
   "copSpawnMinMeters": 50,
   "copSpawnMaxMeters": 150,
   "explodeOnCatch": false,
-  "includeModVehicles": false
+  "includeModVehicles": false,
+  "crashSpeedLossKmh": 50,
+  "crashPenaltySeconds": 10
 }

@@ -190,6 +190,10 @@ local function applyEffects(effects)
       send(-1, "cnr_countdown", { seconds = e.seconds })
     elseif e.kind == "runnerGo" then
       send(-1, "cnr_runnerGo", { headStartSeconds = e.headStartSeconds })
+    elseif e.kind == "penalty" then
+      send(e.pid, "cnr_penalty", { seconds = e.seconds })
+    elseif e.kind == "penaltyEnd" then
+      send(e.pid, "cnr_penaltyEnd", {})
     elseif e.kind == "release" then
       send(-1, "cnr_release", {})
     elseif e.kind == "state" then

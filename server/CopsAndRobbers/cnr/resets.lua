@@ -19,8 +19,16 @@ function M.new(cfg)
   return setmetatable({ cfg = cfg, stillSince = nil, lastAllowedAt = nil }, Tracker)
 end
 
+function Tracker:block(untilTime)
+  self.blockedUntil = untilTime
+end
+
 function Tracker:evaluate(now, car, ctx)
   local cfg = self.cfg
+  if self.blockedUntil and now < self.blockedUntil then
+    self.stillSince = nil
+    return false, string.format("Crash penalty %ds", math.ceil(self.blockedUntil - now - 1e-9))
+  end
   if not car or not car.pos or not car.vel then
     self.stillSince = nil
     return false, "Stop to reset"
@@ -54,6 +62,10 @@ function Tracker:grant(now, seconds)
 end
 
 function Tracker:consume(now)
+  if self.blockedUntil and now < self.blockedUntil then
+    self.lastAllowedAt = nil
+    return false
+  end
   local legal = (self.graceUntil ~= nil and now <= self.graceUntil)
     or (self.lastAllowedAt ~= nil and now - self.lastAllowedAt <= GRACE_SECONDS)
   self.lastAllowedAt = nil
