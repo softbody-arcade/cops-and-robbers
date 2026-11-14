@@ -10,6 +10,9 @@ local RESET_ACTIONS = { "reset_physics" }
 local ALLOWED_TYPES = { Car = true, Truck = true }
 local COP_SPACING = 8
 local SETUP_DELAY = 0.5
+local PLACEMENT_TIMEOUT = 5
+local FREEZE_REASSERT = 0.5
+local POSE_JUMP = 30
 
 local clock = 0
 local active = false
@@ -22,6 +25,8 @@ local headStartEnd
 local lastCountdown
 local pendingPlacement
 local suppressResetUntil = 0
+local lastPose
+local lastFreezeAssert = 0
 
 local function toast(msg, ttl, category)
   ui_message(msg, ttl or 4, category or "cnr", "directions_car")
@@ -130,6 +135,19 @@ local function findCopSpot(center, minD, maxD, index)
   return nil
 end
 
+local function uprightRotation(veh)
+  local dir = veh:getDirectionVector()
+  dir = vec3(dir.x, dir.y, 0)
+  if dir:length() < 1e-3 then dir = vec3(0, 1, 0) end
+  return quatFromDir(dir:normalized(), vec3(0, 0, 1))
+end
+
+local function serverVid(veh)
+  local v = MPVehicleGE and MPVehicleGE.getVehicleByGameID and MPVehicleGE.getVehicleByGameID(veh:getID())
+  local s = v and v.serverVehicleString
+  return s and tonumber(s:match("%-(%d+)$"))
+end
+
 local function nearestRoad(pos)
   local n1, n2 = map.findClosestRoad(pos)
   if not n1 then return nil end
@@ -141,6 +159,7 @@ end
 
 local function teleport(veh, pos, rot)
   suppressResetUntil = clock + 2
+  lastPose = { pos = pos, rot = rot }
   spawn.safeTeleport(veh, pos, rot)
 end
 
@@ -151,7 +170,7 @@ local function placeVehicle(model, config, pos, rot)
   else
     core_vehicles.spawnNewVehicle(model, { config = config })
   end
-  pendingPlacement = { at = clock + SETUP_DELAY, pos = pos, rot = rot }
+  pendingPlacement = { at = clock + SETUP_DELAY, deadline = clock + PLACEMENT_TIMEOUT, pos = pos, rot = rot }
 end
 
 local function onPickVehicle(data)
@@ -171,6 +190,7 @@ local function onRoundSetup(data)
   runnerId = d.runnerId
   resetAllowed = false
   lastHint = nil
+  lastPose = nil
   lockInputs(true)
   setResetKey(false)
   if not resetIsBound() then
@@ -238,6 +258,7 @@ local function endRound()
   headStartEnd = nil
   pendingPlacement = nil
   resetAllowed = false
+  lastPose = nil
   if frozen then setFreeze(false) end
   unlockAll()
 end
@@ -278,11 +299,28 @@ local function onUpdate(dtReal)
   clock = clock + (dtReal or 0)
   if pendingPlacement and clock >= pendingPlacement.at then
     local p = pendingPlacement
-    pendingPlacement = nil
     local veh = ownVehicle()
-    if veh then
+    local vid = veh and serverVid(veh)
+    if veh and vid then
+      pendingPlacement = nil
       if p.pos then teleport(veh, p.pos, p.rot) end
       if p.freeze and headStartEnd and clock < headStartEnd then setFreeze(true) end
+      sendServer("cnr_myVehicle", { vid = vid })
+    elseif clock >= p.deadline then
+      pendingPlacement = nil
+    end
+  end
+  if active and not pendingPlacement then
+    local veh = ownVehicle()
+    if veh then
+      local pos = veh:getPosition()
+      if not lastPose or pos:distance(lastPose.pos) <= POSE_JUMP then
+        lastPose = { pos = pos, rot = uprightRotation(veh) }
+      end
+      if frozen and headStartEnd and clock < headStartEnd and clock - lastFreezeAssert >= FREEZE_REASSERT then
+        lastFreezeAssert = clock
+        veh:queueLuaCommand("controller.setFreeze(1)")
+      end
     end
   end
   if headStartEnd then
@@ -295,11 +333,15 @@ local function onUpdate(dtReal)
 end
 
 local function onVehicleResetted(gameVid)
-  if not active or role ~= "cop" or clock < suppressResetUntil then return end
+  if not active or clock < suppressResetUntil or not lastPose then return end
   local veh = ownVehicle()
   if not veh or veh:getID() ~= gameVid then return end
-  local pos, rot = nearestRoad(veh:getPosition())
-  if pos then teleport(veh, pos, rot) end
+  local pos, rot = lastPose.pos, lastPose.rot
+  if role == "cop" then
+    local roadPos, roadRot = nearestRoad(pos)
+    if roadPos then pos, rot = roadPos, roadRot end
+  end
+  teleport(veh, pos, rot)
 end
 
 local function onExtensionLoaded()

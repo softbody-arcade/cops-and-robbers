@@ -1,4 +1,4 @@
-local pluginDir = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./")
+local pluginDir = (debug.getinfo(1, "S").source:match("^@?(.*[/\\])") or "./")
 package.path = pluginDir .. "?.lua;" .. package.path
 
 local vec = require("cnr.vec")
@@ -19,6 +19,9 @@ local mapName
 local stations = {}
 local activeVid = {}
 local stationsRequested = {}
+local serverClock = MP.CreateTimer()
+
+math.randomseed(os.time())
 
 local function log(msg) print(PREFIX .. msg) end
 
@@ -47,14 +50,15 @@ local function decodeFile(path)
   return value, false
 end
 
-local function now() return MP.GetServerTimeMS() / 1000 end
+local function now() return serverClock:GetCurrent() end
 
 local function reply(pid, msg) MP.SendChatMessage(pid, PREFIX .. msg) end
 local function broadcast(msg) MP.SendChatMessage(-1, PREFIX .. msg) end
 local function send(pid, event, payload) MP.TriggerClientEvent(pid, event, Util.JsonEncode(payload or {})) end
 
 local function loadConfig()
-  local raw = decodeFile(pluginDir .. "config.json")
+  local raw, corrupt = decodeFile(pluginDir .. "config.json")
+  if corrupt then log("config.json is not valid JSON, using defaults") end
   local warnings
   cfg, warnings = config.merge(raw)
   for _, w in ipairs(warnings) do log("config: " .. w) end
@@ -100,8 +104,10 @@ local function requestStations(pid)
 end
 
 local function parseVehicleData(data)
-  local json = type(data) == "string" and data:match("^[^:]*:[^:]*:[^:]*:(.*)$")
-  if not json then return nil end
+  if type(data) ~= "string" then return nil end
+  local start = data:find("{", 1, true)
+  if not start then return nil end
+  local json = data:sub(start)
   local ok, decoded = pcall(Util.JsonDecode, json)
   if ok and type(decoded) == "table" then return decoded end
   return nil
@@ -212,7 +218,9 @@ function handlers.start(pid, cmd)
 end
 
 function handlers.stop(pid)
+  local wasActive = current:isActive()
   applyEffects(current:stop(now(), pid))
+  if not wasActive then send(-1, "cnr_roundEnd", { reason = "cancelled" }) end
 end
 
 function handlers.top(pid)
@@ -301,6 +309,7 @@ function cnrOnVehicleDeleted(pid, vid)
 end
 
 function cnrOnVehicleReset(pid, vid)
+  if activeVid[pid] and activeVid[pid] ~= vid then return end
   applyEffects(current:vehicleReset(now(), pid))
 end
 
@@ -319,6 +328,18 @@ function cnrOnVehiclePicked(pid, data)
   local ok, decoded = pcall(Util.JsonDecode, data)
   if not ok or type(decoded) ~= "table" or type(decoded.model) ~= "string" then return end
   applyEffects(current:vehiclePicked(now(), pid, decoded.model, decoded.config, MP.GetPlayers() or {}))
+end
+
+function cnrOnMyVehicle(pid, data)
+  local ok, decoded = pcall(Util.JsonDecode, data)
+  local vid = ok and type(decoded) == "table" and tonumber(decoded.vid)
+  if not vid or not current:isActive() then return end
+  activeVid[pid] = vid
+  local vehicles = MP.GetPlayerVehicles(pid)
+  if type(vehicles) ~= "table" then return end
+  for other in pairs(vehicles) do
+    if other ~= vid then MP.RemoveVehicle(pid, other) end
+  end
 end
 
 function cnrOnStations(pid, data)
@@ -360,7 +381,10 @@ MP.RegisterEvent("onPlayerJoin", "cnrOnPlayerJoin")
 MP.RegisterEvent("onPlayerDisconnect", "cnrOnPlayerDisconnect")
 MP.RegisterEvent("cnr_vehiclePicked", "cnrOnVehiclePicked")
 MP.RegisterEvent("cnr_stations", "cnrOnStations")
+MP.RegisterEvent("cnr_myVehicle", "cnrOnMyVehicle")
 MP.RegisterEvent("cnr_tick", "cnrTick")
+MP.CancelEventTimer("cnr_tick")
 MP.CreateEventTimer("cnr_tick", 250)
 
-log("Cops and Robbers loaded on " .. mapName)
+send(-1, "cnr_roundEnd", { reason = "cancelled" })
+log("Cops and Robbers loaded on " .. mapName .. " (" .. pluginDir .. ")")
