@@ -564,3 +564,30 @@ test("reroll outside prep is rejected", function()
   local r = started()
   assertEq(find(r:reroll(2, 2), "reply", 2).msg, "You can only reroll during prep")
 end)
+
+test("runner cannot reset while being caught", function()
+  local r = running()
+  for i = 0, 16 do r:tick(11 + i * 0.25, {[1]=kmh(0, 0), [2]=kmh(300, 0), [3]=kmh(500, 0)}, {}) end
+  local fx
+  local lastAllowed, lastHint
+  for i = 1, 16 do
+    fx = r:tick(15 + i * 0.25, {[1]=kmh(0, 0), [2]=kmh(5, 0), [3]=kmh(500, 0)}, {})
+    local s = find(fx, "state", 1)
+    if s then lastAllowed, lastHint = s.resetAllowed, s.resetHint end
+  end
+  assertEq(lastAllowed, false)
+  assertEq(lastHint, "Can't reset while being caught")
+  assertEq(find(r:vehicleReset(19.1, 1), "broadcast").msg, "Reinder reset illegally")
+end)
+
+test("runner can reset again once the hold has drained", function()
+  local r = running()
+  for i = 0, 8 do r:tick(11 + i * 0.25, {[1]=kmh(0, 0), [2]=kmh(5, 0), [3]=kmh(500, 0)}, {}) end
+  local fx, allowed
+  for i = 1, 60 do
+    fx = r:tick(13 + i * 0.25, {[1]=kmh(0, 0), [2]=kmh(300, 0), [3]=kmh(500, 0)}, {})
+    local s = find(fx, "state", 1)
+    if s then allowed = s.resetAllowed end
+  end
+  assertEq(allowed, true)
+end)

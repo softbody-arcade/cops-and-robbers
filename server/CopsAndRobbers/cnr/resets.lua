@@ -33,6 +33,9 @@ function Tracker:evaluate(now, car, ctx)
     self.stillSince = nil
     return false, "Stop to reset"
   end
+  if ctx.beingCaught then
+    return false, "Can't reset while being caught"
+  end
   if ctx.role == "cop" and ctx.runnerPos and vec.dist(car.pos, ctx.runnerPos) >= cfg.copResetMinDistanceMeters then
     return true, "Reset available (far from runner)"
   end
