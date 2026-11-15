@@ -49,7 +49,7 @@ const hud = ref({ visible: false })
 const colorOpen = ref(false)
 const mode = computed(() => hud.value.mode)
 const chaseShown = computed(() => !!(hud.value.status || (hud.value.catch && hud.value.catch.visible)))
-const helpShown = computed(() => !!(hud.value.visible && hud.value.help && hud.value.help.open && !hud.value.driving))
+const helpShown = computed(() => !!(hud.value.visible && hud.value.help && hud.value.help.open && !hud.value.driving && mode.value !== "result"))
 const colorAllowed = computed(() => !!(hud.value.visible && ((mode.value === "lobby" && hud.value.lobby) || (mode.value === "round" && hud.value.prep))))
 
 watch(colorAllowed, allowed => {
@@ -60,12 +60,17 @@ function ui(msg) {
   api.engineLua(`if copsAndRobbers then copsAndRobbers.ui(${api.serializeToLua(msg)}) end`)
 }
 
+let lastReport = ""
+
 function report(where, err) {
   try {
     const message = err && err.message ? err.message : String(err)
     const lines = err && typeof err.stack === "string" ? err.stack.split("\n").map(l => l.trim()) : []
     const at = lines.find(l => l.startsWith("at ")) || lines[0] || ""
-    api.engineLua(`log("E","cnr_ui",${api.serializeToLua(`[cnr_ui] ${where}: ${message} | ${at}`)})`)
+    const text = `[cnr_ui] ${where}: ${message} | ${at}`
+    if (text === lastReport) return
+    lastReport = text
+    api.engineLua(`log("E","cnr_ui",${api.serializeToLua(text)})`)
   } catch (e) {}
 }
 
