@@ -348,6 +348,37 @@
 - [ ] **Step 3:** Ask the user to run a round and a practice round from the panel and check every tab (start with a picked runner, prep states, GO reason in evolving mode, fold bar during the chase, Start now, settings save/reset, add/remove a station). Fix what they report.
 - [ ] **Step 4:** Commit `feat: host panel shows only what you can do now`.
 
+### Task 15b: Split the HUD into movable apps (user checkpoint) — added during execution
+
+**Why:** in-game feedback: the user wants the HUD pieces as separate apps "so player can move and resize them" instead of one full-screen app. Spec sections "2. HUD" and "5. How to play" were updated accordingly (read them).
+
+**Files:**
+- Create: `client/ui/modules/apps/CopsAndRobbersAnnouncements/` (`app.json`, `app.vue`, `app.png` = copy of the HUD's for now; Task 17 redraws), `client/ui/modules/apps/CopsAndRobbersHowToPlay/` (`app.json`, `app.vue`, `app.png` copy)
+- Move: `CopsAndRobbersHud/HudCenter.vue`, `HudResult.vue` → the Announcements folder; `CopsAndRobbersHud/HowToPlay.vue` → the HowToPlay folder
+- Modify: `CopsAndRobbersHud/app.vue` (bottom content only), `CopsAndRobbersHud/app.json`, `client/lua/ge/extensions/copsAndRobbers/apps.lua`, `copsAndRobbers/hudfeed.lua`, `client/lua/ge/extensions/copsAndRobbers.lua`
+- Test: `tests/test_client.lua`, `tests/test_placement.lua` if needed
+
+**Interfaces:**
+- App directives: `copsAndRobbersAnnouncements`, `copsAndRobbersHud`, `copsAndRobbersHowToPlay`. All three `"interactive": "no"` (buttons/cards opt in with `pointer-events: auto`), `"vue": true`, category Gameplay. Announcements and HUD `"isAuxiliary": true` (auto-placed, hidden from the picker); How to play `"isAuxiliary": true` too (only opened by the mod).
+- `apps.APPS` (exact placements, em on non-centre axes, "50%" for centred axes):
+  - `announce = {app = "copsAndRobbersAnnouncements", placement = {left = "50%", right = "", top = "10em", bottom = "", width = "40em", height = "12em"}, sticky = true}`
+  - `hud = {app = "copsAndRobbersHud", placement = {left = "50%", right = "", top = "", bottom = "2em", width = "40em", height = "16em"}, sticky = true}`
+  - `howto = {app = "copsAndRobbersHowToPlay", placement = {left = "50%", right = "", top = "50%", bottom = "", width = "40em", height = "26em"}}`
+  - `panel`, `board` unchanged.
+  - `app.json` `css` of each new/changed app = its placement (fallback when added via Esc > UI Apps, which only matters for panel/board; keep it consistent anyway), with sensible `min-width`/`min-height` (e.g. 20em × 6em for the two HUD apps, 28em × 18em for How to play).
+- `apps.open(name)` / `apps.close(name)` (idempotent; `toggle` stays). `apps.start` activates both sticky apps; `apps.leave` removes all apps the mod placed (hud, announce, howto, and panel/board it opened).
+- Help flow: `{action = "help", open = true}` → `hudfeed.help(true)` + `apps.open("howto")`; `open = false` → `hudfeed.help(false)` + `apps.close("howto")` + write the seen file (as today); first join without the seen file → open both. If the player removes the How to play app themselves (layout editor), treat it as closed: `help.open` becomes false on the next app-state refresh (no seen-file write needed).
+- Every app listens to the same `CnRHud` payload (unchanged contract). Announcements renders `center` (round mode) and `result` (result mode) and nothing otherwise; HUD renders lobby/prep/colour/change/chase/catch/notices as today; How to play renders the How to play card when `help.open` and not driving/result (as today) — otherwise nothing.
+- Content fits the box: Announcements centres its content in its box; HUD anchors to the bottom of its box; long lines wrap or ellipsize, nothing overflows outside the box; big text may scale with the box using container query units with a rem floor/ceiling (e.g. `font-size: clamp(2rem, 30cqh, 5rem)` on the countdown number, `container-type: size` on the root) — keep it simple and readable.
+- Keep the error capture (`onErrorCaptured` → `log("E","cnr_ui",…)`, dedupe) in each app's root, sharing one small helper in the kit (`client/ui/modules/copsAndRobbers/`).
+
+- [ ] **Step 1: Tests** (client Lua): announce and hud placed on join with the exact placements; announce sticky like hud; `help` open/close adds/removes the howto app; first join opens it; player-removed howto → `help.open` false; leaving removes all three.
+- [ ] **Step 2:** `make test`. Expected: fail.
+- [ ] **Step 3:** Implement the Lua and the Vue split.
+- [ ] **Step 4:** `make vuecheck && make test && make package`. Expected: pass.
+- [ ] **Step 5:** Ask the user (via the controller) to check in game: both HUD apps appear on join; each can be moved and resized in the layout editor and its content fits; neither can be removed (comes back); How to play opens/closes from the lobby and prep buttons, opens by itself on a first join, can be moved/resized; everything from the Task 14 checklist still works.
+- [ ] **Step 6:** Commit `feat: the HUD is split into movable apps` (plus fixes from the user's check).
+
 ### Task 16: Leaderboard rewrite (user checkpoint)
 
 **Files:**

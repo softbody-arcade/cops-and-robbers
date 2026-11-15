@@ -13,7 +13,7 @@ Success:
 
 ## Goals
 1. **One native look** for every app, using BeamNG's newest UI system (the Vue system of 0.40.5) and the game's own components, colour variables, fonts and icons.
-2. **A full-screen HUD** that is always there, click-through except its own buttons, and carries everything a player needs during and between rounds.
+2. **A HUD that is always there**, as two movable, resizable apps (announcements and the HUD proper), click-through except their own buttons, carrying everything a player needs during and between rounds.
 3. **The HUD is the front door:** between rounds a lobby card opens the Leaderboard and the Host panel for the player, sets their car colour, and opens How to play.
 4. **A host panel that only shows what you can do right now**, with one main button for the next step and a reason whenever something can't happen yet.
 5. **A leaderboard** in the style of the game's multiplayer scoreboard, with a new Rounds tab that keeps the record chat used to keep.
@@ -87,9 +87,12 @@ Success:
 - **Every card has a ✕** that closes it (the panel and leaderboard are removed from the layout, the same as their HUD button does).
 - **Shared code:** tokens-on-top-of-tokens (our colour meanings), small shared components (role chip, notice line, card header with ✕) and the time/distance formatting live in one shared place that every app imports, for example `client/ui/modules/copsAndRobbers/`. Whether the mod loader resolves a relative import from an app folder to a shared folder must be verified first (see "Verify first"); if it can't, each app carries a copy of the small shared block. (My call.)
 
-### 2. HUD (full screen, always there)
-- **Placement:** `left 0, top 0, width 100%, height 100%`, `"interactive": "no"`, `pointer-events: auto` only on its own buttons. Auto-placed on join as today. **The player can't remove it:** the placement module no longer honours an opt-out for the HUD and puts it back on its next check (today it respects `optedOut`). It is still removed from the layout on leaving the server, as today.
-- **Areas on screen:** the centre (big announcements: role, countdown numbers, GO flashes, the result, How to play) and the bottom centre (the lobby card, the chase line, catch bar and notices). Everything else is see-through.
+### 2. HUD (two apps, always there)
+- **Split after in-game feedback** (the user: "Rather would have separate so player can move and resize them"). The first build used one full-screen app; it is replaced by:
+  - **CnR Announcements** (`CopsAndRobbersAnnouncements`): the centre content — role title, "<runner> is the runner", countdowns and GO flashes, APPLYING CHANGES, the round result. Default placement centred horizontally, near the upper middle of the screen.
+  - **CnR HUD** (`CopsAndRobbersHud`): the bottom content — lobby card, colour picker, prep line, evolving change card, chase line, catch bar, notices. Default placement bottom centre.
+  - **CnR How to play** (`CopsAndRobbersHowToPlay`): opened on demand (section 5).
+- **Placement:** both HUD apps are auto-placed on join, are normal boxes the player can move and resize in the layout editor, and their content fits the box (scales/wraps rather than overflowing). `"interactive": "no"` with `pointer-events: auto` only on their own buttons and cards. **The player can't remove them:** the placement module puts either back on its next check. Both are removed from the layout on leaving the server, as today.
 - **Style:** the police-chase treatment. No boxes while driving: `Overpass`, a soft text shadow (`0 0 4px rgba(var(--bng-off-black-rgb), .6)`), icons from the game's set. Boxes (cards) only where there is something to click: the lobby card, the colour picker, the evolving change with Apply, and How to play.
 - **Between rounds: the lobby card** (bottom centre):
   - Heading "Cops and Robbers", "N online".
@@ -151,7 +154,7 @@ Success:
 - Nothing is opened or closed on someone's behalf because of a phase change, so the server doesn't need to know who "the host" is.
 
 ### 5. How to play
-- **Where:** a centre card inside the HUD, so no extra app. Opened from the lobby card and from prep; **opens by itself on a player's first join** and is remembered on their own PC (a small file in `settings/`, like `cnr_vehicle_modes.json`; my call). Closed with ✕ or **Got it**.
+- **Where:** its own app, **CnR How to play** (`CopsAndRobbersHowToPlay`), opened on demand like the leaderboard (changed with the HUD split, so a small Announcements box can't squash it): the How to play buttons on the lobby card and the prep line add it to the layout (default centred, about 40 × 26 em; movable and resizable), ✕ or **Got it** removes it again. It **opens by itself on a player's first join** and that is remembered on their own PC (a small file in `settings/`, like `cnr_vehicle_modes.json`; my call). It is removed on leaving the server and hides itself from GO until the round ends.
 - **Live values:** every number comes from the server's current settings (shown in orange mono), so it can't go out of date.
 - **Five short tabs, no scrolling:**
   - **Basics:** one runner, everyone else a cop; everyone drives the same car; the score is survival time; the round as five steps (Prep, GO after {runnerCountdownSeconds} s, head start {headStartSeconds} s, Chase, Result); whoever has run least goes next.
@@ -179,7 +182,7 @@ Every message gets a new home:
 - **The mod calls neither `MP.SendChatMessage` nor `ui_message`** any more (including `game.toast` and `hudfeed.notify`'s fallback).
 
 ### 7. Preview images
-Redraw `tools/previews/hud.svg`, `panel.svg` and `board.svg` to show the new apps (the HUD preview shows the full-screen HUD mid-chase), and export them to each app's `app.png`, once the look is final.
+Redraw `tools/previews/hud.svg`, `panel.svg` and `board.svg` and add previews for the Announcements and How to play apps, to show the new apps (the HUD preview shows the chase line mid-chase, Announcements a countdown), and export them to each app's `app.png`, once the look is final.
 
 ### 8. Data the server and client need (new or changed)
 - **To clients:**
