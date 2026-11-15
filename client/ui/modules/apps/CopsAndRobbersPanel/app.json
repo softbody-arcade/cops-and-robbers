@@ -1,0 +1,21 @@
+{
+  "domElement": "<cops-and-robbers-panel></cops-and-robbers-panel>",
+  "name": "Cops and Robbers Panel",
+  "types": ["ui.apps.categories.utility"],
+  "description": "Start Cops and Robbers rounds and change the server's settings.",
+  "css": {
+    "left": "20px",
+    "top": "120px",
+    "width": "440px",
+    "height": "520px",
+    "min-width": "360px",
+    "min-height": "300px"
+  },
+  "author": "ReinderN",
+  "version": "1.0",
+  "directive": "copsAndRobbersPanel",
+  "vue": true,
+  "category": "Gameplay",
+  "isAuxiliary": false,
+  "interactive": "required"
+}
