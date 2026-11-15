@@ -1,12 +1,19 @@
 <template>
-  <div class="cnr-panel">
+  <div class="cnr-panel" :class="{ collapsed }">
     <div class="cnr-head">
-      <button class="cnr-tab" :class="{ active: tab === 'round' }" @click="tab = 'round'">ROUND</button>
-      <button class="cnr-tab" :class="{ active: tab === 'settings' }" @click="tab = 'settings'">SETTINGS</button>
-      <span v-if="state.version" class="cnr-version">v{{ state.version }}</span>
+      <button class="cnr-toggle" :title="collapsed ? 'Show panel' : 'Hide panel'" @click="collapsed = !collapsed">{{ collapsed ? "▸" : "▾" }}</button>
+      <template v-if="collapsed">
+        <span class="cnr-mini" @click="collapsed = false">{{ connected ? statusLine : "Cops and Robbers" }}</span>
+      </template>
+      <template v-else>
+        <button class="cnr-tab" :class="{ active: tab === 'round' }" @click="tab = 'round'">ROUND</button>
+        <button class="cnr-tab" :class="{ active: tab === 'settings' }" @click="tab = 'settings'">SETTINGS</button>
+        <span v-if="state.version" class="cnr-version">v{{ state.version }}</span>
+      </template>
     </div>
 
-    <div v-if="!connected" class="cnr-empty">Not on a Cops and Robbers server</div>
+    <div v-if="collapsed"></div>
+    <div v-else-if="!connected" class="cnr-empty">Not on a Cops and Robbers server</div>
 
     <div v-else-if="tab === 'round'" class="cnr-body">
       <div class="cnr-status">{{ statusLine }}</div>
@@ -72,7 +79,7 @@
       </div>
     </div>
 
-    <div v-if="connected && replyText" class="cnr-reply">{{ replyText }}</div>
+    <div v-if="!collapsed && connected && replyText" class="cnr-reply">{{ replyText }}</div>
   </div>
 </template>
 
@@ -117,6 +124,7 @@ const GROUPS = [
   ] },
 ]
 const KNOWN = new Set(GROUPS.flatMap(g => g.items.map(i => i.key)).concat(["autoNextRound"]))
+const DRIVING = new Set(["countdown", "headstart", "running"])
 const PHASES = {
   idle: "No round",
   picking: "Picking cars",
@@ -138,6 +146,7 @@ const replyText = ref("")
 const pending = ref({})
 const drafts = ref({})
 const resetArmed = ref(false)
+const collapsed = ref(false)
 let inFlight = []
 let saveTimer = null
 let openTimer = null
@@ -153,6 +162,14 @@ const runnerItems = computed(() => [
   { value: "random", label: "Random" },
   ...players.value.map(n => ({ value: n, label: n })),
 ])
+
+watch(
+  () => state.value.phase,
+  (phase, prev) => {
+    if (DRIVING.has(phase) && !DRIVING.has(prev)) collapsed.value = true
+    else if (phase === "idle" && prev && prev !== "idle") collapsed.value = false
+  }
+)
 
 watch(runnerItems, items => {
   if (!items.some(i => i.value === choice.value)) choice.value = "next"
@@ -342,11 +359,36 @@ onUnmounted(() => {
   font-size: 14px;
   overflow: hidden;
 }
+.cnr-panel.collapsed {
+  height: auto;
+  padding: 6px 10px;
+}
 .cnr-head {
   display: flex;
   align-items: center;
   gap: 6px;
   margin-bottom: 8px;
+}
+.cnr-panel.collapsed .cnr-head {
+  margin-bottom: 0;
+}
+.cnr-toggle {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+.cnr-mini {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 700;
+  cursor: pointer;
 }
 .cnr-tab {
   background: transparent;

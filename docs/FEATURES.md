@@ -155,6 +155,7 @@ A BeamMP server plugin with a client mod that BeamMP downloads automatically. Th
   - "Reset to default" needs a second click within 3 s.
   - Settings are locked during a round ("Stop the round first").
 - **Live:** the panel follows changes made by anyone, including chat commands, within a quarter of a second.
+- **Collapse:** the ▾ button shrinks the panel to one line with the live status (click it or ▸ to open again). It collapses by itself when the countdown starts (GO) and opens again when the round ends.
 
 ## Key bindings
 

@@ -51,7 +51,8 @@ via Esc > UI Apps. The Round tab shows the phase, map and players, and has Start
 random or a player), New car, GO, End chase, Cancel, an Automatic rounds switch and practice rounds. Buttons are only
 enabled when they would do something. The Settings tab lists every setting with -/+ steppers, switches and a text field
 for excluded cars; changes save automatically half a second after the last click. Settings are locked during a round.
-"Reset to default" needs a second click.
+"Reset to default" needs a second click. The ▾ button collapses the panel to a one-line status; it collapses by itself
+on GO and opens again when the round ends.
 
 ## Key bindings
 
