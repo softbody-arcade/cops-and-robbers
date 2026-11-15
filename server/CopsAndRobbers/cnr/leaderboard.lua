@@ -20,12 +20,20 @@ function M.validShape(decoded)
   return type(decoded) == "table" and type(decoded.runs) == "table"
 end
 
+local function matches(r, filter)
+  local map, mode = filter, nil
+  if type(filter) == "table" then map, mode = filter.map, filter.mode end
+  if map ~= nil and r.map ~= map then return false end
+  if mode ~= nil and (r.mode or "random") ~= mode then return false end
+  return true
+end
+
 function M.best(board, limit, map)
   limit = limit or 10
   local byKey = {}
   for _, r in ipairs(board.runs) do
     if type(r) == "table" and type(r.player) == "string" and type(r.survivedSeconds) == "number"
-      and (map == nil or r.map == map) then
+      and matches(r, map) then
       local key = type(r.key) == "string" and r.key or r.player
       local cur = byKey[key]
       local at = tonumber(r.endedAt) or 0
@@ -51,8 +59,8 @@ function M.best(board, limit, map)
   return list
 end
 
-local function validRun(r, map)
-  return type(r) == "table" and type(r.survivedSeconds) == "number" and (map == nil or r.map == map)
+local function validRun(r, filter)
+  return type(r) == "table" and type(r.survivedSeconds) == "number" and matches(r, filter)
 end
 
 local function catcherList(r)

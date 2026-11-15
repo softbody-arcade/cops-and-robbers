@@ -330,13 +330,17 @@ local function normalizeConfig(path)
   return (path:gsub("\\", "/"):gsub("^/", ""):lower())
 end
 
-local function boardState(filter)
-  local map = filter ~= "all" and filter or nil
+local function boardState(sub)
+  sub = type(sub) == "table" and sub or { map = mapName }
+  local f = {
+    map = sub.map ~= "all" and sub.map or nil,
+    mode = (sub.mode == "random" or sub.mode == "evolving") and sub.mode or nil,
+  }
   return {
-    map = mapName, maps = leaderboard.maps(board), filter = filter,
-    runners = leaderboard.runners(board, map, 20),
-    cops = leaderboard.cops(board, map, 20),
-    players = leaderboard.players(board, map, cfg.assistMinSightPercent),
+    map = mapName, maps = leaderboard.maps(board), filter = sub.map or mapName, mode = f.mode or "all",
+    runners = leaderboard.runners(board, f, 20),
+    cops = leaderboard.cops(board, f, 20),
+    players = leaderboard.players(board, f, cfg.assistMinSightPercent),
   }
 end
 
@@ -988,8 +992,11 @@ function cnrOnBoard(pid, data)
   if msg.action == "close" then
     boardSubs[pid] = nil
   elseif msg.action == "open" or msg.action == "filter" then
-    local filter = msg.action == "filter" and type(msg.map) == "string" and msg.map or boardSubs[pid] or mapName
-    boardSubs[pid] = filter
+    local sub = boardSubs[pid] or { map = mapName }
+    if msg.action == "filter" then
+      sub = { map = type(msg.map) == "string" and msg.map or sub.map, mode = type(msg.mode) == "string" and msg.mode or nil }
+    end
+    boardSubs[pid] = sub
     sendBoard(pid)
   end
 end

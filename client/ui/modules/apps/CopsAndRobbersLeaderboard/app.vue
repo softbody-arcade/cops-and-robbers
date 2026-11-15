@@ -8,6 +8,7 @@
       <template v-else>
         <button v-for="t in TABS" :key="t.id" class="cnr-tab" :class="{ active: tab === t.id }" @click="selectTab(t.id)">{{ t.label }}</button>
         <BngDropdown v-if="connected" v-model="filter" :items="filterItems" class="cnr-filter" />
+        <BngDropdown v-if="connected" v-model="modeFilter" :items="MODES" class="cnr-mode" />
       </template>
     </div>
 
@@ -99,9 +100,20 @@ const filterItems = computed(() => {
   ]
 })
 
+const MODES = [
+  { value: "all", label: "All modes" },
+  { value: "random", label: "Random" },
+  { value: "evolving", label: "Evolving" },
+]
+
 const filter = computed({
   get: () => state.value.filter,
-  set: value => send({ action: "filter", map: value }),
+  set: value => send({ action: "filter", map: value, mode: state.value.mode }),
+})
+
+const modeFilter = computed({
+  get: () => state.value.mode || "all",
+  set: value => send({ action: "filter", map: state.value.filter, mode: value }),
 })
 
 function formatTime(seconds) {
@@ -217,6 +229,9 @@ onUnmounted(() => {
 .cnr-filter {
   margin-left: auto;
   min-width: 7.5rem;
+}
+.cnr-mode {
+  min-width: 6.5rem;
 }
 .cnr-empty {
   margin: auto;
