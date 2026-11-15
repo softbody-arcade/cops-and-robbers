@@ -1,6 +1,5 @@
 local hud = require("copsAndRobbers/hud")
 local apps = require("copsAndRobbers/apps")
-local joinguard = require("copsAndRobbers/joinguard")
 
 local M = {}
 
@@ -188,7 +187,6 @@ function M.update(clock, info)
     hide()
   end
   apps.update(clock)
-  joinguard.update(clock)
 end
 
 return M
