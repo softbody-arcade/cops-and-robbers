@@ -43,6 +43,8 @@ function bootClient(opts)
     return nil
   end
   env.reads = {}
+  env.written = {}
+  _G.jsonWriteFile = function(path, data) env.written[path] = deepcopy(data) return true end
   _G.jsonReadFile = function(path)
     env.reads[path] = (env.reads[path] or 0) + 1
     if opts.layouts and opts.layouts.disk[path] then return deepcopy(opts.layouts.disk[path]) end

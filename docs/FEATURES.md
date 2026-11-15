@@ -100,6 +100,8 @@ All round controls are in the Cops and Robbers Panel (Esc > UI Apps).
 
 ## Players
 
+- **Car settings carry over:** your in-car switches (traction/stability control, drive mode, diff locks, 4WD range and anything else the car lets you toggle) are noted every few seconds during a round and put back on every car the mod spawns for you (new round, repaint, Apply). They are saved per car model in `settings/cnr_vehicle_modes.json` on your own PC, so they also survive a game restart. A car that doesn't have a setting just keeps its own default.
+
 - **Per-player color:** `/cnr color #ff0000` (or `off`) is applied to every round car. Set during prep, it repaints straight away; otherwise it applies from the next round.
 - **Identity:** players are recognised by their BeamMP account for the leaderboard, colors and `start next/again`. Guests are recognised by name, which changes every session.
 - **Warnings:**
@@ -235,4 +237,4 @@ Everything else runs through the panel and the leaderboard app. Any other `/cnr`
 - **Mods panel:** the zip carries a title, description, version and icon (`mod_info`) for mod panels.
 - **Stuck controls:** Cancel always unlocks everyone, and so does a plugin restart.
 - **Bad files:** a broken `config.json` gives a warning and uses the defaults. A broken or malformed leaderboard is moved aside.
-- **Tests:** 381 automated tests cover the rules, the server wiring and the client, which runs against stubbed game functions in `tests/test_client.lua` (run with `make test`).
+- **Tests:** 385 automated tests cover the rules, the server wiring and the client, which runs against stubbed game functions in `tests/test_client.lua` (run with `make test`).

@@ -10,6 +10,7 @@ local geo = require("copsAndRobbers/geo")
 local hudfeed = require("copsAndRobbers/hudfeed")
 local sight = require("copsAndRobbers/sight")
 local buildDiff = require("copsAndRobbers/build")
+local modes = require("copsAndRobbers/modes")
 
 local CLIENT_VERSION = "2.0.1"
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
@@ -22,6 +23,8 @@ local GEO_SEND_INTERVAL = 0.25
 local SIGHT_CHECK_INTERVAL = 0.25
 local CHANGE_CHECK_INTERVAL = 1
 local BASELINE_DELAY = 1.5
+local MODES_INTERVAL = 3
+local MODES_SETTLE = 2.5
 
 local toast, sendServer, ownVehicle = game.toast, game.sendServer, game.ownVehicle
 local formatTime = hud.formatTime
@@ -54,6 +57,8 @@ local infoTag
 local spotted, nearestText
 local buildBaselineAt, buildBaseline
 local lastChangeKey, lastChanges, lastChangeCheck = "", {}, 0
+local modesState = modes.new()
+local modesHoldUntil, lastModesCapture = 0, 0
 local requestReset
 
 local function setFreeze(on)
@@ -491,6 +496,9 @@ local function updatePendingPlacement()
   if veh and vid then
     pendingPlacement = nil
     if p.pos then teleport(veh, p.pos, p.rot) end
+    local restore = modes.restoreCommand(modes.forModel(modesState, roundModel))
+    if restore then veh:queueLuaCommand(restore) end
+    modesHoldUntil = clock + MODES_SETTLE
     if frozen then setFreeze(true) end
     sendServer("cnr_myVehicle", { vid = vid })
   elseif clock >= p.deadline then
@@ -510,6 +518,13 @@ local function updateOwnCar()
     lastFreezeAssert = clock
     veh:queueLuaCommand("controller.setFreeze(1)")
   end
+end
+
+local function updateModes()
+  if not active or pendingPlacement or clock < modesHoldUntil or clock - lastModesCapture < MODES_INTERVAL then return end
+  lastModesCapture = clock
+  local veh = ownVehicle()
+  if veh then veh:queueLuaCommand(modes.CAPTURE) end
 end
 
 local function updateLightsAndPatch()
@@ -610,6 +625,7 @@ local function onUpdate(dtReal)
   updateGeo()
   updateSight()
   updateBuild()
+  updateModes()
   if active then inputs.enforceEditLock() end
   updateStatusToast()
   hudfeed.update(clock, {
@@ -681,6 +697,8 @@ local function leaveServer()
 end
 
 local function onExtensionLoaded()
+  local ok, saved = pcall(jsonReadFile, modes.FILE)
+  modesState = modes.new(ok and saved or nil)
   hudfeed.refreshApps()
   hudfeed.start(clock)
   if not AddEventHandler then return end
@@ -719,6 +737,13 @@ local function onExtensionLoaded()
   AddEventHandler("cnr_boardState", onBoardState)
   AddEventHandler("cnr_panelState", function(data) guihooks.trigger("CnRPanel", jsonDecode(data) or {}) end)
   AddEventHandler("cnr_panelReply", function(data) guihooks.trigger("CnRPanelReply", jsonDecode(data) or {}) end)
+end
+
+function M.vehicleModes(data)
+  if not active or not roundModel then return end
+  if modes.remember(modesState, roundModel, data) then
+    pcall(jsonWriteFile, modes.FILE, { byModel = modesState.byModel, last = modesState.last }, true)
+  end
 end
 
 function M.configs(opts)

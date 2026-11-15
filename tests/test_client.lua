@@ -567,3 +567,44 @@ test("only the tuning value that really changed shows, with the game's title", f
   assertEq(#sent.changes, 1)
   assertEq(sent.changes[1].label, "Brake Force"); assertEq(sent.changes[1].from, "1"); assertEq(sent.changes[1].to, "0.6")
 end)
+
+local MODES_FILE = "/settings/cnr_vehicle_modes.json"
+
+local function hasCommand(env, text, from)
+  for i = from or 1, #env.veh.commands do
+    if env.veh.commands[i]:find(text, 1, true) then return true end
+  end
+  return false
+end
+
+test("your traction control and drive mode are noted during a round, not right after a new car", function()
+  local env = bootClient()
+  startCop(env)
+  local mark = #env.veh.commands + 1
+  env.tick(1)
+  assertEq(hasCommand(env, "copsAndRobbers.vehicleModes", mark), false)
+  env.tick(4)
+  assertEq(hasCommand(env, "copsAndRobbers.vehicleModes", mark), true)
+end)
+
+test("noted modes are saved and put back on the next car", function()
+  local env = bootClient()
+  startCop(env)
+  env.M.vehicleModes({ controller = { escMode = "off", driveMode = "sport" }, powertrain = { diffRear = "locked" } })
+  assertEq(env.written[MODES_FILE].byModel.pickup.controller.escMode, "off")
+  env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 30, runnerId = 2 })
+  local mark = #env.veh.commands + 1
+  env.fire("cnr_roundSetup", copy(SETUP))
+  env.tick(1)
+  assertEq(hasCommand(env, "setState", mark), true)
+  assertEq(hasCommand(env, '"off"', mark), true)
+  assertEq(hasCommand(env, '"sport"', mark), true)
+  assertEq(hasCommand(env, '"locked"', mark), true)
+end)
+
+test("saved modes from an earlier session are used", function()
+  local env = bootClient({ files = { [MODES_FILE] = { byModel = { pickup = { controller = { escMode = "off" } } } } } })
+  local mark = #env.veh.commands + 1
+  startCop(env)
+  assertEq(hasCommand(env, '"off"', mark), true)
+end)

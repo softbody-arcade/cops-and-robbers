@@ -103,6 +103,7 @@ Then do the checks for whatever actually updated.
   - `FS:getFileOriginInfo(pc).archivePath` (configs from `/mods/multiplayer/` count as server-provided).
   - The `parts_selector` action is the only way into the parts and paint menu, so closing it closes paint too.
   - On update, check that a changed part shows up in the HUD's change list, that Apply rebuilds everyone's car to match, and that the game's config format is still `format: 2` with `parts` and `vars`.
+- **Car settings carry over** (`copsAndRobbers/modes.lua`): vehicle Lua `controller.getState()`/`setState()` and `powertrain.getState()`/`setState()`, the game's own state API for controllers (ESC, drive modes) and drivetrain devices (diff locks, transfer cases); plus `serialize` and `obj:queueGameEngineLua`. On update, check that turning traction control off and starting a new round keeps it off.
 - **Line of sight** (`copsAndRobbers/sight.lua`):
   - `castRayStatic(origin, dirNormalized, length)` returns the distance to the first static hit (terrain, buildings), and `>= length` means clear. Vehicles don't block it.
   - We cast both ways, as the game's own `isVisible` does, because single-sided faces only block from one side.
