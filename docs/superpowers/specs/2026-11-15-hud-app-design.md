@@ -11,7 +11,6 @@ A first, deliberately simple in-game UI for Cops and Robbers. It previews what a
 ## Non-goals (for now)
 - Countdowns, round-end screens, notices and leaderboards stay as toasts or chat.
 - No interactive controls. The keybindings are the controls.
-- No Vue or BeamNG component library.
 
 ## Behaviour
 - **Placement:**
@@ -32,11 +31,15 @@ A first, deliberately simple in-game UI for Cops and Robbers. It previews what a
 ## Changes
 - **Server:** catch progress in `cnr_state` is rounded to 0.01 instead of 0.05, so state updates go out every tick while someone is held.
 - **Client Lua:** pushes `guihooks.trigger("CnRHud", {...})` about 10 times per second while active, and once with `visible = false` when inactive. It also does the auto-placement and removal.
-- **UI app:** `ui/modules/apps/CopsAndRobbersHud/` with `app.json`, `app.js` (an Angular directive listening to `CnRHud`) and `app.png`. It uses plain HTML/CSS, has a dark translucent panel and high-contrast text, and its size follows the app box.
+- **UI app:** `ui/modules/apps/CopsAndRobbersHud/` with `app.json` (`"vue": true`), `app.vue` (a Vue 3 SFC that listens with `useEvents().on("CnRHud", …)` from `@/services/events`, the same way the game's own Countdown app does) and `app.png`. It has a dark translucent panel and high-contrast text, and its size follows the app box. It may use BeamNG's own components from `@/common/components/...` where they fit.
 
 ## Approaches considered
-- **Angular UI app (chosen, Claude's call):** proven for mods for years, plain HTML/CSS/JS, and 68 of the 108 built-in apps still use it.
-- **Vue UI app:** the game's current system, with a new runtime loader for mods in 0.40. It cannot be tested here, so it is kept for later and bigger UIs.
+- **Vue 3 UI app (chosen by the user: "the newest, what the devs want us to use"):**
+  - In 0.40 the game calls Angular apps "legacy Angular" and runs them in a separate host.
+  - It has a dedicated mod Vue loader (`ui/ui-vue/src/services/uiMods/compiler.js`) that compiles a mod's `app.vue` at runtime and resolves `@/...` to the game's UI sources.
+  - The official docs (August 2025) still only describe Angular.
+  - Risk: the mod loader is new in 0.40 and may change.
+- **Angular UI app:** proven for mods for years, but legacy in 0.40.
 - **ImGui window:** needs no layout, but looks like a developer tool. Rejected for a polished HUD.
 
 ## Left to the builder
