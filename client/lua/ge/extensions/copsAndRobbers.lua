@@ -7,6 +7,7 @@ local vehicles = require("copsAndRobbers/vehicles")
 local ai = require("copsAndRobbers/ai")
 local geo = require("copsAndRobbers/geo")
 local hudfeed = require("copsAndRobbers/hudfeed")
+local joinguard = require("copsAndRobbers/joinguard")
 local apps = require("copsAndRobbers/apps")
 local sight = require("copsAndRobbers/sight")
 local buildDiff = require("copsAndRobbers/build")
@@ -694,6 +695,7 @@ local function onBeamNGEarthRebased(info)
 end
 
 local function leaveServer()
+  joinguard.stop()
   endRound()
   hudfeed.clearResult()
   hudfeed.leave()
@@ -837,7 +839,10 @@ M.onGameStateUpdate = function()
   apps.layoutChanged(clock)
 end
 M.onWorldReadyState = function(st)
-  if st == 2 then apps.start(clock) end
+  if st == 2 then
+    apps.start(clock)
+    joinguard.start(clock)
+  end
 end
 M.onUpdate = onUpdate
 M.onVehicleResetted = onVehicleResetted
