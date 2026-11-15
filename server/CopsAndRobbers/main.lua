@@ -9,6 +9,7 @@ local commands = require("cnr.commands")
 local colors = require("cnr.colors")
 local tables = require("cnr.tables")
 local geo = require("cnr.geo")
+local panel = require("cnr.panel")
 
 local VERSION = "1.4.0"
 local PREFIX = "[CnR] "
@@ -77,12 +78,19 @@ end
 
 local function now() return serverClock:GetCurrent() end
 
-local function reply(pid, msg) MP.SendChatMessage(pid, PREFIX .. msg) end
-local function broadcast(msg) MP.SendChatMessage(-1, PREFIX .. msg) end
+local panelSubs = {}
+local panelMirror
+local lastPanelSig
+
 local function send(pid, event, payload)
   if type(pid) ~= "number" or (pid < 0 and pid ~= -1) then return end
   MP.TriggerClientEvent(pid, event, Util.JsonEncode(payload or {}))
 end
+local function reply(pid, msg)
+  MP.SendChatMessage(pid, PREFIX .. msg)
+  if panelMirror and pid == panelMirror then send(pid, "cnr_panelReply", { text = msg }) end
+end
+local function broadcast(msg) MP.SendChatMessage(-1, PREFIX .. msg) end
 
 local function loadConfig()
   local raw, corrupt = decodeFile(pluginDir .. "config.json")
@@ -610,18 +618,74 @@ function handlers.continue(pid)
   applyEffects(current:go(now(), pid))
 end
 
-local BINDABLE = {
-  ["continue"] = true, ["start next"] = true, ["start again"] = true, ["start random"] = true,
-  ["go"] = true, ["reroll"] = true, ["end"] = true, ["stop"] = true, ["auto"] = true, ["top"] = true,
-  ["test runner"] = true, ["test cop"] = true, ["help"] = true,
-}
-
-function cnrOnCommand(pid, data)
-  local text = type(data) == "string" and data:lower():match("^%s*(.-)%s*$") or ""
-  if not BINDABLE[text] then return end
+local function runCommand(pid, text)
   local cmd = commands.parse("/cnr " .. text)
   local handler = cmd and handlers[cmd.name]
   if handler then handler(pid, cmd) end
+end
+
+function cnrOnCommand(pid, data)
+  local text = type(data) == "string" and data:lower():match("^%s*(.-)%s*$") or ""
+  if not panel.BINDABLE[text] then return end
+  runCommand(pid, text)
+end
+
+local function panelState()
+  local running = current.state == "running"
+  return panel.snapshot({
+    version = VERSION, map = mapName, phase = current.state,
+    runner = current.runnerId and current:runnerName() or nil,
+    test = current.test == true,
+    elapsed = running and current.releasedAt and math.max(0, now() - current.releasedAt) or nil,
+    players = MP.GetPlayers() or {}, cfg = cfg, defaults = config.DEFAULTS,
+  })
+end
+
+local function pushPanel(opener)
+  if opener then panelSubs[opener] = nil end
+  if not next(panelSubs) and not opener then return end
+  local state = panelState()
+  local sig = panel.signature(state)
+  if sig ~= lastPanelSig then
+    for p in pairs(panelSubs) do send(p, "cnr_panelState", state) end
+    lastPanelSig = sig
+  end
+  if opener then
+    panelSubs[opener] = true
+    send(opener, "cnr_panelState", state)
+  end
+end
+
+local function panelSettings(pid, values)
+  local function answer(ok, text, keys) send(pid, "cnr_panelReply", { ok = ok, text = text, keys = keys }) end
+  if current:isActive() then return answer(false, "Stop the round first") end
+  local updated, keys = panel.applyValues(rawConfig, values)
+  if not updated then return answer(false, keys) end
+  writeFile(pluginDir .. "config.json", Util.JsonPrettify(Util.JsonEncode(updated)))
+  loadConfig()
+  current = round.new(cfg)
+  answer(true, "Saved", keys)
+  pushPanel()
+end
+
+function cnrOnPanel(pid, data)
+  local ok, msg = pcall(Util.JsonDecode, data)
+  if not ok or type(msg) ~= "table" or type(msg.action) ~= "string" then return end
+  if msg.action == "open" then
+    pushPanel(pid)
+  elseif msg.action == "close" then
+    panelSubs[pid] = nil
+  elseif msg.action == "command" then
+    local text = panel.allow(msg.text)
+    if not text then return end
+    panelMirror = pid
+    local ran, err = pcall(runCommand, pid, text)
+    panelMirror = nil
+    pushPanel()
+    if not ran then error(err, 0) end
+  elseif msg.action == "settings" then
+    panelSettings(pid, msg.values)
+  end
 end
 
 function cnrOnChatMessage(pid, name, msg)
@@ -707,6 +771,7 @@ end
 
 function cnrOnPlayerDisconnect(pid)
   stationsRequested[pid] = nil
+  panelSubs[pid] = nil
   local name = MP.GetPlayerName(pid)
   if name and geoReports[pid] then lastGeoByName[name] = geoPoint(geoReports[pid]) end
   geoReports[pid] = nil
@@ -835,6 +900,7 @@ local function startAutoRound()
 end
 
 function cnrTick()
+  pushPanel()
   if autoNextAt and now() >= autoNextAt then startAutoRound() end
   for i = #pendingResetVerdicts, 1, -1 do
     local v = pendingResetVerdicts[i]
@@ -872,6 +938,7 @@ MP.RegisterEvent("cnr_aiVehicles", "cnrOnAiVehicles")
 MP.RegisterEvent("cnr_geo", "cnrOnGeo")
 MP.RegisterEvent("cnr_relocated", "cnrOnRelocated")
 MP.RegisterEvent("cnr_command", "cnrOnCommand")
+MP.RegisterEvent("cnr_panel", "cnrOnPanel")
 MP.RegisterEvent("cnr_tick", "cnrTick")
 MP.CancelEventTimer("cnr_tick")
 MP.CreateEventTimer("cnr_tick", 250)

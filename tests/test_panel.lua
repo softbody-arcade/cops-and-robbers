@@ -1,4 +1,4 @@
-local panel = require("cnr/panel")
+local panel = require("cnr.panel")
 
 test("allow accepts bindable, start <name> and auto on/off", function()
   assertEq(panel.allow("  GO "), "go")

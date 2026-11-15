@@ -1,4 +1,4 @@
-local config = require("cnr/config")
+local config = require("cnr.config")
 
 local M = {}
 

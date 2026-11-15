@@ -1,5 +1,12 @@
 local function encode(v)
   if type(v) == "table" then
+    local n = 0
+    for _ in pairs(v) do n = n + 1 end
+    if n > 0 and n == #v then
+      local items = {}
+      for i, x in ipairs(v) do items[i] = encode(x) end
+      return "[" .. table.concat(items, ",") .. "]"
+    end
     local parts = {}
     for k, x in pairs(v) do parts[#parts + 1] = string.format("%q:%s", tostring(k), encode(x)) end
     return "{" .. table.concat(parts, ",") .. "}"
@@ -815,5 +822,142 @@ test("a mid-chase join gets chaseElapsed in its setup", function()
   local setup = env.lastSent("cnr_roundSetup")
   assertEq(setup.pid, 3)
   assertEq(setup.data:find('"chaseElapsed":5', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+local function countSent(env, ev, pid)
+  local n = 0
+  for _, s in ipairs(env.sent) do if s.ev == ev and (pid == nil or s.pid == pid) then n = n + 1 end end
+  return n
+end
+
+local function chatLine(env, line)
+  for _, c in ipairs(env.chats) do if c[2] == "[CnR] " .. line then return true end end
+  return false
+end
+
+local function showConfig(env)
+  env.chats = {}
+  env.call("onChatMessage", 1, "Reinder", "/cnr config")
+end
+
+test("panel open sends state to the opener", function()
+  local env = boot()
+  env.call("cnr_panel", 1, '{"action":"open"}')
+  local s = env.lastSent("cnr_panelState")
+  assertEq(s.pid, 1)
+  assertEq(s.data:find('"phase":"idle"', 1, true) ~= nil, true)
+  assertEq(s.data:find('"map":"west_coast_usa"', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("panel state is pushed on change, not every tick", function()
+  local env = boot()
+  env.call("cnr_panel", 1, '{"action":"open"}')
+  local n = countSent(env, "cnr_panelState", 1)
+  env.call("cnr_tick"); env.call("cnr_tick")
+  assertEq(countSent(env, "cnr_panelState", 1), n)
+  env.startRound()
+  env.call("cnr_tick")
+  assertEq(countSent(env, "cnr_panelState", 1), n + 1)
+  assertEq(env.lastSent("cnr_panelState").data:find('"phase":"prep"', 1, true) ~= nil, true)
+  env.call("cnr_tick")
+  assertEq(countSent(env, "cnr_panelState", 1), n + 1)
+  env.cleanup()
+end)
+
+test("chat change is pushed to panel subscribers", function()
+  local env = boot()
+  env.call("cnr_panel", 1, '{"action":"open"}')
+  env.call("onChatMessage", 2, "Bob", "/cnr auto on")
+  env.call("cnr_tick")
+  local s = env.lastSent("cnr_panelState")
+  assertEq(s.pid, 1)
+  assertEq(s.data:find('"autoNextRound":true', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("panel command runs handlers and mirrors replies", function()
+  local env = boot()
+  env.call("cnr_panel", 2, '{"action":"command","text":"go"}')
+  local r = env.lastSent("cnr_panelReply")
+  assertEq(r.pid, 2)
+  assertEq(r.data:find("No round set up", 1, true) ~= nil, true)
+  assertEq(env.chatHas("No round set up"), true)
+  env.call("cnr_panel", 2, '{"action":"command","text":"start Reinder"}')
+  assertEq(env.lastSent("cnr_pickVehicle").pid, 2)
+  env.cleanup()
+end)
+
+test("panel command outside the allowlist does nothing", function()
+  local env = boot()
+  env.call("cnr_panel", 1, '{"action":"command","text":"set headStartSeconds 1"}')
+  showConfig(env)
+  assertEq(chatLine(env, "headStartSeconds = 7"), true)
+  env.cleanup()
+end)
+
+test("panel settings save several values in one write", function()
+  local env = boot()
+  env.call("cnr_panel", 1, '{"action":"settings","values":{"headStartSeconds":9,"explodeOnCatch":true,"excludedModels":["citybus"]}}')
+  local r = env.lastSent("cnr_panelReply")
+  assertEq(r.pid, 1)
+  assertEq(r.data:find('"ok":true', 1, true) ~= nil, true)
+  assertEq(env.chatHas("Saved"), false)
+  showConfig(env)
+  assertEq(chatLine(env, "headStartSeconds = 9"), true)
+  assertEq(chatLine(env, "explodeOnCatch = true"), true)
+  assertEq(chatLine(env, "excludedModels = citybus"), true)
+  env.cleanup()
+end)
+
+test("empty excluded list saves", function()
+  local env = boot()
+  env.call("cnr_panel", 1, '{"action":"settings","values":{"excludedModels":[]}}')
+  assertEq(env.lastSent("cnr_panelReply").data:find('"ok":true', 1, true) ~= nil, true)
+  showConfig(env)
+  assertEq(chatLine(env, "excludedModels = "), true)
+  env.cleanup()
+end)
+
+test("panel settings with one invalid value save nothing", function()
+  local env = boot()
+  env.call("cnr_panel", 1, '{"action":"settings","values":{"headStartSeconds":9,"catchHoldSeconds":0}}')
+  local r = env.lastSent("cnr_panelReply")
+  assertEq(r.data:find('"ok":false', 1, true) ~= nil, true)
+  assertEq(r.data:find("catchHoldSeconds", 1, true) ~= nil, true)
+  showConfig(env)
+  assertEq(chatLine(env, "headStartSeconds = 7"), true)
+  env.cleanup()
+end)
+
+test("panel settings are refused during a round", function()
+  local env = boot()
+  env.startRound()
+  env.call("cnr_panel", 1, '{"action":"settings","values":{"headStartSeconds":9}}')
+  assertEq(env.lastSent("cnr_panelReply").data:find("Stop the round first", 1, true) ~= nil, true)
+  env.call("onChatMessage", 1, "Reinder", "/cnr stop")
+  showConfig(env)
+  assertEq(chatLine(env, "headStartSeconds = 7"), true)
+  env.cleanup()
+end)
+
+test("disconnect drops the panel subscriber", function()
+  local env = boot()
+  env.call("cnr_panel", 1, '{"action":"open"}')
+  env.call("onPlayerDisconnect", 1)
+  local n = countSent(env, "cnr_panelState", 1)
+  env.call("onChatMessage", 2, "Bob", "/cnr auto on")
+  env.call("cnr_tick")
+  assertEq(countSent(env, "cnr_panelState", 1), n)
+  env.cleanup()
+end)
+
+test("malformed panel data is ignored", function()
+  local env = boot()
+  env.call("cnr_panel", 1, "not json")
+  env.call("cnr_panel", 1, '{"nope":1}')
+  env.call("cnr_panel", 1, '{"action":"settings","values":"x"}')
+  assertEq(env.lastSent("cnr_panelReply").data:find("Nothing to save", 1, true) ~= nil, true)
   env.cleanup()
 end)
