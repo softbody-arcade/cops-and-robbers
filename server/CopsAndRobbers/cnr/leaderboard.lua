@@ -9,20 +9,34 @@ function M.add(board, run)
   board.runs[#board.runs + 1] = run
 end
 
+function M.validShape(decoded)
+  if decoded == nil then return true end
+  return type(decoded) == "table" and type(decoded.runs) == "table"
+end
+
 function M.best(board, limit, map)
   limit = limit or 10
-  local byPlayer = {}
+  local byKey = {}
   for _, r in ipairs(board.runs) do
     if type(r) == "table" and type(r.player) == "string" and type(r.survivedSeconds) == "number"
       and (map == nil or r.map == map) then
-      local cur = byPlayer[r.player]
-      if not cur or r.survivedSeconds > cur.survivedSeconds then
-        byPlayer[r.player] = { player = r.player, survivedSeconds = r.survivedSeconds, map = r.map, model = r.model }
+      local key = type(r.key) == "string" and r.key or r.player
+      local cur = byKey[key]
+      local at = tonumber(r.endedAt) or 0
+      if not cur then
+        cur = { player = r.player, survivedSeconds = r.survivedSeconds, map = r.map, model = r.model, nameAt = at }
+        byKey[key] = cur
+      elseif r.survivedSeconds > cur.survivedSeconds then
+        cur.survivedSeconds, cur.map, cur.model = r.survivedSeconds, r.map, r.model
       end
+      if at >= cur.nameAt then cur.player, cur.nameAt = r.player, at end
     end
   end
   local list = {}
-  for _, entry in pairs(byPlayer) do list[#list + 1] = entry end
+  for _, entry in pairs(byKey) do
+    entry.nameAt = nil
+    list[#list + 1] = entry
+  end
   table.sort(list, function(a, b)
     if a.survivedSeconds ~= b.survivedSeconds then return a.survivedSeconds > b.survivedSeconds end
     return a.player < b.player
@@ -51,12 +65,16 @@ function M.formatTopCops(board, limit)
   local stats = {}
   for _, r in ipairs(board.runs) do
     if type(r) == "table" and r.endReason == "caught" and type(r.catchers) == "table" and type(r.survivedSeconds) == "number" then
-      for _, name in ipairs(r.catchers) do
+      local keys = type(r.catcherKeys) == "table" and r.catcherKeys or {}
+      local at = tonumber(r.endedAt) or 0
+      for i, name in ipairs(r.catchers) do
         if type(name) == "string" then
-          local s = stats[name] or { name = name, catches = 0, fastest = math.huge }
+          local key = type(keys[i]) == "string" and keys[i] or name
+          local s = stats[key] or { name = name, catches = 0, fastest = math.huge, nameAt = at }
           s.catches = s.catches + 1
           s.fastest = math.min(s.fastest, r.survivedSeconds)
-          stats[name] = s
+          if at >= s.nameAt then s.name, s.nameAt = name, at end
+          stats[key] = s
         end
       end
     end

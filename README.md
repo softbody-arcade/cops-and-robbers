@@ -23,6 +23,7 @@ repair in place for the runner and move cops to the nearest road.
 | `/cnr start <name\|random\|next\|again>` | Set up a round. `next` = whoever ran least this session, `again` = same runner |
 | `/cnr reroll` | New random car during prep |
 | `/cnr go` | Runner countdown, then cop head start |
+| `/cnr auto on\|off` | Prepare the next round automatically after each round (still needs `/cnr go`) |
 | `/cnr end` | End the chase and record the runner's time |
 | `/cnr stop` | Cancel the round (not recorded) and unlock everyone |
 | `/cnr color <#hex\|off>` | Your car color for every round |
@@ -30,6 +31,7 @@ repair in place for the runner and move cops to the nearest road.
 | `/cnr top [cops\|all\|<map>]` | Leaderboards (default: current map) |
 | `/cnr set <setting> <value>` | Change a setting (saved to config.json) |
 | `/cnr config` / `/cnr reload` | Show settings / reload config.json |
+| `/cnr version` | Show the mod version |
 | `/cnr addstation` / `/cnr removestation` | Edit this map's gas stations |
 
 ## Settings (`config.json`)
@@ -53,6 +55,14 @@ repair in place for the runner and move cops to the nearest road.
 | `excludedModels` | citybus, us_semi, md_series, percheron, rockbouncer | Never picked |
 | `explodeOnCatch` | false | Runner's car explodes when caught |
 | `includeModVehicles` | false | Also pick mod vehicles |
+| `autoNextRound` | false | Prepare the next round automatically (`/cnr auto`) |
+| `autoNextDelaySeconds` | 15 | Delay before the next round is prepared |
+
+## Players and cops
+
+Players are recognised by their BeamMP account (leaderboard, colors, `start next/again`); guests by name, which
+changes every session. Cops get a light bar with lights on (no siren): when the round car has none, the light bar
+parts of a police config of the same model are added for cops.
 
 ## BeamNG.Earth
 

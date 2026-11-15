@@ -19,9 +19,14 @@ M.DEFAULTS = {
   roundTimeLimitSeconds = 0,
   lastSeenIntervalSeconds = 30,
   excludedModels = { "citybus", "us_semi", "md_series", "percheron", "rockbouncer" },
+  autoNextRound = false,
+  autoNextDelaySeconds = 15,
 }
 
-local strictlyPositive = { catchHoldSeconds = true, catchRadiusMeters = true, crashSpeedLossKmh = true }
+local strictlyPositive = {
+  catchHoldSeconds = true, catchRadiusMeters = true, crashSpeedLossKmh = true,
+  catchMaxSpeedKmh = true, stillMaxSpeedKmh = true,
+}
 
 local function copyList(t)
   local c = {}

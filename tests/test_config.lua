@@ -82,3 +82,13 @@ test("setValue rejects unknown keys and bad values", function()
   raw, err = config.setValue({}, "explodeOnCatch", "maybe")
   assertEq(raw, nil); assertEq(err, "Invalid value for explodeOnCatch: maybe")
 end)
+
+test("speed thresholds must be above zero", function()
+  local c, w = config.merge({catchMaxSpeedKmh=0, stillMaxSpeedKmh=0})
+  assertEq(c.catchMaxSpeedKmh, 3); assertEq(c.stillMaxSpeedKmh, 1); assertEq(#w, 2)
+end)
+
+test("auto next round defaults", function()
+  local c = config.merge(nil)
+  assertEq(c.autoNextRound, false); assertEq(c.autoNextDelaySeconds, 15)
+end)

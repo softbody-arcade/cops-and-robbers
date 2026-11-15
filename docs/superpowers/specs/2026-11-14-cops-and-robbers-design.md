@@ -211,3 +211,12 @@ All of the game's reset/recovery buttons stay usable during a round and are rout
 Everything else that resets, teleports or edits a vehicle is locked (the game's `competitive` action template plus
 consoles, Lua reload, walking/photo mode and the big map's teleport). The server announces any jump not explained by
 an allowed reset as "<name> teleported".
+
+## 1.1.0 (2026-11-15)
+
+- Players are keyed by BeamMP account id (`MP.GetPlayerIdentifiers().beammp`), falling back to `name:<name>` for
+  guests; runs store `key` and `catcherKeys`, leaderboards group by key and show the latest name.
+- Cops get the light bar parts of a police config of the same model (format-2 configs) and lights on without siren.
+- `autoNextRound` / `/cnr auto`: after a finished round the next one is prepared (`start next`) after
+  `autoNextDelaySeconds`; `/cnr go` is still required.
+- Version shown in the log, `/cnr help`, `/cnr version`; clients warn when their cached copy differs.

@@ -94,8 +94,9 @@ local function boot(opts)
     end,
     SendChatMessage = function(pid, msg) env.chats[#env.chats + 1] = { pid, msg } end,
     TriggerClientEvent = function(pid, ev, data) env.sent[#env.sent + 1] = { pid = pid, ev = ev, data = data } end,
-    GetPlayers = function() return { [1] = "Reinder", [2] = "Bob" } end,
-    GetPlayerName = function(pid) return ({ "Reinder", "Bob" })[pid] end,
+    GetPlayers = function() return env.names and { [1] = env.names[1], [2] = env.names[2] } or { [1] = "Reinder", [2] = "Bob" } end,
+    GetPlayerName = function(pid) return (env.names or { "Reinder", "Bob" })[pid] end,
+    GetPlayerIdentifiers = function(pid) return (env.ids or {})[pid] or {} end,
     GetPlayerVehicles = function(pid) return env.vehicles[pid] end,
     GetPositionRaw = function(pid, vid)
       local p = env.positions[pid]
@@ -251,7 +252,7 @@ test("reset of a non-active vehicle is ignored", function()
   env.startRound()
   env.call("cnr_myVehicle", 1, '{"vid":1}')
   env.go()
-  for _ = 1, 28 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  for _ = 1, 34 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
   env.call("onVehicleReset", 1, 0, "")
   assertEq(env.chatHas("reset illegally"), false)
   env.call("onVehicleReset", 1, 1, "")
@@ -625,5 +626,112 @@ test("earth: an illegal reset waits a second for a relocation report", function(
   env.call("onVehicleReset", 1, 0, "")
   for _ = 1, 8 do env.clock = env.clock + 0.25; report(env, 1, geoCar(0, 60)); report(env, 2, geoCar(900, 60)); env.call("cnr_tick") end
   assertEq(env.chatHas("Reinder reset illegally") or env.chatHas("ReinderN reset illegally"), true)
+  env.cleanup()
+end)
+
+test("players are recognised by BeamMP account across name changes", function()
+  local env = boot()
+  env.ids = { [1] = { beammp = "7" }, [2] = { beammp = "9" } }
+  env.call("onChatMessage", 1, "Reinder", "/cnr color #ff0000")
+  env.names = { "guest555", "Bob" }
+  env.call("onChatMessage", 2, "Bob", "/cnr start guest")
+  env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  local setup
+  for _, m in ipairs(env.sent) do if m.ev == "cnr_roundSetup" and m.pid == 1 then setup = m.data end end
+  assertEq(setup:find('"hex":"#ff0000"', 1, true) ~= nil, true)
+  env.go()
+  env.positions[1], env.positions[2] = 0, 5
+  for _ = 1, 90 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  local saved = assert(io.open(env.dir .. "data/leaderboard.json")):read("*a")
+  assertEq(saved:find('"key":"beammp:7"', 1, true) ~= nil, true)
+  assertEq(saved:find('"catcherKeys"', 1, true) ~= nil, true)
+  env.names = { "Reinder", "Bob" }
+  env.chats = {}
+  env.call("onChatMessage", 2, "Bob", "/cnr start again")
+  env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  assertEq(env.chatHas("Reinder is the runner"), true)
+  env.cleanup()
+end)
+
+test("guests fall back to their name", function()
+  local env = boot()
+  env.call("onChatMessage", 1, "Reinder", "/cnr color #00ff00")
+  local saved = assert(io.open(env.dir .. "data/colors.json")):read("*a")
+  assertEq(saved:find('"name:Reinder"', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("auto next round prepares a new round but waits for go", function()
+  local env = boot({ config = '{"autoNextRound": true, "autoNextDelaySeconds": 5}' })
+  env.startRound()
+  env.go()
+  for _ = 1, 90 do
+    env.clock = env.clock + 0.25; env.call("cnr_tick")
+    if env.chatHas("Next round in 5s") then break end
+  end
+  assertEq(env.chatHas("Next round in 5s"), true)
+  env.sent = {}
+  for _ = 1, 24 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  local pick = env.lastSent("cnr_pickVehicle")
+  assertEq(pick ~= nil, true)
+  env.call("cnr_vehiclePicked", pick.pid, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  assertEq(env.chatHas("Bob is the runner"), true)
+  for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  assertEq(env.lastSent("cnr_countdown"), nil)
+  env.cleanup()
+end)
+
+test("/cnr auto toggles and saves the setting", function()
+  local env = boot()
+  env.call("onChatMessage", 1, "Reinder", "/cnr auto on")
+  assertEq(env.chatHas("Automatic next round: on"), true)
+  local saved = assert(io.open(env.dir .. "config.json")):read("*a")
+  assertEq(saved:find('"autoNextRound":true', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("manual start cancels a pending automatic round", function()
+  local env = boot({ config = '{"autoNextRound": true, "autoNextDelaySeconds": 5}' })
+  env.startRound()
+  env.go()
+  for _ = 1, 90 do
+    env.clock = env.clock + 0.25; env.call("cnr_tick")
+    if env.chatHas("Next round in 5s") then break end
+  end
+  env.call("onChatMessage", 1, "Reinder", "/cnr start reinder")
+  env.sent = {}
+  for _ = 1, 24 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  assertEq(env.lastSent("cnr_pickVehicle"), nil)
+  env.cleanup()
+end)
+
+test("version is shown in help and the log", function()
+  local env = boot()
+  assertEq(env.logHas("Cops and Robbers 1.1.0 loaded"), true)
+  env.call("onChatMessage", 1, "Reinder", "/cnr help")
+  assertEq(env.chatHas("Cops and Robbers 1.1.0"), true)
+  assertEq(env.lastSent("cnr_mode").data:find('"version":"1.1.0"', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("leaderboard with a wrong shape is moved aside", function()
+  local tmp = boot()
+  local dir = tmp.dir
+  tmp.cleanup()
+  local env = boot()
+  local f = assert(io.open(env.dir .. "data/leaderboard.json", "w")); f:write('{"runs":5}'); f:close()
+  env.cleanup()
+  env = boot()
+  os.execute("mkdir -p '" .. env.dir .. "data'")
+  f = assert(io.open(env.dir .. "data/leaderboard.json", "w")); f:write('{"runs":5}'); f:close()
+  local src = assert(io.open("server/CopsAndRobbers/main.lua")):read("*a")
+  local logs = {}
+  local realPrint = print
+  print = function(...) logs[#logs + 1] = table.concat({ ... }, " ") end
+  assert(load(src, env.dir .. "main.lua"))()
+  print = realPrint
+  local moved = false
+  for _, l in ipairs(logs) do if l:find("moved to", 1, true) then moved = true end end
+  assertEq(moved, true)
   env.cleanup()
 end)

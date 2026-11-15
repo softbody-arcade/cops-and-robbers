@@ -17,7 +17,8 @@ M.AI_FIRST = -10
 function M.isAI(id)
   return type(id) == "number" and id <= M.AI_FIRST
 end
-local SETUP_GRACE_SECONDS = 3
+local SETUP_GRACE_SECONDS = 5
+local RELOCATE_GRACE_SECONDS = 3
 local TELEPORT_BASE_METERS = 60
 local TELEPORT_MAX_SPEED = 100
 local TELEPORT_ANNOUNCE_GAP = 5
@@ -393,7 +394,7 @@ end
 function Round:relocated(now, pid)
   local tracker = self.resetTrackers[pid]
   if not tracker then return {} end
-  tracker:grant(now, SETUP_GRACE_SECONDS)
+  tracker:grant(now, RELOCATE_GRACE_SECONDS)
   if self.crashDetectors[pid] then self.crashDetectors[pid]:reset() end
   self.prevCars[pid] = nil
   return {}

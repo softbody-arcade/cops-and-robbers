@@ -1,5 +1,9 @@
 local M = {}
 
+local CLIENT_VERSION = "1.1.0"
+local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
+local LIGHTS_OFF = "electrics.set_lightbar_signal(0)"
+
 local LOCKED_ACTIONS = {
   "recover_vehicle", "recover_vehicle_alt", "recover_to_last_road", "loadHome", "saveHome",
   "reload_vehicle", "reload_all_vehicles", "reset_all_physics", "vehicle_selector",
@@ -294,8 +298,25 @@ local function serverVid(veh)
   return s and tonumber(s:match("%-(%d+)$"))
 end
 
+local ROAD_SEARCH_MAX = 2000
+
+local function closestNodeFallback(pos)
+  local nodes = map.getMap().nodes or {}
+  local best, bestDist, bestLink
+  for id, n in pairs(nodes) do
+    local d = n.pos:distance(pos)
+    if d <= ROAD_SEARCH_MAX and (not bestDist or d < bestDist) then
+      for linkId in pairs(n.links or {}) do
+        if nodes[linkId] then best, bestDist, bestLink = id, d, linkId break end
+      end
+    end
+  end
+  return best, bestLink
+end
+
 local function nearestRoad(pos)
   local n1, n2 = map.findClosestRoad(pos)
+  if not n1 then n1, n2 = closestNodeFallback(pos) end
   if not n1 then return nil end
   local nodes = map.getMap().nodes
   local a, b = nodes[n1], nodes[n2]
@@ -315,6 +336,43 @@ local function vehicleOptions(config, color)
     opt.paint = createVehiclePaint({ x = color.r, y = color.g, z = color.b, w = 1 })
   end
   return opt
+end
+
+local function hasLightbar(parts)
+  for _, part in pairs(parts or {}) do
+    if type(part) == "string" and part ~= "" and part:lower():find("lightbar", 1, true) then return true end
+  end
+  return false
+end
+
+local function lightbarParts(model)
+  local m = core_vehicles.getModel(model)
+  local best
+  for _, c in pairs(m and m.configs or {}) do
+    local data = c.pcFilename and jsonReadFile(c.pcFilename)
+    if type(data) == "table" and data.format ~= 4 and type(data.parts) == "table" and hasLightbar(data.parts) then
+      local parts = {}
+      for slot, part in pairs(data.parts) do
+        if type(part) == "string" and part ~= "" and (slot:lower():find("lightbar", 1, true) or part:lower():find("lightbar", 1, true)) then
+          parts[slot] = part
+        end
+      end
+      local score = tostring(c.key or ""):lower():find("police", 1, true) and 2 or 1
+      if not best or score > best.score then best = { score = score, parts = parts } end
+    end
+  end
+  return best and best.parts
+end
+
+local function copConfig(model, configPath)
+  if type(configPath) ~= "string" then return configPath end
+  local ok, base = pcall(jsonReadFile, "/" .. configPath:gsub("^/", ""))
+  if not ok or type(base) ~= "table" or type(base.parts) ~= "table" or base.format == 4 or hasLightbar(base.parts) then return configPath end
+  local extra = lightbarParts(model)
+  if not extra then return configPath end
+  local cfg = deepcopy(base)
+  for slot, part in pairs(extra) do cfg.parts[slot] = part end
+  return cfg
 end
 
 local function placeVehicle(model, config, pos, rot, color)
@@ -378,7 +436,7 @@ local function onSetupAI(data)
   for _, a in ipairs(d.ai or {}) do
     local pos, rot
     if center then pos, rot = findCopSpot(center, d.copSpawnMin or 50, d.copSpawnMax or 150, a.index or 1) end
-    local opt = vehicleOptions(d.config, a.color)
+    local opt = vehicleOptions(a.role == "cop" and copConfig(d.model, d.config) or d.config, a.color)
     opt.autoEnterVehicle = false
     opt.pos, opt.rot = pos, rot
     local veh = core_vehicles.spawnNewVehicle(d.model, opt)
@@ -405,7 +463,8 @@ local function onRoundSetup(data)
   active = true
   role = d.role
   runnerId = d.runnerId
-  roundModel, roundConfig, roundColor = d.model, d.config, d.color
+  roundModel, roundColor = d.model, d.color
+  roundConfig = d.role == "cop" and copConfig(d.model, d.config) or d.config
   resetAllowed = false
   lastHint = nil
   lastPose = nil
@@ -432,7 +491,7 @@ local function onRoundSetup(data)
   if role == "cop" and not d.inPlace and not resume and not pos then
     toast("No road found near the runner, you start where you are", 6, "cnr_reset")
   end
-  placeVehicle(d.model, d.config, pos, rot, d.color)
+  placeVehicle(d.model, roundConfig, pos, rot, d.color)
 
   local phase = d.phase or "running"
   frozen = phase == "prep" or phase == "countdown" or (phase == "headstart" and role == "cop")
@@ -485,7 +544,8 @@ end
 
 local function onRestoreConfig(data)
   local d = jsonDecode(data) or {}
-  roundModel, roundConfig = d.model or roundModel, d.config or roundConfig
+  roundModel = d.model or roundModel
+  if d.config then roundConfig = role == "cop" and copConfig(roundModel, d.config) or d.config end
   toast("Only paint can be changed, car reset to the round setup", 5, "cnr_reset")
   repaintInPlace(d.color or roundColor)
 end
@@ -596,6 +656,9 @@ local function onMode(data)
   if geoMode and not earthApi() then
     toast("Cops and Robbers needs a newer BeamNG.Earth (API v1) on this map", 10, "cnr_mode")
   end
+  if d.version and d.version ~= CLIENT_VERSION then
+    toast(string.format("Cops and Robbers: your copy is %s, the server runs %s. Rejoin to update.", CLIENT_VERSION, d.version), 10, "cnr_version")
+  end
 end
 
 local function sendGeo()
@@ -698,6 +761,8 @@ local function formatTime(seconds)
 end
 
 local function endRound()
+  local own = ownVehicle()
+  if active and role == "cop" and own then own:queueLuaCommand(LIGHTS_OFF) end
   active = false
   role = nil
   statusActive = false
@@ -800,7 +865,14 @@ local function onUpdate(dtReal)
   if active and clock - lastVehiclePatch >= VEHICLE_PATCH_INTERVAL then
     lastVehiclePatch = clock
     local veh = ownVehicle()
-    if veh then veh:queueLuaCommand(VEHICLE_PATCH) end
+    if veh then
+      veh:queueLuaCommand(VEHICLE_PATCH)
+      if role == "cop" then veh:queueLuaCommand(LIGHTS_ON) end
+    end
+    for _, car in pairs(aiCars) do
+      local obj = car.role == "cop" and car.gameId and getObjectByID(car.gameId)
+      if obj then obj:queueLuaCommand(LIGHTS_ON) end
+    end
   end
   if geoMode then
     if clock - lastGeoSent >= GEO_SEND_INTERVAL then

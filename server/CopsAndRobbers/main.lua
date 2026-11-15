@@ -10,6 +10,7 @@ local colors = require("cnr.colors")
 local tables = require("cnr.tables")
 local geo = require("cnr.geo")
 
+local VERSION = "1.1.0"
 local PREFIX = "[CnR] "
 local dataDir = pluginDir .. "data/"
 local stationsDir = dataDir .. "stations/"
@@ -26,7 +27,10 @@ local stationsRequested = {}
 local partsBaseline = {}
 local aiVid = {}
 local runCounts = {}
-local lastRunnerName
+local lastRunnerKey
+local currentRunnerKey
+local autoNextAt
+local lastIssuer
 local rawConfig = {}
 local geoMode = false
 local geoRef
@@ -91,6 +95,10 @@ end
 
 local function loadLeaderboard()
   local decoded, corrupt = decodeFile(leaderboardPath)
+  if not corrupt and not leaderboard.validShape(decoded) then
+    corrupt = true
+    decoded = nil
+  end
   if corrupt then
     local aside = leaderboardPath .. ".corrupt-" .. os.time()
     FS.Rename(leaderboardPath, aside)
@@ -115,8 +123,24 @@ local function colorTable(c)
   return c and { hex = c.hex, r = c.r, g = c.g, b = c.b } or nil
 end
 
+local function playerKey(pid)
+  local ids = MP.GetPlayerIdentifiers and MP.GetPlayerIdentifiers(pid)
+  if type(ids) == "table" and ids.beammp and tostring(ids.beammp) ~= "" then
+    return "beammp:" .. tostring(ids.beammp)
+  end
+  return "name:" .. tostring(MP.GetPlayerName(pid) or pid)
+end
+
+local function pidForKey(key)
+  for pid in pairs(MP.GetPlayers() or {}) do
+    if playerKey(pid) == key then return pid end
+  end
+  return nil
+end
+
 local function colorFor(pid)
-  return colorTable(colors.get(colorStore, MP.GetPlayerName(pid) or ""))
+  local c = colors.get(colorStore, playerKey(pid)) or colors.get(colorStore, MP.GetPlayerName(pid) or "")
+  return colorTable(c)
 end
 
 local function roundCarActive()
@@ -259,11 +283,10 @@ local function applyEffects(effects)
       send(e.pid, "cnr_pickVehicle", { includeMods = cfg.includeModVehicles, excludedModels = cfg.excludedModels })
     elseif e.kind == "setup" then
       if e.role == "runner" and not current.test then
-        local name = MP.GetPlayerName(e.pid)
-        if name then
-          runCounts[name] = (runCounts[name] or 0) + 1
-          lastRunnerName = name
-        end
+        local key = playerKey(e.pid)
+        runCounts[key] = (runCounts[key] or 0) + 1
+        lastRunnerKey = key
+        currentRunnerKey = key
       end
       local runnerCar = carFor(current.runnerId)
       local resumeGeo
@@ -318,6 +341,10 @@ local function applyEffects(effects)
       activeVid = {}
       partsBaseline = {}
       aiVid = {}
+      if cfg.autoNextRound and e.reason ~= "cancelled" and not e.to then
+        autoNextAt = now() + cfg.autoNextDelaySeconds
+        broadcast(string.format('Next round in %gs ("/cnr auto off" to stop)', cfg.autoNextDelaySeconds))
+      end
     elseif e.kind == "lastSeen" then
       for pid in pairs(current.players) do
         if pid ~= current.runnerId and not round.isAI(pid) then
@@ -338,6 +365,16 @@ local function applyEffects(effects)
       run.map = mapName
       run.releasedAt = endedAt - math.floor(run.survivedSeconds + 0.5)
       run.endedAt = endedAt
+      run.key = currentRunnerKey
+      if type(run.catchers) == "table" and #run.catchers > 0 then
+        local byName = {}
+        for pid, name in pairs(MP.GetPlayers() or {}) do byName[name] = pid end
+        run.catcherKeys = {}
+        for i, name in ipairs(run.catchers) do
+          local pid = byName[name]
+          run.catcherKeys[i] = pid and playerKey(pid) or ("name:" .. name)
+        end
+      end
       leaderboard.add(board, run)
       local ok, err = pcall(saveLeaderboard)
       if not ok then log("failed to save leaderboard: " .. tostring(err)) end
@@ -360,6 +397,7 @@ end
 local HELP = {
   '"/cnr start <name|random|next|again>" - set up a round with that runner',
   '"/cnr go" - start the countdown',
+  '"/cnr auto on|off" - prepare the next round automatically after each round',
   '"/cnr reroll" - new car during prep',
   '"/cnr end" - end the chase and record the time',
   '"/cnr stop" - cancel the current round',
@@ -375,7 +413,12 @@ local HELP = {
 local handlers = {}
 
 function handlers.help(pid)
+  reply(pid, "Cops and Robbers " .. VERSION)
   for _, line in ipairs(HELP) do reply(pid, line) end
+end
+
+function handlers.version(pid)
+  reply(pid, "Cops and Robbers " .. VERSION)
 end
 
 function handlers.start(pid, cmd)
@@ -383,13 +426,19 @@ function handlers.start(pid, cmd)
     applyEffects(current:stop(now(), current.issuerId))
   end
   if current:isActive() then return reply(pid, "A round is already running") end
+  autoNextAt = nil
+  lastIssuer = pid
   local players = MP.GetPlayers() or {}
   local query = cmd.rest
+  local runnerId, err
   if query and query:lower() == "again" then
-    if not lastRunnerName then return reply(pid, "No previous runner yet") end
-    query = lastRunnerName
+    runnerId = lastRunnerKey and pidForKey(lastRunnerKey)
+    if not runnerId then return reply(pid, "No previous runner online") end
+  else
+    local countsByName = {}
+    for p, name in pairs(players) do countsByName[name] = runCounts[playerKey(p)] or 0 end
+    runnerId, err = commands.matchPlayer(query, players, nil, countsByName)
   end
-  local runnerId, err = commands.matchPlayer(query, players, nil, runCounts)
   if not runnerId then return reply(pid, err) end
   requestStations(pid)
   activeVid = {}
@@ -406,15 +455,28 @@ function handlers.test(pid, cmd)
   applyEffects(current:start(now(), nil, pid, MP.GetPlayers() or {}, { test = true, role = role }))
 end
 
+function handlers.auto(pid, cmd)
+  local arg = cmd.args[1] and cmd.args[1]:lower()
+  if arg ~= "on" and arg ~= "off" then
+    return reply(pid, "Automatic next round: " .. (cfg.autoNextRound and "on" or "off") .. ' (use "/cnr auto on|off")')
+  end
+  local updated = config.setValue(rawConfig, "autoNextRound", arg)
+  writeFile(pluginDir .. "config.json", Util.JsonPrettify(Util.JsonEncode(updated)))
+  loadConfig()
+  current.cfg = cfg
+  if arg == "off" then autoNextAt = nil end
+  reply(pid, "Automatic next round: " .. arg)
+end
+
 function handlers.go(pid)
   applyEffects(current:go(now(), pid))
 end
 
 function handlers.color(pid, cmd)
-  local name = MP.GetPlayerName(pid) or ""
+  local name = playerKey(pid)
   local arg = cmd.args[1]
   if not arg then
-    local c = colors.get(colorStore, name)
+    local c = colors.get(colorStore, name) or colors.get(colorStore, MP.GetPlayerName(pid) or "")
     return reply(pid, c and ("Your car color is " .. c.hex) or 'No car color set, use "/cnr color #ff0000"')
   end
   if arg:lower() == "off" then
@@ -616,7 +678,7 @@ function cnrOnVehicleReset(pid, vid)
 end
 
 function cnrOnPlayerJoin(pid)
-  send(pid, "cnr_mode", { geo = geoMode })
+  send(pid, "cnr_mode", { geo = geoMode, version = VERSION })
   requestStations(pid)
   applyEffects(current:playerJoined(now(), pid, MP.GetPlayerName(pid)))
 end
@@ -737,7 +799,21 @@ function cnrOnStations(pid, data)
   end
 end
 
+local function startAutoRound()
+  autoNextAt = nil
+  if current:isActive() then return end
+  local players = MP.GetPlayers() or {}
+  local issuer = lastIssuer and players[lastIssuer] and lastIssuer
+  if not issuer then
+    for p in pairs(players) do
+      if not issuer or p < issuer then issuer = p end
+    end
+  end
+  if issuer then handlers.start(issuer, { name = "start", args = { "next" }, rest = "next" }) end
+end
+
 function cnrTick()
+  if autoNextAt and now() >= autoNextAt then startAutoRound() end
   for i = #pendingResetVerdicts, 1, -1 do
     local v = pendingResetVerdicts[i]
     if now() - v.at >= GEO_RESET_VERDICT_DELAY then
@@ -778,5 +854,5 @@ MP.CancelEventTimer("cnr_tick")
 MP.CreateEventTimer("cnr_tick", 250)
 
 send(-1, "cnr_roundEnd", { reason = "cancelled" })
-send(-1, "cnr_mode", { geo = geoMode })
-log("Cops and Robbers loaded on " .. mapName .. " (" .. pluginDir .. ")")
+send(-1, "cnr_mode", { geo = geoMode, version = VERSION })
+log("Cops and Robbers " .. VERSION .. " loaded on " .. mapName .. " (" .. pluginDir .. ")")
