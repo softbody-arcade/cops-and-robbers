@@ -1356,6 +1356,21 @@ test("station list with geo points converts them to game space", function()
   assertEq(s.canRemove, true)
 end)
 
+test("geo station distances ignore height and skip points that don't convert", function()
+  local env = bootClient()
+  _G.beamngEarth_api = {
+    version = function() return 1 end,
+    toGame = function(lat, lon, h) if lat == 99 then return nil end return lon, lat, h end,
+  }
+  env.veh.pos = vec3(0, 0, 300)
+  env.fire("cnr_stationList", { geo = true, stations = { { lat = 0, lon = 10 }, { lat = 99, lon = 0 } } })
+  _G.beamngEarth_api = nil
+  local s = env.lastTrigger("CnRStations")
+  assertEq(s.count, 2); assertEq(#s.nearest, 1)
+  assertEq(s.nearest[1].meters, 10)
+  assertEq(s.canRemove, true)
+end)
+
 test("station list without a car of your own has nothing nearby", function()
   local env = bootClient()
   _G.MPVehicleGE.isOwn = function() return false end

@@ -504,7 +504,7 @@ local function onStationList(data)
     end
   end
   local own = ownVehicle()
-  local near = own and nearby.nearest(points, own:getPosition(), 3) or {}
+  local near = own and nearby.nearest(points, own:getPosition(), 3, d.geo == true) or {}
   local result = {}
   for i, n in ipairs(near) do result[i] = { meters = n.meters } end
   guihooks.trigger("CnRStations", {

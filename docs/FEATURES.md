@@ -181,7 +181,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
   - **After a round:** the result line ("Bob caught after 8:41"), and with automatic rounds on, "Next round in 12 s with Kim (fewest runs)" with **Start now** and **Stop automatic rounds**.
   - A reply line shows the server's answer to every click. Nothing goes to chat.
 - **Car tab:** a Random car / Evolving build switch. In evolving mode a summary (car, build step, last change and who made it), New build (choose a car, or random; a second click when a build exists) and Reset build (a second click). For both modes: Include mod cars and the excluded cars. Locked during a round.
-- **Map tab:** "West Coast USA · 10 gas stations", **Add station here**, **Remove nearest** (disabled with "No station within 50 m to remove") and the nearest stations with their distance. Works on BeamNG.Earth, where stations are also discovered automatically.
+- **Map tab:** "West Coast USA · 10 gas stations", **Add station here**, **Remove nearest** (disabled with "No station within 50 m to remove") and the nearest stations with their distance (flat distance on BeamNG.Earth, updated every 2 s while the tab is open). Works on BeamNG.Earth, where stations are also discovered automatically.
 - **Settings tab:**
   - Every setting has a one-line explanation. The common ones come first (Head start, Time limit, Hold time, Catch distance, Reset wait, Crash penalty); the rest are under More settings, grouped into Round, Catching, Resets, Crashes, Cops and Cars. A setting the panel doesn't know yet appears under "Other".
   - Numbers have −/+ steppers, on/off settings have switches, and excluded cars is a comma-separated text field.

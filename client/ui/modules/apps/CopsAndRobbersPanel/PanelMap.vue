@@ -27,7 +27,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from "vue"
+import { ref, computed, watch, onMounted, onUnmounted } from "vue"
 import { useEvents } from "@/services/events"
 import { BngButton, BngIcon, ACCENTS, icons } from "@/common/components/base"
 import { formatDistance } from "../../copsAndRobbers/format.js"
@@ -38,8 +38,11 @@ const props = defineProps({
 })
 const emit = defineEmits(["station", "refresh"])
 
+const REFRESH_MS = 2000
+
 const events = useEvents()
 const stations = ref(null)
+let refreshTimer = null
 
 const count = computed(() => {
   const n = Number(props.state.stationCount)
@@ -57,7 +60,11 @@ events.on("CnRStations", data => {
 })
 
 watch(() => props.state.stationCount, () => emit("refresh"))
-onMounted(() => emit("refresh"))
+onMounted(() => {
+  emit("refresh")
+  refreshTimer = setInterval(() => emit("refresh"), REFRESH_MS)
+})
+onUnmounted(() => clearInterval(refreshTimer))
 </script>
 
 <style scoped>

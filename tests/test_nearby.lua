@@ -23,3 +23,9 @@ test("nearest of nothing is empty", function()
   assertEq(#nearby.nearest({}, here, 3), 0)
   assertEq(#nearby.nearest(nil, here, 3), 0)
 end)
+
+test("nearest can ignore height", function()
+  local high = { x = 0, y = 0, z = 300 }
+  assertEq(nearby.nearest({ { x = 10, y = 0, z = 0 } }, high, 3)[1].meters, 300)
+  assertEq(nearby.nearest({ { x = 10, y = 0, z = 0 } }, high, 3, true)[1].meters, 10)
+end)
