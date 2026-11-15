@@ -425,7 +425,7 @@ test("test round events reach only the issuer", function()
   for _ = 1, 50 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
   env.panel(1, "stop")
   for _, m in ipairs(env.sent) do
-    if m.ev ~= "cnr_lobby" and (m.ev ~= "cnr_roundEnd" or not m.data:find("cancelled")) then assertEq(m.pid, 1, m.ev) end
+    if not (m.ev == "cnr_lobby" and m.pid == -1) and (m.ev ~= "cnr_roundEnd" or not m.data:find("cancelled")) then assertEq(m.pid, 1, m.ev) end
   end
   assertEq(#env.chats, 0)
   env.cleanup()
@@ -1743,5 +1743,22 @@ test("lobby is only re-sent when it changes", function()
   local n = #env.sent
   env.call("cnr_tick")
   for i = n + 1, #env.sent do assertEq(env.sent[i].ev == "cnr_lobby", false) end
+  env.cleanup()
+end)
+
+test("a lobby change still goes out when the panel push errors", function()
+  local env = boot()
+  env.call("cnr_panel", 1, '{"action":"open"}')
+  env.call("cnr_tick")
+  env.names = { "Reinder" }
+  local realGet, calls = MP.GetPlayers, 0
+  MP.GetPlayers = function()
+    calls = calls + 1
+    if calls == 1 then error("boom") end
+    return realGet()
+  end
+  capturingLogs(function() env.call("cnr_tick") end)
+  MP.GetPlayers = realGet
+  assertEq(env.lastSent("cnr_lobby").data:find('"online":1', 1, true) ~= nil, true)
   env.cleanup()
 end)

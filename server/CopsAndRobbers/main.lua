@@ -106,6 +106,7 @@ local panelMirror
 local lastPanelSig
 local lastLobbySig
 local lastPanelError
+local lastLobbyError
 
 local function send(pid, event, payload)
   if type(pid) ~= "number" or (pid < 0 and pid ~= -1) then return end
@@ -1152,9 +1153,12 @@ function startAutoRound()
 end
 
 function cnrTick()
-  local panelOk, panelErr = pcall(function() pushPanel(); pushLobby() end)
+  local panelOk, panelErr = pcall(pushPanel)
   if not panelOk and panelErr ~= lastPanelError then log("panel update failed: " .. tostring(panelErr)) end
   lastPanelError = not panelOk and panelErr or nil
+  local lobbyOk, lobbyErr = pcall(pushLobby)
+  if not lobbyOk and lobbyErr ~= lastLobbyError then log("lobby update failed: " .. tostring(lobbyErr)) end
+  lastLobbyError = not lobbyOk and lobbyErr or nil
   if autoNextAt and now() >= autoNextAt then startAutoRound() end
   for i = #pendingResetVerdicts, 1, -1 do
     local v = pendingResetVerdicts[i]
