@@ -4,16 +4,20 @@ local apps = require("copsAndRobbers/apps")
 local M = {}
 
 local PUSH_INTERVAL = 0.1
-local BANNER_LABELS = { ["Runner starts in"] = "RUNNER STARTS IN", ["Cops released in"] = "COPS RELEASED IN", ["Crash penalty"] = "CRASH PENALTY" }
+local APPS_CHECK_INTERVAL = 2
 local RESULT_TITLES = { caught = "RUNNER CAUGHT", called = "ROUND ENDED", escaped = "ESCAPED", disconnect = "RUNNER LEFT", cancelled = "ROUND CANCELLED" }
 local FLASH_SECONDS, EVENT_SECONDS, RESET_FLASH_SECONDS, RESULT_SECONDS = 2, 4, 1.5, 10
 
 local state = hud.new()
-local flash, prep, resetFlashUntil, result, change, applying
+local flash, prep, resetFlashUntil, result, change, applying, releaseAt
 local events = {}
 local visibleSent = false
 local lastPush = 0
 local warningKeys, warningTexts = {}, {}
+local connected, helpOpen = false, false
+local rules, lobby, color
+local appsOpen, appsCheckedAt = {}, -math.huge
+local lastClock, lastInfo = 0, {}
 
 function M.warning(key, text)
   if text == nil then
@@ -35,7 +39,7 @@ end
 
 function M.clearRound()
   state = hud.new()
-  flash, prep, resetFlashUntil, change, applying = nil, nil, nil, nil, nil
+  flash, prep, resetFlashUntil, change, applying, releaseAt = nil, nil, nil, nil, nil, nil
   events = {}
 end
 
@@ -67,12 +71,16 @@ function M.event(text, clock, tone)
   while #events > 5 do table.remove(events, 1) end
 end
 
-function M.prep(role, car, waiting)
-  prep = role and { role = role, car = car, waiting = waiting or "waiting for GO" } or nil
+function M.prep(role, car, waiting, runner)
+  prep = role and { role = role, car = car, waiting = waiting or "go", runner = runner } or nil
 end
 
-function M.prepWaiting(text)
-  if prep then prep.waiting = text end
+function M.prepWaiting(waiting)
+  if prep then prep.waiting = waiting end
+end
+
+function M.headStart(untilT)
+  releaseAt = untilT
 end
 
 function M.resetFlash(clock)
@@ -102,8 +110,8 @@ function M.showResult(d, clock)
   }
 end
 
-function M.top(lines)
-  if result and type(lines) == "table" then result.top = lines end
+function M.top(rows)
+  if result and type(rows) == "table" then result.rows = rows end
 end
 
 function M.cancelNext()
@@ -112,26 +120,71 @@ function M.cancelNext()
   result.untilT = math.min(result.untilT, result.shownAt + RESULT_SECONDS)
 end
 
+function M.rules(r)
+  rules = type(r) == "table" and r or nil
+end
+
+function M.lobby(l)
+  lobby = type(l) == "table" and l or nil
+end
+
+function M.color(hex)
+  color = type(hex) == "string" and hex ~= "" and hex or nil
+end
+
+function M.help(open)
+  helpOpen = open == true
+end
+
+local function hide()
+  visibleSent = false
+  guihooks.trigger("CnRHud", { visible = false })
+end
+
+function M.connect(on)
+  local was = connected
+  connected = on == true
+  if not connected and (was or visibleSent) then hide() end
+end
+
 function M.leave()
   warningKeys, warningTexts = {}, {}
+  rules, lobby, color, helpOpen = nil, nil, nil, false
+  appsOpen, appsCheckedAt = {}, -math.huge
+  lastInfo = {}
+end
+
+local function showing(clock, info)
+  return connected or info.active or (result ~= nil and clock < result.untilT)
+end
+
+local function push(clock, info)
+  lastPush = clock
+  visibleSent = true
+  if not info.active and clock - appsCheckedAt >= APPS_CHECK_INTERVAL then
+    appsCheckedAt = clock
+    appsOpen = { panel = apps.isOpen("panel"), board = apps.isOpen("board") }
+  end
+  guihooks.trigger("CnRHud", hud.payload(state, clock, {
+    active = info.active, role = info.role, chaseStart = info.chaseStart,
+    resetAllowed = info.resetAllowed, resetHint = info.resetHint, penalty = info.penalty, infoText = info.infoText, infoTag = info.infoTag,
+    timer = info.timer, flash = flash, prep = prep, events = events, resetFlashUntil = resetFlashUntil,
+    change = change, applying = applying, releaseAt = releaseAt,
+    result = result, rules = rules, lobby = lobby, color = color, warnings = M.warnings(), apps = appsOpen, helpOpen = helpOpen,
+  }))
+end
+
+function M.pushNow()
+  appsCheckedAt = -math.huge
+  if showing(lastClock, lastInfo) then push(lastClock, lastInfo) end
 end
 
 function M.update(clock, info)
-  local resultShowing = result and clock < result.untilT
-  if (info.active or resultShowing) and clock - lastPush >= PUSH_INTERVAL then
-    lastPush = clock
-    visibleSent = true
-    local timer = info.timer and { label = BANNER_LABELS[info.timer.label] or info.timer.label, endsAt = info.timer.endsAt } or nil
-    guihooks.trigger("CnRHud", hud.payload(state, clock, {
-      active = info.active, role = info.role, chaseStart = info.chaseStart,
-      resetAllowed = info.resetAllowed, resetHint = info.resetHint, penalty = info.penalty, infoText = info.infoText, infoTag = info.infoTag,
-      timer = timer, flash = flash, prep = prep, events = events, resetFlashUntil = resetFlashUntil,
-      change = change, applying = applying,
-      result = result,
-    }))
-  elseif not info.active and not resultShowing and visibleSent then
-    visibleSent = false
-    guihooks.trigger("CnRHud", { visible = false })
+  lastClock, lastInfo = clock, info
+  if showing(clock, info) then
+    if clock - lastPush >= PUSH_INTERVAL then push(clock, info) end
+  elseif visibleSent then
+    hide()
   end
   apps.update(clock)
 end

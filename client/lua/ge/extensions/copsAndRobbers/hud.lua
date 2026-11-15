@@ -1,6 +1,15 @@
 local M = {}
 
 local EXTRAPOLATE_MAX = 0.3
+local CHANGE_LINES = 4
+local DEFAULT_RULES = { catchMaxSpeedKmh = 3, catchRadiusMeters = 10, catchHoldSeconds = 7, headStartSeconds = 7 }
+local COUNTDOWNS = {
+  ["Runner starts in"] = { label = "RUNNER STARTS IN", tone = "runner" },
+  ["Cops released in"] = { label = "COPS RELEASED IN", tone = "cop" },
+  ["Crash penalty"] = { label = "CRASH PENALTY", tone = "warn" },
+}
+local WAITING_GO = "Waiting for the host to press GO"
+local LOBBY_WAITING, LOBBY_RUNNING = "Waiting for the host to start a round", "A round is running"
 
 function M.new()
   return { samples = {} }
@@ -32,6 +41,25 @@ function M.catchAt(state, now)
   return math.max(0, math.min(1, value))
 end
 
+local function rule(rules, key)
+  return tonumber(type(rules) == "table" and rules[key]) or DEFAULT_RULES[key]
+end
+
+function M.ruleLine(role, runnerName, rules)
+  local catch = string.format("under %g km/h within %g m for %g s.",
+    rule(rules, "catchMaxSpeedKmh"), rule(rules, "catchRadiusMeters"), rule(rules, "catchHoldSeconds"))
+  if role == "runner" then return "Survive as long as you can. Cops catch you by holding you " .. catch end
+  local line = string.format("You're released %g s after the runner. Catch them by holding them %s", rule(rules, "headStartSeconds"), catch)
+  if type(runnerName) == "string" and runnerName ~= "" then return runnerName .. " is the runner. " .. line end
+  return line
+end
+
+local function waitingText(prep)
+  if prep.waiting ~= "change" then return WAITING_GO end
+  if prep.role == "runner" then return "Make your change, then press Apply" end
+  return string.format("Waiting for %s's change", prep.runner or "the runner")
+end
+
 local function resetText(info)
   if info.penalty then return "Penalty" end
   if info.resetAllowed then return "Reset OK" end
@@ -43,21 +71,29 @@ local function remaining(untilT, now)
   return math.ceil(untilT - now - 1e-9)
 end
 
-local CHANGE_LINES = 4
-
-local function banner(info, now)
+local function center(info, now)
   local flash = info.flash
   if flash and type(flash.untilT) == "number" and now < flash.untilT then
-    return { label = flash.text, big = true }
+    return { kind = "flash", text = flash.text }
   end
-  if info.applying then return { label = "APPLYING CHANGES", big = true } end
+  if info.applying then return { kind = "applying", text = "APPLYING CHANGES" } end
   local timer = info.timer
   local left = timer and remaining(timer.endsAt, now)
-  if left then return { label = timer.label, number = left, big = true } end
-  return nil
+  if left then
+    local c = COUNTDOWNS[timer.label] or { label = string.upper(tostring(timer.label)), tone = "warn" }
+    return { kind = "countdown", label = c.label, number = left, tone = c.tone }
+  end
+  local prep = info.prep
+  if not prep then return nil end
+  local runner = prep.role == "runner"
+  return {
+    kind = "role", role = runner and "runner" or "cop", car = prep.car,
+    title = runner and "YOU'RE THE RUNNER" or "YOU'RE A COP",
+    rule = M.ruleLine(prep.role, prep.runner, info.rules),
+  }
 end
 
-local function activeEvents(events, now)
+local function notices(events, now)
   local list = {}
   for i = #(events or {}), 1, -1 do
     local e = events[i]
@@ -69,57 +105,113 @@ local function activeEvents(events, now)
   return list
 end
 
+local function catchBlock(state, now, info)
+  local p = M.catchAt(state, now)
+  local isRunner = info.role == "runner"
+  local catch = {
+    visible = p > 0,
+    percent = math.floor(p * 100 + 1e-9),
+    label = isRunner and "BEING CAUGHT" or "HOLDING RUNNER",
+    tone = isRunner and "runner" or "cop",
+  }
+  local last = state.samples[#state.samples]
+  if catch.percent >= 100 and not (last and last.p >= 1) then catch.percent = 99 end
+  return catch
+end
+
+local function changeBlock(change)
+  local changes = type(change.changes) == "table" and change.changes or {}
+  local who = string.upper(tostring(change.runner or "RUNNER")) .. "'S CHANGE"
+  local lines = {}
+  for i = 1, math.min(#changes, CHANGE_LINES) do lines[i] = changes[i] end
+  return {
+    title = #changes == 0 and (who .. ": none yet") or string.format("%s (%d)", who, #changes),
+    lines = lines,
+    more = #changes > CHANGE_LINES and (#changes - CHANGE_LINES) or nil,
+    canApply = change.canApply == true or nil,
+  }
+end
+
+local function statusBlock(info, now)
+  local isRunner = info.role == "runner"
+  local status
+  if info.chaseStart then
+    status = { time = M.formatTime(now - info.chaseStart) }
+  elseif isRunner and info.releaseAt then
+    status = { time = M.formatTime(0), releaseIn = remaining(info.releaseAt, now) }
+  else
+    return nil
+  end
+  local limit = tonumber(type(info.rules) == "table" and info.rules.roundTimeLimitSeconds)
+  status.role = isRunner and "runner" or "cop"
+  status.limit = limit and limit > 0 and M.formatTime(limit) or nil
+  status.reset = resetText(info)
+  status.resetFlash = type(info.resetFlashUntil) == "number" and now < info.resetFlashUntil
+  status.info = info.infoText
+  status.tag = info.infoTag
+  return status
+end
+
+local function lobbyBlock(info)
+  local lobby = type(info.lobby) == "table" and info.lobby or {}
+  local status = LOBBY_WAITING
+  if type(lobby.practice) == "string" and lobby.practice ~= "" then
+    status = "Practice round: " .. lobby.practice
+  elseif lobby.active then
+    status = LOBBY_RUNNING
+  end
+  local apps = type(info.apps) == "table" and info.apps or {}
+  return {
+    online = tonumber(lobby.online) or 1, status = status, color = info.color,
+    warnings = info.warnings or {}, apps = { panel = apps.panel == true, board = apps.board == true },
+  }
+end
+
+local function resultBlock(result, now)
+  local rows = {}
+  for i, r in ipairs(type(result.rows) == "table" and result.rows or {}) do
+    rows[i] = { rank = r.rank, player = r.player, time = r.time, me = r.me == true }
+  end
+  return {
+    title = result.title, runner = result.runner, time = result.time,
+    catchers = result.catchers, rows = rows, nextIn = remaining(result.nextAt, now),
+  }
+end
+
+local function helpBlock(open, rules)
+  local help = { open = open == true }
+  if help.open and type(rules) == "table" then
+    local r = {}
+    for k, v in pairs(rules) do r[k] = v end
+    r.noLimit = not ((tonumber(rules.roundTimeLimitSeconds) or 0) > 0)
+    r.sightOff = not ((tonumber(rules.sightMaxMeters) or 0) > 0)
+    help.rules = r
+  end
+  return help
+end
+
 function M.payload(state, now, info)
   info = info or {}
   local result = info.result
-  if result and type(result.untilT) == "number" and now < result.untilT then
-    return {
-      visible = true,
-      catch = { visible = false, percent = 0 },
-      result = {
-        title = result.title, runner = result.runner, time = result.time,
-        catchers = result.catchers, top = result.top, nextIn = remaining(result.nextAt, now),
-      },
-    }
-  end
-  local p = M.catchAt(state, now)
-  local isRunner = info.role == "runner"
+  local showResult = result and type(result.untilT) == "number" and now < result.untilT
+  local mode = showResult and "result" or (info.active and "round" or "lobby")
   local payload = {
-    visible = info.active == true,
-    catch = {
-      visible = p > 0,
-      percent = math.floor(p * 100 + 1e-9),
-      label = isRunner and "BEING CAUGHT" or "HOLDING RUNNER",
-      tone = isRunner and "runner" or "cop",
-    },
-    banner = banner(info, now),
-    events = activeEvents(info.events, now),
+    visible = true,
+    mode = mode,
+    driving = mode == "round" and info.prep == nil,
+    catch = mode == "result" and { visible = false, percent = 0 } or catchBlock(state, now, info),
+    notices = notices(info.events, now),
+    help = helpBlock(info.helpOpen, info.rules),
   }
-  local last = state.samples[#state.samples]
-  if payload.catch.percent >= 100 and not (last and last.p >= 1) then payload.catch.percent = 99 end
-  if type(info.change) == "table" then
-    local changes = type(info.change.changes) == "table" and info.change.changes or {}
-    local who = string.upper(tostring(info.change.runner or "RUNNER")) .. "'S CHANGE"
-    local lines = {}
-    for i = 1, math.min(#changes, CHANGE_LINES) do lines[i] = changes[i] end
-    payload.change = {
-      title = #changes == 0 and (who .. ": none yet") or string.format("%s (%d)", who, #changes),
-      lines = lines,
-      more = #changes > CHANGE_LINES and (#changes - CHANGE_LINES) or nil,
-      canApply = info.change.canApply == true or nil,
-    }
-  elseif info.prep then
-    payload.prep = { role = info.prep.role == "runner" and "RUNNER" or "COP", car = info.prep.car, waiting = info.prep.waiting }
-  end
-  if info.chaseStart then
-    payload.status = {
-      role = isRunner and "RUNNER" or "COP",
-      time = M.formatTime(now - info.chaseStart),
-      reset = resetText(info),
-      resetFlash = type(info.resetFlashUntil) == "number" and now < info.resetFlashUntil,
-      info = info.infoText,
-      tag = info.infoTag,
-    }
+  if mode == "result" then
+    payload.result = resultBlock(result, now)
+  elseif mode == "lobby" then
+    payload.lobby = lobbyBlock(info)
+  else
+    payload.center = center(info, now)
+    if info.prep then payload.prep = { waiting = waitingText(info.prep), color = info.color } end
+    if type(info.change) == "table" then payload.change = changeBlock(info.change) end
+    payload.status = statusBlock(info, now)
   end
   return payload
 end

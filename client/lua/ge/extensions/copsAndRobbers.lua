@@ -25,6 +25,7 @@ local CHANGE_CHECK_INTERVAL = 1
 local BASELINE_DELAY = 1.5
 local MODES_INTERVAL = 3
 local MODES_SETTLE = 2.5
+local HELP_FILE = "settings/cnr_help_seen.json"
 
 local sendServer, ownVehicle = game.sendServer, game.ownVehicle
 
@@ -60,6 +61,7 @@ local lastChangeKey, lastChanges, lastChangeCheck = "", {}, 0
 local modesState = modes.new()
 local modesHoldUntil, lastModesCapture = 0, 0
 local requestReset
+local helpSeen = false
 
 local function setFreeze(on)
   frozen = on
@@ -131,6 +133,12 @@ local function setupPosition(d)
   return pos, rot
 end
 
+local function playerName(id)
+  local players = MPVehicleGE and MPVehicleGE.getPlayers and MPVehicleGE.getPlayers() or {}
+  local p = players[id] or players[tostring(id)]
+  return type(p) == "table" and type(p.name) == "string" and p.name or nil
+end
+
 local function onRoundSetup(data)
   local d = jsonDecode(data) or {}
   hudfeed.clearRound()
@@ -163,14 +171,13 @@ local function onRoundSetup(data)
   frozen = phase == "prep" or phase == "applying" or phase == "ready" or phase == "countdown" or (phase == "headstart" and role == "cop")
   if phase == "applying" then hudfeed.applying(true) end
   if phase == "prep" or phase == "applying" or phase == "ready" then
-    local waiting = "waiting for GO"
-    if evolving and phase == "prep" then
-      waiting = role == "runner" and "make your change, then Apply" or "waiting for the runner's change"
-    end
-    hudfeed.prep(role, game.carName(d.model), waiting)
+    hudfeed.prep(role, game.carName(d.model), (evolving and phase == "prep") and "change" or "go", playerName(d.runnerId))
     timerEnd = nil
   elseif phase == "countdown" then
     startTimer(tonumber(d.countdownRemaining), "Runner starts in")
+  elseif phase == "headstart" and role == "runner" then
+    timerEnd = nil
+    hudfeed.headStart(clock + (tonumber(d.headStartRemaining) or 0))
   elseif phase == "headstart" then
     startTimer(tonumber(d.headStartRemaining), "Cops released in")
   else
@@ -197,6 +204,7 @@ local function onRunnerGo(data)
     timerEnd = nil
     setFreeze(false)
     hudfeed.flash("GO! RUN!", clock)
+    hudfeed.headStart(clock + (tonumber(d.headStartSeconds) or 0))
   else
     startTimer(tonumber(d.headStartSeconds), "Cops released in")
   end
@@ -358,6 +366,12 @@ local function onMode(data)
   hudfeed.warning("earth", geoMode and not geo.api() and "Cops and Robbers needs a newer BeamNG.Earth (API v1) on this map" or nil)
   local outdated = d.version and d.version ~= CLIENT_VERSION
   hudfeed.warning("version", outdated and string.format("Your copy is %s, the server runs %s: rejoin to update", CLIENT_VERSION, d.version) or nil)
+  hudfeed.connect(true)
+  if not helpSeen then
+    local ok, seen = pcall(jsonReadFile, HELP_FILE)
+    helpSeen = ok and type(seen) == "table" and seen.seen == true
+    if not helpSeen then hudfeed.help(true) end
+  end
 end
 
 local function onNotice(data)
@@ -368,6 +382,7 @@ end
 
 local function onRelease()
   ai.releaseCops()
+  hudfeed.headStart(nil)
   if role == "runner" and sightMax > 0 and spotted == nil then spotted = false end
   timerEnd = nil
   if frozen then setFreeze(false) end
@@ -429,7 +444,13 @@ local function onRoundEnd(data)
 end
 
 local function onTop(data)
-  hudfeed.top((jsonDecode(data) or {}).lines)
+  hudfeed.top((jsonDecode(data) or {}).rows)
+end
+
+local function onMyColor(data)
+  local d = jsonDecode(data) or {}
+  hudfeed.color(d.hex)
+  if type(d.error) == "string" then hudfeed.event(d.error, clock, "warn") end
 end
 
 local function onBoardState(data)
@@ -636,6 +657,7 @@ local function leaveServer()
   endRound()
   hudfeed.clearResult()
   hudfeed.leave()
+  hudfeed.connect(false)
   apps.leave()
   guihooks.trigger("CnRPanel", {})
   guihooks.trigger("CnRBoard", {})
@@ -661,6 +683,9 @@ local function onExtensionLoaded()
   AddEventHandler("cnr_top", onTop)
   AddEventHandler("cnr_autoNext", onAutoNext)
   AddEventHandler("cnr_mode", onMode)
+  AddEventHandler("cnr_rules", function(data) hudfeed.rules(jsonDecode(data)) end)
+  AddEventHandler("cnr_lobby", function(data) hudfeed.lobby(jsonDecode(data)) end)
+  AddEventHandler("cnr_myColor", onMyColor)
   AddEventHandler("cnr_lastSeen", onLastSeen)
   AddEventHandler("cnr_nearestCop", onNearestCop)
   AddEventHandler("cnr_spotted", onSpotted)
@@ -668,7 +693,7 @@ local function onExtensionLoaded()
   AddEventHandler("cnr_rebuild", onRebuild)
   AddEventHandler("cnr_applied", function()
     hudfeed.applying(false)
-    hudfeed.prepWaiting("waiting for GO")
+    hudfeed.prepWaiting("go")
     hudfeed.queued(nil)
     buildBaselineAt, buildBaseline = nil, nil
     inputs.setPartsMenu(false)
@@ -727,6 +752,25 @@ function M.newBuild(choice)
   end
   if not b then return guihooks.trigger("CnRPanelReply", { text = "That car can't start a build" }) end
   M.panel({ action = "build", op = "new", model = b.model, name = b.name, parts = b.parts, vars = b.vars, from = choice.random and "random" or path })
+end
+
+function M.ui(msg)
+  if type(msg) ~= "table" then return end
+  local action = msg.action
+  if action == "apply" then return M.applyChange() end
+  if action == "color" then return sendServer("cnr_color", { hex = type(msg.hex) == "string" and msg.hex or nil }) end
+  if action == "toggleApp" then
+    apps.toggle(msg.name)
+  elseif action == "help" then
+    hudfeed.help(msg.open == true)
+    if msg.open ~= true then
+      helpSeen = true
+      pcall(jsonWriteFile, HELP_FILE, { seen = true }, true)
+    end
+  elseif action ~= "hello" then
+    return
+  end
+  hudfeed.pushNow()
 end
 
 function M.board(msg)
