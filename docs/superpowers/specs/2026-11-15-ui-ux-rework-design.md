@@ -17,7 +17,7 @@ Success:
 3. **The HUD is the front door:** between rounds a lobby card opens the Leaderboard and the Host panel for the player, sets their car colour, and opens How to play.
 4. **A host panel that only shows what you can do right now**, with one main button for the next step and a reason whenever something can't happen yet.
 5. **A leaderboard** in the style of the game's multiplayer scoreboard, with a new Rounds tab that keeps the record chat used to keep.
-6. **How to play**, inside the HUD, filled from the server's live settings, opened by itself on a player's first join.
+6. **How to play**, its own app opened from the HUD, filled from the server's live settings, opened by itself on a player's first join.
 7. **Quiet:** the mod sends no chat messages and shows no toasts or `ui_message` pop-ups. All `/cnr` chat commands are removed.
 8. **New preview images** (`app.png`) for the apps once the look is final.
 
@@ -32,7 +32,7 @@ Success:
 - **A HUD that gets in the way:** blocking clicks on other apps or the game, or covering the road more than today.
 - **Information that disappears:** something that was in chat or a pop-up and now shows nowhere.
 - **A host who can't act mid-chase:** End chase and Cancel must stay one click away while driving.
-- **Text that disagrees with the real settings** (How to play or the prep rule line saying 7 s when the server says 9 s).
+- **Text that disagrees with the real settings** (How to play's numbers saying 7 s when the server says 9 s).
 - **Looking bolted on:** our own fonts, our own hand-picked colours or the game's legacy components instead of its current system.
 - **A player who can lose the HUD** and with it every bit of round information.
 
@@ -44,7 +44,7 @@ Success:
   - The root font size is 16 px × UI scale, so all sizes are in `rem`/`em`, never `px`.
   - Components to use: `@/common/components/base` (`BngCard`, `BngCardHeading`, `BngTabs`, `BngButton` with `ACCENTS`, `BngIcon` + `icons`, `BngProgressBar`, `BngSwitch`, `BngDropdown`, `BngInput`, `BngColorPicker`, `BngPill`, `BngDivider`), `.../appsUtilities` (`BngSimpleDataDisplay`, `BngRaceStat`), directives (`v-bng-tooltip`, `vBngTextInput`). Avoid the legacy ones: `styles/modules/legacy/*`, `--bng-black-8`-style names, `bngOldIcon`, `bngDrawerOld`, `utility/tab.vue`, the `custom_old` button accent, the `bng-app` class.
   - Icons come from the game's icon set (`assets/fonts/bngIcons/bngIcons.js`, 1163 icons). Unknown names render as a red placeholder, so every name must be checked against that file. Names used in the mockups: `stopwatchArrows02`, `eyeSolidOpened`, `eyeSolidClosed`, `carChase01`, `strobeLights`, `restart`, `mapPoint`, `caution`, `danger`, `abandon`, `checkmarkBold`, `lockClosed`, `cup`, `group`, `info`, `cogSolid`, `play`, `flag`, `timer`.
-- **Full-screen apps work.** Placement accepts `%` sizes (frame-relative) and clamps to the frame (`modules/apps/placementResolve.js`). Every app wrapper is `pointer-events: none` ("children decide what's interactive", `common/modules/overlay/components/OverlayItem.vue`); an app's host turns clicks on only when `app.json` `interactive` is not `"no"` (`modules/apps/components/AppHost.vue`). So a full-screen app with `"interactive": "no"` and `pointer-events: auto` on its own buttons is click-through everywhere else.
+- **Click-through apps work, up to full screen.** Placement accepts `%` sizes (frame-relative) and clamps to the frame (`modules/apps/placementResolve.js`). Every app wrapper is `pointer-events: none` ("children decide what's interactive", `common/modules/overlay/components/OverlayItem.vue`); an app's host turns clicks on only when `app.json` `interactive` is not `"no"` (`modules/apps/components/AppHost.vue`). So a full-screen app with `"interactive": "no"` and `pointer-events: auto` on its own buttons is click-through everywhere else.
 - **Clicking an app needs the mouse cursor**, as the Apply button does today.
 - **Opening apps for the player** uses the same `ui_appLayouts` calls the HUD placement already uses (`addApp`, `removeApp`, see `placement.lua` and `docs/DEPENDENCIES.md`), including BeamMP's layout-in-a-zip special case.
 - **Client Lua:** `copsAndRobbers.lua` is near LuaJIT's upvalue limit in `onUpdate`; new logic goes in modules (`hudfeed.lua`, `hud.lua`, new ones).
@@ -113,7 +113,7 @@ Success:
   - Catch bar under the line, only while the catch timer runs: red "BEING CAUGHT n%" for the runner, blue "HOLDING RUNNER n%" for cops, thin like the game's Arrest bar, smooth as today.
 - **Notices** (replace chat lines and pop-ups): an icon and one line above the chase line (or above the lobby card), a few seconds each (4 s as today), at most two at once. Yellow for "someone broke a rule" and personal warnings, muted white for information.
 - **Result** (centre): the title (RUNNER CAUGHT, ROUND ENDED, ESCAPED, RUNNER LEFT, ROUND CANCELLED), "Bob survived 8:41 · caught by Ann, Kim", the map's top 3 with your row outlined, and "NEXT ROUND IN 12" when automatic rounds are on. It stays about 10 s (or until the next round starts), then the lobby card returns.
-- **How to play:** a centre card inside the HUD (section 5).
+- **How to play:** its own app (section 5).
 
 ### 3. Host panel
 - **Opened** from the lobby card's Host panel button, or Esc > UI Apps. Default spot: right side of the screen (my call). Header: "Host panel", the version (as today), ✕.
@@ -182,7 +182,7 @@ Every message gets a new home:
 - **The mod calls neither `MP.SendChatMessage` nor `ui_message`** any more (including `game.toast` and `hudfeed.notify`'s fallback).
 
 ### 7. Preview images
-Redraw `tools/previews/hud.svg`, `panel.svg` and `board.svg` and add previews for the Announcements and How to play apps, to show the new apps (the HUD preview shows the chase line mid-chase, Announcements a countdown), and export them to each app's `app.png`, once the look is final.
+Redraw `tools/previews/hud.svg`, `panel.svg` and `board.svg` and add `announcements.svg` and `howto.svg`, one per app (the HUD preview shows the chase line mid-chase, Announcements a countdown, How to play the Basics tab, the panel the Round tab in prep, the leaderboard the Runners tab), and export them to each app's `app.png`, once the look is final.
 
 ### 8. Data the server and client need (new or changed)
 - **To clients:**
@@ -196,11 +196,11 @@ Redraw `tools/previews/hud.svg`, `panel.svg` and `board.svg` and add previews fo
 - **From clients (new):** set my colour (hex or none), add station here, remove nearest station, start the scheduled round now, open/close an app (handled on the client).
 
 ### 9. Docs
-Update `README.md` and `docs/FEATURES.md` (apps, no commands, no chat), and `docs/DEPENDENCIES.md` for the new game dependencies: the full-screen click-through behaviour, opening apps from the HUD, the components, tokens, fonts and icon names used.
+Update `README.md` and `docs/FEATURES.md` (apps, no commands, no chat), and `docs/DEPENDENCIES.md` for the new game dependencies: the click-through behaviour of the HUD apps, opening apps from the HUD, the components, tokens, fonts and icon names used.
 
 ## Verify first (before building on it)
 A short in-game spike, before the rest:
-1. **Full-screen HUD:** `"interactive": "no"` with buttons on `pointer-events: auto`: the buttons click, everything under the empty area (the game, other apps) still clicks. Check the layout editor too: a full-screen app may cover other apps there and make them hard to grab; if so, find a way around it (z-order, or a smaller box that still reaches the centre).
+1. **Click-through app:** `"interactive": "no"` with buttons on `pointer-events: auto`: the buttons click, everything under the empty area (the game, other apps) still clicks. Check the layout editor too: a large app may cover other apps there and make them hard to grab; if so, find a way around it (z-order, or a smaller box that still reaches the centre).
 2. **Shared files:** an app's `app.vue` can import a shared `.js`/`.vue`/`.scss` from another folder of the mod.
 3. **`BngColorPicker`** works inside a mod app and its HSL value converts to and from our hex.
 4. **Opening apps from the HUD** with `ui_appLayouts.addApp` while in a round and between rounds, including BeamMP's `beammp` layout, and removing them again on leave.

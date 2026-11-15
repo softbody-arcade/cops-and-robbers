@@ -1,34 +1,65 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1000" height="560" viewBox="0 0 1000 560">
-  <rect width="1000" height="560" fill="#1d232b"/>
-  <g font-family="DejaVu Sans, sans-serif">
-    <rect x="200" y="30" width="600" height="500" rx="18" fill="#0a0c12" opacity="0.85"/>
-    <rect x="226" y="54" width="34" height="34" rx="6" fill="#ffffff" opacity="0.12"/>
-    <text x="243" y="78" text-anchor="middle" font-size="18" fill="#fff">▾</text>
-    <text x="280" y="80" font-size="22" fill="#ffffff" font-weight="bold">ROUND</text>
-    <rect x="278" y="90" width="80" height="3" fill="#ff6600"/>
-    <text x="384" y="80" font-size="22" fill="#9aa0a6" font-weight="bold">SETTINGS</text>
-    <text x="772" y="80" text-anchor="end" font-size="18" fill="#9aa0a6">v2.0</text>
-    <text x="230" y="134" font-size="24" fill="#fff" font-weight="bold">Prep: waiting for GO · 4 players</text>
-    <text x="230" y="168" font-size="20" fill="#d0d4d8">Runner: Bob</text>
-    <rect x="226" y="188" width="548" height="44" rx="8" fill="#ffffff" opacity="0.08"/>
-    <text x="244" y="217" font-size="20" fill="#d0d4d8">Runner</text>
-    <text x="340" y="217" font-size="20" fill="#fff">Next (fewest runs)</text>
-    <text x="756" y="217" text-anchor="end" font-size="18" fill="#9aa0a6">▾</text>
-    <rect x="226" y="248" width="168" height="48" rx="8" fill="#ff6600"/>
-    <text x="310" y="279" text-anchor="middle" font-size="20" fill="#fff" font-weight="bold">Start round</text>
-    <rect x="406" y="248" width="168" height="48" rx="8" fill="#ffffff" opacity="0.14"/>
-    <text x="490" y="279" text-anchor="middle" font-size="20" fill="#fff">Apply change</text>
-    <rect x="586" y="248" width="188" height="48" rx="8" fill="#2e8b57"/>
-    <text x="680" y="280" text-anchor="middle" font-size="24" fill="#fff" font-weight="bold">GO</text>
-    <rect x="226" y="310" width="168" height="48" rx="8" fill="#ffffff" opacity="0.14"/>
-    <text x="310" y="341" text-anchor="middle" font-size="20" fill="#fff">End chase</text>
-    <rect x="406" y="310" width="168" height="48" rx="8" fill="#b3261e"/>
-    <text x="490" y="341" text-anchor="middle" font-size="20" fill="#fff">Cancel</text>
-    <text x="230" y="404" font-size="20" fill="#d0d4d8">Evolving car</text>
-    <rect x="706" y="384" width="62" height="30" rx="15" fill="#ff6600"/>
-    <circle cx="752" cy="399" r="11" fill="#fff"/>
-    <rect x="226" y="424" width="548" height="44" rx="8" fill="#ffffff" opacity="0.06"/>
-    <text x="244" y="453" font-size="20" fill="#fff" font-weight="bold">Gavril D-Series · change 3</text>
-    <text x="230" y="502" font-size="18" fill="#ffcc66">Apply the change first</text>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6f93b8"/><stop offset="0.55" stop-color="#c9d4d8"/><stop offset="1" stop-color="#e3d9bf"/></linearGradient>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6d7a55"/><stop offset="1" stop-color="#4a5538"/></linearGradient>
+    <linearGradient id="road" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5b5f66"/><stop offset="1" stop-color="#2f3237"/></linearGradient>
+    <filter id="sh" x="-10%" y="-30%" width="120%" height="160%"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#1c1c1c" flood-opacity="0.7"/></filter>
+    <filter id="soft"><feGaussianBlur stdDeviation="1.2"/></filter>
+    
+  </defs>
+  <rect width="1000" height="560" fill="url(#sky)"/>
+  <path d="M0 250 L90 212 L190 236 L300 196 L420 240 L520 214 L650 244 L760 204 L880 238 L1000 214 L1000 270 L0 270 Z" fill="#7d8f8a"/>
+  <rect y="262" width="1000" height="298" fill="url(#ground)"/>
+  <path d="M-120 560 L455 262 L545 262 L1120 560 Z" fill="url(#road)"/>
+  <path d="M496 266 L504 266 L518 330 L482 330 Z M480 356 L520 356 L542 440 L458 440 Z M456 470 L544 470 L582 560 L418 560 Z" fill="#c9bd85" opacity="0.4"/>
+  <g filter="url(#soft)">
+    <rect x="515" y="292" width="34" height="16" rx="4" fill="#26282c"/><rect x="520" y="287" width="24" height="8" rx="3" fill="#3a3d44"/>
+    <rect x="450" y="310" width="42" height="19" rx="4" fill="#1d1f23"/><rect x="456" y="304" width="30" height="9" rx="3" fill="#33363c"/>
+    <rect x="456" y="298" width="8" height="4" fill="#e8402f"/><rect x="468" y="298" width="8" height="4" fill="#2c8be6"/>
   </g>
+  <rect width="1000" height="560" fill="#101216" opacity="0.18"/>
+<text x="330" y="250" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="40" font-weight="700" fill="#5aa4f5" text-anchor="middle" filter="url(#sh)" >YOU'RE A COP</text>
+<text x="330" y="280" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="17" font-weight="400" fill="#a8b0c4" text-anchor="middle" filter="url(#sh)" >Bob is the runner</text>
+<rect x="243" y="518" width="14" height="11" rx="2" fill="#a8b0c4"/><path d="M246 518 L246 514 A4 4 0 0 1 254 514 L254 518" fill="none" stroke="#a8b0c4" stroke-width="2"/>
+<text x="266" y="526" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="15" font-weight="700" fill="#a8b0c4" text-anchor="start" filter="url(#sh)" >Waiting for the host to press GO</text>
+<rect x="560" y="30" width="410" height="500" rx="8" fill="#1c1c1c" fill-opacity="0.78"/>
+<path d="M574 44 L580 44 L576 68 L570 68 Z" fill="#f4691b"/>
+<text x="590" y="64" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="20" font-weight="700" fill="#eeeeee" text-anchor="start" >Host panel</text>
+<text x="705.0" y="64" font-family="Overpass Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="400" fill="#a8b0c4" text-anchor="start" >v2.1.0</text>
+<path d="M939 51 L949 61 M949 51 L939 61" stroke="#a8b0c4" stroke-width="2" stroke-linecap="round"/>
+<text x="590" y="112" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="15" font-weight="700" fill="#ff9a6a" text-anchor="start" >Round</text>
+<rect x="590" y="120" width="46.5" height="3" rx="1" fill="#f4691b"/>
+<text x="664.5" y="112" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="15" font-weight="700" fill="#a8b0c4" text-anchor="start" >Car</text>
+<text x="720.4" y="112" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="15" font-weight="700" fill="#a8b0c4" text-anchor="start" >Map</text>
+<text x="776.3" y="112" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="15" font-weight="700" fill="#a8b0c4" text-anchor="start" >Settings</text>
+<rect x="580" y="128" width="370" height="1" fill="#a8b0c4" opacity="0.35"/>
+<circle cx="596" cy="158" r="6" fill="#e8d04a"/>
+<text x="612" y="164" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="18" font-weight="700" fill="#e8d04a" text-anchor="start" >Prep</text>
+<text x="590" y="188" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="14" font-weight="400" fill="#a8b0c4" text-anchor="start" >Bob is the runner · Gavril D-Series</text>
+<rect x="584" y="210" width="362" height="38" rx="4" fill="#1c1c1c" fill-opacity="0.5"/>
+<rect x="596" y="218" width="74" height="22" rx="4" fill="#e8402f"/>
+<text x="633.0" y="234" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="12.5" font-weight="700" fill="#ffffff" text-anchor="middle" >RUNNER</text>
+<text x="684" y="235" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="16" font-weight="700" fill="#eeeeee" text-anchor="start" >Bob</text>
+<text x="930" y="235" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="14" font-weight="700" fill="#4cbf7a" text-anchor="end" >ready</text>
+<rect x="584" y="256" width="362" height="38" rx="4" fill="#1c1c1c" fill-opacity="0.5"/>
+<rect x="596" y="264" width="74" height="22" rx="4" fill="#2c8be6"/>
+<text x="633.0" y="280" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="12.5" font-weight="700" fill="#ffffff" text-anchor="middle" >COP</text>
+<text x="684" y="281" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="16" font-weight="700" fill="#eeeeee" text-anchor="start" >Ann</text>
+<text x="930" y="281" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="14" font-weight="700" fill="#4cbf7a" text-anchor="end" >ready</text>
+<rect x="584" y="302" width="362" height="38" rx="4" fill="#1c1c1c" fill-opacity="0.5"/>
+<rect x="596" y="310" width="74" height="22" rx="4" fill="#2c8be6"/>
+<text x="633.0" y="326" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="12.5" font-weight="700" fill="#ffffff" text-anchor="middle" >COP</text>
+<text x="684" y="327" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="16" font-weight="700" fill="#eeeeee" text-anchor="start" >Kim</text>
+<text x="930" y="327" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="14" font-weight="700" fill="#a8b0c4" text-anchor="end" >loading</text>
+<g><rect x="584" y="380" width="362" height="46" rx="5" fill="#d85a1c"/>
+<text x="765.0" y="409.3" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="18" font-weight="700" fill="#ffffff" text-anchor="middle" >GO</text>
+</g>
+<g><rect x="584" y="438" width="176" height="38" rx="5" fill="#4a5368"/>
+<text x="672.0" y="462.25" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle" >New car</text>
+</g>
+<g><rect x="770" y="438" width="176" height="38" rx="5" fill="none" stroke="#f06a5a" stroke-width="2"/>
+<text x="858.0" y="462.25" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="15" font-weight="700" fill="#f06a5a" text-anchor="middle" >Cancel round</text>
+</g>
+<path d="M596 495 L606 512 L586 512 Z" fill="none" stroke="#e8d04a" stroke-width="2" stroke-linejoin="round"/><path d="M596 501 L596 506" stroke="#e8d04a" stroke-width="2" stroke-linecap="round"/><circle cx="596" cy="509" r="1.1" fill="#e8d04a"/>
+<text x="614" y="510" font-family="Overpass, Noto Sans, DejaVu Sans, sans-serif" font-size="13" font-weight="400" fill="#e8d04a" text-anchor="start" >Waiting for Kim to load the car</text>
 </svg>

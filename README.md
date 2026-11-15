@@ -16,22 +16,19 @@ Players install nothing; BeamMP downloads the client mod on join. Every reset bu
 follows the round's reset rules: Reset vehicle and Recover repair in place; Load home and Recover to last road
 repair in place for the runner and move cops to the nearest road.
 
-## Controls
+## The apps
 
-Everything runs through two apps (Esc > UI Apps):
+The mod talks to players only through five apps. It sends no chat messages or pop-ups, and has no chat commands. Everything is clickable with the mouse cursor shown.
 
-- **Cops and Robbers Panel** (for whoever runs the game): start rounds (runner: next, same, random or a player), GO,
-  End chase, Cancel, automatic rounds, practice rounds, the evolving car build and Apply, and every setting
-  (saved automatically; "Reload config.json" picks up hand edits).
-- **Cops and Robbers Leaderboard** (anyone): best times, top cops and player stats.
-
-Only five chat commands remain:
-
-| Command | |
+| App | How it opens |
 |---|---|
-| `/cnr color <#hex\|off>` | Your car color for every round (the only way to paint: the game's paint menu is closed in rounds) |
-| `/cnr addstation` / `/cnr removestation` | Edit this map's gas stations |
-| `/cnr help` / `/cnr version` | Help / mod version |
+| **Cops and Robbers Announcements** | Added automatically on join. Role title, countdowns, GO and the result after a round. |
+| **Cops and Robbers HUD** | Added automatically on join. Lobby card between rounds, prep line, chase line and catch bar, notices. |
+| **Cops and Robbers How to play** | The How to play button on the lobby card or the prep line. It also opens by itself the first time a player joins. |
+| **Cops and Robbers Panel** | The Host panel button on the lobby card or the prep line, or Esc > UI Apps. |
+| **Cops and Robbers Leaderboard** | The Leaderboard button on the lobby card, or Esc > UI Apps. |
+
+Announcements and the HUD can be moved and resized in the layout editor but not removed. Every app is removed from the layout again on leaving the server. The Panel and the Leaderboard show a ✕ to close them, and the Leaderboard and How to play hide themselves during a round.
 
 ## Evolving car mode
 
@@ -41,36 +38,37 @@ Switch "Evolving car" on in the panel. Instead of a random car each round, every
 - In each round's prep, only the runner may change **one thing** (an engine swap, one performance stage, one
   axle of wheels, plus whatever a swap needs to work). Everyone sees the queued change live in their HUD and keeps
   each other honest.
-- The runner presses **Apply change** on his change line in the HUD (not the panel) to lock it in: every car is rebuilt with it (the HUD shows APPLYING CHANGES until everyone has
+- The runner presses **Apply change** on the change card in the HUD (not the panel) to lock it in: every car is rebuilt with it (the screen shows APPLYING CHANGES until everyone has
   loaded, at most 20 s), then GO. Parts someone doesn't have are flagged in the HUD.
 - The build is saved after every change and continues next session until "Reset build" (backups are kept in
   `data/build-<time>.json`). Practice rounds use the build but never change it.
 
 ## HUD
 
-On join the "Cops and Robbers HUD" app is added automatically to the player's current UI layout, at bottom centre
-(movable and resizable like any app), and removed again on leaving the server. During the chase it shows the status
-line (role, time, reset status, distance info) and a catch bar (red "BEING CAUGHT" for the runner, blue "HOLDING
-RUNNER" for cops) in 1% steps, plus countdowns, GO flashes, the prep line, short event lines and a result card
-(with the map's top 3) after each round. When the app is not in the current layout, the old pop-up messages are shown
-instead.
+- **Lobby card** (between rounds): who is online, a line saying whether a round is waiting, buttons for Colour, How to play, Leaderboard and Host panel, and a yellow line for a standing problem (no reset button bound, an outdated copy, BeamNG.Earth too old).
+- **Colour:** the Colour button opens a colour picker with a hex field, "No colour" and Done. The colour is used for every round car, repaints at once in prep and otherwise applies from the next round.
+- **Prep:** the centre shows your role ("YOU'RE THE RUNNER" or "YOU'RE A COP", and for cops the runner's name). The bottom shows "Waiting for the host to press GO" with the Colour, How to play and Host panel buttons. In evolving mode it shows the runner's queued change instead, with Apply change for the runner.
+- **Countdowns:** "RUNNER STARTS IN", "COPS RELEASED IN" and "CRASH PENALTY", then "GO!" or "PENALTY OVER".
+- **Chase:** role, time (with the time limit when there is one), SPOTTED or HIDDEN for the runner, IN SIGHT or live and last-seen positions for cops, the distance, and the reset status. A catch bar shows while the catch timer runs: red "BEING CAUGHT" for the runner, blue "HOLDING RUNNER" for cops.
+- **Notices:** rule breaks (illegal resets, teleports, parts changes, crash penalties), build changes and personal warnings appear as short lines above the chase line or the lobby card, at most two at a time.
+- **Result:** the title, the runner's time and who caught them, the map's top 3 and "Next round in N" with automatic rounds.
 
-## Control panel
+## How to play
 
-"Cops and Robbers Panel" is a clickable app for whoever runs the game. It is not placed automatically: add it yourself
-via Esc > UI Apps. The Round tab shows the phase, map and players, and has Start round (runner: next, same as last,
-random or a player), New car, GO, End chase, Cancel, an Automatic rounds switch and practice rounds. Buttons are only
-enabled when they would do something. The Settings tab lists every setting with -/+ steppers, switches and a text field
-for excluded cars; changes save automatically half a second after the last click. Settings are locked during a round.
-"Reset to default" needs a second click. The ▾ button collapses the panel to a one-line status; it collapses by itself
-on GO and opens again when the round ends.
+A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from the server's current settings, so it always matches the round (for example "no time limit" or "sight is off").
 
-## Leaderboard app
+## Host panel
 
-"Cops and Robbers Leaderboard" (Esc > UI Apps) shows each player's best survival time, the top cops by catches,
-and per-player stats (runs, best and average, escapes, catches, assists, time hidden from cops, times they lost the
-cops), filtered by map. It refreshes after every round. The leaderboard started fresh in 1.7.0; the old file is kept
-as `data/leaderboard-1.6.json`.
+"Cops and Robbers Panel" has four tabs:
+
+- **Round:** shows only what can be done now. The player list is the runner picker (the player with the fewest runs is preselected). One main button does the next step: Start round, then GO, with a yellow line saying why it can't yet. Practice as runner and as cop, New car, Cancel round, and the Automatic rounds switch. During a round the panel folds into a bar with the time, End chase and Cancel (a second click is needed during the chase). It opens again when the round ends.
+- **Car:** Random car or Evolving build, the build summary, New build (choose a car or random) and Reset build, mod cars and excluded cars.
+- **Map:** gas stations of this map, Add station here and Remove nearest.
+- **Settings:** the common settings first, the rest under More settings, each with a one-line explanation. Changes save by themselves; a value that differs from the default is orange and has its own reset. Settings are locked during a round. "Reload config.json" picks up hand edits.
+
+## Leaderboard
+
+"Cops and Robbers Leaderboard" has the look of the game's multiplayer scoreboard and four tabs: **Runners** (best survival times), **Cops** (catches, assists, fastest catch), **Players** (stats per player) and **Rounds** (every recorded round, newest first, with a timeline of what happened and each cop's share of sight). Filter by map and car mode. It refreshes after every round. The leaderboard started fresh in 1.7.0; the old file is kept as `data/leaderboard-1.6.json`.
 
 ## Settings (`config.json`)
 
@@ -90,8 +88,8 @@ as `data/leaderboard-1.6.json`.
 | `crashPenaltySeconds` | 10 | Freeze for the cop at fault |
 | `lastSeenIntervalSeconds` | 30 | Runner location ping for cops (0 = off) |
 | `sightMaxMeters` | 400 | How far cops can see the runner (0 = sight off) |
-| `sightLiveIntervalSeconds` | 1 | Live runner position for all cops while one sees him (at least 3 s on BeamNG.Earth) |
-| `sightNoRouteSeconds` | 5 | A cop who sees the runner within his speed × this many seconds gets no route |
+| `sightLiveIntervalSeconds` | 1 | Live runner position for all cops while one sees the runner (at least 3 s on BeamNG.Earth) |
+| `sightNoRouteSeconds` | 5 | A cop who sees the runner within their speed × this many seconds gets no route |
 | `sightNoRouteMinMeters` | 50 | ...and always within this distance |
 | `carMode` | random | `random` (a random car each round) or `evolving` (the shared build) |
 | `sightGraceSeconds` | 1.5 | Sight still counts this long after a cop loses it |
@@ -105,7 +103,7 @@ as `data/leaderboard-1.6.json`.
 
 ## Players and cops
 
-Players are recognised by their BeamMP account (leaderboard, colors, `start next/again`); guests by name, which
+Players are recognised by their BeamMP account (leaderboard, colors, who runs next); guests by name, which
 changes every session. Cops get a light bar with lights on (no siren): when the round car has none, the light bar
 parts of a police config of the same model are added for cops.
 
@@ -127,4 +125,4 @@ extension against stubbed game functions). `make install-local` deploys to `.tes
 Client layout (`client/lua/ge/extensions/`): `copsAndRobbers.lua` holds round state, the server event handlers and the
 `onUpdate` steps; `copsAndRobbers/` has `game` (GE helpers), `inputs` (locks, reset hooks), `roads` (spawn spots),
 `vehicles` (car pick, cop lights), `lightbar` (emergency light planner), `ai` (practice cars), `geo` (BeamNG.Earth),
-`hud` (HUD model), `hudfeed` (HUD state and push) and `placement` (layout handling).
+`hud` (HUD model), `hudfeed` (HUD state and push), `apps` (opening and closing the apps) and `placement` (layout handling).
