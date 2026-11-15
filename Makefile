@@ -1,7 +1,7 @@
 LUA := $(shell command -v lua5.3 2>/dev/null || command -v lua)
 TESTSERVER := .testserver
 
-.PHONY: test package install-local clean
+.PHONY: test package install-local clean deploy
 
 test:
 	$(LUA) tests/run.lua tests/test_*.lua
@@ -18,3 +18,6 @@ install-local: package
 
 clean:
 	rm -rf dist
+
+deploy: package
+	./scripts/deploy.sh
