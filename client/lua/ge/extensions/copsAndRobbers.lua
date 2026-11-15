@@ -4,7 +4,7 @@ local hud = require("copsAndRobbers/hud")
 local lightbar = require("copsAndRobbers/lightbar")
 local placement = require("copsAndRobbers/placement")
 
-local CLIENT_VERSION = "1.4.0"
+local CLIENT_VERSION = "1.5.0"
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
 local LIGHTS_OFF = "electrics.set_lightbar_signal(0)"
 

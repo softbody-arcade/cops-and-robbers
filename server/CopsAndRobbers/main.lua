@@ -11,7 +11,7 @@ local tables = require("cnr.tables")
 local geo = require("cnr.geo")
 local panel = require("cnr.panel")
 
-local VERSION = "1.4.0"
+local VERSION = "1.5.0"
 local PREFIX = "[CnR] "
 local dataDir = pluginDir .. "data/"
 local stationsDir = dataDir .. "stations/"

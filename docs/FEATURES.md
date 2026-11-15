@@ -1,4 +1,4 @@
-# Cops and Robbers 1.4.0: features
+# Cops and Robbers 1.5.0: features
 
 A BeamMP server plugin with a client mod that BeamMP downloads automatically. The mod enforces the group's cops-and-robbers rules. It is one mod for every map, and it switches to geo mode on BeamNG.Earth by itself.
 
@@ -137,6 +137,24 @@ A BeamMP server plugin with a client mod that BeamMP downloads automatically. Th
 - **Result card:** shown for 10 s after a round. It contains the title, the runner and their time, who caught them, the top 3 for the map, and "Next round in N" when `/cnr auto` is on.
 - **Fallback:** when the app is not in the current layout, the old pop-up messages are used. Chat stays the record, and rare warnings stay pop-ups.
 - **Format:** a Vue 3 app, the newest UI system in BeamNG 0.40.
+
+## Control panel (UI app)
+
+- **Who:** "Cops and Robbers Panel" is for whoever runs the game. It is never placed automatically: add it via Esc > UI Apps. It needs the mouse shown to click. The server does not check who uses it, just like the chat commands.
+- **Round tab:**
+  - The status line shows the phase ("No round", "Picking cars", "Prep: waiting for GO", "Countdown", "Runner head start" or "Chase m:ss"), the map and the number of players. It also shows the runner's name, with "(practice)" in a test round.
+  - Runner picker: "Next (fewest runs)", "Same as last", "Random", or any online player.
+  - Buttons: Start round, New car, GO, End chase and Cancel, each enabled only when it would do something. End chase is enabled once the chase is running.
+  - An Automatic rounds switch, and Practice "as runner" / "as cop".
+  - A reply line shows the server's answer to the last click. The answer also appears in chat.
+- **Settings tab:**
+  - Every `config.json` setting, grouped into Round, Catching, Resets, Crashes, Cops and Cars. A setting the panel doesn't know yet appears under "Other".
+  - Numbers have −/+ steppers, on/off settings have switches, and excluded cars is a comma-separated text field.
+  - Changes save automatically 0.5 s after the last click, all at once. Excluded cars save on Enter or when you click away. A value that would be invalid saves nothing and snaps back.
+  - The reply line confirms each save ("Saved: Head start 8 s"). Saves don't post to chat.
+  - "Reset to default" needs a second click within 3 s.
+  - Settings are locked during a round ("Stop the round first").
+- **Live:** the panel follows changes made by anyone, including chat commands, within a quarter of a second.
 
 ## Key bindings
 

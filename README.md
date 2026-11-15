@@ -44,6 +44,15 @@ RUNNER" for cops) in 1% steps, plus countdowns, GO flashes, the prep line, short
 (with the map's top 3) after each round. When the app is not in the current layout, the old pop-up messages are shown
 instead.
 
+## Control panel
+
+"Cops and Robbers Panel" is a clickable app for whoever runs the game. It is not placed automatically: add it yourself
+via Esc > UI Apps. The Round tab shows the phase, map and players, and has Start round (runner: next, same as last,
+random or a player), New car, GO, End chase, Cancel, an Automatic rounds switch and practice rounds. Buttons are only
+enabled when they would do something. The Settings tab lists every setting with -/+ steppers, switches and a text field
+for excluded cars; changes save automatically half a second after the last click. Settings are locked during a round.
+"Reset to default" needs a second click.
+
 ## Key bindings
 
 Options > Controls > Gameplay lists the "Cops & Robbers: ..." actions (bind them to wheel buttons): Next step
