@@ -781,3 +781,25 @@ test("/cnr auto without argument toggles", function()
   assertEq(env.chatHas("Automatic next round: off"), true)
   env.cleanup()
 end)
+
+test("roundEnd carries autoNextSeconds when an auto round is scheduled", function()
+  local env = boot({ config = '{"autoNextRound": true, "autoNextDelaySeconds": 5}' })
+  env.startRound(); env.go()
+  for _ = 1, 90 do
+    env.clock = env.clock + 0.25; env.call("cnr_tick")
+    local e = env.lastSent("cnr_roundEnd")
+    if e and e.data:find("caught", 1, true) then break end
+  end
+  assertEq(env.lastSent("cnr_roundEnd").data:find('"autoNextSeconds":5', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("a recorded run sends the top 3 for the map", function()
+  local env = boot()
+  env.startRound(); env.go()
+  for _ = 1, 90 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  local top = env.lastSent("cnr_top")
+  assertEq(top.pid, -1)
+  assertEq(top.data:find("1. Reinder", 1, true) ~= nil, true)
+  env.cleanup()
+end)

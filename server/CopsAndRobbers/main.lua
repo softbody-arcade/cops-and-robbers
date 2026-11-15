@@ -334,14 +334,16 @@ local function applyEffects(effects)
     elseif e.kind == "state" then
       send(e.pid, "cnr_state", { resetAllowed = e.resetAllowed, resetHint = e.resetHint, catchProgress = e.catchProgress })
     elseif e.kind == "roundEnd" then
+      local autoNext = cfg.autoNextRound and e.reason ~= "cancelled" and not e.to
       send(e.to or -1, "cnr_roundEnd", {
         runnerId = e.runnerId, runnerName = e.runnerName, survivedSeconds = e.survivedSeconds,
         reason = e.reason, explode = e.explode, catchers = e.catchers,
+        autoNextSeconds = autoNext and cfg.autoNextDelaySeconds or nil,
       })
       activeVid = {}
       partsBaseline = {}
       aiVid = {}
-      if cfg.autoNextRound and e.reason ~= "cancelled" and not e.to then
+      if autoNext then
         autoNextAt = now() + cfg.autoNextDelaySeconds
         broadcast(string.format('Next round in %gs ("/cnr auto off" to stop)', cfg.autoNextDelaySeconds))
       end
@@ -390,6 +392,7 @@ local function applyEffects(effects)
         broadcast(string.format("%s disconnected after %s", run.player, t))
       end
       for _, line in ipairs(leaderboard.formatTop(board, 5, mapName)) do broadcast(line) end
+      send(-1, "cnr_top", { lines = leaderboard.formatTop(board, 3, mapName) })
     end
   end
 end
