@@ -3,6 +3,7 @@ package.path = pluginDir .. "?.lua;" .. package.path
 
 local vec = require("cnr.vec")
 local config = require("cnr.config")
+local rules = require("cnr.rules")
 local round = require("cnr.round")
 local leaderboard = require("cnr.leaderboard")
 local commands = require("cnr.commands")
@@ -103,6 +104,7 @@ local leaderboardLocked = false
 local panelSubs = {}
 local panelMirror
 local lastPanelSig
+local lastLobbySig
 local lastPanelError
 
 local function send(pid, event, payload)
@@ -584,6 +586,29 @@ function handlers.test(pid, cmd)
   applyEffects(current:start(now(), nil, pid, MP.GetPlayers() or {}, opts))
 end
 
+local function pushRules(pid)
+  send(pid or -1, "cnr_rules", rules.payload(cfg))
+end
+
+local function lobbyState()
+  local players = MP.GetPlayers() or {}
+  local online = 0
+  for _ in pairs(players) do online = online + 1 end
+  local practice
+  if current:isActive() and current.test then practice = MP.GetPlayerName(current.issuerId) end
+  return { online = online, practice = practice, active = current:isActive() and not current.test or false }
+end
+
+local function pushLobby(pid)
+  local state = lobbyState()
+  if pid then return send(pid, "cnr_lobby", state) end
+  local sig = panel.signature(state)
+  if sig ~= lastLobbySig then
+    lastLobbySig = sig
+    send(-1, "cnr_lobby", state)
+  end
+end
+
 function handlers.auto(pid, cmd)
   local arg = cmd.args[1] and cmd.args[1]:lower()
   if arg ~= "on" and arg ~= "off" then arg = cfg.autoNextRound and "off" or "on" end
@@ -591,6 +616,7 @@ function handlers.auto(pid, cmd)
   writeFile(pluginDir .. "config.json", Util.JsonPrettify(Util.JsonEncode(updated)))
   loadConfig()
   current.cfg = cfg
+  pushRules()
   if arg == "off" then
     autoNextAt = nil
     send(-1, "cnr_autoNext", {})
@@ -672,6 +698,7 @@ function handlers.reload(pid)
   if current:isActive() then return reply(pid, "Stop the round before reloading") end
   loadConfig()
   current = round.new(cfg)
+  pushRules()
   reply(pid, "Config reloaded")
 end
 
@@ -740,6 +767,7 @@ local function panelSettings(pid, values, id)
   loadConfig()
   current = round.new(cfg)
   answer(true, "Saved", keys)
+  pushRules()
   pushPanel()
   pushBoard()
 end
@@ -960,6 +988,8 @@ end
 function cnrOnPlayerJoin(pid)
   send(pid, "cnr_mode", { geo = geoMode, version = VERSION })
   sendMyColor(pid)
+  pushRules(pid)
+  pushLobby(pid)
   requestStations(pid)
   applyEffects(current:playerJoined(now(), pid, MP.GetPlayerName(pid)))
   if current.evolving and current.state == "prep" and current.queued and current.players[pid] then
@@ -1122,7 +1152,7 @@ function startAutoRound()
 end
 
 function cnrTick()
-  local panelOk, panelErr = pcall(pushPanel)
+  local panelOk, panelErr = pcall(function() pushPanel(); pushLobby() end)
   if not panelOk and panelErr ~= lastPanelError then log("panel update failed: " .. tostring(panelErr)) end
   lastPanelError = not panelOk and panelErr or nil
   if autoNextAt and now() >= autoNextAt then startAutoRound() end
@@ -1175,4 +1205,6 @@ MP.CreateEventTimer("cnr_tick", 250)
 
 send(-1, "cnr_roundEnd", { reason = "cancelled" })
 send(-1, "cnr_mode", { geo = geoMode, version = VERSION })
+pushRules()
+pushLobby()
 log("Cops and Robbers " .. VERSION .. " loaded on " .. mapName .. " (" .. pluginDir .. ")")

@@ -425,7 +425,7 @@ test("test round events reach only the issuer", function()
   for _ = 1, 50 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
   env.panel(1, "stop")
   for _, m in ipairs(env.sent) do
-    if m.ev ~= "cnr_roundEnd" or not m.data:find("cancelled") then assertEq(m.pid, 1, m.ev) end
+    if m.ev ~= "cnr_lobby" and (m.ev ~= "cnr_roundEnd" or not m.data:find("cancelled")) then assertEq(m.pid, 1, m.ev) end
   end
   assertEq(#env.chats, 0)
   env.cleanup()
@@ -1682,5 +1682,66 @@ test("next without a schedule", function()
   env.panel(1, "next")
   assertEq(env.replyHas("No round is scheduled"), true)
   assertEq(env.lastSent("cnr_pickVehicle"), nil)
+  env.cleanup()
+end)
+
+test("a joiner gets rules, lobby and colour", function()
+  local env = boot()
+  env.call("onPlayerJoin", 2)
+  assertEq(sentTo(env, "cnr_rules", 2):find('"headStartSeconds":7', 1, true) ~= nil, true)
+  assertEq(sentTo(env, "cnr_lobby", 2):find('"online":2', 1, true) ~= nil, true)
+  assertEq(sentTo(env, "cnr_lobby", 2):find('"active":false', 1, true) ~= nil, true)
+  assertEq(sentTo(env, "cnr_myColor", 2) ~= nil, true)
+  env.cleanup()
+end)
+
+test("a mid-round joiner also gets them", function()
+  local env = boot()
+  env.startRound()
+  env.call("onVehicleSpawn", 1, 3, '1:Reinder:1-3:{"jbm":"etk800"}')
+  env.go()
+  for _ = 1, 40 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.call("onPlayerJoin", 2)
+  assertEq(sentTo(env, "cnr_rules", 2) ~= nil, true)
+  assertEq(sentTo(env, "cnr_lobby", 2):find('"active":true', 1, true) ~= nil, true)
+  assertEq(sentTo(env, "cnr_myColor", 2) ~= nil, true)
+  assertEq(sentTo(env, "cnr_roundSetup", 2):find('"phase":"running"', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("saving a setting re-sends the rules", function()
+  local env = boot()
+  env.call("cnr_panel", 1, '{"action":"settings","id":1,"values":{"headStartSeconds":9}}')
+  local last = env.lastSent("cnr_rules")
+  assertEq(last.pid, -1)
+  assertEq(last.data:find('"headStartSeconds":9', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("lobby shows a practice round by someone", function()
+  local env = boot()
+  env.panel(1, "test runner")
+  env.call("cnr_tick")
+  local l = env.lastSent("cnr_lobby")
+  assertEq(l.pid, -1)
+  assertEq(l.data:find('"practice":"Reinder"', 1, true) ~= nil, true)
+  assertEq(l.data:find('"active":false', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("lobby online count follows players", function()
+  local env = boot()
+  env.names = { "Reinder" }
+  env.call("cnr_tick")
+  assertEq(env.lastSent("cnr_lobby").data:find('"online":1', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("lobby is only re-sent when it changes", function()
+  local env = boot()
+  env.call("cnr_tick")
+  local n = #env.sent
+  env.call("cnr_tick")
+  for i = n + 1, #env.sent do assertEq(env.sent[i].ev == "cnr_lobby", false) end
   env.cleanup()
 end)
