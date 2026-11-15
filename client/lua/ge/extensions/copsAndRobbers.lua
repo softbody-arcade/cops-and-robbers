@@ -39,7 +39,7 @@ local POSE_JUMP = 30
 
 local clock = 0
 local HUD_APP = "copsAndRobbersHud"
-local HUD_PLACEMENT = { left = "0", right = "0", margin = "auto", bottom = "70px", width = "520px", height = "170px" }
+local HUD_PLACEMENT = { left = "0", right = "0", margin = "auto", bottom = "70px", width = "520px", height = "230px" }
 local HUD_FILES = { "/ui/modules/apps/CopsAndRobbersHud/app.json", "/ui/modules/apps/CopsAndRobbersHud/app.vue" }
 local HUD_PUSH_INTERVAL = 0.1
 local PLACEMENT_INTERVAL = 2
@@ -56,6 +56,7 @@ local RESULT_TITLES = { caught = "RUNNER CAUGHT", called = "ROUND ENDED", escape
 local FLASH_SECONDS, EVENT_SECONDS, RESET_FLASH_SECONDS, RESULT_SECONDS = 2, 4, 1.5, 10
 local hudFlash, hudPrep, hudResetFlashUntil, hudResult
 local hudEvents = {}
+local startStatus
 local active = false
 local role
 local runnerId
@@ -574,6 +575,10 @@ local function onRoundSetup(data)
     startTimer(tonumber(d.headStartRemaining), "Cops released in")
   else
     timerEnd = nil
+    if phase == "running" then
+      startStatus()
+      chaseStart = clock - (tonumber(d.chaseElapsed) or 0)
+    end
   end
 end
 
@@ -784,7 +789,7 @@ local function onNotice(data)
   end
 end
 
-local function startStatus()
+startStatus = function()
   statusActive = true
   chaseStart = clock
   lastStatusAt = 0
@@ -923,13 +928,19 @@ end
 local function onRoundEnd(data)
   local d = jsonDecode(data) or {}
   local wasRunner = MPConfig and MPConfig.getPlayerServerID() == d.runnerId
+  local wasActive = active
   endRound()
+  local cancelled = d.reason == "cancelled" or not RESULT_TITLES[d.reason]
+  if cancelled and not wasActive then return end
   local catchers = (type(d.catchers) == "table" and #d.catchers > 0) and table.concat(d.catchers, ", ") or nil
+  local nextAt = tonumber(d.autoNextSeconds) and (clock + tonumber(d.autoNextSeconds)) or nil
   hudResult = {
     title = RESULT_TITLES[d.reason] or RESULT_TITLES.cancelled,
-    runner = tostring(d.runnerName or ""), time = formatTime(d.survivedSeconds), catchers = catchers,
-    untilT = clock + RESULT_SECONDS,
-    nextAt = tonumber(d.autoNextSeconds) and (clock + tonumber(d.autoNextSeconds)) or nil,
+    runner = (not cancelled and d.runnerName) and tostring(d.runnerName) or nil,
+    time = not cancelled and formatTime(d.survivedSeconds) or nil,
+    catchers = catchers,
+    untilT = math.max(clock + RESULT_SECONDS, nextAt or 0),
+    nextAt = nextAt,
   }
   if not hudPlaced then showEndToast(d) end
   if d.explode and wasRunner then
@@ -1086,8 +1097,11 @@ local function requestReset(kind)
   if not veh then return end
   if not resetAllowed then
     hudResetFlashUntil = clock + RESET_FLASH_SECONDS
-    if not hudPlaced then
-      toast(penaltyActive and "No reset during a crash penalty" or (lastHint or "Reset not available"), 3, "cnr_reset")
+    local msg = penaltyActive and "No reset during a crash penalty" or (lastHint or "Reset not available")
+    if hudPlaced and not statusActive then
+      addEvent(msg)
+    elseif not hudPlaced then
+      toast(msg, 3, "cnr_reset")
     end
     return
   end

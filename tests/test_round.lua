@@ -650,3 +650,11 @@ test("catch progress is floored, never reported as 1 before the catch", function
   assertEq(find(fx, "roundEnd"), nil)
   assertNear(find(fx, "state", 2).catchProgress, 0.99, 1e-9)
 end)
+
+test("joining during the chase tells how long it has been running", function()
+  local r = running()
+  local fx = r:playerJoined(41, 9, "Zed")
+  assertNear(find(fx, "setup", 9).chaseElapsed, 30, 1e-9)
+  local r2 = started()
+  assertEq(find(r2:playerJoined(2, 9, "Zed"), "setup", 9).chaseElapsed, nil)
+end)

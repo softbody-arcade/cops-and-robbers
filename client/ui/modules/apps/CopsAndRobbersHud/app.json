@@ -2,14 +2,14 @@
   "domElement": "<cops-and-robbers-hud></cops-and-robbers-hud>",
   "name": "Cops and Robbers HUD",
   "types": ["ui.apps.categories.info"],
-  "description": "Cops and Robbers status line and catch bar.",
+  "description": "Cops and Robbers countdowns, status line, catch bar and round results.",
   "css": {
     "left": "0",
     "right": "0",
     "margin": "auto",
     "bottom": "70px",
     "width": "520px",
-    "height": "170px",
+    "height": "230px",
     "min-width": "320px",
     "min-height": "60px"
   },

@@ -2,7 +2,7 @@
   <div v-if="hud.visible" class="cnr-hud">
     <div v-if="hud.result" class="cnr-panel cnr-result">
       <div class="cnr-result-title">{{ hud.result.title }}</div>
-      <div class="cnr-result-line">
+      <div v-if="hud.result.runner" class="cnr-result-line">
         <span class="cnr-strong">{{ hud.result.runner }}</span>
         <span class="cnr-time">{{ hud.result.time }}</span>
       </div>
@@ -149,6 +149,8 @@ events.on("CnRHud", data => {
   content: "|";
   margin-right: 14px;
   opacity: 0.4;
+  color: #fff;
+  font-weight: 400;
 }
 .cnr-catch {
   padding: 6px 14px 8px;

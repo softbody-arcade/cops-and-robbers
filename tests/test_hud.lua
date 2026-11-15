@@ -109,3 +109,9 @@ test("result card replaces everything for its time and counts down to the next r
   assertEq(p.banner, nil); assertEq(p.events, nil); assertEq(p.result.top, nil)
   assertEq(hud.payload(s, 20, info).visible, false)
 end)
+
+test("result without runner or next round", function()
+  local s = hud.new()
+  local p = hud.payload(s, 1, { active = false, result = { title = "ROUND CANCELLED", untilT = 5 } })
+  assertEq(p.result.title, "ROUND CANCELLED"); assertEq(p.result.runner, nil); assertEq(p.result.nextIn, nil)
+end)

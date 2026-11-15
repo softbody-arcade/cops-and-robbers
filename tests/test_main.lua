@@ -803,3 +803,17 @@ test("a recorded run sends the top 3 for the map", function()
   assertEq(top.data:find("1. Reinder", 1, true) ~= nil, true)
   env.cleanup()
 end)
+
+test("a mid-chase join gets chaseElapsed in its setup", function()
+  local env = boot()
+  env.startRound(); env.go()
+  env.positions[1], env.positions[2] = 0, 900
+  for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.sent = {}
+  env.names = { "Reinder", "Bob", "Cid" }
+  env.call("onPlayerJoin", 3)
+  local setup = env.lastSent("cnr_roundSetup")
+  assertEq(setup.pid, 3)
+  assertEq(setup.data:find('"chaseElapsed":5', 1, true) ~= nil, true)
+  env.cleanup()
+end)

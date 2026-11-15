@@ -296,7 +296,7 @@ local function applyEffects(effects)
         resumeGeo = resumeGeo,
         runnerId = current.runnerId, role = e.role, copIndex = e.copIndex,
         model = current.vehicle.model, config = current.vehicle.config,
-        phase = e.phase, countdownRemaining = e.countdownRemaining,
+        phase = e.phase, countdownRemaining = e.countdownRemaining, chaseElapsed = e.chaseElapsed,
         headStartRemaining = e.headStartRemaining, inPlace = e.inPlace,
         resumePos = not geoMode and e.resumePos or nil,
         color = e.colorHex and colorTable((colors.parseHex(e.colorHex))) or colorFor(e.pid),

@@ -90,6 +90,8 @@ function Round:setupFor(now, pid)
     e.countdownRemaining = math.max(0, self.countdownStartedAt + self.cfg.runnerCountdownSeconds - now)
   elseif self.state == "headstart" then
     e.headStartRemaining = math.max(0, self.startedAt + self.cfg.headStartSeconds - now)
+  elseif self.state == "running" then
+    e.chaseElapsed = math.max(0, now - self.releasedAt)
   end
   return e
 end
