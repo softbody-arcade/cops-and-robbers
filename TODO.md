@@ -1,10 +1,8 @@
 # TODO
 
-## Next
-- [ ] Traffic during rounds. Today the traffic toggles are locked during a round, and the server refuses any car other than the round car for players in a round, which would also remove traffic they spawn. Needs: decide who spawns the traffic, let those cars through the vehicle rule, and keep crash penalties and catching limited to players
-- [ ] UI update: a design pass over all three apps (runner/cop HUD, host panel, leaderboard) so they share one look, read well at a glance while driving, and scale on different screen sizes. Scope still to be decided when planning
-
 ## Ideas
+- [ ] Traffic during rounds. Today the traffic toggles are locked during a round, and the server refuses any car other than the round car for players in a round, which would also remove traffic they spawn. Needs: decide who spawns the traffic, let those cars through the vehicle rule, and keep crash penalties and catching limited to players
+- [ ] UI/UX update: a design and usability pass over all three apps (runner/cop HUD, host panel, leaderboard). Look: one shared style that reads at a glance while driving and scales on different screen sizes. Experience: what each role needs to know at each moment of a round (prep, countdown, chase, Apply, result), fewer steps for the host's common actions (start, practice, settings, builds), clear feedback for every action and state change, and a first-time player who understands what's going on without reading the docs. Scope still to be decided when planning
 - [ ] Hard mode vs normal mode (a round setting): hard mode gives cops a route/position only while someone has sight (no 30 s last-seen pings), hides the name plates above cars, and whatever else fits when planning it (for example no "Nearest cop" for the runner, no minimap markers for other cars)
 - [ ] Spike strips for cops: a few per round on a button, placed behind or ahead of the cop and visible to everyone (the game has spike strip props)
 - [ ] Escape route: the runner gets a random destination a few km away; reaching it ends the round as "Escaped" with a time bonus (GPS on BeamNG.Earth)
