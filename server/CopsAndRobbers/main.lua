@@ -646,16 +646,15 @@ end
 local function checkParts(pid, decoded)
   if not decoded or type(decoded.vcf) ~= "table" or decoded.vcf.parts == nil then return end
   local parts = decoded.vcf.parts
-  if partsBaseline[pid] == nil then
-    partsBaseline[pid] = parts
-  elseif not tables.deepEqual(parts, partsBaseline[pid]) then
-    if current.state == "prep" then
-      send(pid, "cnr_restoreConfig", { model = current.vehicle.model, config = current.vehicle.config, color = colorFor(pid) })
-      reply(pid, "Only paint can be changed, your car was reset to the round setup")
-    else
-      broadcast(string.format("%s changed parts during the round", MP.GetPlayerName(pid) or tostring(pid)))
-      partsBaseline[pid] = parts
+  local entry = partsBaseline[pid]
+  if entry == nil then
+    partsBaseline[pid] = { parts = parts, announced = false }
+  elseif not tables.deepEqual(parts, entry.parts) then
+    if not entry.announced then
+      entry.announced = true
+      log(string.format("%s changed parts during the round (not enforced)", MP.GetPlayerName(pid) or tostring(pid)))
     end
+    entry.parts = parts
   end
 end
 

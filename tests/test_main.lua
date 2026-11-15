@@ -217,16 +217,20 @@ test("edit in real pid-vid format with round car is allowed", function()
   env.cleanup()
 end)
 
-test("parts change after baseline restores the round config", function()
+test("parts changes never replace the car and are only logged once per round", function()
   local env = boot()
   env.startRound()
-  env.call("onVehicleEdited", 1, 0, '1-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc","parts":{"engine":"v8"}}}')
+  local base = '1-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc","parts":{"engine":"v8"}}}'
+  local tuned = '1-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc","parts":{"engine":"v12"}}}'
+  env.call("onVehicleEdited", 1, 0, base)
   env.sent = {}
-  assertEq(env.call("onVehicleEdited", 1, 0, '1-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc","parts":{"engine":"v8"}}}'), 0)
+  env.chats = {}
+  for _ = 1, 10 do
+    assertEq(env.call("onVehicleEdited", 1, 0, tuned), 0)
+    assertEq(env.call("onVehicleEdited", 1, 0, base), 0)
+  end
   assertEq(env.lastSent("cnr_restoreConfig"), nil)
-  assertEq(env.call("onVehicleEdited", 1, 0, '1-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc","parts":{"engine":"v12"}}}'), 0)
-  assertEq(env.lastSent("cnr_restoreConfig").pid, 1)
-  assertEq(env.chatHas("Only paint can be changed"), true)
+  for _, c in ipairs(env.chats) do assertEq(c[2]:find("changed parts", 1, true), nil, c[2]) end
   env.cleanup()
 end)
 
