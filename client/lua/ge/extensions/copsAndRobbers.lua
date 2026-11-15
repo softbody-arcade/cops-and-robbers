@@ -371,7 +371,10 @@ local function onMode(data)
   if not helpSeen then
     local ok, seen = pcall(jsonReadFile, HELP_FILE)
     helpSeen = ok and type(seen) == "table" and seen.seen == true
-    if not helpSeen then hudfeed.help(true) end
+    if not helpSeen then
+      hudfeed.help(true)
+      apps.open("howto")
+    end
   end
 end
 
@@ -804,7 +807,10 @@ function M.ui(msg)
     apps.toggle(msg.name)
   elseif action == "help" then
     hudfeed.help(msg.open == true)
-    if msg.open ~= true then
+    if msg.open == true then
+      apps.open("howto")
+    else
+      apps.close("howto")
       helpSeen = true
       pcall(jsonWriteFile, HELP_FILE, { seen = true }, true)
     end

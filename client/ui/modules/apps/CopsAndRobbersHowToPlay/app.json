@@ -1,0 +1,25 @@
+{
+  "domElement": "<cops-and-robbers-how-to-play></cops-and-robbers-how-to-play>",
+  "name": "Cops and Robbers How to play",
+  "types": [
+    "ui.apps.categories.info"
+  ],
+  "description": "How Cops and Robbers works, with the server's current settings.",
+  "css": {
+    "left": "50%",
+    "right": "",
+    "top": "50%",
+    "bottom": "",
+    "width": "40em",
+    "height": "26em",
+    "min-width": "28em",
+    "min-height": "18em"
+  },
+  "author": "ReinderN",
+  "version": "1.0",
+  "directive": "copsAndRobbersHowToPlay",
+  "vue": true,
+  "category": "Gameplay",
+  "isAuxiliary": true,
+  "interactive": "no"
+}

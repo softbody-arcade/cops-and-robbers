@@ -219,8 +219,8 @@ function duration(key) {
 
 <style scoped>
 .how-to-play {
-  width: 44rem;
-  max-width: 100%;
+  flex: 1 1 auto;
+  width: 100%;
   text-shadow: none;
   pointer-events: auto;
   font-size: 1rem;
@@ -231,7 +231,6 @@ function duration(key) {
 }
 .htp-tab {
   box-sizing: border-box;
-  min-height: 15rem;
   padding: 0.75rem 0.25rem 0;
 }
 p {

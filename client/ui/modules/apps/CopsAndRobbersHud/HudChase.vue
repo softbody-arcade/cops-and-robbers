@@ -62,9 +62,10 @@ const percent = computed(() => Math.max(0, Math.min(100, Number(props.bar && pro
 }
 .chase-top {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 1.25rem;
+  gap: 0.25rem 1.25rem;
   max-width: 100%;
   font-size: 1.25rem;
   font-weight: 700;

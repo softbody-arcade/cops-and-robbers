@@ -4,25 +4,30 @@ local M = {}
 
 M.APPS = {
   hud = { app = "copsAndRobbersHud", dir = "CopsAndRobbersHud", sticky = true,
-    placement = { left = "0", top = "0", right = "", bottom = "", width = "100%", height = "100%" } },
+    placement = { left = "50%", right = "", top = "", bottom = "2em", width = "40em", height = "16em" } },
+  announce = { app = "copsAndRobbersAnnouncements", dir = "CopsAndRobbersAnnouncements", sticky = true,
+    placement = { left = "50%", right = "", top = "10em", bottom = "", width = "40em", height = "12em" } },
+  howto = { app = "copsAndRobbersHowToPlay", dir = "CopsAndRobbersHowToPlay",
+    placement = { left = "50%", right = "", top = "50%", bottom = "", width = "40em", height = "26em" } },
   panel = { app = "copsAndRobbersPanel", dir = "CopsAndRobbersPanel",
     placement = { left = "", right = "1em", top = "6em", width = "27.5em", height = "34em" } },
   board = { app = "copsAndRobbersLeaderboard", dir = "CopsAndRobbersLeaderboard",
     placement = { left = "1em", top = "6em", width = "25em", height = "32em" } },
 }
 
-local ORDER = { "hud", "panel", "board" }
+local ORDER = { "hud", "announce", "howto", "panel", "board" }
 local PLACEMENT_INTERVAL = 2
 local PLACED_INTERVAL = 10
 local LAYOUT_SETTLE_SECONDS = 0.5
 local USER_LAYOUTS, ORIGINAL_LAYOUTS = "/settings/ui_apps/layouts/", "/settings/ui_apps/originalLayouts/"
 local PLACEMENT_DELAY = 3
 
+local group = placement.group()
 local states = {}
 for _, name in ipairs(ORDER) do
   local def = M.APPS[name]
   def.files = { "/ui/modules/apps/" .. def.dir .. "/app.json", "/ui/modules/apps/" .. def.dir .. "/app.vue" }
-  states[name] = placement.new(def.app, def.placement, { sticky = def.sticky })
+  states[name] = placement.new(def.app, def.placement, { sticky = def.sticky, group = group })
 end
 
 local placed = false
@@ -98,19 +103,32 @@ function M.isOpen(name)
   return ok and open == true
 end
 
-function M.toggle(name)
+function M.open(name)
+  local def = M.APPS[name]
+  if not def or def.sticky or M.isOpen(name) then return end
+  local state = states[name]
+  state.placed, state.optedOut = {}, {}
+  placement.activate(state)
+  if placed then tickApp(name) end
+end
+
+function M.close(name)
   local def = M.APPS[name]
   if not def or def.sticky then return end
+  local state = states[name]
+  if not state.active and not M.isOpen(name) then return end
   local env = placementEnv(name)
-  if not env then return end
-  if M.isOpen(name) then
-    pcall(placement.leave, states[name], env)
-  else
-    local state = states[name]
-    state.placed, state.optedOut = {}, {}
-    placement.activate(state)
-    tickApp(name)
-  end
+  if env then pcall(placement.leave, state, env) end
+  state.active = false
+end
+
+function M.toggle(name)
+  if M.isOpen(name) then M.close(name) else M.open(name) end
+end
+
+function M.dismissed(name)
+  local state = states[name]
+  return state ~= nil and state.active and not state.sticky and next(state.optedOut) ~= nil
 end
 
 function M.refreshApps()
@@ -123,7 +141,9 @@ end
 
 function M.start(clock)
   loadedAt = clock
-  placement.activate(states.hud)
+  for _, name in ipairs(ORDER) do
+    if states[name].sticky then placement.activate(states[name]) end
+  end
 end
 
 function M.layoutChanged(clock)
@@ -141,6 +161,7 @@ function M.leave()
       state.active = false
     end
   end
+  group.createdCopy, group.hidMod = {}, {}
 end
 
 function M.update(clock)
@@ -149,10 +170,12 @@ function M.update(clock)
   if loadedAt and clock - loadedAt >= PLACEMENT_DELAY and due then
     lastPlacementCheck = clock
     forcedCheckAt = nil
-    placed = tickApp("hud")
+    local all = true
     for _, name in ipairs(ORDER) do
-      if name ~= "hud" and states[name].active then tickApp(name) end
+      local state = states[name]
+      if state.active and not tickApp(name) and state.sticky then all = false end
     end
+    placed = all
   end
 end
 

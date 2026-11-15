@@ -31,8 +31,13 @@ local function same(a, b)
   return true
 end
 
+function M.group()
+  return { createdCopy = {}, hidMod = {} }
+end
+
 function M.new(appName, placement, opts)
-  return { appName = appName, placement = placement, sticky = opts and opts.sticky or false, active = false, placed = {}, optedOut = {}, createdCopy = {}, hidMod = {} }
+  opts = opts or {}
+  return { appName = appName, placement = placement, sticky = opts.sticky or false, active = false, placed = {}, optedOut = {}, group = opts.group or M.group() }
 end
 
 function M.activate(state)
@@ -40,24 +45,31 @@ function M.activate(state)
 end
 
 function M.leave(state, env)
-  local createdCopy, hidMod = state.createdCopy or {}, state.hidMod or {}
+  local group = state.group
   state.active = false
-  state.placed, state.optedOut, state.createdCopy, state.hidMod = {}, {}, {}, {}
+  state.placed, state.optedOut = {}, {}
   local api = env.api
   for _, layout in ipairs(api.getAvailableLayouts() or {}) do
-    local fresh = env.readLayout(layout.filename) or layout
+    local name = layout.filename
+    local fresh = env.readLayout(name) or layout
     local idx = appIndex(fresh, state.appName)
     while idx do
-      api.removeApp(layout.filename, idx - 1)
+      api.removeApp(name, idx - 1)
       table.remove(fresh.apps, idx)
       idx = appIndex(fresh, state.appName)
     end
-    if createdCopy[layout.filename] and api.resetLayout and env.readOriginal then
-      local original = env.readOriginal(layout.filename)
-      if type(original) == "table" and same(original.apps or {}, fresh.apps or {}) then api.resetLayout(layout.filename) end
+    if group.createdCopy[name] and api.resetLayout and env.readOriginal then
+      local original = env.readOriginal(name)
+      if type(original) == "table" and same(original.apps or {}, fresh.apps or {}) then
+        api.resetLayout(name)
+        group.createdCopy[name] = nil
+      end
     end
-    local modApps = hidMod[layout.filename]
-    if modApps and env.removeUserFile and same(modApps, fresh.apps or {}) then env.removeUserFile(layout.filename) end
+    local modApps = group.hidMod[name]
+    if modApps and env.removeUserFile and same(modApps, fresh.apps or {}) then
+      env.removeUserFile(name)
+      group.hidMod[name] = nil
+    end
   end
   local current = api.getCurrentLayout()
   if type(current) == "table" and current.filename then api.setCurrentLayout(current.filename) end
@@ -90,8 +102,8 @@ function M.tick(state, env)
   local modApps = not makesCopy and env.fromMod and env.fromMod(name) and deepCopy(fresh.apps or {})
   if api.addApp(name, state.appName, copy(state.placement)) then
     state.placed[name] = true
-    if makesCopy then state.createdCopy[name] = true end
-    if modApps then state.hidMod[name] = modApps end
+    if makesCopy then state.group.createdCopy[name] = true end
+    if modApps and not state.group.hidMod[name] then state.group.hidMod[name] = modApps end
     api.setCurrentLayout(name)
     return true
   end

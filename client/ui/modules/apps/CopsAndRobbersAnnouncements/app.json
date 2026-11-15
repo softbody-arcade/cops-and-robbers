@@ -1,0 +1,25 @@
+{
+  "domElement": "<cops-and-robbers-announcements></cops-and-robbers-announcements>",
+  "name": "Cops and Robbers Announcements",
+  "types": [
+    "ui.apps.categories.info"
+  ],
+  "description": "Cops and Robbers role, countdowns, GO and the round result.",
+  "css": {
+    "left": "50%",
+    "right": "",
+    "top": "10em",
+    "bottom": "",
+    "width": "40em",
+    "height": "12em",
+    "min-width": "20em",
+    "min-height": "6em"
+  },
+  "author": "ReinderN",
+  "version": "1.0",
+  "directive": "copsAndRobbersAnnouncements",
+  "vue": true,
+  "category": "Gameplay",
+  "isAuxiliary": true,
+  "interactive": "no"
+}

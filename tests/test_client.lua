@@ -197,20 +197,6 @@ local function fakeLayouts()
   return L
 end
 
-test("the HUD is placed full-screen and checked less often once placed", function()
-  local L = fakeLayouts()
-  local env = bootClient({ layouts = L })
-  env.tick(4, 0.5)
-  assertEq(#L.added, 1)
-  assertEq(L.added[1].left, "0")
-  assertEq(L.added[1].margin, nil)
-  assertEq(L.added[1].width, "100%")
-  assertEq(L.added[1].height, "100%")
-  local before = env.reads[L.name]
-  env.tick(20, 0.5)
-  assertEq(env.reads[L.name] - before <= 3, true)
-end)
-
 local function names(L)
   local list = {}
   for _, a in ipairs(L.disk[L.name].apps) do list[#list + 1] = a.appName end
@@ -221,6 +207,49 @@ local function has(L, app)
   for _, n in ipairs(names(L)) do if n == app then return true end end
   return false
 end
+
+local function countApp(L, app)
+  local n = 0
+  for _, name in ipairs(names(L)) do if name == app then n = n + 1 end end
+  return n
+end
+
+local function assertPlacement(L, app, expected)
+  local placement
+  for _, a in ipairs(L.disk[L.name].apps) do
+    if a.appName == app then placement = a.placement end
+  end
+  assertEq(type(placement), "table", app)
+  for k, v in pairs(expected) do assertEq(placement[k], v, app .. "." .. k) end
+  for k in pairs(placement) do assertEq(expected[k] ~= nil, true, app .. "." .. k) end
+end
+
+local ANNOUNCE_PLACEMENT = { left = "50%", right = "", top = "10em", bottom = "", width = "40em", height = "12em" }
+local HUD_PLACEMENT = { left = "50%", right = "", top = "", bottom = "2em", width = "40em", height = "16em" }
+local HOWTO_PLACEMENT = { left = "50%", right = "", top = "50%", bottom = "", width = "40em", height = "26em" }
+
+test("joining places Announcements and the HUD, then checks less often", function()
+  local L = fakeLayouts()
+  local env = bootClient({ layouts = L })
+  env.tick(4, 0.5)
+  assertEq(#L.added, 2)
+  assertPlacement(L, "copsAndRobbersAnnouncements", ANNOUNCE_PLACEMENT)
+  assertPlacement(L, "copsAndRobbersHud", HUD_PLACEMENT)
+  assertEq(has(L, "copsAndRobbersHowToPlay"), false)
+  local before = env.reads[L.name]
+  env.tick(20, 0.5)
+  assertEq(env.reads[L.name] - before <= 4, true)
+end)
+
+test("the player can't remove Announcements or the HUD: both come back", function()
+  local L = fakeLayouts()
+  local env = bootClient({ layouts = L })
+  env.tick(4, 0.5)
+  L.disk[L.name].apps = {}
+  env.tick(10, 0.5)
+  assertEq(countApp(L, "copsAndRobbersAnnouncements"), 1)
+  assertEq(countApp(L, "copsAndRobbersHud"), 1)
+end)
 
 test("toggle opens and closes the leaderboard", function()
   local L = fakeLayouts()
@@ -249,15 +278,19 @@ test("isOpen sees an app the player added", function()
   assertEq(has(L, "copsAndRobbersPanel"), false)
 end)
 
-test("leaving the server removes the HUD and the apps it opened, not ones the player added", function()
+test("leaving the server removes the HUD apps, How to play and the apps it opened, not ones the player added", function()
   local L = fakeLayouts()
   local env = bootClient({ layouts = L })
   local apps = require("copsAndRobbers/apps")
   env.tick(4, 0.5)
   apps.toggle("board")
+  env.M.ui({ action = "help", open = true })
+  assertEq(has(L, "copsAndRobbersHowToPlay"), true)
   table.insert(L.disk[L.name].apps, { appName = "copsAndRobbersPanel" })
   env.M.onBeamMPServerLeave()
   assertEq(has(L, "copsAndRobbersHud"), false)
+  assertEq(has(L, "copsAndRobbersAnnouncements"), false)
+  assertEq(has(L, "copsAndRobbersHowToPlay"), false)
   assertEq(has(L, "copsAndRobbersLeaderboard"), false)
   assertEq(has(L, "copsAndRobbersPanel"), true)
 end)
@@ -266,19 +299,19 @@ test("a layout switch is picked up right away, not after the slow check", functi
   local L = fakeLayouts()
   local env = bootClient({ layouts = L })
   env.tick(4, 0.5)
-  assertEq(#L.added, 1)
+  assertEq(#L.added, 2)
   L.current = L.other
   env.M.onGameStateUpdate({})
   env.tick(1, 0.25)
-  assertEq(#L.added, 2)
-  assertEq(#L.disk[L.other].apps, 1)
+  assertEq(#L.added, 4)
+  assertEq(#L.disk[L.other].apps, 2)
 end)
 
-test("leaving deletes the HUD's copy of BeamMP's own layout, which comes from the BeamMP zip", function()
+test("leaving deletes the HUD apps' copy of BeamMP's own layout, which comes from the BeamMP zip", function()
   local L = fakeLayouts()
   local env = bootClient({ layouts = L, origins = { [L.name] = "/mods/multiplayer/beammp.zip" } })
   env.tick(4, 0.5)
-  assertEq(#L.added, 1)
+  assertEq(#L.added, 2)
   env.M.onBeamMPServerLeave()
   assertEq(#env.removedFiles, 1); assertEq(env.removedFiles[1], L.name)
 end)
@@ -977,6 +1010,62 @@ test("first join opens How to play and Got it remembers", function()
   assertEq(again.hud().help.open, false)
   again.M.ui({ action = "help", open = true })
   assertEq(again.hud().help.open, true)
+end)
+
+test("How to play opens and closes as its own app", function()
+  local L = fakeLayouts()
+  local env = bootClient({ layouts = L, files = { [HELP_FILE] = { seen = true } } })
+  join(env)
+  env.tick(4, 0.5)
+  assertEq(has(L, "copsAndRobbersHowToPlay"), false)
+  env.M.ui({ action = "help", open = true })
+  assertPlacement(L, "copsAndRobbersHowToPlay", HOWTO_PLACEMENT)
+  assertEq(env.hud().help.open, true)
+  env.M.ui({ action = "help", open = true })
+  env.tick(11, 0.5)
+  assertEq(countApp(L, "copsAndRobbersHowToPlay"), 1)
+  env.M.ui({ action = "help", open = false })
+  assertEq(has(L, "copsAndRobbersHowToPlay"), false)
+  assertEq(env.hud().help.open, false)
+  assertEq(env.written[HELP_FILE].seen, true)
+  env.M.ui({ action = "help", open = false })
+  env.tick(11, 0.5)
+  assertEq(has(L, "copsAndRobbersHowToPlay"), false)
+  assertEq(has(L, "copsAndRobbersHud"), true); assertEq(has(L, "copsAndRobbersAnnouncements"), true)
+end)
+
+test("a first join adds How to play to the layout along with the HUD", function()
+  local L = fakeLayouts()
+  local env = bootClient({ layouts = L })
+  join(env)
+  env.tick(4, 0.5)
+  assertEq(env.hud().help.open, true)
+  assertPlacement(L, "copsAndRobbersHowToPlay", HOWTO_PLACEMENT)
+end)
+
+test("How to play removed by the player counts as closed, without marking it seen", function()
+  local L = fakeLayouts()
+  local env = bootClient({ layouts = L })
+  join(env)
+  env.tick(4, 0.5)
+  assertEq(has(L, "copsAndRobbersHowToPlay"), true)
+  local kept = {}
+  for _, a in ipairs(L.disk[L.name].apps) do
+    if a.appName ~= "copsAndRobbersHowToPlay" then kept[#kept + 1] = a end
+  end
+  L.disk[L.name].apps = kept
+  env.tick(11, 0.5)
+  assertEq(env.hud().help.open, false)
+  assertEq(has(L, "copsAndRobbersHowToPlay"), false)
+  assertEq(env.written[HELP_FILE], nil)
+  L.current = L.other
+  env.M.onGameStateUpdate({})
+  env.tick(1, 0.25)
+  assertEq(#L.disk[L.other].apps, 2)
+  L.current = L.name
+  env.M.ui({ action = "help", open = true })
+  assertEq(has(L, "copsAndRobbersHowToPlay"), true)
+  assertEq(env.hud().help.open, true)
 end)
 
 test("the colour picker sends cnr_color and the server's answer sets your colour", function()
