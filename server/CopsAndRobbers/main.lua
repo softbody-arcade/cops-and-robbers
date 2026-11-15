@@ -10,7 +10,7 @@ local colors = require("cnr.colors")
 local tables = require("cnr.tables")
 local geo = require("cnr.geo")
 
-local VERSION = "1.1.0"
+local VERSION = "1.2.0"
 local PREFIX = "[CnR] "
 local dataDir = pluginDir .. "data/"
 local stationsDir = dataDir .. "stations/"
@@ -397,7 +397,8 @@ end
 local HELP = {
   '"/cnr start <name|random|next|again>" - set up a round with that runner',
   '"/cnr go" - start the countdown',
-  '"/cnr auto on|off" - prepare the next round automatically after each round',
+  '"/cnr auto [on|off]" - prepare the next round automatically after each round',
+  '"/cnr continue" - next step: set up a round, or start it (handy on a button)',
   '"/cnr reroll" - new car during prep',
   '"/cnr end" - end the chase and record the time',
   '"/cnr stop" - cancel the current round',
@@ -457,9 +458,7 @@ end
 
 function handlers.auto(pid, cmd)
   local arg = cmd.args[1] and cmd.args[1]:lower()
-  if arg ~= "on" and arg ~= "off" then
-    return reply(pid, "Automatic next round: " .. (cfg.autoNextRound and "on" or "off") .. ' (use "/cnr auto on|off")')
-  end
+  if arg ~= "on" and arg ~= "off" then arg = cfg.autoNextRound and "off" or "on" end
   local updated = config.setValue(rawConfig, "autoNextRound", arg)
   writeFile(pluginDir .. "config.json", Util.JsonPrettify(Util.JsonEncode(updated)))
   loadConfig()
@@ -599,6 +598,27 @@ function handlers.reload(pid)
   loadConfig()
   current = round.new(cfg)
   reply(pid, "Config reloaded")
+end
+
+function handlers.continue(pid)
+  if current.state == "idle" then
+    return handlers.start(pid, { name = "start", args = { "next" }, rest = "next" })
+  end
+  applyEffects(current:go(now(), pid))
+end
+
+local BINDABLE = {
+  ["continue"] = true, ["start next"] = true, ["start again"] = true, ["start random"] = true,
+  ["go"] = true, ["reroll"] = true, ["end"] = true, ["stop"] = true, ["auto"] = true, ["top"] = true,
+  ["test runner"] = true, ["test cop"] = true, ["help"] = true,
+}
+
+function cnrOnCommand(pid, data)
+  local text = type(data) == "string" and data:lower():match("^%s*(.-)%s*$") or ""
+  if not BINDABLE[text] then return end
+  local cmd = commands.parse("/cnr " .. text)
+  local handler = cmd and handlers[cmd.name]
+  if handler then handler(pid, cmd) end
 end
 
 function cnrOnChatMessage(pid, name, msg)
@@ -849,6 +869,7 @@ MP.RegisterEvent("cnr_myVehicle", "cnrOnMyVehicle")
 MP.RegisterEvent("cnr_aiVehicles", "cnrOnAiVehicles")
 MP.RegisterEvent("cnr_geo", "cnrOnGeo")
 MP.RegisterEvent("cnr_relocated", "cnrOnRelocated")
+MP.RegisterEvent("cnr_command", "cnrOnCommand")
 MP.RegisterEvent("cnr_tick", "cnrTick")
 MP.CancelEventTimer("cnr_tick")
 MP.CreateEventTimer("cnr_tick", 250)

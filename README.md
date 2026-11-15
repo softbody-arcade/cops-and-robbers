@@ -23,6 +23,7 @@ repair in place for the runner and move cops to the nearest road.
 | `/cnr start <name\|random\|next\|again>` | Set up a round. `next` = whoever ran least this session, `again` = same runner |
 | `/cnr reroll` | New random car during prep |
 | `/cnr go` | Runner countdown, then cop head start |
+| `/cnr continue` | Next step: set up a round (next runner), or start it during prep |
 | `/cnr auto on\|off` | Prepare the next round automatically after each round (still needs `/cnr go`) |
 | `/cnr end` | End the chase and record the runner's time |
 | `/cnr stop` | Cancel the round (not recorded) and unlock everyone |
@@ -33,6 +34,12 @@ repair in place for the runner and move cops to the nearest road.
 | `/cnr config` / `/cnr reload` | Show settings / reload config.json |
 | `/cnr version` | Show the mod version |
 | `/cnr addstation` / `/cnr removestation` | Edit this map's gas stations |
+
+## Key bindings
+
+Options > Controls > Gameplay lists the "Cops & Robbers: ..." actions (bind them to wheel buttons): Next step
+(set up / go), Start round (next / same / random runner), Go, New car, End chase, Cancel round, Automatic rounds
+on/off, Leaderboard, Practice as runner / cop. They send the same commands as chat.
 
 ## Settings (`config.json`)
 

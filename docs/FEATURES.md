@@ -1,4 +1,4 @@
-# Cops and Robbers 1.1.0: features
+# Cops and Robbers 1.2.0: features
 
 A BeamMP server plugin with a client mod that BeamMP downloads automatically. The mod enforces the group's cops-and-robbers rules. It is one mod for every map, and it switches to geo mode on BeamNG.Earth by itself.
 
@@ -124,6 +124,22 @@ A BeamMP server plugin with a client mod that BeamMP downloads automatically. Th
 - **Moves by BeamNG.Earth itself** (rebase, resync, setting the car down) do not count as resets or teleports. Teleporting yourself during a round does.
 - **Needs:** BeamNG.Earth with mod API v1. Road resets for cops, cop placement and the AI also need BeamNG.Earth traffic turned on.
 
+## Key bindings
+
+Options > Controls > Gameplay contains "Cops & Robbers: ..." actions that can be bound to wheel buttons. Nothing is bound by default.
+
+| Action | Same as |
+|---|---|
+| Next step (set up / go) | `/cnr continue`: sets up a round with the next runner, or starts it during prep |
+| Start round: next / same / random runner | `/cnr start next` / `again` / `random` |
+| Go | `/cnr go` |
+| New car | `/cnr reroll` |
+| End chase (record time) | `/cnr end` |
+| Cancel round | `/cnr stop` |
+| Automatic rounds on/off | `/cnr auto` |
+| Leaderboard | `/cnr top` |
+| Practice as runner / cop | `/cnr test runner` / `cop` |
+
 ## Commands
 
 | Command | |
@@ -131,6 +147,7 @@ A BeamMP server plugin with a client mod that BeamMP downloads automatically. Th
 | `/cnr start <name\|random\|next\|again>` | Set up a round |
 | `/cnr reroll` | New car during prep |
 | `/cnr go` | Start the countdown |
+| `/cnr continue` | Next step: set up a round, or start it |
 | `/cnr end` | End the chase and record the time |
 | `/cnr stop` | Cancel without recording, and unlock everyone |
 | `/cnr auto on\|off` | Prepare the next round automatically |
@@ -172,4 +189,4 @@ A BeamMP server plugin with a client mod that BeamMP downloads automatically. Th
 - **Mods panel:** the zip carries a title, description, version and icon (`mod_info`) for mod panels.
 - **Stuck controls:** `/cnr stop` always unlocks everyone, and so does a plugin restart.
 - **Bad files:** a broken `config.json` gives a warning and uses the defaults. A broken or malformed leaderboard is moved aside.
-- **Tests:** 183 automated tests cover the rules and the server wiring (run with `make test`).
+- **Tests:** 187 automated tests cover the rules and the server wiring (run with `make test`).

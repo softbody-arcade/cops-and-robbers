@@ -1,6 +1,6 @@
 local M = {}
 
-local CLIENT_VERSION = "1.1.0"
+local CLIENT_VERSION = "1.2.0"
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
 local LIGHTS_OFF = "electrics.set_lightbar_signal(0)"
 
@@ -974,7 +974,18 @@ end
 
 M.onBeamNGEarthRebased = onBeamNGEarthRebased
 
+local ACTIONS_FILE = "/lua/ge/extensions/core/input/actions/copsAndRobbers.json"
+
+local function refreshActions()
+  extensions.hook("onFileChanged", ACTIONS_FILE, "modified")
+end
+
+function M.command(text)
+  if TriggerServerEvent then TriggerServerEvent("cnr_command", tostring(text)) end
+end
+
 local function onExtensionLoaded()
+  refreshActions()
   if AddEventHandler then
     AddEventHandler("cnr_pickVehicle", onPickVehicle)
     AddEventHandler("cnr_roundSetup", onRoundSetup)
@@ -997,7 +1008,10 @@ local function onExtensionLoaded()
 end
 
 M.onExtensionLoaded = onExtensionLoaded
-M.onExtensionUnloaded = endRound
+M.onExtensionUnloaded = function()
+  endRound()
+  refreshActions()
+end
 M.onClientEndMission = endRound
 M.onUpdate = onUpdate
 M.onVehicleResetted = onVehicleResetted

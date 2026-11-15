@@ -1,0 +1,98 @@
+{
+  "cnr_continue": {
+    "cat": "gameplay",
+    "order": 60,
+    "ctx": "tlua",
+    "onDown": "if copsAndRobbers then copsAndRobbers.command('continue') end",
+    "title": "Cops & Robbers: Next step (set up / go)",
+    "desc": "No round: set up a round with the next runner. During prep: start it."
+  },
+  "cnr_start_next": {
+    "cat": "gameplay",
+    "order": 61,
+    "ctx": "tlua",
+    "onDown": "if copsAndRobbers then copsAndRobbers.command('start next') end",
+    "title": "Cops & Robbers: Start round: next runner",
+    "desc": "Set up a round with whoever has run least."
+  },
+  "cnr_start_again": {
+    "cat": "gameplay",
+    "order": 62,
+    "ctx": "tlua",
+    "onDown": "if copsAndRobbers then copsAndRobbers.command('start again') end",
+    "title": "Cops & Robbers: Start round: same runner",
+    "desc": "Set up a round with the previous runner."
+  },
+  "cnr_start_random": {
+    "cat": "gameplay",
+    "order": 63,
+    "ctx": "tlua",
+    "onDown": "if copsAndRobbers then copsAndRobbers.command('start random') end",
+    "title": "Cops & Robbers: Start round: random runner",
+    "desc": "Set up a round with a random runner."
+  },
+  "cnr_go": {
+    "cat": "gameplay",
+    "order": 64,
+    "ctx": "tlua",
+    "onDown": "if copsAndRobbers then copsAndRobbers.command('go') end",
+    "title": "Cops & Robbers: Go",
+    "desc": "Start the runner countdown."
+  },
+  "cnr_reroll": {
+    "cat": "gameplay",
+    "order": 65,
+    "ctx": "tlua",
+    "onDown": "if copsAndRobbers then copsAndRobbers.command('reroll') end",
+    "title": "Cops & Robbers: New car",
+    "desc": "Pick a new random car during prep."
+  },
+  "cnr_end": {
+    "cat": "gameplay",
+    "order": 66,
+    "ctx": "tlua",
+    "onDown": "if copsAndRobbers then copsAndRobbers.command('end') end",
+    "title": "Cops & Robbers: End chase (record time)",
+    "desc": "End the chase and record the runner's time."
+  },
+  "cnr_stop": {
+    "cat": "gameplay",
+    "order": 67,
+    "ctx": "tlua",
+    "onDown": "if copsAndRobbers then copsAndRobbers.command('stop') end",
+    "title": "Cops & Robbers: Cancel round",
+    "desc": "Cancel the round without recording it."
+  },
+  "cnr_auto": {
+    "cat": "gameplay",
+    "order": 68,
+    "ctx": "tlua",
+    "onDown": "if copsAndRobbers then copsAndRobbers.command('auto') end",
+    "title": "Cops & Robbers: Automatic rounds on/off",
+    "desc": "Toggle preparing the next round automatically."
+  },
+  "cnr_top": {
+    "cat": "gameplay",
+    "order": 69,
+    "ctx": "tlua",
+    "onDown": "if copsAndRobbers then copsAndRobbers.command('top') end",
+    "title": "Cops & Robbers: Leaderboard",
+    "desc": "Show the leaderboard in chat."
+  },
+  "cnr_test_runner": {
+    "cat": "gameplay",
+    "order": 70,
+    "ctx": "tlua",
+    "onDown": "if copsAndRobbers then copsAndRobbers.command('test runner') end",
+    "title": "Cops & Robbers: Practice as runner",
+    "desc": "Practice round against two AI cops."
+  },
+  "cnr_test_cop": {
+    "cat": "gameplay",
+    "order": 71,
+    "ctx": "tlua",
+    "onDown": "if copsAndRobbers then copsAndRobbers.command('test cop') end",
+    "title": "Cops & Robbers: Practice as cop",
+    "desc": "Practice round with an AI runner."
+  }
+}
