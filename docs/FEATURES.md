@@ -1,4 +1,4 @@
-# Cops and Robbers 2.0.3: features
+# Cops and Robbers 2.0.4: features
 
 A BeamMP server plugin with a client mod that BeamMP downloads automatically. The mod enforces the group's cops-and-robbers rules. It is one mod for every map, and it switches to geo mode on BeamNG.Earth by itself.
 
@@ -10,7 +10,7 @@ All round controls are in the Cops and Robbers Panel (Esc > UI Apps).
 |---|---|
 | Start round | Picks a random car and config (or the evolving build). Everyone gets the same one. Cops are placed on a road 50–150 m from the runner. Everyone is frozen. |
 | Prep | No time limit. Colors come from `/cnr color` only: the game's parts and paint menu is closed for everyone (except the runner in evolving mode, for his one change). Parts changes during the round are logged (with the slots that changed) but not undone yet. New car picks another car (random mode). |
-| Apply change (evolving only) | Locks in the runner's change and rebuilds every car; the HUD shows APPLYING CHANGES until everyone has loaded (at most 20 s). |
+| Apply change (evolving only, the runner's HUD button) | Locks in the runner's change and rebuilds every car; the HUD shows APPLYING CHANGES until everyone has loaded (at most 20 s). |
 | GO | "Runner starts in 3", then the runner is released. |
 | Head start | Cops stay frozen for 7 s and see a countdown. |
 | Chase | Cops are released and the survival clock starts. A status line shows `time \| reset status \| distance info`. |
@@ -24,7 +24,7 @@ All round controls are in the Cops and Robbers Panel (Esc > UI Apps).
 
 - **The build:** one shared car (model, parts and tuning) instead of a random car each round. Switch "Evolving car" on in the panel. Start a build from a random car or a chosen one: vanilla configs and base cars from mods the server distributes only, never a player's own saved car, so everyone can spawn it.
 - **One change per round:** during prep only the runner can change parts and tuning (from any menu). The group's rule: one change that works on its own (an engine swap, one performance stage, wheels one axle at a time, plus whatever a swap needs). The mod doesn't enforce it: everyone sees the queued change live in the HUD: "BOB'S CHANGE (1)", "Engine 2.0L I4 → 3.0L I6, + 12 parts come with it" (parts that come with a swap are grouped under it, names from the game), and tuning values that really changed (within half a step) and keeps each other honest.
-- **Apply change:** the runner's exact setup becomes the build (liveries are paint and stay out), every car is rebuilt in place (cops keep their emergency lights), and the HUD shows APPLYING CHANGES until everyone's car has loaded (at most 20 s). GO only works after that. Each game checks it has every part and the HUD warns "⚠ Ann is missing: …" if not.
+- **Apply change:** the runner presses **Apply change** on his own change line in the HUD (only the runner sees it; in practice as cop, whoever started it can apply). The runner's exact setup becomes the build (liveries are paint and stay out), every car is rebuilt in place (cops keep their emergency lights), and the HUD shows APPLYING CHANGES until everyone's car has loaded (at most 20 s). GO only works after that. Each game checks it has every part and the HUD warns "⚠ Ann is missing: …" if not.
 - **Record:** chat logs each change ("Change 7 by Bob: Engine 4.5L V8 → 6.0L V8"). The build is saved after every change in `data/build.json` and continues next session until "Reset build"; resetting or starting a new build keeps a backup (`data/build-<time>.json`). Practice rounds use the build but never change it.
 - **Leaderboard:** runs record the mode and build step, and the leaderboard app filters by mode (all, random, evolving).
 
@@ -186,7 +186,7 @@ All round controls are in the Cops and Robbers Panel (Esc > UI Apps).
   - "Reset to default" needs a second click within 3 s.
   - Settings are locked during a round ("Stop the round first").
 - **Live:** the panel follows changes made by anyone within a quarter of a second.
-- **Evolving car:** the Round tab has the Evolving car switch, the build controls (New build: random, choose a car + Start build, both asking for a second click when a build exists; Reset build) and Apply change. Phases include Applying the change and Ready for GO.
+- **Evolving car:** the Round tab has the Evolving car switch and the build controls (New build: random, choose a car + Start build, both asking for a second click when a build exists; Reset build). Apply is not in the panel: the runner applies from his HUD. Phases include Applying the change and Ready for GO.
 - **Reload config.json:** on the Settings tab, picks up hand edits to `config.json` (not during a round).
 - **Collapse:** the ▾ button shrinks the panel to one line with the live status (click it or ▸ to open again). It collapses by itself when the countdown starts (GO) and opens again when the round ends.
 
@@ -237,4 +237,4 @@ Everything else runs through the panel and the leaderboard app. Any other `/cnr`
 - **Mods panel:** the zip carries a title, description, version and icon (`mod_info`) for mod panels.
 - **Stuck controls:** Cancel always unlocks everyone, and so does a plugin restart.
 - **Bad files:** a broken `config.json` gives a warning and uses the defaults. A broken or malformed leaderboard is moved aside.
-- **Tests:** 385 automated tests cover the rules, the server wiring and the client, which runs against stubbed game functions in `tests/test_client.lua` (run with `make test`).
+- **Tests:** 389 automated tests cover the rules, the server wiring and the client, which runs against stubbed game functions in `tests/test_client.lua` (run with `make test`).

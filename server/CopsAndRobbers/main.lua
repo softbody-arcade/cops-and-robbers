@@ -12,7 +12,7 @@ local geo = require("cnr.geo")
 local build = require("cnr.build")
 local panel = require("cnr.panel")
 
-local VERSION = "2.0.3"
+local VERSION = "2.0.4"
 local PREFIX = "[CnR] "
 local dataDir = pluginDir .. "data/"
 local stationsDir = dataDir .. "stations/"
@@ -779,6 +779,8 @@ function cnrOnPanel(pid, data)
   elseif msg.action == "build" then
     panelBuild(pid, msg)
   elseif msg.action == "apply" then
+    local mayApply = pid == current.runnerId or (round.isAI(current.runnerId) and pid == current.issuerId)
+    if not mayApply then return send(pid, "cnr_panelReply", { text = "Only the runner can apply the change" }) end
     panelMirror = pid
     local ran, err = pcall(function() applyEffects(current:apply(now(), pid)) end)
     panelMirror = nil

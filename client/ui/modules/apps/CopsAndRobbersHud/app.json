@@ -20,5 +20,5 @@
   "vue": true,
   "category": "Gameplay",
   "isAuxiliary": true,
-  "interactive": "no"
+  "interactive": "yes"
 }

@@ -12,7 +12,7 @@ local sight = require("copsAndRobbers/sight")
 local buildDiff = require("copsAndRobbers/build")
 local modes = require("copsAndRobbers/modes")
 
-local CLIENT_VERSION = "2.0.3"
+local CLIENT_VERSION = "2.0.4"
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
 local LIGHTS_OFF = "electrics.set_lightbar_signal(0)"
 local SETUP_DELAY = 0.5
@@ -728,7 +728,8 @@ local function onExtensionLoaded()
   end)
   AddEventHandler("cnr_queued", function(data)
     local d = jsonDecode(data) or {}
-    hudfeed.queued(d.runner, d.changes)
+    local mine = role == "runner" and evolving and (buildBaseline ~= nil or buildBaselineAt ~= nil)
+    hudfeed.queued(d.runner, d.changes, mine)
   end)
   AddEventHandler("cnr_penaltyEnd", onPenaltyEnd)
   AddEventHandler("cnr_state", onState)
@@ -744,6 +745,10 @@ function M.vehicleModes(data)
   if modes.remember(modesState, roundModel, data) then
     pcall(jsonWriteFile, modes.FILE, { byModel = modesState.byModel, last = modesState.last }, true)
   end
+end
+
+function M.applyChange()
+  M.panel({ action = "apply" })
 end
 
 function M.configs(opts)

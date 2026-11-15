@@ -31,6 +31,7 @@
           <div v-if="line.extra" class="cnr-change-extra">+ {{ line.extra }} {{ line.extra === 1 ? "part comes" : "parts come" }} with it</div>
         </template>
         <div v-if="hud.change.more" class="cnr-muted">+{{ hud.change.more }} more</div>
+        <button v-if="hud.change.canApply" class="cnr-apply" @click="applyChange">Apply change</button>
       </div>
       <div v-else-if="hud.prep" class="cnr-panel cnr-prep">
         <span class="cnr-role" :class="hud.prep.role === 'RUNNER' ? 'is-runner' : 'is-cop'">{{ hud.prep.role }}</span>
@@ -59,9 +60,16 @@
 <script setup>
 import { ref } from "vue"
 import { useEvents } from "@/services/events"
+import { useBridge } from "@/bridge"
 
 const hud = ref({ visible: false })
 const events = useEvents()
+
+const { api } = useBridge()
+
+function applyChange() {
+  api.engineLua("if copsAndRobbers then copsAndRobbers.applyChange() end")
+}
 
 events.on("CnRHud", data => {
   hud.value = data && typeof data === "object" ? data : { visible: false }
@@ -98,6 +106,19 @@ events.on("CnRHud", data => {
   font-size: 2.125rem;
   line-height: 1;
   font-variant-numeric: tabular-nums;
+}
+.cnr-apply {
+  pointer-events: auto;
+  align-self: flex-start;
+  margin-top: 0.25rem;
+  padding: 0.25rem 0.875rem;
+  border: 0;
+  border-radius: 0.375rem;
+  background: #ff6600;
+  color: #fff;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
 }
 .cnr-change {
   display: flex;

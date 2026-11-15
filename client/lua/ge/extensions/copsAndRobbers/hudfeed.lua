@@ -42,8 +42,8 @@ function M.clearRound()
   events = {}
 end
 
-function M.queued(runner, changes)
-  change = runner and { runner = runner, changes = changes or {} } or nil
+function M.queued(runner, changes, canApply)
+  change = runner and { runner = runner, changes = changes or {}, canApply = canApply } or nil
 end
 
 function M.applying(on)

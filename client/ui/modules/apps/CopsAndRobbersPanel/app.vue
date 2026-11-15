@@ -43,10 +43,9 @@
       <div class="cnr-buttons">
         <BngButton :disabled="!can.start" @click="command(`start ${choice}`)">Start round</BngButton>
         <BngButton v-if="!isEvolving" :disabled="!can.reroll" accent="secondary" @click="command('reroll')">New car</BngButton>
-        <BngButton v-if="isEvolving" :disabled="!can.apply" accent="secondary" @click="applyChange">Apply change</BngButton>
         <BngButton :disabled="!can.go" @click="command('go')">GO</BngButton>
       </div>
-      <div v-if="isEvolving && state.phase === 'prep'" class="cnr-hint">Apply the change first</div>
+      <div v-if="isEvolving && state.phase === 'prep'" class="cnr-hint">Waiting for the runner to apply the change (button in his HUD)</div>
       <div v-if="isEvolving && !state.build && state.phase === 'idle'" class="cnr-hint">Start a new build first</div>
       <div class="cnr-buttons">
         <BngButton :disabled="!can.end" accent="secondary" @click="command('end')">End chase</BngButton>
@@ -278,11 +277,6 @@ function resetBuildClick() {
   buildResetArmed.value = false
   replyText.value = ""
   send({ action: "build", op: "reset" })
-}
-
-function applyChange() {
-  replyText.value = ""
-  send({ action: "apply" })
 }
 
 function command(text) {

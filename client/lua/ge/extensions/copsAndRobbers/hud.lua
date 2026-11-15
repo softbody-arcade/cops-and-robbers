@@ -106,6 +106,7 @@ function M.payload(state, now, info)
       title = #changes == 0 and (who .. ": none yet") or string.format("%s (%d)", who, #changes),
       lines = lines,
       more = #changes > CHANGE_LINES and (#changes - CHANGE_LINES) or nil,
+      canApply = info.change.canApply == true or nil,
     }
   elseif info.prep then
     payload.prep = { role = info.prep.role == "runner" and "RUNNER" or "COP", car = info.prep.car }

@@ -41,7 +41,7 @@ Switch "Evolving car" on in the panel. Instead of a random car each round, every
 - In each round's prep, only the runner may change **one thing** (an engine swap, one performance stage, one
   axle of wheels, plus whatever a swap needs to work). Everyone sees the queued change live in their HUD and keeps
   each other honest.
-- **Apply change** locks it in: every car is rebuilt with it (the HUD shows APPLYING CHANGES until everyone has
+- The runner presses **Apply change** on his change line in the HUD (not the panel) to lock it in: every car is rebuilt with it (the HUD shows APPLYING CHANGES until everyone has
   loaded, at most 20 s), then GO. Parts someone doesn't have are flagged in the HUD.
 - The build is saved after every change and continues next session until "Reset build" (backups are kept in
   `data/build-<time>.json`). Practice rounds use the build but never change it.
