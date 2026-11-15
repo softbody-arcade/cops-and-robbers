@@ -380,64 +380,40 @@ local function vehicleOptions(config, color)
   return opt
 end
 
-local function hasLightbar(parts)
-  for _, part in pairs(parts or {}) do
-    if lightbar.isMainLight(part) then return true end
-  end
-  return false
-end
-
-local function lightbarParts(model)
-  local m = core_vehicles.getModel(model)
-  local best
-  for _, c in pairs(m and m.configs or {}) do
-    local data = c.pcFilename and jsonReadFile(c.pcFilename)
-    if type(data) == "table" and data.format ~= 4 and type(data.parts) == "table" and hasLightbar(data.parts) then
-      local parts = {}
-      for slot, part in pairs(data.parts) do
-        if type(part) == "string" and part ~= "" and (lightbar.isLightPart(slot) or lightbar.isLightPart(part)) then
-          parts[slot] = part
-        end
-      end
-      local score = tostring(c.key or ""):lower():find("police", 1, true) and 2 or 1
-      if not best or score > best.score then best = { score = score, parts = parts } end
-    end
-  end
-  return best and best.parts
-end
-
-local function jbeamLightbarParts(model)
+local function jbeamEnv(model)
   local okIo, jbeamIO = pcall(require, "jbeam/io")
   if not okIo or type(jbeamIO) ~= "table" then return nil end
-  local okCtx, ioCtx = pcall(jbeamIO.startLoading, { "/vehicles/" .. model .. "/" })
+  local okCtx, ioCtx = pcall(jbeamIO.startLoading, { "/vehicles/" .. model .. "/", "/vehicles/common/" })
   if not okCtx or type(ioCtx) ~= "table" then return nil end
-  local okParts, available = pcall(jbeamIO.getAvailableParts, ioCtx)
-  if not okParts or type(available) ~= "table" then return nil end
-  local candidates = {}
-  for name in pairs(available) do
-    if lightbar.isLightPart(name) then
-      local okPart, part = pcall(jbeamIO.getPart, ioCtx, name)
-      if okPart and type(part) == "table" then
-        candidates[#candidates + 1] = { name = name, slots = part.slotType or part.slotTypes }
+  local okMap, slotMap = pcall(jbeamIO.getAvailableSlotNameMap, ioCtx)
+  if not okMap or type(slotMap) ~= "table" then return nil end
+  local partsCache = {}
+  return {
+    getPart = function(name)
+      if partsCache[name] == nil then
+        local ok, part = pcall(jbeamIO.getPart, ioCtx, name)
+        partsCache[name] = ok and type(part) == "table" and part or false
       end
-    end
-  end
-  return lightbar.choose(candidates)
+      return partsCache[name] or nil
+    end,
+    compatible = function(slot)
+      local ok, names = pcall(jbeamIO.getCompatiblePartNamesForSlot, ioCtx, slot, slotMap)
+      return ok and type(names) == "table" and names or {}
+    end,
+  }
 end
 
 local function copConfig(model, configPath)
   if type(configPath) ~= "string" then return configPath end
   local ok, base = pcall(jsonReadFile, "/" .. configPath:gsub("^/", ""))
-  if not ok or type(base) ~= "table" or type(base.parts) ~= "table" or base.format == 4 or hasLightbar(base.parts) then return configPath end
+  if not ok or type(base) ~= "table" or type(base.parts) ~= "table" or base.format == 4 then return configPath end
+  local env = jbeamEnv(model)
+  if not env then return configPath end
+  local okPlan, additions = pcall(lightbar.plan, base.mainPartName or model, base.parts, env)
+  if not okPlan or not additions then return configPath end
   local cfg = deepcopy(base)
-  local extra = lightbarParts(model)
-  if extra then
-    for slot, part in pairs(extra) do cfg.parts[slot] = part end
-    return cfg
-  end
-  local chosen = jbeamLightbarParts(model)
-  if chosen and lightbar.apply(cfg.parts, chosen) then return cfg end
-  return configPath
+  for slot, part in pairs(additions) do cfg.parts[slot] = part end
+  return cfg
 end
 
 local function placeVehicle(model, config, pos, rot, color)

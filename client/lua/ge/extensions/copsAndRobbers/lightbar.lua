@@ -1,10 +1,6 @@
 local M = {}
 
-function M.isLightPart(name)
-  if type(name) ~= "string" then return false end
-  local n = name:lower()
-  return n:find("lightbar", 1, true) ~= nil or n:find("beacon", 1, true) ~= nil
-end
+local MAX_DEFAULT_DEPTH = 4
 
 local function isMain(n, word)
   return n:find(word, 1, true) ~= nil and not n:find("color", 1, true) and not n:find("pattern", 1, true)
@@ -17,36 +13,89 @@ function M.isMainLight(name)
   return isMain(n, "lightbar") or isMain(n, "beacon")
 end
 
-function M.choose(candidates)
-  local chosen, found = {}, false
-  for _, word in ipairs({ "lightbar", "beacon" }) do
-    local list = {}
-    for _, c in ipairs(candidates or {}) do
-      if type(c.name) == "string" and isMain(c.name:lower(), word) then list[#list + 1] = c end
+local function emergencyElectric(e)
+  local n = e:lower()
+  return n:find("lightbar", 1, true) or n:find("beacon", 1, true) or n:find("flash", 1, true)
+    or n:find("siren", 1, true) or e:match("^[LR]%d+_%a") ~= nil
+end
+
+local function hasEmergencyElectric(t, seen)
+  if seen[t] then return false end
+  seen[t] = true
+  for k, v in pairs(t) do
+    if (k == "$electric" or k == "electric") and type(v) == "string" then
+      if emergencyElectric(v) then return true end
+    elseif type(v) == "table" and hasEmergencyElectric(v, seen) then
+      return true
     end
-    table.sort(list, function(a, b) return a.name < b.name end)
-    for _, c in ipairs(list) do
-      local slots = type(c.slots) == "table" and c.slots or { c.slots }
-      for _, slot in ipairs(slots) do
-        if type(slot) == "string" and not chosen[slot] then
-          chosen[slot] = c.name
-          found = true
+  end
+  return false
+end
+
+function M.isEmergency(name, getPart, depth, seenParts)
+  depth, seenParts = depth or 0, seenParts or {}
+  if type(name) ~= "string" or depth > MAX_DEFAULT_DEPTH or seenParts[name] then return false end
+  seenParts[name] = true
+  local part = getPart(name)
+  if type(part) ~= "table" then return false end
+  if hasEmergencyElectric(part, {}) then return true end
+  for _, s in ipairs(type(part.slots2) == "table" and part.slots2 or {}) do
+    if type(s) == "table" and type(s.default) == "string" and s.default ~= ""
+      and M.isEmergency(s.default, getPart, depth + 1, seenParts) then
+      return true
+    end
+  end
+  return false
+end
+
+local function rankKey(name)
+  local n = name:lower()
+  return (n:find("lightbar", 1, true) and 0 or 2) + (n:find("police", 1, true) and 0 or 1), n
+end
+
+local function better(a, b)
+  local ka, na = rankKey(a)
+  local kb, nb = rankKey(b)
+  if ka ~= kb then return ka < kb end
+  return na < nb
+end
+
+function M.plan(mainPart, parts, env)
+  parts = type(parts) == "table" and parts or {}
+  local cache = {}
+  local function emergency(name)
+    if cache[name] == nil then cache[name] = M.isMainLight(name) and M.isEmergency(name, env.getPart) end
+    return cache[name]
+  end
+  local additions, seen, stack = {}, {}, { mainPart }
+  while #stack > 0 do
+    local name = table.remove(stack)
+    if type(name) == "string" and not seen[name] then
+      seen[name] = true
+      if emergency(name) then return nil end
+      local part = env.getPart(name)
+      local slots = type(part) == "table" and type(part.slots2) == "table" and part.slots2 or {}
+      for _, s in ipairs(slots) do
+        if type(s) == "table" and type(s.name) == "string" then
+          local chosen = parts[s.name]
+          if chosen == nil then chosen = s.default end
+          if type(chosen) == "string" and chosen ~= "" then
+            stack[#stack + 1] = chosen
+          else
+            local lights = {}
+            for _, c in ipairs(env.compatible(s) or {}) do
+              if emergency(c) then lights[#lights + 1] = c end
+            end
+            if #lights > 0 then
+              table.sort(lights, better)
+              additions[s.name] = lights[1]
+            end
+          end
         end
       end
     end
   end
-  return found and chosen or nil
-end
-
-function M.apply(parts, chosen)
-  local added = false
-  for slot, name in pairs(chosen or {}) do
-    if parts[slot] == nil or parts[slot] == "" then
-      parts[slot] = name
-      added = true
-    end
-  end
-  return added
+  return next(additions) and additions or nil
 end
 
 return M
