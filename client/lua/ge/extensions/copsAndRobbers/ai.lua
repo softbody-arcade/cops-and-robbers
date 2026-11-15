@@ -9,6 +9,11 @@ local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
 local REPLACE_MIN, REPLACE_MAX = 80, 200
 
 local cars = {}
+local notify = function() end
+
+function M.setNotify(fn)
+  notify = fn
+end
 
 local function command(car, cmd)
   local obj = car.gameId and getObjectByID(car.gameId)
@@ -57,7 +62,7 @@ local function spawnCar(model, config, a, pos, rot)
   opt.autoEnterVehicle = false
   opt.pos, opt.rot = pos, rot
   local veh = core_vehicles.spawnNewVehicle(model, opt)
-  if not veh then game.toast("Could not spawn " .. tostring(a.name) .. ", is MaxCars high enough?", 6, "cnr_reset") end
+  if not veh then notify("Could not spawn " .. tostring(a.name) .. ", is MaxCars high enough?", "warn") end
   return veh
 end
 

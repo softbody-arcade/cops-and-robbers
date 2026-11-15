@@ -96,8 +96,9 @@ end)
 test("events: newest two unexpired, newest first", function()
   local s = hud.new()
   local p = hud.payload(s, 10, { active = true, role = "cop", events = {
-    { text = "a", untilT = 9 }, { text = "b", untilT = 12 }, { text = "c", untilT = 13 }, { text = "d", untilT = 14 } } })
-  assertEq(#p.events, 2); assertEq(p.events[1], "d"); assertEq(p.events[2], "c")
+    { text = "a", untilT = 9 }, { text = "b", untilT = 12 }, { text = "c", untilT = 13, tone = "warn" }, { text = "d", untilT = 14 } } })
+  assertEq(#p.events, 2); assertEq(p.events[1].text, "d"); assertEq(p.events[1].tone, "info")
+  assertEq(p.events[2].text, "c"); assertEq(p.events[2].tone, "warn")
 end)
 
 test("result card replaces everything for its time and counts down to the next round", function()

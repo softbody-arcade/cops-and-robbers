@@ -1,6 +1,5 @@
 local hud = require("copsAndRobbers/hud")
 local placement = require("copsAndRobbers/placement")
-local game = require("copsAndRobbers/game")
 
 local M = {}
 
@@ -26,14 +25,29 @@ local lastPush = 0
 local lastPlacementCheck = 0
 local forcedCheckAt
 local loadedAt
+local warningKeys, warningTexts = {}, {}
 local placementState = placement.new(HUD_APP, HUD_PLACEMENT)
 
 function M.placed()
   return placed
 end
 
-function M.notify(msg, ttl, category)
-  if not placed then game.toast(msg, ttl, category) end
+function M.warning(key, text)
+  if text == nil then
+    warningTexts[key] = nil
+    for i, k in ipairs(warningKeys) do
+      if k == key then table.remove(warningKeys, i) break end
+    end
+  else
+    if warningTexts[key] == nil then warningKeys[#warningKeys + 1] = key end
+    warningTexts[key] = text
+  end
+end
+
+function M.warnings()
+  local list = {}
+  for _, k in ipairs(warningKeys) do list[#list + 1] = warningTexts[k] end
+  return list
 end
 
 function M.clearRound()
@@ -59,8 +73,8 @@ function M.flash(text, clock)
   flash = { text = text, untilT = clock + FLASH_SECONDS }
 end
 
-function M.event(text, clock)
-  events[#events + 1] = { text = text, untilT = clock + EVENT_SECONDS }
+function M.event(text, clock, tone)
+  events[#events + 1] = { text = text, tone = tone == "warn" and "warn" or "info", untilT = clock + EVENT_SECONDS }
   while #events > 5 do table.remove(events, 1) end
 end
 
@@ -171,6 +185,7 @@ function M.layoutChanged(clock)
 end
 
 function M.leave()
+  warningKeys, warningTexts = {}, {}
   loadedAt = nil
   placed = false
   local env = placementEnv()

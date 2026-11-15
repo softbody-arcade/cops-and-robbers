@@ -362,13 +362,75 @@ test("in evolving prep only the runner gets the parts menu", function()
   assertEq(cop.actionFilter.cnr_parts, true)
 end)
 
-test("the prep message does not mention a chat command", function()
+test("no pop-ups during a full round", function()
   local env = bootClient()
   env.fire("cnr_roundSetup", copy(SETUP))
-  local found = false
-  for _, t in ipairs(env.toasts) do if t:find("Waiting for GO", 1, true) then found = true end end
-  assertEq(found, true)
-  for _, t in ipairs(env.toasts) do assertEq(t:find("/cnr", 1, true), nil, t) end
+  env.tick(1)
+  env.fire("cnr_countdown", { seconds = 3 })
+  env.tick(1)
+  env.fire("cnr_runnerGo", { headStartSeconds = 5 })
+  env.tick(1)
+  env.fire("cnr_release", {})
+  env.fire("cnr_state", { resetAllowed = false, resetHint = "Reset in 5s", catchProgress = 0.4 })
+  env.tick(1.2)
+  env.fire("cnr_penalty", { seconds = 5 })
+  env.tick(1)
+  env.fire("cnr_penaltyEnd", {})
+  env.fire("cnr_lastSeen", { pos = { x = 10, y = 0, z = 0 } })
+  env.fire("cnr_roundEnd", { reason = "caught", runnerName = "Bob", survivedSeconds = 30, runnerId = 2, catchers = { "Ann" } })
+  env.tick(1)
+  assertEq(#env.toasts, 0)
+end)
+
+test("notices become HUD events with their tone", function()
+  local env = bootClient()
+  startCop(env)
+  env.fire("cnr_notice", { msg = "Ann reset illegally", tone = "warn" })
+  env.fire("cnr_notice", { msg = "Change 7 by Bob", tone = "info" })
+  env.tick(0.2)
+  local events = env.hud().events
+  assertEq(#events, 2)
+  assertEq(events[1].text, "Change 7 by Bob"); assertEq(events[1].tone, "info")
+  assertEq(events[2].text, "Ann reset illegally"); assertEq(events[2].tone, "warn")
+  assertEq(#env.toasts, 0)
+end)
+
+test("a missing reset binding is a standing warning until bound", function()
+  local env = bootClient()
+  local hudfeed = package.loaded["copsAndRobbers/hudfeed"]
+  local text = "Bind a reset or recover button to reset during rounds"
+  core_input_bindings.bindings = {}
+  env.fire("cnr_roundSetup", copy(SETUP))
+  assertEq(hudfeed.warnings()[1], text)
+  env.fire("cnr_roundEnd", { reason = "cancelled" })
+  core_input_bindings.bindings = { { contents = { bindings = { { action = "reset_physics" } } } } }
+  env.fire("cnr_roundSetup", copy(SETUP))
+  assertEq(#hudfeed.warnings(), 0)
+end)
+
+test("version mismatch and a missing BeamNG.Earth are standing warnings", function()
+  local env = bootClient()
+  local hudfeed = package.loaded["copsAndRobbers/hudfeed"]
+  env.fire("cnr_mode", { geo = false, version = "9.9.9" })
+  assertEq(hudfeed.warnings()[1], "Your copy is 2.0.7, the server runs 9.9.9: rejoin to update")
+  env.fire("cnr_mode", { geo = true, version = "2.0.7" })
+  local w = hudfeed.warnings()
+  assertEq(#w, 1)
+  assertEq(w[1], "Cops and Robbers needs a newer BeamNG.Earth (API v1) on this map")
+  env.fire("cnr_mode", { geo = false, version = "2.0.7" })
+  assertEq(#hudfeed.warnings(), 0)
+  assertEq(#env.toasts, 0)
+end)
+
+test("reset refused in prep is a HUD event", function()
+  local env = bootClient()
+  startCop(env)
+  env.M.requestReset("place")
+  env.tick(0.2)
+  local events = env.hud().events
+  assertEq(#events, 1)
+  assertEq(events[1].text, "Reset not available"); assertEq(events[1].tone, "warn")
+  assertEq(#env.toasts, 0)
 end)
 
 local EVOLVING_RUNNER = { role = "runner", runnerId = 1, model = "pickup", phase = "prep", evolving = true,
@@ -564,14 +626,14 @@ end)
 test("during a round no menu can change a cop's parts or paint", function()
   local env = bootClient()
   env.fire("cnr_roundSetup", copy(SETUP))
-  env.toasts = {}
+  env.tick(1)
   core_vehicle_partmgmt.setNewParts({})
   core_vehicle_partmgmt.setConfigVars({})
   core_vehicle_colors.setVehiclePaint({})
   assertEq(#env.edits, 0)
-  local warned = false
-  for _, t in ipairs(env.toasts) do if t:find("Use the Colour button for your car colour", 1, true) then warned = true end end
-  assertEq(warned, true)
+  env.tick(0.2)
+  assertEq(env.hud().events[1].text, "Parts and paint are locked during a round. Use the Colour button for your car colour")
+  assertEq(#env.toasts, 0)
   env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 30, runnerId = 2 })
   core_vehicle_partmgmt.setNewParts({})
   assertEq(#env.edits, 1)
@@ -732,16 +794,16 @@ test("the runner reads HIDDEN from the start of the chase when sight is on", fun
   assertEq(env.hud().status.tag, "HIDDEN")
 end)
 
-test("without the HUD the queued change shows as a pop-up", function()
+test("the queued change shows as a HUD event", function()
   local env = bootClient()
   local setup = copy(SETUP)
   setup.evolving = true
   env.fire("cnr_roundSetup", setup)
-  env.toasts = {}
+  env.tick(1)
   env.fire("cnr_queued", { runner = "Bob", changes = { { label = "Engine", from = "2.0L I4", to = "3.0L I6", extra = 12 } } })
-  local found = false
-  for _, t in ipairs(env.toasts) do if t:find("Bob's change: Engine 2.0L I4 → 3.0L I6", 1, true) then found = true end end
-  assertEq(found, true)
+  env.tick(0.2)
+  assertEq(env.hud().events[1].text:find("Bob's change: Engine 2.0L I4 → 3.0L I6", 1, true) ~= nil, true)
+  assertEq(#env.toasts, 0)
 end)
 
 test("a random new build skips cars that can't start a build", function()

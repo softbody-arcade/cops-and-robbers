@@ -1,9 +1,5 @@
 local M = {}
 
-function M.toast(msg, ttl, category)
-  ui_message(msg, ttl or 4, category or "cnr", "directions_car")
-end
-
 function M.sendServer(event, payload)
   if TriggerServerEvent then TriggerServerEvent(event, jsonEncode(payload or {})) end
 end

@@ -32,10 +32,15 @@ local PAINT_EDITS = { { "core_vehicle_partmgmt", "setConfigPaints" }, { "core_ve
 local LOCK_MESSAGE = "Parts and paint are locked during a round. Use the Colour button for your car colour"
 
 local editMode
+local notify = function() end
+
+function M.setNotify(fn)
+  notify = fn
+end
 local wrapped = {}
 
 local function blocker()
-  ui_message(LOCK_MESSAGE, 4, "cnr_parts", "directions_car")
+  notify(LOCK_MESSAGE, "warn")
 end
 
 local function wrap(moduleName, name)
@@ -96,7 +101,7 @@ local function guardBigMapTeleport(on)
   if on and not originalBigMapTeleport then
     originalBigMapTeleport = bigMap.teleportToPoi
     bigMap.teleportToPoi = function()
-      ui_message("Teleporting is disabled during a Cops and Robbers round", 4, "cnr_reset", "directions_car")
+      notify("Teleporting is disabled during a Cops and Robbers round", "warn")
     end
   elseif not on and originalBigMapTeleport then
     bigMap.teleportToPoi = originalBigMapTeleport

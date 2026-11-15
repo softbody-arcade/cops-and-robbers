@@ -62,7 +62,7 @@ local function activeEvents(events, now)
   for i = #(events or {}), 1, -1 do
     local e = events[i]
     if type(e.untilT) == "number" and now < e.untilT then
-      list[#list + 1] = e.text
+      list[#list + 1] = { text = e.text, tone = e.tone == "warn" and "warn" or "info" }
       if #list == 2 then break end
     end
   end

@@ -26,8 +26,7 @@ local BASELINE_DELAY = 1.5
 local MODES_INTERVAL = 3
 local MODES_SETTLE = 2.5
 
-local toast, sendServer, ownVehicle = game.toast, game.sendServer, game.ownVehicle
-local formatTime = hud.formatTime
+local sendServer, ownVehicle = game.sendServer, game.ownVehicle
 
 local clock = 0
 local active = false
@@ -35,7 +34,7 @@ local role
 local frozen = false
 local resetAllowed = false
 local lastHint
-local timerEnd, timerLabel, lastCountdown
+local timerEnd, timerLabel
 local roundModel, roundConfig, roundColor
 local penaltyActive = false
 local statusActive = false
@@ -72,7 +71,6 @@ local function startTimer(seconds, label)
   if seconds and seconds > 0 then
     timerEnd = clock + seconds
     timerLabel = label
-    lastCountdown = nil
   else
     timerEnd = nil
   end
@@ -108,7 +106,7 @@ local function onPickVehicle(data)
   local d = jsonDecode(data) or {}
   local model, config = vehicles.pick(d.includeMods, d.excludedModels)
   if not model then
-    toast("No vehicles available to pick", 6)
+    hudfeed.event("No vehicles available to pick", clock, "warn")
     return
   end
   sendServer("cnr_vehiclePicked", { model = model, config = config })
@@ -129,7 +127,7 @@ local function setupPosition(d)
   if center then
     pos, rot = roads.findCopSpot(center, d.copSpawnMin or 50, d.copSpawnMax or 150, math.max(d.copIndex or 1, 1))
   end
-  if not pos then toast("No road found near the runner, you start where you are", 6, "cnr_reset") end
+  if not pos then hudfeed.event("No road found near the runner, you start where you are", clock, "warn") end
   return pos, rot
 end
 
@@ -156,9 +154,7 @@ local function onRoundSetup(data)
   local mayChange = d.phase == "prep" and evolving and role == "runner"
   inputs.setPartsMenu(mayChange)
   inputs.lockEditing(mayChange and "paint" or "all")
-  if not inputs.resetIsBound() then
-    toast("Bind a reset or recover button to reset during rounds", 10, "cnr_binding")
-  end
+  hudfeed.warning("binding", not inputs.resetIsBound() and "Bind a reset or recover button to reset during rounds" or nil)
 
   local pos, rot = setupPosition(d)
   placeVehicle(d.model, roundConfig, pos, rot, d.color)
@@ -172,7 +168,6 @@ local function onRoundSetup(data)
       waiting = role == "runner" and "make your change, then Apply" or "waiting for the runner's change"
     end
     hudfeed.prep(role, game.carName(d.model), waiting)
-    hudfeed.notify(string.format("You are the %s! Waiting for GO", role == "runner" and "runner" or "cop"), 8, "cnr_go")
     timerEnd = nil
   elseif phase == "countdown" then
     startTimer(tonumber(d.countdownRemaining), "Runner starts in")
@@ -202,7 +197,6 @@ local function onRunnerGo(data)
     timerEnd = nil
     setFreeze(false)
     hudfeed.flash("GO! RUN!", clock)
-    hudfeed.notify("GO! Run!", 4, "cnr_go")
   else
     startTimer(tonumber(d.headStartSeconds), "Cops released in")
   end
@@ -278,7 +272,6 @@ local function onRebuild(data)
   inputs.setPartsMenu(false)
   inputs.lockEditing("all")
   hudfeed.applying(true)
-  hudfeed.notify("Applying the change...", 4, "cnr_apply")
   roundConfig = role == "cop" and vehicles.copConfig(roundModel, d.config) or d.config
   local veh = ownVehicle()
   placeVehicle(roundModel, roundConfig, veh and veh:getPosition(), veh and game.uprightRotation(veh), roundColor)
@@ -307,7 +300,6 @@ local function onPenaltyEnd(data)
   timerEnd = nil
   setFreeze(false)
   hudfeed.flash("PENALTY OVER", clock)
-  hudfeed.notify("Penalty over, go!", 3, "cnr_go")
 end
 
 local function onLastSeen(data)
@@ -323,7 +315,6 @@ local function onLastSeen(data)
   if geoMode and d.geo and geo.setGpsTarget(d.geo) then
     local info = geo.gpsInfo()
     infoText = info or infoText
-    if info and not d.live then hudfeed.notify(infoText, 4, "cnr_seen") end
     return
   end
   if core_groundMarkers then pcall(core_groundMarkers.setPath, target) end
@@ -335,7 +326,6 @@ local function onLastSeen(data)
       infoText = string.format("Runner %s %s", geo.formatDistance(meters), geo.compass(here, target))
     else
       infoText = string.format("Runner seen %d m %s", meters, geo.compass(here, target))
-      hudfeed.notify(infoText, 4, "cnr_seen")
     end
   end
 end
@@ -365,21 +355,15 @@ local function onMode(data)
   geo.resetPlaces()
   guihooks.trigger("CnRPanel", {})
   guihooks.trigger("CnRBoard", {})
-  if geoMode and not geo.api() then
-    toast("Cops and Robbers needs a newer BeamNG.Earth (API v1) on this map", 10, "cnr_mode")
-  end
-  if d.version and d.version ~= CLIENT_VERSION then
-    toast(string.format("Cops and Robbers: your copy is %s, the server runs %s. Rejoin to update.", CLIENT_VERSION, d.version), 10, "cnr_version")
-  end
+  hudfeed.warning("earth", geoMode and not geo.api() and "Cops and Robbers needs a newer BeamNG.Earth (API v1) on this map" or nil)
+  local outdated = d.version and d.version ~= CLIENT_VERSION
+  hudfeed.warning("version", outdated and string.format("Your copy is %s, the server runs %s: rejoin to update", CLIENT_VERSION, d.version) or nil)
 end
 
 local function onNotice(data)
   local d = jsonDecode(data) or {}
   if d.about ~= nil and MPConfig and d.about == MPConfig.getPlayerServerID() then return end
-  if d.msg then
-    hudfeed.event(d.msg, clock)
-    hudfeed.notify(d.msg, 4, "cnr_notice")
-  end
+  if d.msg then hudfeed.event(d.msg, clock, d.tone == "warn" and "warn" or "info") end
 end
 
 local function onRelease()
@@ -389,7 +373,6 @@ local function onRelease()
   if frozen then setFreeze(false) end
   if role == "cop" then
     hudfeed.flash("GO!", clock)
-    hudfeed.notify("GO!", 3, "cnr_go")
   end
   startStatus()
   if role == "runner" then infoText = runnerInfo() end
@@ -401,16 +384,9 @@ local function onState(data)
     resetAllowed = d.resetAllowed and true or false
     inputs.setResetKey()
   end
-  if d.resetHint and d.resetHint ~= lastHint then
-    lastHint = d.resetHint
-    if not penaltyActive and not statusActive then toast(d.resetHint, 3, "cnr_reset") end
-  end
+  if d.resetHint and d.resetHint ~= lastHint then lastHint = d.resetHint end
   local p = tonumber(d.catchProgress) or 0
   hudfeed.catchSample(clock, p)
-  if p > 0 then
-    local pct = math.floor(p * 100 + 0.5)
-    hudfeed.notify(string.format(role == "runner" and "BEING CAUGHT %d%%" or "HOLDING RUNNER %d%%", pct), 1, "cnr_catch")
-  end
 end
 
 local function endRound()
@@ -438,21 +414,6 @@ local function endRound()
   inputs.unlockAll()
 end
 
-local function showEndToast(d)
-  if d.reason == "caught" then
-    local by = (type(d.catchers) == "table" and #d.catchers > 0) and (" by " .. table.concat(d.catchers, ", ")) or ""
-    toast(string.format("Runner caught%s! %s survived %s", by, tostring(d.runnerName), formatTime(d.survivedSeconds)), 8, "cnr_end")
-  elseif d.reason == "called" then
-    toast(string.format("Round ended: %s survived %s", tostring(d.runnerName), formatTime(d.survivedSeconds)), 8, "cnr_end")
-  elseif d.reason == "escaped" then
-    toast(string.format("%s escaped! Survived %s", tostring(d.runnerName), formatTime(d.survivedSeconds)), 8, "cnr_end")
-  elseif d.reason == "disconnect" then
-    toast(string.format("%s left after %s", tostring(d.runnerName), formatTime(d.survivedSeconds)), 8, "cnr_end")
-  else
-    toast("Round cancelled", 5, "cnr_end")
-  end
-end
-
 local function onRoundEnd(data)
   local d = jsonDecode(data) or {}
   local wasRunner = MPConfig and MPConfig.getPlayerServerID() == d.runnerId
@@ -461,7 +422,6 @@ local function onRoundEnd(data)
   local cancelled = d.reason == "cancelled" or not hudfeed.isResultReason(d.reason)
   if cancelled and not wasActive then return end
   hudfeed.showResult(d, clock)
-  if not hudfeed.placed() then showEndToast(d) end
   if d.explode and wasRunner then
     local veh = ownVehicle()
     if veh then veh:queueLuaCommand("fire.explodeVehicle()") end
@@ -557,34 +517,12 @@ local function updateGeo()
   geo.lookupStations(clock)
 end
 
-local function updateStatusToast()
+local function updateGpsInfo()
   if not statusActive or clock - lastStatusAt < 1 then return end
   lastStatusAt = clock
-  local parts = { formatTime(clock - chaseStart) }
-  if penaltyActive then
-    parts[#parts + 1] = "Penalty"
-  elseif resetAllowed then
-    parts[#parts + 1] = "Reset OK"
-  elseif lastHint then
-    parts[#parts + 1] = lastHint
-  end
   if geo.hasTarget() then
     local info = geo.gpsInfo()
     if info then infoText = info end
-  end
-  if infoTag then parts[#parts + 1] = infoTag end
-  if infoText then parts[#parts + 1] = infoText end
-  hudfeed.notify(table.concat(parts, "  |  "), 1.5, "cnr_status")
-end
-
-local function updateCountdownToast()
-  if not timerEnd then return end
-  local left = math.ceil(timerEnd - clock)
-  if left > 0 and left ~= lastCountdown then
-    lastCountdown = left
-    hudfeed.notify(string.format("%s %d", timerLabel, left), 1.2, "cnr_go")
-  elseif left <= 0 then
-    timerEnd = nil
   end
 end
 
@@ -638,13 +576,12 @@ local function onUpdate(dtReal)
   updateBuild()
   updateModes()
   if active then inputs.enforceEditLock() end
-  updateStatusToast()
+  updateGpsInfo()
   hudfeed.update(clock, {
     active = active, role = role, chaseStart = statusActive and chaseStart or nil,
     resetAllowed = resetAllowed, resetHint = lastHint, penalty = penaltyActive, infoText = infoText, infoTag = infoTag,
     timer = timerEnd and { label = timerLabel, endsAt = timerEnd } or nil,
   })
-  updateCountdownToast()
 end
 
 local function onVehicleResetted(gameVid)
@@ -665,11 +602,7 @@ requestReset = function(kind)
   if not resetAllowed then
     hudfeed.resetFlash(clock)
     local msg = penaltyActive and "No reset during a crash penalty" or (lastHint or "Reset not available")
-    if hudfeed.placed() then
-      if not statusActive then hudfeed.event(msg, clock) end
-    else
-      toast(msg, 3, "cnr_reset")
-    end
+    if not statusActive then hudfeed.event(msg, clock, "warn") end
     return
   end
   resetAllowed = false
@@ -679,7 +612,7 @@ requestReset = function(kind)
     if roadPos then
       pos, rot = roadPos, roadRot
     else
-      toast("No road found nearby, repaired in place", 4, "cnr_reset")
+      hudfeed.event("No road found nearby, repaired in place", clock, "info")
     end
   end
   teleport(veh, pos, rot)
@@ -712,6 +645,8 @@ local function onExtensionLoaded()
   modesState = modes.new(ok and saved or nil)
   hudfeed.refreshApps()
   hudfeed.start(clock)
+  inputs.setNotify(function(msg, tone) hudfeed.event(msg, clock, tone) end)
+  ai.setNotify(function(msg, tone) hudfeed.event(msg, clock, tone) end)
   if not AddEventHandler then return end
   AddEventHandler("cnr_pickVehicle", onPickVehicle)
   AddEventHandler("cnr_roundSetup", onRoundSetup)
@@ -755,7 +690,7 @@ local function onExtensionLoaded()
     local summary = first and string.format("%s %s → %s", tostring(first.label), tostring(first.from), tostring(first.to)) or "none yet"
     local more = #changes > 1 and string.format(" (+%d more)", #changes - 1) or ""
     local warn = anyMissing and " (⚠ you're missing parts for it)" or ""
-    hudfeed.notify(string.format("%s's change: %s%s%s", tostring(d.runner), summary, more, warn), 6, "cnr_change")
+    hudfeed.event(string.format("%s's change: %s%s%s", tostring(d.runner), summary, more, warn), clock, anyMissing and "warn" or "info")
   end)
   AddEventHandler("cnr_penaltyEnd", onPenaltyEnd)
   AddEventHandler("cnr_state", onState)
