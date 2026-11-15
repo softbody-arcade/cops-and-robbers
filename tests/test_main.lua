@@ -714,10 +714,10 @@ end)
 
 test("version is shown in help and the log", function()
   local env = boot()
-  assertEq(env.logHas("Cops and Robbers 2.0.2 loaded"), true)
+  assertEq(env.logHas("Cops and Robbers 2.0.3 loaded"), true)
   env.call("onChatMessage", 1, "Reinder", "/cnr help")
-  assertEq(env.chatHas("Cops and Robbers 2.0.2"), true)
-  assertEq(env.lastSent("cnr_mode").data:find('"version":"2.0.2"', 1, true) ~= nil, true)
+  assertEq(env.chatHas("Cops and Robbers 2.0.3"), true)
+  assertEq(env.lastSent("cnr_mode").data:find('"version":"2.0.3"', 1, true) ~= nil, true)
   env.cleanup()
 end)
 

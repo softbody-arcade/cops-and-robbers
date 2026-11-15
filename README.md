@@ -119,6 +119,8 @@ looked up and remembered by the server as they drive. Players need a BeamNG.Eart
 
 See `docs/DEPENDENCIES.md` for everything the mod depends on and what to check when BeamMP, BeamNG or BeamNG.Earth updates.
 
+App preview images are drawn from `tools/previews/*.svg`: `rsvg-convert -w 1000 -h 560 -o client/ui/modules/apps/<App>/app.png tools/previews/<name>.svg`.
+
 `make test` runs the rule, wiring and client tests with stock Lua (`tests/test_client.lua` loads the real GE
 extension against stubbed game functions). `make install-local` deploys to `.testserver/`, `make deploy` to the server.
 

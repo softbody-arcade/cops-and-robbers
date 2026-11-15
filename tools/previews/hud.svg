@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="560" viewBox="0 0 1000 560">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b4654"/><stop offset="1" stop-color="#1b2028"/></linearGradient>
+  </defs>
+  <rect width="1000" height="560" fill="url(#bg)"/>
+  <path d="M0 560 L420 250 L580 250 L1000 560 Z" fill="#2a2f36"/>
+  <path d="M497 270 L503 270 L512 330 L488 330 Z M486 360 L514 360 L526 450 L474 450 Z" fill="#d9c56b" opacity="0.7"/>
+  <g font-family="DejaVu Sans, sans-serif">
+    <rect x="200" y="70" width="600" height="96" rx="16" fill="#0a0c12" opacity="0.78"/>
+    <text x="500" y="112" text-anchor="middle" font-size="30" fill="#ffffff" font-weight="bold">COPS RELEASED IN</text>
+    <text x="500" y="156" text-anchor="middle" font-size="40" fill="#ffcc66" font-weight="bold">5</text>
+    <rect x="110" y="300" width="780" height="104" rx="16" fill="#0a0c12" opacity="0.8"/>
+    <rect x="150" y="318" width="138" height="44" rx="8" fill="#d93025"/>
+    <text x="219" y="349" text-anchor="middle" font-size="26" fill="#fff" font-weight="bold">RUNNER</text>
+    <text x="314" y="351" font-size="30" fill="#fff" font-weight="bold">2:41</text>
+    <rect x="400" y="320" width="2" height="40" fill="#ffffff" opacity="0.35"/>
+    <rect x="422" y="319" width="168" height="42" rx="7" fill="none" stroke="#ff7b72" stroke-width="2.5"/>
+    <text x="506" y="349" text-anchor="middle" font-size="22" fill="#ff7b72" font-weight="bold">◉ SPOTTED</text>
+    <text x="610" y="349" font-size="24" fill="#e8e8e8">Cop 120 m</text>
+    <text x="500" y="390" text-anchor="middle" font-size="20" fill="#9fe870">Reset OK</text>
+    <rect x="110" y="420" width="780" height="96" rx="16" fill="#0a0c12" opacity="0.8"/>
+    <text x="500" y="458" text-anchor="middle" font-size="24" fill="#ff7b72" font-weight="bold" letter-spacing="2">BEING CAUGHT 62%</text>
+    <rect x="150" y="476" width="700" height="18" rx="9" fill="#ffffff" opacity="0.15"/>
+    <rect x="150" y="476" width="434" height="18" rx="9" fill="#d93025"/>
+  </g>
+</svg>

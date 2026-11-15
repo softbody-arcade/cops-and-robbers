@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="560" viewBox="0 0 1000 560">
+  <rect width="1000" height="560" fill="#1d232b"/>
+  <g font-family="DejaVu Sans, sans-serif">
+    <rect x="160" y="30" width="680" height="500" rx="18" fill="#0a0c12" opacity="0.85"/>
+    <rect x="186" y="54" width="34" height="34" rx="6" fill="#ffffff" opacity="0.12"/>
+    <text x="203" y="78" text-anchor="middle" font-size="18" fill="#fff">▾</text>
+    <text x="238" y="80" font-size="22" fill="#ffffff" font-weight="bold">RUNNERS</text>
+    <rect x="236" y="90" width="104" height="3" fill="#ff6600"/>
+    <text x="378" y="80" font-size="22" fill="#9aa0a6" font-weight="bold">COPS</text>
+    <text x="462" y="80" font-size="22" fill="#9aa0a6" font-weight="bold">PLAYERS</text>
+    <rect x="616" y="56" width="196" height="34" rx="6" fill="#ffffff" opacity="0.1"/>
+    <text x="632" y="80" font-size="18" fill="#fff">This map</text>
+    <text x="800" y="80" text-anchor="end" font-size="16" fill="#9aa0a6">▾</text>
+    <g font-size="24">
+      <rect x="186" y="116" width="628" height="74" rx="8" fill="#ffd166" opacity="0.14"/>
+      <text x="206" y="150" fill="#ffd166" font-weight="bold">1.</text>
+      <text x="252" y="150" fill="#fff" font-weight="bold">Bob</text>
+      <text x="794" y="150" text-anchor="end" fill="#fff" font-weight="bold">12:41</text>
+      <text x="252" y="178" font-size="17" fill="#9aa0a6">Gavril D-Series</text>
+      <rect x="186" y="200" width="628" height="74" rx="8" fill="#ffffff" opacity="0.06"/>
+      <text x="206" y="234" fill="#d0d4d8" font-weight="bold">2.</text>
+      <text x="252" y="234" fill="#fff" font-weight="bold">Reinder</text>
+      <text x="794" y="234" text-anchor="end" fill="#fff" font-weight="bold">9:03</text>
+      <text x="252" y="262" font-size="17" fill="#9aa0a6">Burnside Special</text>
+      <rect x="186" y="284" width="628" height="74" rx="8" fill="#ffffff" opacity="0.06"/>
+      <text x="206" y="318" fill="#d0d4d8" font-weight="bold">3.</text>
+      <text x="252" y="318" fill="#fff" font-weight="bold">Ann</text>
+      <text x="794" y="318" text-anchor="end" fill="#fff" font-weight="bold">7:55</text>
+      <text x="252" y="346" font-size="17" fill="#9aa0a6">ETK I-Series</text>
+      <rect x="186" y="368" width="628" height="74" rx="8" fill="#ffffff" opacity="0.06"/>
+      <text x="206" y="402" fill="#d0d4d8" font-weight="bold">4.</text>
+      <text x="252" y="402" fill="#fff" font-weight="bold">Gizmo</text>
+      <text x="794" y="402" text-anchor="end" fill="#fff" font-weight="bold">6:12</text>
+      <text x="252" y="430" font-size="17" fill="#9aa0a6">Ibishu Covet</text>
+    </g>
+    <text x="500" y="494" text-anchor="middle" font-size="18" fill="#9aa0a6">Best survival times · catches · player stats</text>
+  </g>
+</svg>

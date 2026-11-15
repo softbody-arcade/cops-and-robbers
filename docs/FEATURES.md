@@ -1,4 +1,4 @@
-# Cops and Robbers 2.0.2: features
+# Cops and Robbers 2.0.3: features
 
 A BeamMP server plugin with a client mod that BeamMP downloads automatically. The mod enforces the group's cops-and-robbers rules. It is one mod for every map, and it switches to geo mode on BeamNG.Earth by itself.
 
