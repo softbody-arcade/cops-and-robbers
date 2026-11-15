@@ -646,3 +646,39 @@ test("in evolving prep the prep line says what's next, then waiting for GO", fun
   plain.tick(0.2)
   assertEq(plain.hud().prep.waiting, "waiting for GO")
 end)
+
+test("the runner reads HIDDEN from the start of the chase when sight is on", function()
+  local env = bootClient()
+  env.fire("cnr_roundSetup", { role = "runner", runnerId = 1, model = "pickup", config = "vehicles/pickup/base.pc", phase = "prep", sightMaxMeters = 400 })
+  env.tick(1)
+  env.fire("cnr_release", {})
+  env.tick(0.2)
+  assertEq(env.hud().status.tag, "HIDDEN")
+end)
+
+test("without the HUD the queued change shows as a pop-up", function()
+  local env = bootClient()
+  local setup = copy(SETUP)
+  setup.evolving = true
+  env.fire("cnr_roundSetup", setup)
+  env.toasts = {}
+  env.fire("cnr_queued", { runner = "Bob", changes = { { label = "Engine", from = "2.0L I4", to = "3.0L I6", extra = 12 } } })
+  local found = false
+  for _, t in ipairs(env.toasts) do if t:find("Bob's change: Engine 2.0L I4 → 3.0L I6", 1, true) then found = true end end
+  assertEq(found, true)
+end)
+
+test("a random new build skips cars that can't start a build", function()
+  local env = bootClient({ configs = {
+    { model_key = "pickup", key = "old", Configuration = "Old", Source = "BeamNG - Official", Type = "Car", pcFilename = "/vehicles/pickup/old.pc" },
+    { model_key = "pickup", key = "base", Configuration = "Base", Source = "BeamNG - Official", Type = "Car", pcFilename = "/vehicles/pickup/base.pc" },
+  }, files = {
+    ["/vehicles/pickup/old.pc"] = { format = 4, partsTree = {} },
+    ["/vehicles/pickup/base.pc"] = { format = 2, model = "pickup", parts = { pickup_engine = "v8" }, vars = {} },
+  } })
+  for _ = 1, 5 do
+    env.sent = {}
+    env.M.newBuild({ random = true })
+    assertEq(env.lastSent("cnr_panel").parts.pickup_engine, "v8")
+  end
+end)

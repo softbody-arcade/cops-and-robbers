@@ -98,6 +98,11 @@ end
 
 function M.label(slot, model)
   local text = tostring(slot)
+  if text:sub(1, 1) == "/" then
+    local last
+    for segment in text:gmatch("[^/]+") do last = segment end
+    text = last or text
+  end
   if model and text:sub(1, #model + 1) == model .. "_" then text = text:sub(#model + 2) end
   return words(text)
 end

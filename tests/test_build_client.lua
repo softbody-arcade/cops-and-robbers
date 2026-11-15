@@ -55,3 +55,8 @@ test("varsDiff ignores noise smaller than half a step", function()
   d = build.varsDiff({ gear1 = 3.1 }, { gear1 = 3.45 }, { gear1 = 0.01 })
   assertEq(#d, 1)
 end)
+
+test("path-style slot names read like words", function()
+  assertEq(build.label("/pickup_frame/pickup_engine/", "pickup"), "Engine")
+  assertEq(build.label("/a/tire_R/", "pickup"), "Tire R")
+end)

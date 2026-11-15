@@ -275,6 +275,7 @@ local function onRebuild(data)
   inputs.setPartsMenu(false)
   inputs.lockEditing("all")
   hudfeed.applying(true)
+  hudfeed.notify("Applying the change...", 4, "cnr_apply")
   roundConfig = role == "cop" and vehicles.copConfig(roundModel, d.config) or d.config
   local veh = ownVehicle()
   placeVehicle(roundModel, roundConfig, veh and veh:getPosition(), veh and game.uprightRotation(veh), roundColor)
@@ -379,6 +380,7 @@ end
 
 local function onRelease()
   ai.releaseCops()
+  if role == "runner" and sightMax > 0 and spotted == nil then spotted = false end
   timerEnd = nil
   if frozen then setFreeze(false) end
   if role == "cop" then
@@ -386,6 +388,7 @@ local function onRelease()
     hudfeed.notify("GO!", 3, "cnr_go")
   end
   startStatus()
+  if role == "runner" then infoText = runnerInfo() end
 end
 
 local function onState(data)
@@ -735,6 +738,10 @@ local function onExtensionLoaded()
     local d = jsonDecode(data) or {}
     local mine = role == "runner" and evolving and (buildBaseline ~= nil or buildBaselineAt ~= nil)
     hudfeed.queued(d.runner, d.changes, mine)
+    local first = type(d.changes) == "table" and d.changes[1]
+    local summary = first and string.format("%s %s → %s", tostring(first.label), tostring(first.from), tostring(first.to)) or "none yet"
+    local more = type(d.changes) == "table" and #d.changes > 1 and string.format(" (+%d more)", #d.changes - 1) or ""
+    hudfeed.notify(string.format("%s's change: %s%s", tostring(d.runner), summary, more), 6, "cnr_change")
   end)
   AddEventHandler("cnr_penaltyEnd", onPenaltyEnd)
   AddEventHandler("cnr_state", onState)
@@ -763,12 +770,17 @@ end
 function M.newBuild(choice)
   choice = type(choice) == "table" and choice or {}
   local path = choice.config
+  local b
   if choice.random then
     local list = vehicles.configList(choice)
-    local pick = #list > 0 and list[math.random(#list)]
-    path = pick and pick.config
+    while #list > 0 and not b do
+      local pick = table.remove(list, math.random(#list))
+      path = pick.config
+      b = vehicles.buildFrom(path)
+    end
+  else
+    b = vehicles.buildFrom(path)
   end
-  local b = vehicles.buildFrom(path)
   if not b then return guihooks.trigger("CnRPanelReply", { text = "That car can't start a build" }) end
   M.panel({ action = "build", op = "new", model = b.model, name = b.name, parts = b.parts, vars = b.vars, from = choice.random and "random" or path })
 end

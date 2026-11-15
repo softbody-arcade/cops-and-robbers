@@ -139,9 +139,9 @@ const GROUPS = [
     { key: "sightMaxMeters", label: "Sight range (0 = off)", unit: "m", step: 50, min: 0 },
     { key: "sightLiveIntervalSeconds", label: "Live update every", unit: "s", step: 1, min: 1 },
     { key: "sightNoRouteSeconds", label: "No route within", unit: "s", step: 1, min: 0 },
-    { key: "sightNoRouteMinMeters", label: "No route at least", unit: "m", step: 10, min: 0 },
+    { key: "sightNoRouteMinMeters", label: "No route minimum", unit: "m", step: 10, min: 0 },
     { key: "sightGraceSeconds", label: "Sight grace", unit: "s", step: 0.5, min: 0 },
-    { key: "assistMinSightPercent", label: "Assist needs sight", unit: "%", step: 5, min: 0 },
+    { key: "assistMinSightPercent", label: "Assist needs sight", unit: "%", step: 5, min: 0, max: 100 },
   ] },
   { title: "Cars", items: [
     { key: "includeModVehicles", label: "Include mod cars", kind: "bool" },
@@ -181,7 +181,7 @@ const configItems = ref([])
 let buildResetTimer = null
 const collapsed = ref(false)
 let inFlight = []
-let nextRequestId = 1
+let nextRequestId = Date.now() % 1000000000
 let saveTimer = null
 let openTimer = null
 let resetTimer = null
@@ -293,6 +293,7 @@ function listText(v) {
 }
 
 function itemFor(key) {
+  if (key === "carMode") return { key, label: "Evolving car", kind: "mode" }
   for (const g of groups.value) {
     const item = g.items.find(i => i.key === key)
     if (item) return item
@@ -301,6 +302,7 @@ function itemFor(key) {
 }
 
 function shown(item, v) {
+  if (item.kind === "mode") return v === "evolving" ? "on" : "off"
   if (item.kind === "bool") return v ? "on" : "off"
   if (item.kind === "list") return listText(v) || "none"
   return `${v} ${item.unit || ""}`.trim()
@@ -336,7 +338,8 @@ function stepBy(item, dir) {
   const q = (Number(valueOf(item.key)) || 0) / item.step
   const onGrid = Math.abs(q - Math.round(q)) < 1e-6
   const n = onGrid ? Math.round(q) + dir : dir > 0 ? Math.ceil(q) : Math.floor(q)
-  change(item.key, Math.max(item.min, Math.round(n * item.step * 10000) / 10000))
+  const value = Math.max(item.min, Math.round(n * item.step * 10000) / 10000)
+  change(item.key, item.max === undefined ? value : Math.min(item.max, value))
 }
 
 function commitList(key) {
@@ -365,7 +368,7 @@ function resetClick() {
   drafts.value = {}
   const values = {}
   for (const [k, v] of Object.entries(state.value.defaults || {})) {
-    if (k !== "autoNextRound") values[k] = v
+    if (k !== "autoNextRound" && k !== "carMode") values[k] = v
   }
   if (!Object.keys(values).length) return
   saveSettings(values, true)
@@ -421,7 +424,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   for (const key of Object.keys(drafts.value)) commitList(key)
-  flush()
+  if (saveTimer) flush()
   send({ action: "close" })
   clearInterval(openTimer)
   clearTimeout(saveTimer)
