@@ -225,7 +225,7 @@ local function assertPlacement(L, app, expected)
 end
 
 local ANNOUNCE_PLACEMENT = { left = "50%", right = "", top = "10em", bottom = "", width = "40em", height = "12em" }
-local HUD_PLACEMENT = { left = "50%", right = "", top = "", bottom = "2em", width = "40em", height = "16em" }
+local HUD_PLACEMENT = { left = "50%", right = "", top = "", bottom = "2em", width = "40em", height = "22em" }
 local HOWTO_PLACEMENT = { left = "50%", right = "", top = "50%", bottom = "", width = "40em", height = "26em" }
 
 test("joining places Announcements and the HUD, then checks less often", function()
@@ -1041,6 +1041,35 @@ test("a first join adds How to play to the layout along with the HUD", function(
   env.tick(4, 0.5)
   assertEq(env.hud().help.open, true)
   assertPlacement(L, "copsAndRobbersHowToPlay", HOWTO_PLACEMENT)
+end)
+
+local function withLeftoverHowTo()
+  local L = fakeLayouts()
+  table.insert(L.disk[L.name].apps, { appName = "copsAndRobbersHowToPlay" })
+  local env = bootClient({ layouts = L, files = { [HELP_FILE] = { seen = true } } })
+  join(env)
+  env.tick(4, 0.5)
+  env.M.ui({ action = "help", open = true })
+  assertEq(countApp(L, "copsAndRobbersHowToPlay"), 1)
+  return L, env
+end
+
+test("a How to play left in the layout by an unclean exit is removed on leaving once opened", function()
+  local L, env = withLeftoverHowTo()
+  env.M.onBeamMPServerLeave()
+  assertEq(has(L, "copsAndRobbersHowToPlay"), false)
+end)
+
+test("a How to play left in the layout by an unclean exit counts as closed when the player removes it", function()
+  local L, env = withLeftoverHowTo()
+  local kept = {}
+  for _, a in ipairs(L.disk[L.name].apps) do
+    if a.appName ~= "copsAndRobbersHowToPlay" then kept[#kept + 1] = a end
+  end
+  L.disk[L.name].apps = kept
+  env.tick(11, 0.5)
+  assertEq(env.hud().help.open, false)
+  assertEq(has(L, "copsAndRobbersHowToPlay"), false)
 end)
 
 test("How to play removed by the player counts as closed, without marking it seen", function()

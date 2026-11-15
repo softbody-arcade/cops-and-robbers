@@ -16,7 +16,7 @@ export function useFit(box, content) {
     const h = Math.max(c.offsetHeight, c.scrollHeight)
     const w = Math.max(c.offsetWidth, c.scrollWidth)
     const s = Math.min(1, h > 0 ? b.clientHeight / h : 1, w > 0 ? b.clientWidth / w : 1)
-    scale.value = s > 0 ? Math.floor(s * 100) / 100 : 1
+    scale.value = s > 0 ? Math.max(0.01, Math.floor(s * 100) / 100) : 1
   }
 
   watch(

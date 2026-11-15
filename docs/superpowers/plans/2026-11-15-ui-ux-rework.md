@@ -362,7 +362,7 @@
 - App directives: `copsAndRobbersAnnouncements`, `copsAndRobbersHud`, `copsAndRobbersHowToPlay`. All three `"interactive": "no"` (buttons/cards opt in with `pointer-events: auto`), `"vue": true`, category Gameplay. Announcements and HUD `"isAuxiliary": true` (auto-placed, hidden from the picker); How to play `"isAuxiliary": true` too (only opened by the mod).
 - `apps.APPS` (exact placements, em on non-centre axes, "50%" for centred axes):
   - `announce = {app = "copsAndRobbersAnnouncements", placement = {left = "50%", right = "", top = "10em", bottom = "", width = "40em", height = "12em"}, sticky = true}`
-  - `hud = {app = "copsAndRobbersHud", placement = {left = "50%", right = "", top = "", bottom = "2em", width = "40em", height = "16em"}, sticky = true}`
+  - `hud = {app = "copsAndRobbersHud", placement = {left = "50%", right = "", top = "", bottom = "2em", width = "40em", height = "22em"}, sticky = true}`
   - `howto = {app = "copsAndRobbersHowToPlay", placement = {left = "50%", right = "", top = "50%", bottom = "", width = "40em", height = "26em"}}`
   - `panel`, `board` unchanged.
   - `app.json` `css` of each new/changed app = its placement (fallback when added via Esc > UI Apps, which only matters for panel/board; keep it consistent anyway), with sensible `min-width`/`min-height` (e.g. 20em × 6em for the two HUD apps, 28em × 18em for How to play).

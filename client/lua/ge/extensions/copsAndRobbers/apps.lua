@@ -4,7 +4,7 @@ local M = {}
 
 M.APPS = {
   hud = { app = "copsAndRobbersHud", dir = "CopsAndRobbersHud", sticky = true,
-    placement = { left = "50%", right = "", top = "", bottom = "2em", width = "40em", height = "16em" } },
+    placement = { left = "50%", right = "", top = "", bottom = "2em", width = "40em", height = "22em" } },
   announce = { app = "copsAndRobbersAnnouncements", dir = "CopsAndRobbersAnnouncements", sticky = true,
     placement = { left = "50%", right = "", top = "10em", bottom = "", width = "40em", height = "12em" } },
   howto = { app = "copsAndRobbersHowToPlay", dir = "CopsAndRobbersHowToPlay",
@@ -105,9 +105,9 @@ end
 
 function M.open(name)
   local def = M.APPS[name]
-  if not def or def.sticky or M.isOpen(name) then return end
+  if not def or def.sticky then return end
   local state = states[name]
-  state.placed, state.optedOut = {}, {}
+  if not M.isOpen(name) then state.placed, state.optedOut = {}, {} end
   placement.activate(state)
   if placed then tickApp(name) end
 end
