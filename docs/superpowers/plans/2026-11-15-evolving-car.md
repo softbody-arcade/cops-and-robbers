@@ -241,6 +241,6 @@
   - document the evolving car mode and the paint rule
 - `DEPENDENCIES.md`: add `core_vehicle_manager.getPlayerVehicleData`, `core_vehicle_partmgmt.partsTreeToPartsMap`, `FS:getFileOriginInfo`, and the parts menu as the only paint path.
 - `TODO.md`: remove the evolving car item.
-- Version 1.8.0 everywhere, and the test counts.
+- Version 2.0.0 everywhere, and the test counts.
 
 ### Task 10: final review (opus), fix pass, then ask for deploy (server empty) and merge.

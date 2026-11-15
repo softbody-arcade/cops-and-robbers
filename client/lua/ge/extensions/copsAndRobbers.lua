@@ -11,7 +11,7 @@ local hudfeed = require("copsAndRobbers/hudfeed")
 local sight = require("copsAndRobbers/sight")
 local buildDiff = require("copsAndRobbers/build")
 
-local CLIENT_VERSION = "1.8.0"
+local CLIENT_VERSION = "2.0.0"
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
 local LIGHTS_OFF = "electrics.set_lightbar_signal(0)"
 local SETUP_DELAY = 0.5
