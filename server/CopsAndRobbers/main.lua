@@ -12,7 +12,7 @@ local geo = require("cnr.geo")
 local build = require("cnr.build")
 local panel = require("cnr.panel")
 
-local VERSION = "2.0.0"
+local VERSION = "2.0.1"
 local PREFIX = "[CnR] "
 local dataDir = pluginDir .. "data/"
 local stationsDir = dataDir .. "stations/"
@@ -152,7 +152,14 @@ local function saveBuild()
 end
 
 local function backupBuild()
-  if FS.Exists(buildPath) then FS.Rename(buildPath, dataDir .. "build-" .. os.time() .. ".json") end
+  if not FS.Exists(buildPath) then return end
+  local base = dataDir .. "build-" .. os.time()
+  local aside, n = base .. ".json", 1
+  while FS.Exists(aside) do
+    n = n + 1
+    aside = string.format("%s-%d.json", base, n)
+  end
+  FS.Rename(buildPath, aside)
 end
 
 local function buildOpts()
@@ -784,17 +791,20 @@ function cnrOnSetup(pid, data)
   local ok, d = pcall(Util.JsonDecode, data)
   if not ok or type(d) ~= "table" or type(d.parts) ~= "table" then return end
   if not current.evolving or current.state ~= "applying" or pid ~= current.runnerId then return end
-  local setup = { parts = d.parts, vars = type(d.vars) == "table" and d.vars or {} }
+  if d.model ~= nil and d.model ~= current.vehicle.model then return log("ignored a setup for another car model from " .. tostring(pid)) end
+  local valid = build.normalize({ model = current.vehicle.model, parts = d.parts, vars = d.vars })
+  if not valid then return log("ignored a malformed setup from " .. tostring(pid)) end
+  local setup = { parts = valid.parts, vars = valid.vars }
   local changes = type(d.changes) == "table" and d.changes or {}
   if not current.test and currentBuild then
     local name = MP.GetPlayerName(pid) or tostring(pid)
     local nb, changed = build.apply(currentBuild, setup, changes, name, os.time())
-    if changed then
+    if nb ~= currentBuild then
       currentBuild = nb
       current.buildStep = nb.step
       saveBuild()
-      broadcast(build.changeLine(nb.step, name, changes))
     end
+    if changed then broadcast(build.changeLine(nb.step, name, changes)) end
   end
   local cfgTable = { format = 2, model = current.vehicle.model, parts = setup.parts, vars = setup.vars }
   applyEffects(current:setupReceived(now(), pid, cfgTable))

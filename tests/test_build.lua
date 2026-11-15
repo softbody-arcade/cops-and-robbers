@@ -35,6 +35,14 @@ test("apply with no change keeps the build and its step", function()
   assertEq(changed, false); assertEq(nb.step, 0)
 end)
 
+test("apply with an empty change list keeps the step but adopts the resolved parts", function()
+  local b = sample()
+  local resolved = { parts = { pickup_engine = "pickup_engine_v8", pickup_wheel_F = "steel", pickup_frame = "frame" }, vars = { gear1 = 3.1, arb = 40000 } }
+  local nb, changed = build.apply(b, resolved, {}, "Bob", 200)
+  assertEq(changed, false); assertEq(nb.step, 0); assertEq(#nb.history, 0)
+  assertEq(nb.parts.pickup_frame, "frame"); assertEq(nb.vars.arb, 40000)
+end)
+
 test("label and change line", function()
   local b = sample()
   b.step = 7

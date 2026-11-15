@@ -123,7 +123,7 @@ function Round:finish(now, reason)
   if reason ~= "cancelled" and not self.test then
     fx[#fx + 1] = { kind = "record", run = {
       player = self:runnerName(), survivedSeconds = survived,
-      model = self.vehicle and self.vehicle.model, config = self.vehicle and self.vehicle.config,
+      model = self.vehicle and self.vehicle.model, config = not self.evolving and self.vehicle and self.vehicle.config or nil,
       releasedAt = self.releasedAt, endedAt = now, endReason = reason, catchers = catchers,
       chaseSeconds = survived, copIds = {}, copSight = {},
       hiddenSeconds = self.cfg.sightMaxMeters > 0 and self.hiddenSeconds or nil,
@@ -293,6 +293,12 @@ function Round:tick(now, cars, stations)
     return fx
   end
   if self.state == "applying" and now - self.applyStartedAt >= APPLY_TIMEOUT_SECONDS - 1e-9 then
+    if not self.setupDone then
+      self.setupDone = true
+      self.readyPids = {}
+      self.applyStartedAt = now
+      return { { kind = "rebuild", config = self.vehicle.config } }
+    end
     return self:markApplied(true)
   end
   if self.state == "idle" or self.state == "prep" or self.state == "applying" or self.state == "ready" then return fx end

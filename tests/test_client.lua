@@ -514,3 +514,39 @@ test("the evolving runner may change parts and tuning in prep, but not paint, an
   core_vehicle_partmgmt.setNewParts({})
   assertEq(#env.edits, 2)
 end)
+
+test("changing one tuning value shows only that value, with rounded numbers", function()
+  local env = bootClient()
+  env.liveVars = { ["$gear_1"] = { val = 3.1, step = 0.01 }, ["$arb_F"] = { val = 40000, step = 100 } }
+  env.fire("cnr_roundSetup", copy(EVOLVING_RUNNER))
+  env.tick(2)
+  env.liveVars["$arb_F"].val = 40000.0000001
+  env.liveVars["$gear_1"].val = 3.4500000001
+  env.tick(1.2)
+  local sent = env.lastSent("cnr_change")
+  assertEq(#sent.changes, 1)
+  assertEq(sent.changes[1].label, "Gear 1"); assertEq(sent.changes[1].from, "3.1"); assertEq(sent.changes[1].to, "3.45")
+end)
+
+test("a player who joins while applying or ready is frozen and sees the prep line", function()
+  local env = bootClient()
+  local setup = copy(SETUP)
+  setup.phase = "ready"
+  setup.evolving = true
+  env.fire("cnr_roundSetup", setup)
+  env.tick(1)
+  local frozen = false
+  for _, c in ipairs(env.veh.commands) do if c == "controller.setFreeze(1)" then frozen = true end end
+  assertEq(frozen, true)
+  assertEq(env.hud().prep.role, "COP")
+end)
+
+test("cars ready clears the queued change and closes the parts menu", function()
+  local env = bootClient()
+  env.fire("cnr_roundSetup", copy(EVOLVING_RUNNER))
+  env.fire("cnr_queued", { runner = "Reinder", changes = { { label = "Engine", from = "a", to = "b" } } })
+  env.fire("cnr_applied", {})
+  env.tick(0.2)
+  assertEq(env.hud().change, nil)
+  assertEq(env.actionFilter.cnr_parts, true)
+end)

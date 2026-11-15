@@ -27,7 +27,14 @@ function M.diff(baseline, current)
   return list
 end
 
-function M.varsDiff(baseline, current)
+local function same(a, b, step)
+  if type(a) == "number" and type(b) == "number" then
+    return math.abs(a - b) <= math.max(1e-6, (tonumber(step) or 0) / 2)
+  end
+  return a == b
+end
+
+function M.varsDiff(baseline, current, steps)
   local names, seen = {}, {}
   for _, t in ipairs({ baseline or {}, current or {} }) do
     for name in pairs(t) do
@@ -41,7 +48,7 @@ function M.varsDiff(baseline, current)
   local list = {}
   for _, name in ipairs(names) do
     local from, to = (baseline or {})[name], (current or {})[name]
-    if from ~= to then list[#list + 1] = { name = name, from = from, to = to } end
+    if not same(from, to, (steps or {})[name]) then list[#list + 1] = { name = name, from = from, to = to } end
   end
   return list
 end
@@ -77,6 +84,11 @@ function M.group(changes, slotsOf)
     if root(i) == i then roots[#roots + 1] = { slot = c.slot, from = c.from, to = c.to, extra = extra[i] or 0 } end
   end
   return roots
+end
+
+function M.formatValue(v)
+  if type(v) ~= "number" then return v == nil and "(default)" or tostring(v) end
+  return (string.format("%.3f", v):gsub("0+$", ""):gsub("%.$", ""))
 end
 
 local function words(text)

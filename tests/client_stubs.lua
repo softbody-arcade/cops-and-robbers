@@ -105,7 +105,17 @@ function bootClient(opts)
   _G.createVehiclePaint = function(c) return c end
   env.liveConfig = { partsTree = { tree = true }, vars = { gear1 = 3.1 } }
   env.liveParts = { pickup_engine = "v8", pickup_paint_design = "stripes" }
-  _G.core_vehicle_manager = { getPlayerVehicleData = function() return { model = "pickup", config = env.liveConfig } end }
+  env.liveVars = nil
+  local function vehicleData()
+    local data = { model = "pickup", config = env.liveConfig }
+    if env.liveVars then
+      local variables = {}
+      for name, v in pairs(env.liveVars) do variables[name] = { name = name, val = v.val, step = v.step } end
+      data.vdata = { variables = variables }
+    end
+    return data
+  end
+  _G.core_vehicle_manager = { getPlayerVehicleData = vehicleData, getVehicleData = function(id) return id == env.veh.id and vehicleData() or nil end }
   env.edits = {}
   local function edit(name) return function() env.edits[#env.edits + 1] = name end end
   _G.core_vehicle_partmgmt = {

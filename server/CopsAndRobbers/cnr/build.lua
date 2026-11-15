@@ -47,6 +47,7 @@ function M.apply(b, setup, changes, by, now)
   if same(b.parts, parts) and same(b.vars or {}, vars) then return b, false end
   local nb = copy(b)
   nb.parts, nb.vars = copy(parts), copy(vars)
+  if type(changes) == "table" and #changes == 0 then return nb, false end
   nb.step = (b.step or 0) + 1
   nb.history[#nb.history + 1] = { step = nb.step, by = by, at = now, changes = copy(changes or {}) }
   return nb, true

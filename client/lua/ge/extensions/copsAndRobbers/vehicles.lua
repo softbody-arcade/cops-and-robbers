@@ -150,7 +150,9 @@ function M.hasPart(model, id)
 end
 
 function M.currentSetup()
-  local data = core_vehicle_manager and core_vehicle_manager.getPlayerVehicleData and core_vehicle_manager.getPlayerVehicleData()
+  local own = game.ownVehicle()
+  if not own or not core_vehicle_manager then return nil end
+  local data = core_vehicle_manager.getVehicleData and core_vehicle_manager.getVehicleData(own:getID())
   local cfg = type(data) == "table" and data.config
   if type(cfg) ~= "table" then return nil end
   local parts = cfg.parts
@@ -162,7 +164,19 @@ function M.currentSetup()
   for slot, part in pairs(parts) do
     if type(slot) == "string" and not slot:find("paint_design", 1, true) then clean[slot] = type(part) == "string" and part or "" end
   end
-  return { model = data.model or cfg.model, parts = clean, vars = deepcopy(type(cfg.vars) == "table" and cfg.vars or {}) }
+  local vars, steps = {}, {}
+  local variables = type(data.vdata) == "table" and data.vdata.variables
+  if type(variables) == "table" then
+    for name, v in pairs(variables) do
+      if type(v) == "table" and v.val ~= nil then
+        vars[name] = v.val
+        steps[name] = tonumber(v.step) or tonumber(v.stepDis)
+      end
+    end
+  else
+    vars = deepcopy(type(cfg.vars) == "table" and cfg.vars or {})
+  end
+  return { model = data.model or cfg.model, parts = clean, vars = vars, steps = steps }
 end
 
 function M.copConfig(model, configPath)

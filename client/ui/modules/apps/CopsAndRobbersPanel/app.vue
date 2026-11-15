@@ -32,10 +32,10 @@
         <div class="cnr-build-label">{{ state.build ? state.build.label : "No build yet" }}</div>
         <div class="cnr-row">
           <BngDropdown v-model="buildChoice" :items="configItems" show-search class="cnr-grow" @open="loadConfigs" />
-          <BngButton :disabled="!can.build || !buildChoice" accent="secondary" @click="newBuild({ config: buildChoice })">Start build</BngButton>
+          <BngButton :disabled="!can.build || !buildChoice" accent="secondary" @click="newBuildClick('choose', { config: buildChoice })">{{ newBuildArmed === "choose" ? "Click again to replace" : "Start build" }}</BngButton>
         </div>
         <div class="cnr-buttons">
-          <BngButton :disabled="!can.build" accent="secondary" @click="newBuild({ random: true })">New build: random</BngButton>
+          <BngButton :disabled="!can.build" accent="secondary" @click="newBuildClick('random', { random: true })">{{ newBuildArmed === "random" ? "Click again to replace" : "New build: random" }}</BngButton>
           <BngButton :disabled="!can.build || !state.build" accent="attention" @click="resetBuildClick">{{ buildResetArmed ? "Click again to reset" : "Reset build" }}</BngButton>
         </div>
       </div>
@@ -175,6 +175,8 @@ const pending = ref({})
 const drafts = ref({})
 const resetArmed = ref(false)
 const buildResetArmed = ref(false)
+const newBuildArmed = ref(null)
+let newBuildTimer = null
 const buildChoice = ref(null)
 const configItems = ref([])
 let buildResetTimer = null
@@ -252,6 +254,18 @@ function loadConfigs() {
 function newBuild(choice) {
   replyText.value = ""
   api.engineLua(`if copsAndRobbers then copsAndRobbers.newBuild(${api.serializeToLua({ ...buildFilter(), ...choice })}) end`)
+}
+
+function newBuildClick(kind, choice) {
+  if (state.value.build && newBuildArmed.value !== kind) {
+    newBuildArmed.value = kind
+    clearTimeout(newBuildTimer)
+    newBuildTimer = setTimeout(() => (newBuildArmed.value = null), RESET_CONFIRM_MS)
+    return
+  }
+  clearTimeout(newBuildTimer)
+  newBuildArmed.value = null
+  newBuild(choice)
 }
 
 function resetBuildClick() {
@@ -419,6 +433,7 @@ onUnmounted(() => {
   clearTimeout(saveTimer)
   clearTimeout(resetTimer)
   clearTimeout(buildResetTimer)
+  clearTimeout(newBuildTimer)
 })
 </script>
 

@@ -11,7 +11,7 @@ local hudfeed = require("copsAndRobbers/hudfeed")
 local sight = require("copsAndRobbers/sight")
 local buildDiff = require("copsAndRobbers/build")
 
-local CLIENT_VERSION = "2.0.0"
+local CLIENT_VERSION = "2.0.1"
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
 local LIGHTS_OFF = "electrics.set_lightbar_signal(0)"
 local SETUP_DELAY = 0.5
@@ -157,8 +157,9 @@ local function onRoundSetup(data)
   placeVehicle(d.model, roundConfig, pos, rot, d.color)
 
   local phase = d.phase or "running"
-  frozen = phase == "prep" or phase == "countdown" or (phase == "headstart" and role == "cop")
-  if phase == "prep" then
+  frozen = phase == "prep" or phase == "applying" or phase == "ready" or phase == "countdown" or (phase == "headstart" and role == "cop")
+  if phase == "applying" then hudfeed.applying(true) end
+  if phase == "prep" or phase == "applying" or phase == "ready" then
     hudfeed.prep(role, game.carName(d.model))
     hudfeed.notify(string.format("You are the %s! Set your color with /cnr color, waiting for GO", role == "runner" and "runner" or "cop"), 8, "cnr_go")
     timerEnd = nil
@@ -219,8 +220,8 @@ local function labelledChanges(setup)
       extra = c.extra > 0 and c.extra or nil,
     }
   end
-  for _, c in ipairs(buildDiff.varsDiff(buildBaseline.vars, setup.vars)) do
-    list[#list + 1] = { label = buildDiff.varLabel(c.name), from = tostring(c.from), to = tostring(c.to) }
+  for _, c in ipairs(buildDiff.varsDiff(buildBaseline.vars, setup.vars, setup.steps)) do
+    list[#list + 1] = { label = buildDiff.varLabel(c.name), from = buildDiff.formatValue(c.from), to = buildDiff.formatValue(c.to) }
   end
   return list
 end
@@ -699,7 +700,13 @@ local function onExtensionLoaded()
   AddEventHandler("cnr_spotted", onSpotted)
   AddEventHandler("cnr_requestSetup", onRequestSetup)
   AddEventHandler("cnr_rebuild", onRebuild)
-  AddEventHandler("cnr_applied", function() hudfeed.applying(false) end)
+  AddEventHandler("cnr_applied", function()
+    hudfeed.applying(false)
+    hudfeed.queued(nil)
+    buildBaselineAt, buildBaseline = nil, nil
+    inputs.setPartsMenu(false)
+    inputs.lockEditing("all")
+  end)
   AddEventHandler("cnr_queued", function(data)
     local d = jsonDecode(data) or {}
     hudfeed.queued(d.runner, d.changes)
