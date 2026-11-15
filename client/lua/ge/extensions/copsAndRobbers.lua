@@ -6,6 +6,11 @@ local LOCKED_ACTIONS = {
   "dropPlayerAtCamera", "dropPlayerAtCameraNoReset", "nodegrabberGrab", "switch_next_vehicle",
   "switch_previous_vehicle", "toggleWalkingMode",
 }
+local EXTRA_LOCKED_ACTIONS = {
+  "toggleWalkingMode", "photomode", "toggleTrackBuilder", "toggleConsoleNG", "cefdev_console_toggle", "lua_reload",
+  "toggleTraffic", "toggleAITraffic", "debugmode_reset",
+}
+local GATED_ACTIONS = { reset_physics = true, parts_selector = true }
 local RESET_ACTIONS = { "reset_physics" }
 local PARTS_ACTIONS = { "parts_selector" }
 local ALLOWED_TYPES = { Car = true, Truck = true }
@@ -90,9 +95,41 @@ local function setFreeze(on)
   if veh then veh:queueLuaCommand("controller.setFreeze(" .. (on and 1 or 0) .. ")") end
 end
 
+local function lockedActions()
+  local seen, list = {}, {}
+  local function add(name)
+    if type(name) == "string" and not seen[name] and not GATED_ACTIONS[name] then
+      seen[name] = true
+      list[#list + 1] = name
+    end
+  end
+  local templates = core_input_actionFilter.getActionTemplates and core_input_actionFilter.getActionTemplates()
+  for _, name in ipairs(templates and templates.competitive or {}) do add(name) end
+  for _, name in ipairs(LOCKED_ACTIONS) do add(name) end
+  for _, name in ipairs(EXTRA_LOCKED_ACTIONS) do add(name) end
+  return list
+end
+
+local originalBigMapTeleport
+
+local function guardBigMapTeleport(on)
+  local bigMap = rawget(_G, "freeroam_bigMapMode")
+  if not bigMap then return end
+  if on and not originalBigMapTeleport then
+    originalBigMapTeleport = bigMap.teleportToPoi
+    bigMap.teleportToPoi = function()
+      ui_message("Teleporting is disabled during a Cops and Robbers round", 4, "cnr_reset", "directions_car")
+    end
+  elseif not on and originalBigMapTeleport then
+    bigMap.teleportToPoi = originalBigMapTeleport
+    originalBigMapTeleport = nil
+  end
+end
+
 local function lockInputs(on)
-  core_input_actionFilter.setGroup("cnr_locked", LOCKED_ACTIONS)
+  core_input_actionFilter.setGroup("cnr_locked", lockedActions())
   core_input_actionFilter.addAction(0, "cnr_locked", on)
+  guardBigMapTeleport(on)
 end
 
 local function setResetKey(allowed)

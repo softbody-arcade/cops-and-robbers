@@ -64,6 +64,11 @@ function Tracker:grant(now, seconds)
   self.graceUntil = math.max(self.graceUntil or now, now + seconds)
 end
 
+function Tracker:inGrace(now)
+  return (self.graceUntil ~= nil and now <= self.graceUntil)
+    or (self.lastAllowedAt ~= nil and now - self.lastAllowedAt <= GRACE_SECONDS)
+end
+
 function Tracker:consume(now)
   if self.blockedUntil and now < self.blockedUntil then
     self.lastAllowedAt = nil

@@ -18,6 +18,9 @@ function M.isAI(id)
   return type(id) == "number" and id <= M.AI_FIRST
 end
 local SETUP_GRACE_SECONDS = 3
+local TELEPORT_BASE_METERS = 60
+local TELEPORT_MAX_SPEED = 100
+local TELEPORT_ANNOUNCE_GAP = 5
 
 local function copy(t)
   local c = {}
@@ -57,6 +60,8 @@ function Round:clear()
   self.penalties = {}
   self.prevCars = {}
   self.leftPlayers = {}
+  self.teleportAnnounced = {}
+  self.lastTickAt = nil
   self.lastSeenAt = nil
   self.test = false
   self.lastState = {}
@@ -288,6 +293,20 @@ function Round:tick(now, cars, stations)
     end
   end
 
+  if self.lastTickAt then
+    local allowedMove = TELEPORT_BASE_METERS + TELEPORT_MAX_SPEED * (now - self.lastTickAt)
+    for _, pid in ipairs(sortedPids(self.players)) do
+      local before, after, tracker = self.prevCars[pid], cars[pid], self.resetTrackers[pid]
+      if before and after and before.pos and after.pos and vec.dist(before.pos, after.pos) > allowedMove
+        and not (tracker and tracker:inGrace(now)) then
+        if not self.teleportAnnounced[pid] or now - self.teleportAnnounced[pid] >= TELEPORT_ANNOUNCE_GAP then
+          self.teleportAnnounced[pid] = now
+          fx[#fx + 1] = { kind = "broadcast", msg = string.format("%s teleported", self.players[pid]) }
+        end
+      end
+    end
+  end
+  self.lastTickAt = now
   self.prevCars = cars
   local limit = self.cfg.roundTimeLimitSeconds
   if caught then
