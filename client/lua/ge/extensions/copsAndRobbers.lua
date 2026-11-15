@@ -11,6 +11,7 @@ local apps = require("copsAndRobbers/apps")
 local sight = require("copsAndRobbers/sight")
 local buildDiff = require("copsAndRobbers/build")
 local modes = require("copsAndRobbers/modes")
+local nearby = require("copsAndRobbers/nearby")
 
 local CLIENT_VERSION = "2.0.7"
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
@@ -455,10 +456,49 @@ end
 
 local function onBoardState(data)
   local d = jsonDecode(data) or {}
-  for _, row in ipairs(type(d.runners) == "table" and d.runners or {}) do
+  local function addCar(row)
     if type(row) == "table" and row.model then row.car = game.carName(row.model) end
   end
+  for _, row in ipairs(type(d.runners) == "table" and d.runners or {}) do addCar(row) end
+  addCar(d.mine)
+  for _, row in ipairs(type(d.rounds) == "table" and d.rounds or {}) do addCar(row) end
+  local names = {}
+  local function name(id)
+    if type(id) == "string" and id ~= "" and id ~= "all" and not names[id] then names[id] = game.mapTitle(id) end
+  end
+  name(d.map)
+  name(d.filter)
+  for _, id in ipairs(type(d.maps) == "table" and d.maps or {}) do name(id) end
+  for _, row in ipairs(type(d.rounds) == "table" and d.rounds or {}) do
+    if type(row) == "table" then name(row.map) end
+  end
+  d.mapNames = names
   guihooks.trigger("CnRBoard", d)
+end
+
+local function onPanelState(data)
+  local d = jsonDecode(data) or {}
+  if type(d.map) == "string" and d.map ~= "" then d.mapName = game.mapTitle(d.map) end
+  guihooks.trigger("CnRPanel", d)
+end
+
+local function onStationList(data)
+  local d = jsonDecode(data) or {}
+  local list = type(d.stations) == "table" and d.stations or {}
+  local points = {}
+  for _, s in ipairs(list) do
+    if type(s) == "table" then
+      local p = d.geo and geo.toGame(s) or (tonumber(s.x) and tonumber(s.y) and { x = s.x, y = s.y, z = tonumber(s.z) or 0 })
+      if p then points[#points + 1] = p end
+    end
+  end
+  local own = ownVehicle()
+  local near = own and nearby.nearest(points, own:getPosition(), 3) or {}
+  local result = {}
+  for i, n in ipairs(near) do result[i] = { meters = n.meters } end
+  guihooks.trigger("CnRStations", {
+    count = #list, nearest = result, canRemove = result[1] ~= nil and result[1].meters <= 50,
+  })
 end
 
 local function onAutoNext()
@@ -717,7 +757,8 @@ local function onExtensionLoaded()
   AddEventHandler("cnr_roundEnd", onRoundEnd)
   AddEventHandler("cnr_requestStations", onRequestStations)
   AddEventHandler("cnr_boardState", onBoardState)
-  AddEventHandler("cnr_panelState", function(data) guihooks.trigger("CnRPanel", jsonDecode(data) or {}) end)
+  AddEventHandler("cnr_panelState", onPanelState)
+  AddEventHandler("cnr_stationList", onStationList)
   AddEventHandler("cnr_panelReply", function(data) guihooks.trigger("CnRPanelReply", jsonDecode(data) or {}) end)
 end
 

@@ -33,4 +33,23 @@ function M.carName(model)
   return tostring(model)
 end
 
+function M.mapTitle(id)
+  local title
+  if core_levels and core_levels.getLevelTitle then
+    local ok, t = pcall(core_levels.getLevelTitle, id)
+    if ok and type(t) == "string" and t ~= "" then title = t end
+  end
+  local pretty
+  if id == "beamng_earth" then
+    pretty = "BeamNG.Earth"
+  else
+    local words = {}
+    for word in tostring(id):gmatch("[^_]+") do
+      words[#words + 1] = (word == "usa" or word == "uk") and word:upper() or (word:sub(1, 1):upper() .. word:sub(2))
+    end
+    pretty = table.concat(words, " ")
+  end
+  return { id = id, title = title, pretty = pretty }
+end
+
 return M
