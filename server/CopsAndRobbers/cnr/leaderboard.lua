@@ -269,14 +269,4 @@ function M.formatTime(seconds)
   return string.format("%d:%02d", math.floor(total / 60), total % 60)
 end
 
-function M.formatTop(board, limit, map)
-  local best = M.runners(board, map, limit)
-  if #best == 0 then return { "No runs yet" } end
-  local lines = {}
-  for i, e in ipairs(best) do
-    lines[i] = string.format("%d. %s %s (%s, %s)", i, e.player, M.formatTime(e.survivedSeconds), tostring(e.model), tostring(e.map))
-  end
-  return lines
-end
-
 return M

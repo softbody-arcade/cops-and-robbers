@@ -60,7 +60,7 @@ function M.goBlocked(phase, evolving, runnerName, loading)
   if not evolving then return nil end
   if phase == "prep" then return "Waiting for " .. (runnerName or "the runner") .. " to apply the change" end
   if phase == "applying" then
-    if loading and loading > 0 then return string.format("Applying the change: %d cars still loading", loading) end
+    if loading and loading > 0 then return string.format("Applying the change: %d %s still loading", loading, loading == 1 and "car" or "cars") end
     return "Applying the change"
   end
   return nil

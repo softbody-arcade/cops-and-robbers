@@ -967,7 +967,7 @@ function cnrOnMissing(pid, data)
     if i > 6 then names[#names + 1] = string.format("+%d more", #d.parts - 6) break end
     names[#names + 1] = tostring(part)
   end
-  send(-1, "cnr_notice", { msg = string.format("⚠ %s is missing: %s", MP.GetPlayerName(pid) or tostring(pid), table.concat(names, ", ")), tone = "warn" })
+  send(current.test and current.issuerId or -1, "cnr_notice", { msg = string.format("⚠ %s is missing: %s", MP.GetPlayerName(pid) or tostring(pid), table.concat(names, ", ")), tone = "warn" })
 end
 
 function cnrOnChatMessage(pid, name, msg)
@@ -1056,6 +1056,7 @@ function cnrOnColor(pid, data)
   local hex = type(msg.hex) == "string" and msg.hex or ""
   if hex == "" then
     colors.clear(colorStore, playerKey(pid))
+    colors.clear(colorStore, MP.GetPlayerName(pid) or "")
     saveColors()
     return sendMyColor(pid)
   end

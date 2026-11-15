@@ -1,7 +1,6 @@
 local catch = require("cnr.catch")
 local resets = require("cnr.resets")
 local crash = require("cnr.crash")
-local leaderboard = require("cnr.leaderboard")
 local vec = require("cnr.vec")
 local sight = require("cnr.sight")
 

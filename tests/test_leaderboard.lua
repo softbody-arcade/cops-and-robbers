@@ -43,15 +43,6 @@ test("formatTime", function()
   assertEq(leaderboard.formatTime(0), "0:00")
 end)
 
-test("formatTop", function()
-  local b = leaderboard.load(nil)
-  local lines = leaderboard.formatTop(b, 5)
-  assertEq(#lines, 1); assertEq(lines[1], "No runs yet")
-  leaderboard.add(b, run("Reinder", 272.4))
-  lines = leaderboard.formatTop(b, 5)
-  assertEq(lines[1], "1. Reinder 4:32 (pickup, west_coast_usa)")
-end)
-
 test("best filters by map", function()
   local b = leaderboard.load(nil)
   leaderboard.add(b, {player="A", survivedSeconds=100, map="italy"})
@@ -59,7 +50,6 @@ test("best filters by map", function()
   assertEq(#leaderboard.best(b, 10, "italy"), 1)
   assertEq(leaderboard.best(b, 10, "italy")[1].player, "A")
   assertEq(#leaderboard.best(b, 10), 2)
-  assertEq(leaderboard.formatTop(b, 5, "utah")[1], "No runs yet")
 end)
 
 
