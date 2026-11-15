@@ -155,6 +155,14 @@ local function backupBuild()
   if FS.Exists(buildPath) then FS.Rename(buildPath, dataDir .. "build-" .. os.time() .. ".json") end
 end
 
+local function buildOpts()
+  if not currentBuild then return nil end
+  return {
+    model = currentBuild.model, step = currentBuild.step, name = currentBuild.name,
+    config = { format = 2, model = currentBuild.model, parts = currentBuild.parts, vars = currentBuild.vars },
+  }
+end
+
 local function saveLeaderboard()
   if leaderboardLocked then return log("leaderboard not saved: the old file could not be moved aside") end
   writeFile(leaderboardPath, Util.JsonPrettify(Util.JsonEncode(board)))
@@ -371,6 +379,7 @@ local function applyEffects(effects)
         runnerPos = not geoMode and runnerCar and runnerCar.pos or nil,
         copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
         sightMaxMeters = cfg.sightMaxMeters,
+        evolving = current.evolving or nil,
       })
     elseif e.kind == "setupAI" then
       local list = {}
@@ -434,6 +443,14 @@ local function applyEffects(effects)
           send(current.runnerId, "cnr_nearestCop", { dist = e.nearestCop })
         end
       end
+    elseif e.kind == "requestSetup" then
+      send(e.pid, "cnr_requestSetup", {})
+    elseif e.kind == "rebuild" then
+      for pid in pairs(current.players) do
+        if not round.isAI(pid) then send(pid, "cnr_rebuild", { model = current.vehicle.model, config = e.config }) end
+      end
+    elseif e.kind == "applied" then
+      send(e.to or -1, "cnr_notice", { msg = e.timedOut and "Cars ready (not everyone loaded in time), press GO" or "Cars ready, press GO" })
     elseif e.kind == "spotted" then
       if not round.isAI(current.runnerId) then send(current.runnerId, "cnr_spotted", { spotted = e.spotted }) end
     elseif e.kind == "lastSeen" then
@@ -517,6 +534,7 @@ function handlers.start(pid, cmd)
     applyEffects(current:stop(now(), current.issuerId))
   end
   if current:isActive() then return reply(pid, "A round is already running") end
+  if cfg.carMode == "evolving" and not currentBuild then return reply(pid, "Start a new build first") end
   autoNextAt = nil
   lastIssuer = pid
   local players = MP.GetPlayers() or {}
@@ -534,7 +552,7 @@ function handlers.start(pid, cmd)
   requestStations(pid)
   activeVid = {}
   partsBaseline = {}
-  applyEffects(current:start(now(), runnerId, pid, players))
+  applyEffects(current:start(now(), runnerId, pid, players, cfg.carMode == "evolving" and { build = buildOpts() } or nil))
 end
 
 function handlers.test(pid, cmd)
@@ -543,7 +561,9 @@ function handlers.test(pid, cmd)
   partsBaseline = {}
   aiVid = {}
   local role = cmd.args[1] and cmd.args[1]:lower()
-  applyEffects(current:start(now(), nil, pid, MP.GetPlayers() or {}, { test = true, role = role }))
+  if cfg.carMode == "evolving" and not currentBuild then return reply(pid, "Start a new build first") end
+  local opts = { test = true, role = role, build = cfg.carMode == "evolving" and buildOpts() or nil }
+  applyEffects(current:start(now(), nil, pid, MP.GetPlayers() or {}, opts))
 end
 
 function handlers.auto(pid, cmd)
@@ -674,6 +694,8 @@ local function panelState()
     test = current.test == true,
     elapsed = running and current.releasedAt and math.max(0, now() - current.releasedAt) or nil,
     players = MP.GetPlayers() or {}, cfg = cfg, defaults = config.DEFAULTS,
+    evolving = current.evolving == true,
+    build = currentBuild and { label = build.label(currentBuild), step = currentBuild.step } or nil,
   })
 end
 
@@ -690,6 +712,25 @@ local function pushPanel(opener)
     panelSubs[opener] = true
     send(opener, "cnr_panelState", state)
   end
+end
+
+local function panelBuild(pid, msg)
+  local function answer(text) send(pid, "cnr_panelReply", { text = text }) end
+  if current:isActive() then return answer("Stop the round first") end
+  if msg.op == "reset" then
+    backupBuild()
+    currentBuild = nil
+    pushPanel()
+    return answer("Build reset")
+  end
+  if msg.op ~= "new" then return end
+  local nb = build.normalize({ model = msg.model, name = msg.name, parts = msg.parts, vars = msg.vars })
+  if not nb then return answer("That car can't start a build") end
+  backupBuild()
+  currentBuild = build.new(nb.model, nb.name, nb.parts, nb.vars, type(msg.from) == "string" and msg.from or "random", os.time())
+  saveBuild()
+  pushPanel()
+  answer("New build: " .. build.label(currentBuild))
 end
 
 local function panelSettings(pid, values, id)
@@ -723,7 +764,59 @@ function cnrOnPanel(pid, data)
     if not ran then error(err, 0) end
   elseif msg.action == "settings" then
     panelSettings(pid, msg.values, msg.id)
+  elseif msg.action == "build" then
+    panelBuild(pid, msg)
+  elseif msg.action == "apply" then
+    panelMirror = pid
+    local ran, err = pcall(function() applyEffects(current:apply(now(), pid)) end)
+    panelMirror = nil
+    pushPanel()
+    if not ran then error(err, 0) end
   end
+end
+
+function cnrOnSetup(pid, data)
+  local ok, d = pcall(Util.JsonDecode, data)
+  if not ok or type(d) ~= "table" or type(d.parts) ~= "table" then return end
+  if not current.evolving or current.state ~= "applying" or pid ~= current.runnerId then return end
+  local setup = { parts = d.parts, vars = type(d.vars) == "table" and d.vars or {} }
+  local changes = type(d.changes) == "table" and d.changes or {}
+  if not current.test and currentBuild then
+    local name = MP.GetPlayerName(pid) or tostring(pid)
+    local nb, changed = build.apply(currentBuild, setup, changes, name, os.time())
+    if changed then
+      currentBuild = nb
+      current.buildStep = nb.step
+      saveBuild()
+      broadcast(build.changeLine(nb.step, name, changes))
+    end
+  end
+  local cfgTable = { format = 2, model = current.vehicle.model, parts = setup.parts, vars = setup.vars }
+  applyEffects(current:setupReceived(now(), pid, cfgTable))
+  pushPanel()
+end
+
+function cnrOnChange(pid, data)
+  local ok, d = pcall(Util.JsonDecode, data)
+  if not ok or type(d) ~= "table" then return end
+  if not current.evolving or current.state ~= "prep" or pid ~= current.runnerId then return end
+  local runnerName = MP.GetPlayerName(pid) or tostring(pid)
+  local changes = type(d.changes) == "table" and d.changes or {}
+  for p in pairs(current.players) do
+    if not round.isAI(p) then send(p, "cnr_queued", { runner = runnerName, changes = changes }) end
+  end
+end
+
+function cnrOnMissing(pid, data)
+  local ok, d = pcall(Util.JsonDecode, data)
+  if not ok or type(d) ~= "table" or type(d.parts) ~= "table" or #d.parts == 0 then return end
+  if not current:isActive() or current.players[pid] == nil then return end
+  local names = {}
+  for i, part in ipairs(d.parts) do
+    if i > 6 then names[#names + 1] = string.format("+%d more", #d.parts - 6) break end
+    names[#names + 1] = tostring(part)
+  end
+  send(-1, "cnr_notice", { msg = string.format("⚠ %s is missing: %s", MP.GetPlayerName(pid) or tostring(pid), table.concat(names, ", ")) })
 end
 
 local CHAT_COMMANDS = { color = true, addstation = true, removestation = true, help = true, version = true }
@@ -745,7 +838,7 @@ local function vehicleAllowed(pid, data, isSpawn)
   local decoded = parseVehicleData(data)
   if not decoded or decoded.jbm ~= current.vehicle.model then return false end
   local pcFile = type(decoded.vcf) == "table" and decoded.vcf.partConfigFilename
-  if pcFile and normalizeConfig(pcFile) ~= normalizeConfig(current.vehicle.config) then return false end
+  if pcFile and not current.evolving and normalizeConfig(pcFile) ~= normalizeConfig(current.vehicle.config) then return false end
   if isSpawn and firstVid(pid) and not (current.test and pid == current.issuerId) then return false end
   return true, decoded
 end
@@ -832,6 +925,7 @@ function cnrOnMyVehicle(pid, data)
   local vid = ok and type(decoded) == "table" and tonumber(decoded.vid)
   if not vid or not current:isActive() then return end
   activeVid[pid] = vid
+  applyEffects(current:vehicleReady(now(), pid))
   if current.test then return end
   local vehicles = MP.GetPlayerVehicles(pid)
   if type(vehicles) ~= "table" then return end
@@ -1003,6 +1097,9 @@ MP.RegisterEvent("cnr_relocated", "cnrOnRelocated")
 MP.RegisterEvent("cnr_panel", "cnrOnPanel")
 MP.RegisterEvent("cnr_sight", "cnrOnSight")
 MP.RegisterEvent("cnr_board", "cnrOnBoard")
+MP.RegisterEvent("cnr_setup", "cnrOnSetup")
+MP.RegisterEvent("cnr_change", "cnrOnChange")
+MP.RegisterEvent("cnr_missing", "cnrOnMissing")
 MP.RegisterEvent("cnr_tick", "cnrTick")
 MP.CancelEventTimer("cnr_tick")
 MP.CreateEventTimer("cnr_tick", 250)

@@ -19,11 +19,13 @@ function M.allow(text)
   return nil
 end
 
-function M.can(state, test)
+function M.can(state, test, evolving)
   return {
     start = state == "idle" or test == true,
-    reroll = state == "prep",
-    go = state == "prep",
+    reroll = state == "prep" and not evolving,
+    go = (state == "prep" and not evolving) or state == "ready",
+    apply = state == "prep" and evolving == true,
+    build = state == "idle",
     ["end"] = state == "running",
     stop = state ~= "idle",
     test = state == "idle",
@@ -54,7 +56,9 @@ function M.snapshot(info)
     settings = copy(cfg),
     defaults = copy(info.defaults or {}),
     auto = cfg.autoNextRound == true,
-    can = M.can(info.phase, info.test),
+    can = M.can(info.phase, info.test, info.evolving),
+    evolving = info.evolving == true,
+    build = info.build,
   }
 end
 
