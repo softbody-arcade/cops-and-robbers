@@ -1,418 +1,176 @@
 <template>
-  <div class="cnr-panel" :class="{ collapsed }">
-    <div class="cnr-head">
-      <button class="cnr-toggle" :title="collapsed ? 'Show panel' : 'Hide panel'" @click="collapsed = !collapsed">{{ collapsed ? "▸" : "▾" }}</button>
-      <template v-if="collapsed">
-        <span class="cnr-mini" @click="collapsed = false">{{ connected ? statusLine : "Cops and Robbers" }}</span>
-      </template>
+  <CnrRoot class="cnr-panel">
+    <div v-if="barShown" class="p-bar">
+      <span class="p-dot p-dot-runner"></span>
+      <span class="bar-phase">{{ barPhase }} <span v-if="state.phase === 'running'" class="p-mono">{{ formatTime(state.elapsed || 0) }}</span></span>
+      <span class="bar-runner">{{ state.runner ? `${state.runner} running` : "" }}</span>
+      <BngButton v-if="can.end" class="p-btn p-fit" :accent="ACCENTS.main" @click="command('end')">End chase</BngButton>
+      <BngButton v-if="can.stop" class="p-btn p-fit" :accent="ACCENTS.destructive" @click="cancelChase">
+        {{ armed === "cancel" ? "Click again" : "Cancel" }}
+      </BngButton>
+      <BngButton v-bng-tooltip:top="'Open the panel'" class="p-icon-btn" :accent="ACCENTS.ghost" :icon="icons.arrowSmallDown" @click="folded = false" />
+    </div>
+    <CnrCard v-else class="panel-card" title="Host panel" :sub="state.version ? `v${state.version}` : undefined" closable @close="close">
+      <div v-if="!connected" class="p-empty">Not on a Cops and Robbers server</div>
       <template v-else>
-        <button class="cnr-tab" :class="{ active: tab === 'round' }" @click="tab = 'round'">ROUND</button>
-        <button class="cnr-tab" :class="{ active: tab === 'settings' }" @click="tab = 'settings'">SETTINGS</button>
-        <span v-if="state.version" class="cnr-version">v{{ state.version }}</span>
+        <BngTabs v-model="tab" class="panel-tabs" :show-arrows="false">
+          <PanelRound
+            v-model:pick="runnerPick"
+            tab-heading="Round"
+            :state="state"
+            :map-label="mapLabel"
+            @command="command"
+            @fold="folded = true"
+          />
+          <PanelCar tab-heading="Car" :state="state" :store="store" @new-build="newBuild" @reset-build="resetBuild" />
+          <PanelMap tab-heading="Map" :state="state" :map-label="mapLabel" @station="station" @refresh="refreshStations" />
+          <PanelSettings tab-heading="Settings" :state="state" :store="store" @command="command" />
+        </BngTabs>
+        <div v-if="reply.text" class="p-reply" :class="reply.tone ? `p-reply-${reply.tone}` : null">
+          <BngIcon :type="reply.tone === 'good' ? icons.checkmarkBold : reply.tone === 'warn' ? icons.caution : icons.info" />
+          <span>{{ reply.text }}</span>
+        </div>
       </template>
-    </div>
-
-    <div v-if="collapsed"></div>
-    <div v-else-if="!connected" class="cnr-empty">Not on a Cops and Robbers server</div>
-
-    <div v-else-if="tab === 'round'" class="cnr-body">
-      <div class="cnr-status">{{ statusLine }}</div>
-      <div v-if="state.runner" class="cnr-runner">Runner: {{ state.runner }}<span v-if="state.test"> (practice)</span></div>
-
-      <div class="cnr-row">
-        <span class="cnr-label">Runner</span>
-        <BngDropdown v-model="choice" :items="runnerItems" class="cnr-grow" />
-      </div>
-
-      <div class="cnr-row">
-        <BngSwitch :model-value="isEvolving" :disabled="!can.build" label-before :inline="false" class="cnr-grow" @update:modelValue="v => saveSettings({ carMode: v ? 'evolving' : 'random' }, false)">Evolving car</BngSwitch>
-      </div>
-
-      <div v-if="isEvolving" class="cnr-build">
-        <div class="cnr-build-label">{{ state.build ? state.build.label : "No build yet" }}</div>
-        <div class="cnr-row">
-          <BngDropdown v-model="buildChoice" :items="configItems" show-search class="cnr-grow" @open="loadConfigs" />
-          <BngButton :disabled="!can.build || !buildChoice" accent="secondary" @click="newBuildClick('choose', { config: buildChoice })">{{ newBuildArmed === "choose" ? "Click again to replace" : "Start build" }}</BngButton>
-        </div>
-        <div class="cnr-buttons">
-          <BngButton :disabled="!can.build" accent="secondary" @click="newBuildClick('random', { random: true })">{{ newBuildArmed === "random" ? "Click again to replace" : "New build: random" }}</BngButton>
-          <BngButton :disabled="!can.build || !state.build" accent="attention" @click="resetBuildClick">{{ buildResetArmed ? "Click again to reset" : "Reset build" }}</BngButton>
-        </div>
-      </div>
-
-      <div class="cnr-buttons">
-        <BngButton :disabled="!can.start" @click="command(`start ${choice}`)">Start round</BngButton>
-        <BngButton v-if="!isEvolving" :disabled="!can.reroll" accent="secondary" @click="command('reroll')">New car</BngButton>
-        <BngButton :disabled="!can.go" @click="command('go')">GO</BngButton>
-      </div>
-      <div v-if="isEvolving && state.phase === 'prep'" class="cnr-hint">Waiting for the runner to apply the change (button in his HUD)</div>
-      <div v-if="isEvolving && !state.build && state.phase === 'idle'" class="cnr-hint">Start a new build first</div>
-      <div class="cnr-buttons">
-        <BngButton :disabled="!can.end" accent="secondary" @click="command('end')">End chase</BngButton>
-        <BngButton :disabled="!can.stop" accent="destructive" @click="command('stop')">Cancel</BngButton>
-      </div>
-
-      <div class="cnr-row">
-        <BngSwitch :model-value="state.auto === true" label-before :inline="false" class="cnr-grow" @update:modelValue="v => command(v ? 'auto on' : 'auto off')">Automatic rounds</BngSwitch>
-      </div>
-
-      <div class="cnr-row">
-        <span class="cnr-label">Practice</span>
-        <BngButton :disabled="!can.test" accent="outlined" @click="command('test runner')">as runner</BngButton>
-        <BngButton :disabled="!can.test" accent="outlined" @click="command('test cop')">as cop</BngButton>
-      </div>
-    </div>
-
-    <div v-else class="cnr-body">
-      <div v-if="!can.settings" class="cnr-locked">Stop the round first</div>
-      <div v-for="group in groups" :key="group.title" class="cnr-group">
-        <div class="cnr-group-title">{{ group.title }}</div>
-        <div v-for="item in group.items" :key="item.key" class="cnr-setting">
-          <span class="cnr-setting-label">{{ item.label }}</span>
-          <template v-if="item.kind === 'bool'">
-            <BngSwitch :model-value="valueOf(item.key) === true" :disabled="!can.settings" @update:modelValue="v => change(item.key, v)" />
-          </template>
-          <template v-else-if="item.kind === 'list'">
-            <input
-              v-bng-text-input
-              class="cnr-text"
-              :disabled="!can.settings"
-              :value="drafts[item.key] ?? listText(valueOf(item.key))"
-              @input="e => (drafts[item.key] = e.target.value)"
-              @keydown.enter="e => e.target.blur()"
-              @blur="commitList(item.key)"
-            />
-          </template>
-          <template v-else>
-            <span class="cnr-stepper">
-              <button class="cnr-step" :disabled="!can.settings" @click="stepBy(item, -1)">−</button>
-              <span class="cnr-value" :class="{ pending: item.key in pending }">{{ valueOf(item.key) }} {{ item.unit }}</span>
-              <button class="cnr-step" :disabled="!can.settings" @click="stepBy(item, 1)">+</button>
-            </span>
-          </template>
-        </div>
-      </div>
-      <div class="cnr-row cnr-end">
-        <BngButton :disabled="!can.settings" accent="secondary" @click="command('reload')">Reload config.json</BngButton>
-        <BngButton :disabled="!can.settings" accent="attention" @click="resetClick">{{ resetArmed ? "Click again to reset" : "Reset to default" }}</BngButton>
-      </div>
-    </div>
-
-    <div v-if="!collapsed && connected && replyText" class="cnr-reply">{{ replyText }}</div>
-  </div>
+    </CnrCard>
+  </CnrRoot>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted } from "vue"
+import { ref, computed, watch, onMounted, onUnmounted, onErrorCaptured } from "vue"
 import { useBridge } from "@/bridge"
 import { useEvents } from "@/services/events"
-import { BngButton, BngSwitch, BngDropdown } from "@/common/components/base"
-import { vBngTextInput } from "@/common/directives"
+import { $translate } from "@/services"
+import { BngButton, BngIcon, BngTabs, ACCENTS, icons } from "@/common/components/base"
+import { vBngTooltip } from "@/common/directives"
+import CnrRoot from "../../copsAndRobbers/CnrRoot.vue"
+import CnrCard from "../../copsAndRobbers/CnrCard.vue"
+import { formatTime, mapName } from "../../copsAndRobbers/format.js"
+import PanelRound from "./PanelRound.vue"
+import PanelCar from "./PanelCar.vue"
+import PanelMap from "./PanelMap.vue"
+import PanelSettings from "./PanelSettings.vue"
+import { useSettings } from "./settings.js"
+import { useConfirm } from "./confirm.js"
 
-const GROUPS = [
-  { title: "Round", items: [
-    { key: "headStartSeconds", label: "Head start", unit: "s", step: 1, min: 0 },
-    { key: "runnerCountdownSeconds", label: "Runner countdown", unit: "s", step: 1, min: 0 },
-    { key: "roundTimeLimitSeconds", label: "Time limit (0 = off)", unit: "s", step: 60, min: 0 },
-    { key: "autoNextDelaySeconds", label: "Next round delay", unit: "s", step: 5, min: 0 },
-  ] },
-  { title: "Catching", items: [
-    { key: "catchHoldSeconds", label: "Hold time", unit: "s", step: 1, min: 1 },
-    { key: "catchRadiusMeters", label: "Radius", unit: "m", step: 1, min: 1 },
-    { key: "catchMaxSpeedKmh", label: "Max speed", unit: "km/h", step: 1, min: 1 },
-    { key: "explodeOnCatch", label: "Explode on catch", kind: "bool" },
-  ] },
-  { title: "Resets", items: [
-    { key: "resetWaitSeconds", label: "Wait time", unit: "s", step: 1, min: 0 },
-    { key: "stillMaxSpeedKmh", label: "Still speed", unit: "km/h", step: 0.5, min: 0.5 },
-    { key: "copResetMinDistanceMeters", label: "Cop min distance", unit: "m", step: 100, min: 0 },
-    { key: "gasStationRadiusMeters", label: "Gas station radius", unit: "m", step: 5, min: 0 },
-  ] },
-  { title: "Crashes", items: [
-    { key: "crashSpeedLossKmh", label: "Speed loss", unit: "km/h", step: 5, min: 5 },
-    { key: "crashPenaltySeconds", label: "Penalty", unit: "s", step: 1, min: 0 },
-  ] },
-  { title: "Cops", items: [
-    { key: "copSpawnMinMeters", label: "Spawn min", unit: "m", step: 10, min: 0 },
-    { key: "copSpawnMaxMeters", label: "Spawn max", unit: "m", step: 10, min: 0 },
-    { key: "lastSeenIntervalSeconds", label: "Last seen every", unit: "s", step: 5, min: 0 },
-    { key: "sightMaxMeters", label: "Sight range (0 = off)", unit: "m", step: 50, min: 0 },
-    { key: "sightLiveIntervalSeconds", label: "Live update every", unit: "s", step: 1, min: 1 },
-    { key: "sightNoRouteSeconds", label: "No route within", unit: "s", step: 1, min: 0 },
-    { key: "sightNoRouteMinMeters", label: "No route minimum", unit: "m", step: 10, min: 0 },
-    { key: "sightGraceSeconds", label: "Sight grace", unit: "s", step: 0.5, min: 0 },
-    { key: "assistMinSightPercent", label: "Assist needs sight", unit: "%", step: 5, min: 0, max: 100 },
-  ] },
-  { title: "Cars", items: [
-    { key: "includeModVehicles", label: "Include mod cars", kind: "bool" },
-    { key: "excludedModels", label: "Excluded cars", kind: "list" },
-  ] },
-]
-const KNOWN = new Set(GROUPS.flatMap(g => g.items.map(i => i.key)).concat(["autoNextRound", "carMode"]))
 const DRIVING = new Set(["countdown", "headstart", "running"])
-const PHASES = {
-  idle: "No round",
-  picking: "Picking cars",
-  prep: "Prep: waiting for GO",
-  countdown: "Countdown",
-  headstart: "Runner head start",
-  applying: "Applying the change",
-  ready: "Ready for GO",
-}
-const SAVE_DELAY_MS = 500
+const BAR_PHASES = { countdown: "Countdown", headstart: "Head start", running: "Chase" }
 const OPEN_RETRY_MS = 2000
-const RESET_CONFIRM_MS = 3000
 
 const { api } = useBridge()
 const events = useEvents()
 
 const state = ref({})
-const tab = ref("round")
-const choice = ref("next")
-const replyText = ref("")
-const pending = ref({})
-const drafts = ref({})
-const resetArmed = ref(false)
-const buildResetArmed = ref(false)
-const newBuildArmed = ref(null)
-let newBuildTimer = null
-const buildChoice = ref(null)
-const configItems = ref([])
-let buildResetTimer = null
-const collapsed = ref(false)
-let inFlight = []
-let nextRequestId = Date.now() % 1000000000
-let saveTimer = null
+const tab = ref(0)
+const folded = ref(false)
+const runnerPick = ref(null)
+const reply = ref({ text: "", tone: "" })
 let openTimer = null
-let resetTimer = null
 
 const connected = computed(() => !!state.value.phase)
 const can = computed(() => state.value.can || {})
-const players = computed(() => (Array.isArray(state.value.players) ? state.value.players : []))
-
-const runnerItems = computed(() => [
-  { value: "next", label: "Next (fewest runs)" },
-  { value: "again", label: "Same as last" },
-  { value: "random", label: "Random" },
-  ...players.value.map(n => ({ value: `=${n}`, label: n })),
-])
-
-watch(
-  () => state.value.phase,
-  (phase, prev) => {
-    if (DRIVING.has(phase) && !DRIVING.has(prev)) collapsed.value = true
-    else if (phase === "idle" && prev && prev !== "idle") collapsed.value = false
-  }
-)
-
-watch(runnerItems, items => {
-  if (!items.some(i => i.value === choice.value)) choice.value = "next"
+const barShown = computed(() => folded.value && connected.value && DRIVING.has(state.value.phase))
+const barPhase = computed(() => BAR_PHASES[state.value.phase] || "")
+const mapLabel = computed(() => {
+  const m = state.value.mapName
+  const info = m && typeof m === "object" ? m : { id: state.value.map, pretty: state.value.map }
+  return mapName(info, t => $translate.instant(t)) || ""
 })
 
-function formatTime(s) {
-  const m = Math.floor(s / 60)
-  const r = Math.floor(s % 60)
-  return `${m}:${r < 10 ? "0" : ""}${r}`
-}
-
-const statusLine = computed(() => {
-  const phase = state.value.phase
-  const label = phase === "running" ? `Chase ${formatTime(state.value.elapsed || 0)}` : PHASES[phase] || phase
-  return `${label} · ${state.value.map} · ${players.value.length} players`
-})
-
-const groups = computed(() => {
-  const settings = state.value.settings || {}
-  const other = Object.keys(settings)
-    .filter(k => !KNOWN.has(k))
-    .sort()
-    .map(k => {
-      const v = settings[k]
-      if (typeof v === "boolean") return { key: k, label: k, kind: "bool" }
-      if (typeof v === "object") return { key: k, label: k, kind: "list" }
-      return { key: k, label: k, unit: "", step: 1, min: 0 }
-    })
-  return other.length ? [...GROUPS, { title: "Other", items: other }] : GROUPS
-})
+const { armed, confirm } = useConfirm()
 
 function send(msg) {
   api.engineLua(`if copsAndRobbers then copsAndRobbers.panel(${api.serializeToLua(msg)}) end`)
 }
 
-const isEvolving = computed(() => (state.value.settings || {}).carMode === "evolving")
-
-function buildFilter() {
-  const settings = state.value.settings || {}
-  return { includeMods: settings.includeModVehicles === true, excludedModels: Array.isArray(settings.excludedModels) ? settings.excludedModels : [] }
+function clearReply() {
+  reply.value = { text: "", tone: "" }
 }
 
-function loadConfigs() {
-  api.engineLua(`if copsAndRobbers then copsAndRobbers.configs(${api.serializeToLua(buildFilter())}) end`)
-}
-
-function newBuild(choice) {
-  replyText.value = ""
-  api.engineLua(`if copsAndRobbers then copsAndRobbers.newBuild(${api.serializeToLua({ ...buildFilter(), ...choice })}) end`)
-}
-
-function newBuildClick(kind, choice) {
-  if (state.value.build && newBuildArmed.value !== kind) {
-    newBuildArmed.value = kind
-    clearTimeout(newBuildTimer)
-    newBuildTimer = setTimeout(() => (newBuildArmed.value = null), RESET_CONFIRM_MS)
-    return
-  }
-  clearTimeout(newBuildTimer)
-  newBuildArmed.value = null
-  newBuild(choice)
-}
-
-function resetBuildClick() {
-  if (!buildResetArmed.value) {
-    buildResetArmed.value = true
-    buildResetTimer = setTimeout(() => (buildResetArmed.value = false), RESET_CONFIRM_MS)
-    return
-  }
-  clearTimeout(buildResetTimer)
-  buildResetArmed.value = false
-  replyText.value = ""
-  send({ action: "build", op: "reset" })
-}
+const store = useSettings(state, send, clearReply)
 
 function command(text) {
-  replyText.value = ""
+  clearReply()
   send({ action: "command", text })
 }
 
-function valueOf(key) {
-  return key in pending.value ? pending.value[key] : (state.value.settings || {})[key]
+function cancelChase() {
+  confirm("cancel", true, () => command("stop"))
 }
 
-function listText(v) {
-  return Array.isArray(v) ? v.join(", ") : ""
+function newBuild(choice) {
+  clearReply()
+  api.engineLua(`if copsAndRobbers then copsAndRobbers.newBuild(${api.serializeToLua(choice)}) end`)
 }
 
-function itemFor(key) {
-  if (key === "carMode") return { key, label: "Evolving car", kind: "mode" }
-  for (const g of groups.value) {
-    const item = g.items.find(i => i.key === key)
-    if (item) return item
+function resetBuild() {
+  clearReply()
+  send({ action: "build", op: "reset" })
+}
+
+function refreshStations() {
+  send({ action: "stations" })
+}
+
+function station(op) {
+  clearReply()
+  send({ action: "station", op })
+  refreshStations()
+}
+
+function close() {
+  api.engineLua(`if copsAndRobbers then copsAndRobbers.ui(${api.serializeToLua({ action: "toggleApp", name: "panel" })}) end`)
+}
+
+watch(
+  () => state.value.phase,
+  (phase, prev) => {
+    if (DRIVING.has(phase) && !DRIVING.has(prev)) {
+      folded.value = true
+    } else if (phase === "idle" && prev && prev !== "idle") {
+      folded.value = false
+      tab.value = 0
+    }
   }
-  return { key, label: key, unit: "" }
+)
+
+watch(tab, () => store.commitDrafts())
+
+let lastReport = ""
+
+function report(where, err) {
+  try {
+    const message = err && err.message ? err.message : String(err)
+    const lines = err && typeof err.stack === "string" ? err.stack.split("\n").map(l => l.trim()) : []
+    const at = lines.find(l => l.startsWith("at ")) || lines[0] || ""
+    const text = `[cnr_ui] panel ${where}: ${message} | ${at}`
+    if (text === lastReport) return
+    lastReport = text
+    api.engineLua(`log("E","cnr_ui",${api.serializeToLua(text)})`)
+  } catch (e) {}
 }
 
-function shown(item, v) {
-  if (item.kind === "mode") return v === "evolving" ? "on" : "off"
-  if (item.kind === "bool") return v ? "on" : "off"
-  if (item.kind === "list") return listText(v) || "none"
-  return `${v} ${item.unit || ""}`.trim()
-}
-
-function same(a, b) {
-  return JSON.stringify(a) === JSON.stringify(b)
-}
-
-function saveSettings(values, reset) {
-  const id = nextRequestId++
-  inFlight.push({ id, keys: Object.keys(values), values, reset })
-  replyText.value = ""
-  send({ action: "settings", id, values })
-}
-
-function flush() {
-  clearTimeout(saveTimer)
-  saveTimer = null
-  const values = { ...pending.value }
-  const keys = Object.keys(values)
-  if (!keys.length) return
-  saveSettings(values, false)
-}
-
-function change(key, value) {
-  pending.value = { ...pending.value, [key]: value }
-  clearTimeout(saveTimer)
-  saveTimer = setTimeout(flush, SAVE_DELAY_MS)
-}
-
-function stepBy(item, dir) {
-  const q = (Number(valueOf(item.key)) || 0) / item.step
-  const onGrid = Math.abs(q - Math.round(q)) < 1e-6
-  const n = onGrid ? Math.round(q) + dir : dir > 0 ? Math.ceil(q) : Math.floor(q)
-  const value = Math.max(item.min, Math.round(n * item.step * 10000) / 10000)
-  change(item.key, item.max === undefined ? value : Math.min(item.max, value))
-}
-
-function commitList(key) {
-  const draft = drafts.value[key]
-  if (draft === undefined) return
-  const d = { ...drafts.value }
-  delete d[key]
-  drafts.value = d
-  const list = draft.split(/[\s,]+/).filter(Boolean)
-  if (same(list, valueOf(key))) return
-  pending.value = { ...pending.value, [key]: list }
-  flush()
-}
-
-function resetClick() {
-  if (!resetArmed.value) {
-    resetArmed.value = true
-    resetTimer = setTimeout(() => (resetArmed.value = false), RESET_CONFIRM_MS)
-    return
-  }
-  clearTimeout(resetTimer)
-  resetArmed.value = false
-  clearTimeout(saveTimer)
-  saveTimer = null
-  pending.value = {}
-  drafts.value = {}
-  const values = {}
-  for (const [k, v] of Object.entries(state.value.defaults || {})) {
-    if (k !== "autoNextRound" && k !== "carMode") values[k] = v
-  }
-  if (!Object.keys(values).length) return
-  saveSettings(values, true)
-}
+onErrorCaptured((err, instance, info) => {
+  const options = (instance && instance.$options) || {}
+  report(`${options.name || options.__name || "?"} ${info}`, err)
+  return false
+})
 
 events.on("CnRPanel", data => {
   state.value = data && typeof data === "object" && data.phase ? data : {}
   if (!state.value.phase) {
-    pending.value = {}
-    drafts.value = {}
-    inFlight = []
+    store.clear()
+    folded.value = false
   }
-})
-
-events.on("CnRConfigs", data => {
-  configItems.value = Array.isArray(data) ? data.map(c => ({ value: c.config, label: c.label })) : []
 })
 
 events.on("CnRPanelReply", data => {
   if (!data || typeof data !== "object") return
   if (data.ok === undefined) {
-    replyText.value = data.text || ""
+    reply.value = { text: data.text || "", tone: "" }
     return
   }
-  const idx = data.id === undefined ? 0 : inFlight.findIndex(r => r.id === data.id)
-  if (idx < 0) return
-  const req = inFlight.splice(idx, 1)[0]
-  if (req) {
-    const p = { ...pending.value }
-    for (const k of req.keys) {
-      if (k in p && same(p[k], req.values[k])) delete p[k]
-    }
-    pending.value = p
-  }
-  if (!data.ok) {
-    replyText.value = data.text || "Not saved"
-  } else if (req && req.reset) {
-    replyText.value = "Reset to defaults"
-  } else if (req && req.keys.length === 1) {
-    const item = itemFor(req.keys[0])
-    replyText.value = `Saved: ${item.label} ${shown(item, req.values[item.key])}`
-  } else {
-    replyText.value = `Saved ${req ? req.keys.length + " " : ""}settings`
-  }
+  const r = store.onReply(data)
+  if (r) reply.value = r
 })
 
 onMounted(() => {
@@ -423,203 +181,265 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  for (const key of Object.keys(drafts.value)) commitList(key)
-  if (saveTimer) flush()
+  store.dispose()
   send({ action: "close" })
   clearInterval(openTimer)
-  clearTimeout(saveTimer)
-  clearTimeout(resetTimer)
-  clearTimeout(buildResetTimer)
-  clearTimeout(newBuildTimer)
 })
 </script>
 
-<style scoped>
+<style>
 .cnr-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
-  display: flex;
-  flex-direction: column;
   box-sizing: border-box;
-  padding: 0.625rem 0.75rem;
-  border-radius: 0.5rem;
-  background: rgba(10, 12, 18, 0.72);
-  color: #fff;
-  font-family: sans-serif;
   font-size: 0.875rem;
-  overflow: hidden;
+  --bng-icon-color: currentColor;
 }
-.cnr-panel.collapsed {
-  height: auto;
-  padding: 0.375rem 0.625rem;
+.cnr-panel .panel-card {
+  flex: 1 1 auto;
+  min-height: 0;
 }
-.cnr-head {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  margin-bottom: 0.5rem;
-}
-.cnr-panel.collapsed .cnr-head {
-  margin-bottom: 0;
-}
-.cnr-toggle {
-  width: 1.5rem;
-  height: 1.5rem;
-  border: 0;
-  border-radius: 0.25rem;
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-  font-size: 0.8125rem;
-  cursor: pointer;
-}
-.cnr-mini {
-  flex: 1;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-weight: 700;
-  cursor: pointer;
-}
-.cnr-tab {
-  background: transparent;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 0.875rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  padding: 0.25rem 0.5rem;
-  cursor: pointer;
-}
-.cnr-tab.active {
-  color: #fff;
-  border-bottom-color: #ff6600;
-}
-.cnr-version {
-  margin-left: auto;
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.5);
-}
-.cnr-empty {
-  margin: auto;
-  color: rgba(255, 255, 255, 0.7);
-}
-.cnr-body {
-  flex: 1;
-  overflow-y: auto;
+.cnr-panel .panel-card > .cnr-card-body {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
 }
-.cnr-status {
-  font-size: 1rem;
-  font-weight: 700;
+.cnr-panel .panel-tabs {
+  flex: 1 1 auto;
+  min-height: 0;
+  --bng-tabs-content-overflow: auto;
 }
-.cnr-runner {
-  color: rgba(255, 255, 255, 0.85);
+.cnr-panel .p-tab {
+  box-sizing: border-box;
+  padding: 0.75rem 0.25rem 0.5rem;
 }
-.cnr-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.cnr-end {
-  justify-content: flex-end;
-  margin-top: 0.25rem;
-}
-.cnr-label {
-  min-width: 4rem;
-  color: rgba(255, 255, 255, 0.7);
-}
-.cnr-grow {
-  flex: 1;
-}
-.cnr-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.375rem;
-}
-.cnr-build {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-  padding: 0.5rem;
-  border-radius: 0.25rem;
-  background: rgba(255, 255, 255, 0.05);
-}
-.cnr-build-label {
-  font-weight: 700;
-}
-.cnr-hint {
-  font-size: 0.75rem;
-  color: #ffcc66;
-}
-.cnr-locked {
-  padding: 0.375rem 0.5rem;
-  border-radius: 0.25rem;
-  background: rgba(255, 102, 0, 0.25);
-  font-weight: 700;
-}
-.cnr-group-title {
-  margin: 0.25rem 0 2px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #ff9a4d;
-}
-.cnr-setting {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  min-height: 1.875rem;
-}
-.cnr-setting-label {
-  color: rgba(255, 255, 255, 0.85);
-}
-.cnr-stepper {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-}
-.cnr-step {
-  width: 1.625rem;
-  height: 1.625rem;
-  border: 0;
-  border-radius: 0.25rem;
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
-  font-size: 1rem;
-  cursor: pointer;
-}
-.cnr-step:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-.cnr-value {
-  min-width: 4.75rem;
+.cnr-panel .p-empty {
+  padding: 2rem 0;
   text-align: center;
+  color: var(--cnr-muted);
+}
+.cnr-panel .p-state {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 1.75rem;
+  font-family: var(--cnr-display);
+  font-size: 1rem;
+  font-weight: 800;
+}
+.cnr-panel .p-dot {
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--cnr-muted);
+}
+.cnr-panel .p-dot-warn {
+  background: var(--cnr-warn);
+}
+.cnr-panel .p-dot-good {
+  background: var(--cnr-good);
+}
+.cnr-panel .p-dot-runner {
+  background: var(--cnr-runner);
+}
+.cnr-panel .p-grow {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.cnr-panel .p-sub {
+  margin-top: 0.25rem;
+  color: var(--cnr-muted);
+}
+.cnr-panel .p-line {
+  margin-top: 0.5rem;
+}
+.cnr-panel .p-sec {
+  margin: 0.75rem 0 0.25rem;
+  font-family: var(--cnr-display);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cnr-muted);
+}
+.cnr-panel .p-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 1.5rem;
+  margin-top: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  background: var(--cnr-row);
+  border-radius: var(--bng-corners-1);
+}
+.cnr-panel .p-pick {
+  cursor: pointer;
+}
+.cnr-panel .p-pick:hover {
+  box-shadow: inset 0 0 0 0.125rem var(--cnr-accent);
+}
+.cnr-panel .p-pick.sel {
+  box-shadow: inset 0 0 0 0.125rem var(--cnr-me);
+}
+.cnr-panel .p-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cnr-panel .p-muted {
+  color: var(--cnr-muted);
+}
+.cnr-panel .p-good {
+  color: var(--cnr-good);
+}
+.cnr-panel .p-warn {
+  color: var(--cnr-warn);
+}
+.cnr-panel .p-mono {
+  font-family: var(--fnt-mono);
   font-variant-numeric: tabular-nums;
 }
-.cnr-value.pending {
-  color: #ffcc66;
+.cnr-panel .p-why {
+  margin-top: 0.25rem;
+  color: var(--cnr-warn);
 }
-.cnr-text {
-  flex: 1;
-  max-width: 14.375rem;
-  padding: 0.25rem 0.375rem;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 0.25rem;
-  background: rgba(0, 0, 0, 0.35);
-  color: #fff;
-  font-size: 0.8125rem;
-}
-.cnr-reply {
+.cnr-panel .p-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   margin-top: 0.5rem;
-  padding-top: 0.375rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.15);
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 0.8125rem;
+}
+.cnr-panel .p-gap {
+  margin-top: 0.75rem;
+}
+.cnr-panel .bng-button.p-btn {
+  flex: 1 1 auto;
+  font-family: var(--cnr-display);
+  font-weight: 700;
+  --bng-button-margin: 0;
+  --bng-button-min-width: 0;
+  --bng-content-align: center;
+  --bng-icon-size: 1.25rem;
+}
+.cnr-panel .bng-button.p-big {
+  width: 100%;
+  font-size: 1rem;
+  line-height: 2rem;
+}
+.cnr-panel .bng-button.p-fit {
+  flex: 0 0 auto;
+}
+.cnr-panel .bng-button.p-icon-btn {
+  flex: 0 0 auto;
+  --bng-button-margin: 0;
+  --bng-button-min-width: 1.75rem;
+  --bng-button-padding: 0.25rem;
+  --bng-button-padding-top: 0.25rem;
+  --bng-button-padding-bottom: 0.25rem;
+  --bng-icon-size: 1rem;
+}
+.cnr-panel .p-lock {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--bng-corners-1);
+  background: rgba(var(--bng-ter-yellow-200-rgb), 0.13);
+  color: var(--cnr-warn);
+  font-weight: 600;
+  --bng-icon-size: 1rem;
+}
+.cnr-panel .p-seg {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  background: var(--cnr-row);
+  border-radius: var(--bng-corners-1);
+}
+.cnr-panel .p-box {
+  margin-top: 0.75rem;
+  padding: 0.5rem;
+  background: var(--cnr-row);
+  border-radius: var(--bng-corners-1);
+}
+.cnr-panel .p-box-title {
+  font-family: var(--cnr-display);
+  font-size: 1rem;
+  font-weight: 800;
+}
+.cnr-panel .p-switch {
+  margin-top: 0.75rem;
+}
+.cnr-panel .p-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+}
+.cnr-panel .p-text {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.25rem 0.5rem;
+  border: 0;
+  border-radius: var(--bng-corners-1);
+  background: var(--cnr-row);
+  color: var(--cnr-text);
+  font-family: var(--fnt-defs);
+  font-size: 0.875rem;
+}
+.cnr-panel .p-text:focus {
+  outline: 0.125rem solid var(--cnr-accent);
+}
+.cnr-panel .p-text:disabled {
+  opacity: 0.5;
+}
+.cnr-panel .p-reply {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--bng-corners-1);
+  background: var(--cnr-row);
+  font-weight: 600;
+  --bng-icon-size: 1rem;
+}
+.cnr-panel .p-reply-good {
+  color: var(--cnr-good);
+  background: rgba(var(--bng-add-green-400-rgb), 0.16);
+}
+.cnr-panel .p-reply-warn {
+  color: var(--cnr-warn);
+  background: rgba(var(--bng-ter-yellow-200-rgb), 0.13);
+}
+.cnr-panel .p-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--cnr-card);
+  border-radius: var(--bng-corners-2);
+  font-family: var(--cnr-display);
+  font-weight: 800;
+}
+.cnr-panel .bar-phase {
+  flex: 0 0 auto;
+}
+.cnr-panel .bar-runner {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--fnt-defs);
+  font-weight: 600;
+  color: var(--cnr-muted);
 }
 </style>

@@ -4,12 +4,12 @@
   "types": [
     "ui.apps.categories.utility"
   ],
-  "description": "Start Cops and Robbers rounds and change the server's settings.",
+  "description": "Host Cops and Robbers rounds: pick the runner, the car, gas stations and the server's settings.",
   "css": {
-    "left": "1.25em",
-    "top": "7.5em",
+    "right": "1em",
+    "top": "6em",
     "width": "27.5em",
-    "height": "32.5em",
+    "height": "34em",
     "min-width": "22.5em",
     "min-height": "18.75em"
   },
