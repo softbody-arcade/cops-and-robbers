@@ -2,6 +2,7 @@
 
 ## Next
 - [ ] Traffic during rounds. Today the traffic toggles are locked during a round, and the server refuses any car other than the round car for players in a round, which would also remove traffic they spawn. Needs: decide who spawns the traffic, let those cars through the vehicle rule, and keep crash penalties and catching limited to players
+- [ ] UI update: a design pass over all three apps (runner/cop HUD, host panel, leaderboard) so they share one look, read well at a glance while driving, and scale on different screen sizes. Scope still to be decided when planning
 
 ## Ideas
 - [ ] Hard mode vs normal mode (a round setting): hard mode gives cops a route/position only while someone has sight (no 30 s last-seen pings), hides the name plates above cars, and whatever else fits when planning it (for example no "Nearest cop" for the runner, no minimap markers for other cars)
