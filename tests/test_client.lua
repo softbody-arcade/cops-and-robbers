@@ -322,3 +322,33 @@ test("sight needs a clear ray in both directions", function()
   env.tick(0.3)
   assertEq(env.lastSent("cnr_sight").seen, false)
 end)
+
+test("prep keeps the parts menu closed for everyone in random mode", function()
+  local env = bootClient()
+  env.fire("cnr_roundSetup", { role = "runner", runnerId = 1, model = "pickup", config = "vehicles/pickup/base.pc", phase = "prep" })
+  assertEq(env.actionFilter.cnr_parts, true)
+  local cop = bootClient()
+  cop.fire("cnr_roundSetup", copy(SETUP))
+  assertEq(cop.actionFilter.cnr_parts, true)
+end)
+
+test("in evolving prep only the runner gets the parts menu", function()
+  local env = bootClient()
+  env.fire("cnr_roundSetup", { role = "runner", runnerId = 1, model = "pickup", config = "vehicles/pickup/base.pc", phase = "prep", evolving = true })
+  assertEq(env.actionFilter.cnr_parts, false)
+  env.fire("cnr_countdown", { seconds = 3 })
+  assertEq(env.actionFilter.cnr_parts, true)
+  local cop = bootClient()
+  local setup = copy(SETUP)
+  setup.evolving = true
+  cop.fire("cnr_roundSetup", setup)
+  assertEq(cop.actionFilter.cnr_parts, true)
+end)
+
+test("the prep message points to /cnr color for paint", function()
+  local env = bootClient()
+  env.fire("cnr_roundSetup", copy(SETUP))
+  local found = false
+  for _, t in ipairs(env.toasts) do if t:find("Set your color with /cnr color", 1, true) then found = true end end
+  assertEq(found, true)
+end)

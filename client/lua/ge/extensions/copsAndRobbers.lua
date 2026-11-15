@@ -43,6 +43,7 @@ local suppressResetUntil = 0
 local lastPose
 local lastFreezeAssert = 0
 local runnerId
+local evolving = false
 local sightMax = 0
 local sightState = sight.new()
 local lastSightCheck = 0
@@ -128,6 +129,7 @@ local function onRoundSetup(data)
   active = true
   role = d.role
   runnerId = d.runnerId
+  evolving = d.evolving == true
   sightMax = tonumber(d.sightMaxMeters) or 0
   sightState = sight.new()
   roundModel, roundColor = d.model, d.color
@@ -137,7 +139,7 @@ local function onRoundSetup(data)
   lastPose = nil
   inputs.lock(true, requestReset)
   inputs.setResetKey()
-  inputs.setPartsMenu(d.phase == "prep")
+  inputs.setPartsMenu(d.phase == "prep" and evolving and role == "runner")
   if not inputs.resetIsBound() then
     toast("Bind a reset or recover button to reset during rounds", 10, "cnr_binding")
   end
@@ -324,6 +326,7 @@ local function endRound()
   infoSuffix = ""
   spotted, nearestText = nil, nil
   runnerId = nil
+  evolving = false
   geo.clearRoute()
   ai.remove()
   penaltyActive = false

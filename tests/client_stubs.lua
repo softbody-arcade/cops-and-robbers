@@ -29,7 +29,7 @@ end
 
 function bootClient(opts)
   opts = opts or {}
-  local env = { handlers = {}, sent = {}, triggers = {}, toasts = {}, objects = {}, replaced = {}, spawned = {}, nextId = 200 }
+  local env = { actionFilter = {}, handlers = {}, sent = {}, triggers = {}, toasts = {}, objects = {}, replaced = {}, spawned = {}, nextId = 200 }
   for name in pairs(package.loaded) do
     if name:find("^copsAndRobbers") then package.loaded[name] = nil end
   end
@@ -90,7 +90,7 @@ function bootClient(opts)
   _G.core_input_actionFilter = {
     getActionTemplates = function() return { competitive = {} } end,
     setGroup = function() end,
-    addAction = function() end,
+    addAction = function(_, group, blocked) env.actionFilter[group] = blocked end,
   }
   _G.core_input_bindings = { bindings = { { contents = { bindings = { { action = "reset_physics" } } } } } }
   local nodes = {
