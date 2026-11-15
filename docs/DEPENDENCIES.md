@@ -67,6 +67,7 @@ Then do the checks for whatever actually updated.
 - `AddEventHandler(name, fn)` and `TriggerServerEvent(name, string)`.
 - `MPVehicleGE.isOwn(gameId)` and `MPVehicleGE.getVehicleByGameID(id).serverVehicleString`. That string is `"pid-vid"`, and we take the vid after the last `-`.
 - `MPConfig.getPlayerServerID()`.
+- **Line of sight:** `MPVehicleGE.getVehicles()`, keyed by `"pid-vid"` with `gameVehicleID`, `isSpawned` and `isDeleted`. Also `MPVehicleGE.getPlayers()[pid].activeVehicleID`, a `"pid-vid"` key for the car that player is driving or viewing. These are used to find the runner's car on a cop's game.
 - The GE hook `onBeamMPServerLeave`.
 - **Mod mounting:** the mod is mounted when you join. Our keybindings then need an `onFileChanged` hook for `core/input/actions/copsAndRobbers.json`, and our UI apps need an `onFilesChanged` refresh.
 - **Launcher on Arch:** the wrapper in `~/.local/bin/beammp-launcher` sets argv[0] and the working directory. The AUR binary name broke `CheckName()` before.
@@ -98,6 +99,10 @@ Then do the checks for whatever actually updated.
   - The action names in `LOCKED_ACTIONS` and `RESET_BUTTONS`.
   - We replace the globals `resetGameplay` and `spawn.teleportToLastRoad`, and `freeroam_bigMapMode.teleportToPoi`.
 - **Gas stations:** `freeroam_facilities.getFacilitiesByType("gasStation")` and `freeroam_gasStations.gasStationCenterRadius(f)`.
+- **Line of sight** (`copsAndRobbers/sight.lua`):
+  - `castRayStatic(origin, dirNormalized, length)` returns the distance to the first static hit (terrain, buildings), and `>= length` means clear. Vehicles don't block it.
+  - We cast both ways, as the game's own `isVisible` does, because single-sided faces only block from one side.
+  - Also used: `veh:getDirectionVector()` and the global `log`.
 - **Other:**
   - `core_groundMarkers.setPath`, `guihooks.trigger`, `ui_message`, `extensions.hook` / `load`.
   - `FS:fileExists`, `getCurrentLevelIdentifier`, `getObjectByID`, `getPlayerVehicle(0)`.
@@ -146,6 +151,7 @@ Then do the checks for whatever actually updated.
 
   A car that drops to "nothing added" means BeamNG renamed parts or electrics, or moved slots.
 - In game, a cop round in a car with a beacon (Burnside) and one with a light bar (Miramar): the lights flash and there's no siren.
+- **Line of sight:** in a cop round, the client log shows `runner in sight (N m)` / `out of sight` as you drive past buildings and hills. If it never changes, `castRayStatic` or the MPVehicleGE fields changed.
 - **Freeze and recovery:**
   - During prep you can't drive (freeze).
   - Pressing recover during the chase is refused and doesn't rewind the car. If it rewinds, the `recovery.*` function names changed.

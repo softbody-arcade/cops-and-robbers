@@ -676,6 +676,7 @@ test("a cop's sight sends live updates and holds back the regular ping", functio
   assertEq(find(r:tick(12.5, farCars(), {}), "live"), nil)
   assertEq(find(r:tick(13, farCars(), {}), "live") ~= nil, true)
   for t = 14, 41 do
+    if t % 5 == 0 then r:sightReport(t, 2, true) end
     fx = r:tick(t, farCars(), {})
     assertEq(find(fx, "lastSeen"), nil)
   end
@@ -777,4 +778,16 @@ test("a cop who left before the end is not in the record", function()
   r:playerLeft(15, 3)
   local run = find(r:endCalled(20, 1), "record").run
   assertEq(#run.copIds, 1); assertEq(run.copIds[1], 2)
+end)
+
+test("a cop whose game stops reporting stops counting as sight", function()
+  local r = chasing({lastSeenIntervalSeconds=30})
+  r:sightReport(12, 2, true)
+  r:tick(12, farCars(), {})
+  local lost
+  for t = 13, 30 do
+    local fx = r:tick(t, farCars(), {})
+    if find(fx, "lastSeen") then lost = t end
+  end
+  assertEq(lost, 24)
 end)

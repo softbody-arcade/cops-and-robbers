@@ -63,10 +63,15 @@ function bootClient(opts)
   _G.getPlayerVehicle = function() return env.veh end
   _G.getObjectByID = function(id) return env.objects[id] end
   env.mpVehicles = {}
-  _G.castRayStatic = function(origin, dir, len) return env.blockAt or (len + 100) end
+  env.mpPlayers = {}
+  _G.castRayStatic = function(origin, dir, len)
+    if env.blockFrom and origin:distance(env.blockFrom) < 5 then return 1 end
+    return env.blockAt or (len + 100)
+  end
   _G.log = function() end
   _G.MPVehicleGE = {
     getVehicles = function() return env.mpVehicles end,
+    getPlayers = function() return env.mpPlayers end,
     isOwn = function(id) return env.veh and id == env.veh.id end,
     getVehicleByGameID = function(id) return { serverVehicleString = "1-" .. tostring(id) } end,
   }

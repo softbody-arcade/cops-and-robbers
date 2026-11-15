@@ -482,12 +482,19 @@ local function runnerObject()
   if aiRunner then return aiRunner end
   if not runnerId or not MPVehicleGE or not MPVehicleGE.getVehicles then return nil end
   local prefix = tostring(runnerId) .. "-"
-  for key, v in pairs(MPVehicleGE.getVehicles() or {}) do
-    if type(key) == "string" and key:sub(1, #prefix) == prefix and type(v) == "table"
-      and v.isSpawned ~= false and not v.isDeleted and v.gameVehicleID then
-      local obj = getObjectByID(v.gameVehicleID)
-      if obj then return obj end
-    end
+  local vehicles = MPVehicleGE.getVehicles() or {}
+  local function usable(key)
+    local v = type(key) == "string" and key:sub(1, #prefix) == prefix and vehicles[key]
+    if type(v) ~= "table" or v.isSpawned == false or v.isDeleted or not v.gameVehicleID then return nil end
+    return getObjectByID(v.gameVehicleID)
+  end
+  local players = MPVehicleGE.getPlayers and MPVehicleGE.getPlayers() or {}
+  local runner = players[runnerId] or players[tostring(runnerId)]
+  local active = type(runner) == "table" and usable(runner.activeVehicleID)
+  if active then return active end
+  for key in pairs(vehicles) do
+    local obj = usable(key)
+    if obj then return obj end
   end
   return nil
 end

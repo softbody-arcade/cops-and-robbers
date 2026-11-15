@@ -301,3 +301,24 @@ test("the leaderboard bridge forwards requests and state with car names", functi
   env.M.onBeamMPServerLeave()
   assertEq(env.lastTrigger("CnRBoard").filter, nil)
 end)
+
+test("sight follows the car the runner is driving, not a parked one", function()
+  local env = bootClient()
+  copInChase(env)
+  env.addObject(301, vec3(0, 900, 0))
+  env.mpVehicles["2-1"] = { gameVehicleID = 301, isSpawned = true }
+  env.mpPlayers[2] = { activeVehicleID = "2-1" }
+  env.tick(0.3)
+  assertEq(env.lastSent("cnr_sight").seen, false)
+  env.mpPlayers[2] = { activeVehicleID = "2-0" }
+  env.tick(0.3)
+  assertEq(env.lastSent("cnr_sight").seen, true)
+end)
+
+test("sight needs a clear ray in both directions", function()
+  local env = bootClient()
+  copInChase(env)
+  env.blockFrom = vec3(0, 101, 0)
+  env.tick(0.3)
+  assertEq(env.lastSent("cnr_sight").seen, false)
+end)

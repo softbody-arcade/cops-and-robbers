@@ -16,7 +16,9 @@ function M.visible(eyePos, runnerPos, runnerDir, maxMeters, cast)
   for _, target in ipairs({ center, center + along, center - along }) do
     local delta = target - eye
     local len = delta:length()
-    if len < 1e-3 or cast(eye, delta / len, len) >= len - CLEAR_MARGIN then return true, dist end
+    if len < 1e-3 then return true, dist end
+    local dir = delta / len
+    if cast(eye, dir, len) >= len - CLEAR_MARGIN and cast(target, dir * -1, len) >= len - CLEAR_MARGIN then return true, dist end
   end
   return false, dist
 end

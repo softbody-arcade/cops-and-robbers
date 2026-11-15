@@ -48,3 +48,12 @@ test("config has the sight settings and needs a positive live interval", functio
   local _, warnings = config.merge({ sightLiveIntervalSeconds = 0 })
   assertEq(#warnings, 1)
 end)
+
+test("a seen report expires when it is not refreshed", function()
+  local s = sight.new()
+  sight.report(s, 2, true, 10)
+  assertEq(sight.sees(s, 2, 21, 1.5), true)
+  assertEq(sight.sees(s, 2, 21.1, 1.5), false)
+  sight.report(s, 2, true, 21.2)
+  assertEq(sight.sees(s, 2, 30, 1.5), true)
+end)
