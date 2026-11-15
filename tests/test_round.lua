@@ -806,3 +806,105 @@ test("sight time stays with the cop's name when they leave, not with the reused 
   assertEq(byPid[3], 0)
   assertEq(byPid[4] >= 8, true)
 end)
+
+local BUILD = { model = "pickup", config = { format = 2, model = "pickup", parts = { pickup_engine = "v8" }, vars = {} }, step = 3, name = "Gavril D-Series" }
+
+local function evolvingPrep()
+  local r = round.new((config.merge(nil)))
+  local fx = r:start(0, 1, 2, players, { build = BUILD })
+  return r, fx
+end
+
+local NEW = { format = 2, model = "pickup", parts = { pickup_engine = "v8_60" }, vars = {} }
+
+test("an evolving start skips picking and sets everyone up with the build", function()
+  local r, fx = evolvingPrep()
+  assertEq(r.state, "prep"); assertEq(r.evolving, true)
+  assertEq(find(fx, "pickVehicle"), nil)
+  assertEq(count(fx, "setup"), 3)
+  assertEq(r.vehicle.config, BUILD.config); assertEq(r.vehicle.model, "pickup")
+end)
+
+test("apply asks the runner for his setup, then rebuilds every car until all are ready", function()
+  local r = evolvingPrep()
+  local fx = r:apply(1, 2)
+  assertEq(r.state, "applying"); assertEq(find(fx, "requestSetup").pid, 1)
+  fx = r:setupReceived(2, 1, NEW)
+  assertEq(find(fx, "rebuild").config, NEW); assertEq(r.vehicle.config, NEW)
+  assertEq(#r:vehicleReady(3, 1), 0); assertEq(#r:vehicleReady(3, 2), 0)
+  assertEq(r.state, "applying")
+  fx = r:vehicleReady(3, 3)
+  assertEq(find(fx, "applied") ~= nil, true); assertEq(r.state, "ready")
+end)
+
+test("only the runner's setup counts, and only once", function()
+  local r = evolvingPrep()
+  r:apply(1, 2)
+  assertEq(#r:setupReceived(2, 2, NEW), 0)
+  r:setupReceived(2, 1, NEW)
+  assertEq(#r:setupReceived(2.5, 1, BUILD.config), 0)
+  assertEq(r.vehicle.config, NEW)
+end)
+
+test("applying moves on after 20 s, with or without a setup reply", function()
+  local r = evolvingPrep()
+  r:apply(1, 2)
+  r:setupReceived(2, 1, NEW)
+  assertEq(find(r:tick(21.9, stillCars(), {}), "applied"), nil)
+  local e = find(r:tick(22, stillCars(), {}), "applied")
+  assertEq(e.timedOut, true); assertEq(r.state, "ready")
+  local r2 = evolvingPrep()
+  r2:apply(1, 2)
+  assertEq(find(r2:tick(21, stillCars(), {}), "applied") ~= nil, true)
+  assertEq(r2.vehicle.config, BUILD.config)
+end)
+
+test("GO needs the change applied first in evolving mode", function()
+  local r = evolvingPrep()
+  assertEq(find(r:go(1, 2), "reply").msg, "Apply the change first")
+  r:apply(1, 2); r:setupReceived(2, 1, NEW)
+  assertEq(find(r:go(2.5, 2), "reply").msg, "Apply the change first")
+  for _, p in ipairs({ 1, 2, 3 }) do r:vehicleReady(3, p) end
+  assertEq(find(r:go(4, 2), "countdown") ~= nil, true)
+end)
+
+test("apply only works during evolving prep", function()
+  local r = started()
+  assertEq(find(r:apply(5, 2), "reply") ~= nil, true)
+  local e = evolvingPrep()
+  e:apply(1, 2)
+  assertEq(find(e:apply(1.5, 2), "reply") ~= nil, true)
+end)
+
+test("new car is not available in evolving mode", function()
+  local r = evolvingPrep()
+  assertEq(find(r:reroll(1, 2), "reply").msg, "New car isn't available in evolving mode")
+  assertEq(r.state, "prep")
+end)
+
+test("the runner leaving while applying cancels the round", function()
+  local r = evolvingPrep()
+  r:apply(1, 2)
+  local fx = r:playerLeft(2, 1)
+  assertEq(find(fx, "roundEnd") ~= nil, true); assertEq(r.state, "idle")
+end)
+
+test("a cop leaving while applying no longer holds the round up", function()
+  local r = evolvingPrep()
+  r:apply(1, 2); r:setupReceived(2, 1, NEW)
+  r:vehicleReady(3, 1); r:vehicleReady(3, 2)
+  local fx = r:playerLeft(4, 3)
+  assertEq(find(fx, "applied") ~= nil, true); assertEq(r.state, "ready")
+end)
+
+test("the record keeps the mode and the build", function()
+  local r = evolvingPrep()
+  r:apply(1, 2); r:setupReceived(2, 1, NEW)
+  for _, p in ipairs({ 1, 2, 3 }) do r:vehicleReady(3, p) end
+  r:go(4, 2)
+  r:tick(7, stillCars(), {}); r:tick(14, stillCars(), {})
+  local run = find(r:endCalled(30, 1), "record").run
+  assertEq(run.mode, "evolving"); assertEq(run.buildStep, 3); assertEq(run.buildName, "Gavril D-Series")
+  local plain = chasing()
+  assertEq(find(plain:endCalled(20, 1), "record").run.mode, "random")
+end)

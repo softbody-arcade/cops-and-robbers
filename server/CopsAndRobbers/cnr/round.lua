@@ -10,6 +10,7 @@ local Round = {}
 Round.__index = Round
 
 local PICK_TIMEOUT_SECONDS = 10
+local APPLY_TIMEOUT_SECONDS = 20
 local COLOR_RUNNER = "#1f5fff"
 local COLOR_COPS = { "#20c020", "#e02020" }
 
@@ -48,6 +49,9 @@ function Round:clear()
   self.runnerId = nil
   self.issuerId = nil
   self.vehicle = nil
+  self.evolving = false
+  self.buildStep, self.buildName = nil, nil
+  self.applyStartedAt, self.setupDone, self.readyPids = nil, false, {}
   self.startedAt = nil
   self.countdownStartedAt = nil
   self.releasedAt = nil
@@ -124,6 +128,7 @@ function Round:finish(now, reason)
       chaseSeconds = survived, copIds = {}, copSight = {},
       hiddenSeconds = self.cfg.sightMaxMeters > 0 and self.hiddenSeconds or nil,
       lostCount = self.cfg.sightMaxMeters > 0 and self.lostCount or nil,
+      mode = self.evolving and "evolving" or "random", buildStep = self.buildStep, buildName = self.buildName,
     } }
     local run = fx[#fx].run
     for _, pid in ipairs(self:copPids()) do
@@ -172,7 +177,53 @@ function Round:start(now, runnerId, issuerId, players, opts)
   self.state = "picking"
   self.issuerId = issuerId
   self.pickStartedAt = now
+  local b = opts and opts.build
+  if b then
+    self.evolving = true
+    self.buildStep, self.buildName = b.step, b.name
+    return self:vehiclePicked(now, issuerId, b.model, b.config, players)
+  end
   return { { kind = "pickVehicle", pid = issuerId } }
+end
+
+function Round:allReady()
+  for pid in pairs(self.players) do
+    if not M.isAI(pid) and not self.readyPids[pid] then return false end
+  end
+  return true
+end
+
+function Round:markApplied(timedOut)
+  self.state = "ready"
+  return { { kind = "applied", timedOut = timedOut or nil } }
+end
+
+function Round:apply(now, pid)
+  if not self.evolving or self.state ~= "prep" then
+    return { { kind = "reply", pid = pid, msg = "Apply only works during prep in evolving mode" } }
+  end
+  self.state = "applying"
+  self.applyStartedAt = now
+  self.setupDone = false
+  self.readyPids = {}
+  if M.isAI(self.runnerId) then return self:markApplied() end
+  return { { kind = "requestSetup", pid = self.runnerId } }
+end
+
+function Round:setupReceived(now, pid, newConfig)
+  if self.state ~= "applying" or pid ~= self.runnerId or self.setupDone then return {} end
+  self.setupDone = true
+  self.vehicle.config = newConfig
+  self.readyPids = {}
+  self.applyStartedAt = now
+  return { { kind = "rebuild", config = newConfig } }
+end
+
+function Round:vehicleReady(now, pid)
+  if self.state ~= "applying" or not self.setupDone or self.players[pid] == nil then return {} end
+  self.readyPids[pid] = true
+  if self:allReady() then return self:markApplied() end
+  return {}
 end
 
 function Round:vehiclePicked(now, pid, model, config, players)
@@ -219,7 +270,10 @@ function Round:go(now, pid)
   if self.state == "idle" or self.state == "picking" then
     return { { kind = "reply", pid = pid, msg = "No round set up, start one in the panel" } }
   end
-  if self.state ~= "prep" then
+  if self.evolving and (self.state == "prep" or self.state == "applying") then
+    return { { kind = "reply", pid = pid, msg = "Apply the change first" } }
+  end
+  if self.state ~= (self.evolving and "ready" or "prep") then
     return { { kind = "reply", pid = pid, msg = "Round already started" } }
   end
   self.state = "countdown"
@@ -238,7 +292,10 @@ function Round:tick(now, cars, stations)
     end
     return fx
   end
-  if self.state == "idle" or self.state == "prep" then return fx end
+  if self.state == "applying" and now - self.applyStartedAt >= APPLY_TIMEOUT_SECONDS - 1e-9 then
+    return self:markApplied(true)
+  end
+  if self.state == "idle" or self.state == "prep" or self.state == "applying" or self.state == "ready" then return fx end
 
   if self.state == "countdown" then
     if now - self.countdownStartedAt < self.cfg.runnerCountdownSeconds then return fx end
@@ -456,6 +513,7 @@ function Round:playerLeft(now, pid)
   self.crashDetectors[pid] = nil
   self.penalties[pid] = nil
   self.lastState[pid] = nil
+  if self.state == "applying" and self.setupDone and self:allReady() then return self:markApplied() end
   return {}
 end
 
@@ -487,6 +545,9 @@ function Round:endCalled(now, pid)
 end
 
 function Round:reroll(now, pid)
+  if self.evolving then
+    return { { kind = "reply", pid = pid, msg = "New car isn't available in evolving mode" } }
+  end
   if self.state ~= "prep" then
     return { { kind = "reply", pid = pid, msg = "You can only reroll during prep" } }
   end
@@ -506,7 +567,7 @@ function Round:stop(now, issuerId)
   return self:cancel(now, "Round cancelled")
 end
 
-for _, name in ipairs({ "start", "vehiclePicked", "go", "tick", "playerJoined", "playerLeft", "vehicleReset", "stop", "endCalled", "reroll", "relocated" }) do
+for _, name in ipairs({ "start", "vehiclePicked", "go", "tick", "playerJoined", "playerLeft", "vehicleReset", "stop", "endCalled", "reroll", "relocated", "apply", "setupReceived", "vehicleReady" }) do
   local method = Round[name]
   Round[name] = function(self, ...)
     local issuer = self.test and self.issuerId
