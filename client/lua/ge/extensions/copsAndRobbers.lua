@@ -268,6 +268,7 @@ local function onMode(data)
   geoMode = d.geo == true
   geo.resetPlaces()
   guihooks.trigger("CnRPanel", {})
+  guihooks.trigger("CnRBoard", {})
   if geoMode and not geo.api() then
     toast("Cops and Robbers needs a newer BeamNG.Earth (API v1) on this map", 10, "cnr_mode")
   end
@@ -369,6 +370,14 @@ end
 
 local function onTop(data)
   hudfeed.top((jsonDecode(data) or {}).lines)
+end
+
+local function onBoardState(data)
+  local d = jsonDecode(data) or {}
+  for _, row in ipairs(type(d.runners) == "table" and d.runners or {}) do
+    if type(row) == "table" and row.model then row.car = game.carName(row.model) end
+  end
+  guihooks.trigger("CnRBoard", d)
 end
 
 local function onAutoNext()
@@ -578,6 +587,7 @@ local function leaveServer()
   hudfeed.clearResult()
   hudfeed.leave()
   guihooks.trigger("CnRPanel", {})
+  guihooks.trigger("CnRBoard", {})
 end
 
 local function onExtensionLoaded()
@@ -604,12 +614,17 @@ local function onExtensionLoaded()
   AddEventHandler("cnr_state", onState)
   AddEventHandler("cnr_roundEnd", onRoundEnd)
   AddEventHandler("cnr_requestStations", onRequestStations)
+  AddEventHandler("cnr_boardState", onBoardState)
   AddEventHandler("cnr_panelState", function(data) guihooks.trigger("CnRPanel", jsonDecode(data) or {}) end)
   AddEventHandler("cnr_panelReply", function(data) guihooks.trigger("CnRPanelReply", jsonDecode(data) or {}) end)
 end
 
 function M.command(text)
   if TriggerServerEvent then TriggerServerEvent("cnr_command", tostring(text)) end
+end
+
+function M.board(msg)
+  if TriggerServerEvent and type(msg) == "table" then TriggerServerEvent("cnr_board", jsonEncode(msg)) end
 end
 
 function M.panel(msg)
