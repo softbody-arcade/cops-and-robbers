@@ -34,6 +34,7 @@ local runCounts = {}
 local lastRunnerKey
 local currentRunnerKey
 local autoNextAt
+local startAutoRound
 local lastIssuer
 local rawConfig = {}
 local geoMode = false
@@ -601,31 +602,9 @@ function handlers.go(pid)
   applyEffects(current:go(now(), pid))
 end
 
-function handlers.color(pid, cmd)
-  local name = playerKey(pid)
-  local arg = cmd.args[1]
-  if not arg then
-    local c = colors.get(colorStore, name) or colors.get(colorStore, MP.GetPlayerName(pid) or "")
-    return reply(pid, c and ("Your car color is " .. c.hex) or 'No car color set, use "/cnr color #ff0000"')
-  end
-  if arg:lower() == "off" then
-    colors.clear(colorStore, name)
-    saveColors()
-    return reply(pid, "Car color cleared")
-  end
-  local c, err = colors.parseHex(arg)
-  if not c then return reply(pid, err) end
-  colors.set(colorStore, name, c.hex)
-  saveColors()
-  if current.state == "prep" and current.players[pid] then
-    reply(pid, "Your car color is now " .. c.hex)
-    placing(pid)
-    send(pid, "cnr_paint", { color = colorFor(pid) })
-  elseif roundCarActive() then
-    reply(pid, "Your car color is now " .. c.hex .. " (applies from the next round)")
-  else
-    reply(pid, "Your car color is now " .. c.hex)
-  end
+function handlers.next(pid)
+  if not autoNextAt then return reply(pid, "No round is scheduled") end
+  startAutoRound()
 end
 
 function handlers.stop(pid)
@@ -780,6 +759,19 @@ function cnrOnPanel(pid, data)
     panelMirror = nil
     pushPanel()
     if not ran then error(err, 0) end
+  elseif msg.action == "station" then
+    if msg.op ~= "add" and msg.op ~= "remove" then return end
+    panelMirror = pid
+    local ran, err = pcall(msg.op == "add" and handlers.addstation or handlers.removestation, pid)
+    panelMirror = nil
+    pushPanel()
+    if not ran then error(err, 0) end
+  elseif msg.action == "stations" then
+    local list = {}
+    for _, st in ipairs(geoMode and geoStations or stations) do
+      list[#list + 1] = geoMode and { lat = st.lat, lon = st.lon, name = st.name } or { x = st.x, y = st.y, z = st.z }
+    end
+    send(pid, "cnr_stationList", { geo = geoMode, stations = list })
   elseif msg.action == "settings" then
     panelSettings(pid, msg.values, msg.id)
   elseif msg.action == "build" then
@@ -940,8 +932,34 @@ function cnrOnVehicleReset(pid, vid)
   applyEffects(current:vehicleReset(now(), pid))
 end
 
+local function sendMyColor(pid, err)
+  local c = colorFor(pid)
+  send(pid, "cnr_myColor", { hex = c and c.hex, error = err })
+end
+
+function cnrOnColor(pid, data)
+  local ok, msg = pcall(Util.JsonDecode, data)
+  if not ok or type(msg) ~= "table" then return end
+  local hex = type(msg.hex) == "string" and msg.hex or ""
+  if hex == "" then
+    colors.clear(colorStore, playerKey(pid))
+    saveColors()
+    return sendMyColor(pid)
+  end
+  local c, err = colors.parseHex(hex)
+  if not c then return sendMyColor(pid, err) end
+  colors.set(colorStore, playerKey(pid), c.hex)
+  saveColors()
+  sendMyColor(pid)
+  if current.state == "prep" and current.players[pid] then
+    placing(pid)
+    send(pid, "cnr_paint", { color = colorFor(pid) })
+  end
+end
+
 function cnrOnPlayerJoin(pid)
   send(pid, "cnr_mode", { geo = geoMode, version = VERSION })
+  sendMyColor(pid)
   requestStations(pid)
   applyEffects(current:playerJoined(now(), pid, MP.GetPlayerName(pid)))
   if current.evolving and current.state == "prep" and current.queued and current.players[pid] then
@@ -1090,7 +1108,7 @@ function cnrOnStations(pid, data)
   end
 end
 
-local function startAutoRound()
+function startAutoRound()
   autoNextAt = nil
   if current:isActive() then return end
   local players = MP.GetPlayers() or {}
@@ -1145,6 +1163,7 @@ MP.RegisterEvent("cnr_aiVehicles", "cnrOnAiVehicles")
 MP.RegisterEvent("cnr_geo", "cnrOnGeo")
 MP.RegisterEvent("cnr_relocated", "cnrOnRelocated")
 MP.RegisterEvent("cnr_panel", "cnrOnPanel")
+MP.RegisterEvent("cnr_color", "cnrOnColor")
 MP.RegisterEvent("cnr_sight", "cnrOnSight")
 MP.RegisterEvent("cnr_board", "cnrOnBoard")
 MP.RegisterEvent("cnr_setup", "cnrOnSetup")

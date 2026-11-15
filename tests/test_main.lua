@@ -1204,7 +1204,7 @@ test("no player-facing text tells people to type a removed command", function()
     "client/lua/ge/extensions/copsAndRobbers.lua", "client/ui/modules/apps/CopsAndRobbersHud/app.vue" }
   for _, f in ipairs(files) do
     local text = assert(io.open(f)):read("*a")
-    for _, removed in ipairs({ '"/cnr go"', '"/cnr start', '"/cnr auto', '"/cnr stop"', '"/cnr test', '"/cnr set', '"/cnr top', '"/cnr continue', '"/cnr reload', '"/cnr config' }) do
+    for _, removed in ipairs({ '"/cnr go"', '"/cnr start', '"/cnr auto', '"/cnr stop"', '"/cnr test', '"/cnr set', '"/cnr top', '"/cnr continue', '"/cnr reload', '"/cnr config', '"/cnr color', '/cnr addstation', '/cnr removestation', '/cnr help', '/cnr version' }) do
       assertEq(text:find(removed, 1, true), nil, f .. " " .. removed)
     end
   end
@@ -1518,5 +1518,166 @@ test("the leaderboard app never receives account ids", function()
   env.panel(1, "end")
   env.call("cnr_board", 2, '{"action":"open"}')
   assertEq(env.lastSent("cnr_boardState").data:find("12345", 1, true), nil)
+  env.cleanup()
+end)
+
+local function sentTo(env, ev, pid)
+  for i = #env.sent, 1, -1 do
+    local m = env.sent[i]
+    if m.ev == ev and m.pid == pid then return m.data end
+  end
+end
+
+test("colour from the UI is saved and confirmed", function()
+  local env = boot()
+  env.call("cnr_color", 1, '{"hex":"#ff0000"}')
+  assertEq(sentTo(env, "cnr_myColor", 1):find('"hex":"#ff0000"', 1, true) ~= nil, true)
+  local saved = assert(io.open(env.dir .. "data/colors.json")):read("*a")
+  assertEq(saved:find("#ff0000", 1, true) ~= nil, true)
+  env.startRound()
+  local setup
+  for _, m in ipairs(env.sent) do if m.ev == "cnr_roundSetup" and m.pid == 1 then setup = m.data end end
+  assertEq(setup:find('"hex":"#ff0000"', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("a bad colour answers with the error and the old colour", function()
+  local env = boot()
+  env.call("cnr_color", 1, '{"hex":"#ff0000"}')
+  env.call("cnr_color", 1, '{"hex":"#zz"}')
+  local d = sentTo(env, "cnr_myColor", 1)
+  assertEq(d:find('"error":"Use a hex color like #ff0000"', 1, true) ~= nil, true)
+  assertEq(d:find('"hex":"#ff0000"', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("no colour clears it", function()
+  local env = boot()
+  env.call("cnr_color", 1, '{"hex":"#ff0000"}')
+  env.call("cnr_color", 1, '{}')
+  assertEq(sentTo(env, "cnr_myColor", 1):find('"hex"', 1, true), nil)
+  env.call("cnr_color", 1, '{"hex":"#ff0000"}')
+  env.call("cnr_color", 1, '{"hex":""}')
+  assertEq(sentTo(env, "cnr_myColor", 1):find('"hex"', 1, true), nil)
+  env.cleanup()
+end)
+
+test("colour in prep repaints", function()
+  local env = boot()
+  env.startRound()
+  env.sent = {}
+  env.call("cnr_color", 2, '{"hex":"#00ff00"}')
+  local m = env.lastSent("cnr_paint")
+  assertEq(m.pid, 2)
+  assertEq(m.data:find('"hex":"#00ff00"', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("colour during the chase is saved but does not repaint", function()
+  local env = boot()
+  runToChase(env)
+  env.sent = {}
+  env.call("cnr_color", 1, '{"hex":"#ff0000"}')
+  assertEq(env.lastSent("cnr_paint"), nil)
+  assertEq(sentTo(env, "cnr_myColor", 1):find('"hex":"#ff0000"', 1, true) ~= nil, true)
+  assertEq(assert(io.open(env.dir .. "data/colors.json")):read("*a"):find("#ff0000", 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("a repaint is not a parts change", function()
+  local env = boot()
+  env.startRound()
+  placed(env, 2)
+  local bob = function(text) return (text:gsub("^1%-0", "2-0")) end
+  env.call("onVehicleEdited", 2, 0, bob(BASE_EDIT))
+  env.call("cnr_color", 2, '{"hex":"#00ff00"}')
+  assertEq(env.lastSent("cnr_paint").pid, 2)
+  env.call("onVehicleEdited", 2, 0, bob(TUNED_EDIT))
+  assertEq(partsLines(env), 0)
+  env.cleanup()
+end)
+
+test("a guest gets their colour by name key", function()
+  local env = boot()
+  env.call("cnr_color", 1, '{"hex":"#00ff00"}')
+  local saved = assert(io.open(env.dir .. "data/colors.json")):read("*a")
+  assertEq(saved:find('"name:Reinder"', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("join sends your colour", function()
+  local env = boot()
+  env.call("cnr_color", 1, '{"hex":"#ff0000"}')
+  env.sent = {}
+  env.call("onPlayerJoin", 1)
+  assertEq(sentTo(env, "cnr_myColor", 1):find('"hex":"#ff0000"', 1, true) ~= nil, true)
+  env.sent = {}
+  env.call("onPlayerJoin", 2)
+  local d = sentTo(env, "cnr_myColor", 2)
+  assertEq(d ~= nil and d:find('"hex"', 1, true) == nil, true)
+  env.cleanup()
+end)
+
+test("Map tab adds and removes a station where you stand", function()
+  local env = boot()
+  env.positions[1] = 0
+  env.call("cnr_panel", 1, '{"action":"station","op":"add"}')
+  assertEq(env.replyHas("Gas station added (1 on west_coast_usa)"), true)
+  assertEq(io.open(env.dir .. "data/stations/west_coast_usa.json") ~= nil, true)
+  env.positions[1] = 500
+  env.call("cnr_panel", 1, '{"action":"station","op":"remove"}')
+  assertEq(env.replyHas("No gas station within 50 m"), true)
+  env.positions[1] = 0
+  env.call("cnr_panel", 1, '{"action":"station","op":"remove"}')
+  assertEq(env.replyHas("Gas station removed (0 left on west_coast_usa)"), true)
+  env.cleanup()
+end)
+
+test("stations list", function()
+  local env = boot()
+  env.positions[1] = 0
+  env.call("cnr_panel", 1, '{"action":"station","op":"add"}')
+  env.call("cnr_panel", 1, '{"action":"stations"}')
+  local d = decodeJson(sentTo(env, "cnr_stationList", 1))
+  assertEq(d.geo, false)
+  assertEq(#d.stations, 1)
+  assertEq(d.stations[1].x, 0)
+  assertEq(d.stations[1].y ~= nil and d.stations[1].z ~= nil, true)
+  env.cleanup()
+end)
+
+test("stations list on earth has lat and lon", function()
+  local env = boot({ map = EARTH })
+  report(env, 1, geoCar(0))
+  env.call("cnr_panel", 1, '{"action":"station","op":"add"}')
+  assertEq(env.replyHas("Gas station added (1 on beamng_earth)"), true)
+  env.call("cnr_panel", 1, '{"action":"stations"}')
+  local d = decodeJson(sentTo(env, "cnr_stationList", 1))
+  assertEq(d.geo, true)
+  assertEq(math.abs(d.stations[1].lat - LAT) < 1e-6, true)
+  assertEq(math.abs(d.stations[1].lon - LON) < 1e-6, true)
+  env.cleanup()
+end)
+
+test("Start now starts the scheduled round", function()
+  local env = boot({ config = '{"autoNextRound": true, "autoNextDelaySeconds": 60}' })
+  env.startRound()
+  env.go()
+  for _ = 1, 90 do
+    env.clock = env.clock + 0.25; env.call("cnr_tick")
+    if env.caught() then break end
+  end
+  assertEq(env.caught(), true)
+  env.sent = {}
+  env.panel(1, "next")
+  assertEq(env.lastSent("cnr_pickVehicle") ~= nil, true)
+  env.cleanup()
+end)
+
+test("next without a schedule", function()
+  local env = boot()
+  env.panel(1, "next")
+  assertEq(env.replyHas("No round is scheduled"), true)
+  assertEq(env.lastSent("cnr_pickVehicle"), nil)
   env.cleanup()
 end)

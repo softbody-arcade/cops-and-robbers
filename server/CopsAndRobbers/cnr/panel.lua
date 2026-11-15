@@ -4,7 +4,7 @@ local M = {}
 
 M.COMMANDS = {
   ["go"] = true, ["reroll"] = true, ["end"] = true, ["stop"] = true, ["auto on"] = true, ["auto off"] = true,
-  ["test runner"] = true, ["test cop"] = true, ["reload"] = true,
+  ["test runner"] = true, ["test cop"] = true, ["reload"] = true, ["next"] = true,
 }
 
 local MAX_COMMAND_LENGTH = 64

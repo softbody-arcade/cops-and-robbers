@@ -5,6 +5,7 @@ test("allow accepts bindable, start <name> and auto on/off", function()
   assertEq(panel.allow("start Reinder"), "start Reinder")
   assertEq(panel.allow("START =next"), "start =next")
   assertEq(panel.allow("auto off"), "auto off")
+  assertEq(panel.allow("next"), "next")
   assertEq(panel.allow("test cop"), "test cop")
 end)
 
