@@ -62,7 +62,7 @@ end
 
 local function resetText(info)
   if info.penalty then return "Penalty" end
-  if info.resetAllowed then return "Reset OK" end
+  if info.resetAllowed then return "Reset ready" end
   return info.resetHint or ""
 end
 
