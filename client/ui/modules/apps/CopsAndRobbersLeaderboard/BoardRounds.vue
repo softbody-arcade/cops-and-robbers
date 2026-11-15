@@ -83,7 +83,7 @@ const timeline = computed(() => {
   const r = round.value
   if (!r) return []
   const evs = events(r)
-  if (!evs.length && !Array.isArray(r.timeline)) return []
+  if (!evs.length && r.tracked !== true) return []
   return [
     { t: 0, text: "Cops released", tone: "" },
     ...evs,

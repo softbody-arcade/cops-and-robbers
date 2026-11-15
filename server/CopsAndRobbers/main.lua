@@ -398,10 +398,12 @@ local function boardState(sub, viewerKey)
     if p.key == viewerKey then p.me = true end
     p.key = anonymous(tostring(p.key))
   end
+  local limit = sub.rounds or ROUNDS_DEFAULT
+  local rounds, total = leaderboard.rounds(board, f, limit)
   return {
     map = mapName, maps = leaderboard.maps(board), filter = sub.map or mapName, mode = f.mode or "all",
     runners = runners, cops = cops, players = players, mine = mine,
-    rounds = leaderboard.rounds(board, f, sub.rounds or ROUNDS_DEFAULT),
+    rounds = rounds, moreRounds = (total > #rounds and limit < ROUNDS_MAX) or nil,
   }
 end
 

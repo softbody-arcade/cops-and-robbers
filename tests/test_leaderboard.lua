@@ -239,3 +239,23 @@ test("an old run without a timeline or sight data", function()
   b.runs[2].timeline = {}
   assertEq(leaderboard.rounds(b, nil, 10)[1].timeline, nil)
 end)
+
+test("a run saved with a timeline is tracked even when nothing happened", function()
+  local b = leaderboard.load(nil)
+  leaderboard.add(b, { player = "Old", survivedSeconds = 60, map = "italy", endedAt = 5, endReason = "caught" })
+  leaderboard.add(b, { player = "Clean", survivedSeconds = 30, map = "italy", endedAt = 6, endReason = "caught", timeline = {} })
+  leaderboard.add(b, { player = "Busy", survivedSeconds = 90, map = "italy", endedAt = 7, endReason = "escaped",
+    timeline = { { t = 3, kind = "lost", name = "Busy" } } })
+  local list = leaderboard.rounds(b, nil, 10)
+  assertEq(list[1].player, "Busy"); assertEq(list[1].tracked, true); assertEq(#list[1].timeline, 1)
+  assertEq(list[2].player, "Clean"); assertEq(list[2].tracked, true); assertEq(list[2].timeline, nil)
+  assertEq(list[3].player, "Old"); assertEq(list[3].tracked, nil); assertEq(list[3].timeline, nil)
+end)
+
+test("rounds also gives how many rounds match the filter", function()
+  local b = statsBoard()
+  local list, total = leaderboard.rounds(b, nil, 2)
+  assertEq(#list, 2); assertEq(total, 3)
+  list, total = leaderboard.rounds(b, "italy", 10)
+  assertEq(#list, 1); assertEq(total, 1)
+end)

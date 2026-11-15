@@ -47,8 +47,6 @@ import BoardPlayers from "./BoardPlayers.vue"
 import BoardRounds from "./BoardRounds.vue"
 
 const OPEN_RETRY_MS = 2000
-const ROUNDS_PAGE = 30
-const ROUNDS_MAX = 300
 const PLAYERS_TAB = 2
 const ROUNDS_TAB = 3
 const MODES = [
@@ -65,8 +63,6 @@ const state = ref({})
 const tab = ref(0)
 const playerKey = ref(null)
 const roundId = ref(null)
-const moreStuckAt = ref(null)
-let moreAskedAt = null
 let openTimer = null
 
 const hidden = computed(() => hud.value.driving === true)
@@ -83,10 +79,7 @@ const filtersShown = computed(() => {
   return true
 })
 
-const moreShown = computed(() => {
-  const n = rounds.value.length
-  return n >= ROUNDS_PAGE && n < ROUNDS_MAX && n % ROUNDS_PAGE === 0 && n !== moreStuckAt.value
-})
+const moreShown = computed(() => state.value.moreRounds === true)
 
 function mapLabel(id) {
   const names = state.value.mapNames
@@ -122,13 +115,10 @@ function send(msg) {
 }
 
 function filter(map, mode) {
-  moreStuckAt.value = null
-  moreAskedAt = null
   send({ action: "filter", map, mode })
 }
 
 function more() {
-  moreAskedAt = rounds.value.length
   send({ action: "more" })
 }
 
@@ -145,10 +135,6 @@ events.on("CnRBoard", data => {
   state.value = data && typeof data === "object" && typeof data.filter === "string" ? data : {}
   if (playerKey.value !== null && !players.value.some(p => p.key === playerKey.value)) playerKey.value = null
   if (roundId.value !== null && !rounds.value.some(r => r.id === roundId.value)) roundId.value = null
-  if (moreAskedAt !== null) {
-    if (rounds.value.length <= moreAskedAt) moreStuckAt.value = rounds.value.length
-    moreAskedAt = null
-  }
 })
 
 onMounted(() => {
