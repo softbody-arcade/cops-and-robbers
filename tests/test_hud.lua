@@ -68,3 +68,44 @@ test("jittered samples cannot push the bar more than one server step ahead", fun
   hud.catchSample(s, 10.80, 0.47); hud.catchSample(s, 10.81, 0.51)
   assertNear(hud.catchAt(s, 11.0), 0.55, 1e-9)
 end)
+
+test("timer banner counts down and disappears at zero", function()
+  local s = hud.new()
+  local p = hud.payload(s, 10.2, { active = true, role = "cop", timer = { label = "COPS RELEASED IN", endsAt = 17 } })
+  assertEq(p.banner.label, "COPS RELEASED IN"); assertEq(p.banner.number, 7)
+  assertEq(hud.payload(s, 17.0, { active = true, role = "cop", timer = { label = "COPS RELEASED IN", endsAt = 17 } }).banner, nil)
+end)
+
+test("flash beats the timer and expires", function()
+  local s = hud.new()
+  local info = { active = true, role = "runner", flash = { text = "GO! RUN!", untilT = 5 }, timer = { label = "COPS RELEASED IN", endsAt = 11 } }
+  assertEq(hud.payload(s, 4, info).banner.label, "GO! RUN!")
+  assertEq(hud.payload(s, 4, info).banner.number, nil)
+  assertEq(hud.payload(s, 5, info).banner.label, "COPS RELEASED IN")
+end)
+
+test("prep line and reset flash", function()
+  local s = hud.new()
+  local p = hud.payload(s, 1, { active = true, role = "runner", prep = { role = "runner", car = "Gavril D-Series" } })
+  assertEq(p.prep.role, "RUNNER"); assertEq(p.prep.car, "Gavril D-Series")
+  local q = hud.payload(s, 1, { active = true, role = "cop", chaseStart = 0, resetFlashUntil = 1.5 })
+  assertEq(q.status.resetFlash, true)
+  assertEq(hud.payload(s, 2, { active = true, role = "cop", chaseStart = 0, resetFlashUntil = 1.5 }).status.resetFlash, false)
+end)
+
+test("events: newest two unexpired, newest first", function()
+  local s = hud.new()
+  local p = hud.payload(s, 10, { active = true, role = "cop", events = {
+    { text = "a", untilT = 9 }, { text = "b", untilT = 12 }, { text = "c", untilT = 13 }, { text = "d", untilT = 14 } } })
+  assertEq(#p.events, 2); assertEq(p.events[1], "d"); assertEq(p.events[2], "c")
+end)
+
+test("result card replaces everything for its time and counts down to the next round", function()
+  local s = hud.new()
+  local info = { active = false, events = { { text = "x", untilT = 99 } }, flash = { text = "GO!", untilT = 99 },
+    result = { title = "RUNNER CAUGHT", runner = "Reinder", time = "4:12", catchers = "Bob", untilT = 20, nextAt = 25.2 } }
+  local p = hud.payload(s, 12, info)
+  assertEq(p.visible, true); assertEq(p.result.title, "RUNNER CAUGHT"); assertEq(p.result.nextIn, 14)
+  assertEq(p.banner, nil); assertEq(p.events, nil); assertEq(p.result.top, nil)
+  assertEq(hud.payload(s, 20, info).visible, false)
+end)

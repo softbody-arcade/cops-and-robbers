@@ -38,8 +38,47 @@ local function resetText(info)
   return info.resetHint or ""
 end
 
+local function remaining(untilT, now)
+  if type(untilT) ~= "number" or untilT <= now then return nil end
+  return math.ceil(untilT - now - 1e-9)
+end
+
+local function banner(info, now)
+  local flash = info.flash
+  if flash and type(flash.untilT) == "number" and now < flash.untilT then
+    return { label = flash.text, big = true }
+  end
+  local timer = info.timer
+  local left = timer and remaining(timer.endsAt, now)
+  if left then return { label = timer.label, number = left, big = true } end
+  return nil
+end
+
+local function activeEvents(events, now)
+  local list = {}
+  for i = #(events or {}), 1, -1 do
+    local e = events[i]
+    if type(e.untilT) == "number" and now < e.untilT then
+      list[#list + 1] = e.text
+      if #list == 2 then break end
+    end
+  end
+  return list
+end
+
 function M.payload(state, now, info)
   info = info or {}
+  local result = info.result
+  if result and type(result.untilT) == "number" and now < result.untilT then
+    return {
+      visible = true,
+      catch = { visible = false, percent = 0 },
+      result = {
+        title = result.title, runner = result.runner, time = result.time,
+        catchers = result.catchers, top = result.top, nextIn = remaining(result.nextAt, now),
+      },
+    }
+  end
   local p = M.catchAt(state, now)
   local isRunner = info.role == "runner"
   local payload = {
@@ -50,14 +89,20 @@ function M.payload(state, now, info)
       label = isRunner and "BEING CAUGHT" or "HOLDING RUNNER",
       tone = isRunner and "runner" or "cop",
     },
+    banner = banner(info, now),
+    events = activeEvents(info.events, now),
   }
   local last = state.samples[#state.samples]
   if payload.catch.percent >= 100 and not (last and last.p >= 1) then payload.catch.percent = 99 end
+  if info.prep then
+    payload.prep = { role = info.prep.role == "runner" and "RUNNER" or "COP", car = info.prep.car }
+  end
   if info.chaseStart then
     payload.status = {
       role = isRunner and "RUNNER" or "COP",
       time = M.formatTime(now - info.chaseStart),
       reset = resetText(info),
+      resetFlash = type(info.resetFlashUntil) == "number" and now < info.resetFlashUntil,
       info = info.infoText,
     }
   end
