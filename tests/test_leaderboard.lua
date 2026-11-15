@@ -101,7 +101,7 @@ end)
 
 local function fullRun(o)
   return {
-    player = o.player, key = "k:" .. o.player, survivedSeconds = o.s, chaseSeconds = o.s, map = o.map or "west_coast_usa",
+    player = o.player, key = o.key or ("k:" .. o.player), survivedSeconds = o.s, chaseSeconds = o.s, map = o.map or "west_coast_usa",
     model = o.model or "pickup", endedAt = o.at or 0, endReason = o.reason or "caught",
     catchers = o.catchers or {}, catcherKeys = o.catcherKeys or {}, cops = o.cops or {}, copNames = o.copNames or {},
     copSightSeconds = o.copSight or {}, hiddenSeconds = o.hidden, lostCount = o.lost,
@@ -171,4 +171,18 @@ test("isCurrent accepts format 2 and a missing file only", function()
   assertEq(leaderboard.isCurrent({ format = 2, runs = {} }), true)
   assertEq(leaderboard.isCurrent({ runs = {} }), false)
   assertEq(leaderboard.load(nil).format, 2)
+end)
+
+test("a renamed player shows the latest name in every tab and map filter", function()
+  local b = leaderboard.load(nil)
+  leaderboard.add(b, fullRun({ player = "Ann", s = 50, at = 1, map = "italy", catchers = { "Bob" }, catcherKeys = { "k:Bob" },
+    cops = { "k:Bob" }, copNames = { "Bob" }, copSight = { 10 } }))
+  leaderboard.add(b, fullRun({ player = "Robert", key = "k:Bob", s = 80, at = 2 }))
+  assertEq(leaderboard.cops(b, nil, 10)[1].name, "Robert")
+  assertEq(byName(leaderboard.players(b, "italy", 20)).Robert ~= nil, true)
+  assertEq(byName(leaderboard.players(b, "italy", 20)).Bob, nil)
+  local early = leaderboard.load(nil)
+  leaderboard.add(early, fullRun({ player = "Bob", s = 90, at = 1 }))
+  leaderboard.add(early, fullRun({ player = "Ann", s = 10, at = 2, cops = { "k:Bob" }, copNames = { "Robert" }, copSight = { 1 } }))
+  assertEq(leaderboard.runners(early, nil, 10)[1].player, "Robert")
 end)

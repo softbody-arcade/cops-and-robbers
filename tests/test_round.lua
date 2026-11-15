@@ -791,3 +791,18 @@ test("a cop whose game stops reporting stops counting as sight", function()
   end
   assertEq(lost, 24)
 end)
+
+test("sight time stays with the cop's name when they leave, not with the reused pid", function()
+  local r = chasing()
+  r:sightReport(11, 3, true)
+  for t = 12, 20 do r:tick(t, farCars(), {}) end
+  r:playerLeft(20, 3)
+  r:playerJoined(21, 3, "Cid")
+  r:playerJoined(21, 4, "Ann")
+  for t = 22, 25 do r:tick(t, {[1]=kmh(0, 50), [2]=kmh(300, 50), [3]=kmh(900, 50), [4]=kmh(900, 50)}, {}) end
+  local run = find(r:endCalled(25, 1), "record").run
+  local byPid = {}
+  for i, pid in ipairs(run.copIds) do byPid[pid] = run.copSight[i] end
+  assertEq(byPid[3], 0)
+  assertEq(byPid[4] >= 8, true)
+end)

@@ -367,6 +367,7 @@ function Round:playerJoined(now, pid, name)
   if left then
     self.leftPlayers[name] = nil
     setup.resumePos = left.pos
+    self.copSight[pid] = left.copSight
     if left.penaltyUntil and left.penaltyUntil > now then
       self.penalties[pid] = left.penaltyUntil
       self.resetTrackers[pid]:block(left.penaltyUntil)
@@ -447,8 +448,9 @@ function Round:playerLeft(now, pid)
   local name = self.players[pid]
   local prev = self.prevCars[pid]
   if self.state == "running" or self.state == "headstart" then
-    self.leftPlayers[name] = { pos = prev and prev.pos, penaltyUntil = self.penalties[pid] }
+    self.leftPlayers[name] = { pos = prev and prev.pos, penaltyUntil = self.penalties[pid], copSight = self.copSight[pid] }
   end
+  self.copSight[pid] = nil
   self.players[pid] = nil
   self.resetTrackers[pid] = nil
   self.crashDetectors[pid] = nil

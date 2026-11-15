@@ -30,7 +30,7 @@ function M.best(board, limit, map)
       local cur = byKey[key]
       local at = tonumber(r.endedAt) or 0
       if not cur then
-        cur = { player = r.player, survivedSeconds = r.survivedSeconds, map = r.map, model = r.model, nameAt = at }
+        cur = { key = key, player = r.player, survivedSeconds = r.survivedSeconds, map = r.map, model = r.model, nameAt = at }
         byKey[key] = cur
       elseif r.survivedSeconds > cur.survivedSeconds then
         cur.survivedSeconds, cur.map, cur.model = r.survivedSeconds, r.map, r.model
@@ -55,22 +55,6 @@ local function validRun(r, map)
   return type(r) == "table" and type(r.survivedSeconds) == "number" and (map == nil or r.map == map)
 end
 
-function M.runners(board, map, limit)
-  return M.best(board, limit, map)
-end
-
-function M.maps(board)
-  local seen, list = {}, {}
-  for _, r in ipairs(board.runs) do
-    if validRun(r) and type(r.map) == "string" and not seen[r.map] then
-      seen[r.map] = true
-      list[#list + 1] = r.map
-    end
-  end
-  table.sort(list)
-  return list
-end
-
 local function catcherList(r)
   local list = {}
   if r.endReason ~= "caught" or type(r.catchers) ~= "table" then return list end
@@ -93,6 +77,45 @@ local function copList(r)
   return list
 end
 
+local function runnerKey(r)
+  return type(r.key) == "string" and r.key or r.player
+end
+
+local function latestNames(board)
+  local names, at = {}, {}
+  local function note(key, name, t)
+    if type(key) == "string" and type(name) == "string" and (not at[key] or t >= at[key]) then names[key], at[key] = name, t end
+  end
+  for _, r in ipairs(board.runs) do
+    if validRun(r) then
+      local t = tonumber(r.endedAt) or 0
+      if type(r.player) == "string" then note(runnerKey(r), r.player, t) end
+      for _, c in ipairs(catcherList(r)) do note(c.key, c.name, t) end
+      for _, c in ipairs(copList(r)) do note(c.key, c.name, t) end
+    end
+  end
+  return names
+end
+
+function M.runners(board, map, limit)
+  local names = latestNames(board)
+  local list = M.best(board, limit, map)
+  for _, e in ipairs(list) do e.player = names[e.key] or e.player end
+  return list
+end
+
+function M.maps(board)
+  local seen, list = {}, {}
+  for _, r in ipairs(board.runs) do
+    if validRun(r) and type(r.map) == "string" and not seen[r.map] then
+      seen[r.map] = true
+      list[#list + 1] = r.map
+    end
+  end
+  table.sort(list)
+  return list
+end
+
 function M.cops(board, map, limit)
   local byKey, list = {}, {}
   for _, r in ipairs(board.runs) do
@@ -101,7 +124,7 @@ function M.cops(board, map, limit)
       for _, c in ipairs(catcherList(r)) do
         local s = byKey[c.key]
         if not s then
-          s = { name = c.name, catches = 0, fastest = math.huge, nameAt = at }
+          s = { key = c.key, name = c.name, catches = 0, fastest = math.huge, nameAt = at }
           byKey[c.key] = s
           list[#list + 1] = s
         end
@@ -111,12 +134,14 @@ function M.cops(board, map, limit)
       end
     end
   end
+  local names = latestNames(board)
+  for _, s in ipairs(list) do s.name = names[s.key] or s.name end
   table.sort(list, function(a, b)
     if a.catches ~= b.catches then return a.catches > b.catches end
     if a.fastest ~= b.fastest then return a.fastest < b.fastest end
     return a.name < b.name
   end)
-  for _, s in ipairs(list) do s.nameAt = nil end
+  for _, s in ipairs(list) do s.nameAt, s.key = nil, nil end
   while limit and #list > limit do table.remove(list) end
   return list
 end
@@ -163,7 +188,9 @@ function M.players(board, map, assistPercent)
       end
     end
   end
+  local names = latestNames(board)
   for _, p in ipairs(list) do
+    p.name = names[p.key] or p.name
     p.average = p.runs > 0 and p.total / p.runs or nil
     p.hiddenPct = p.chaseSum and p.chaseSum > 0 and p.hiddenSum / p.chaseSum * 100 or nil
     p.total, p.hiddenSum, p.chaseSum, p.nameAt = nil, nil, nil, nil
@@ -181,7 +208,7 @@ function M.formatTime(seconds)
 end
 
 function M.formatTop(board, limit, map)
-  local best = M.best(board, limit, map)
+  local best = M.runners(board, map, limit)
   if #best == 0 then return { "No runs yet" } end
   local lines = {}
   for i, e in ipairs(best) do

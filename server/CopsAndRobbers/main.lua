@@ -81,6 +81,7 @@ end
 local function now() return serverClock:GetCurrent() end
 
 local boardSubs = {}
+local leaderboardLocked = false
 local panelSubs = {}
 local panelMirror
 local lastPanelSig
@@ -111,21 +112,28 @@ local function loadLeaderboard()
     corrupt = true
     decoded = nil
   end
+  local aside, why
   if corrupt then
-    local aside = leaderboardPath .. ".corrupt-" .. os.time()
-    FS.Rename(leaderboardPath, aside)
-    log("leaderboard.json was unreadable, moved to " .. aside)
+    aside, why = leaderboardPath .. ".corrupt-" .. os.time(), "was unreadable"
   elseif not leaderboard.isCurrent(decoded) then
-    local aside = dataDir .. "leaderboard-1.6.json"
-    if readFile(aside) then aside = dataDir .. "leaderboard-1.6-" .. os.time() .. ".json" end
-    FS.Rename(leaderboardPath, aside)
-    log("old leaderboard moved to " .. aside .. ", starting a fresh one")
+    aside, why = dataDir .. "leaderboard-1.6.json", "is the old format"
+    if FS.Exists(aside) then aside = dataDir .. "leaderboard-1.6-" .. os.time() .. ".json" end
+  end
+  if aside then
+    local moved, err = FS.Rename(leaderboardPath, aside)
+    if moved == false then
+      leaderboardLocked = true
+      log(string.format("leaderboard.json %s but could not be moved to %s (%s): runs are not saved until this is fixed", why, aside, tostring(err)))
+    else
+      log(string.format("leaderboard.json %s, moved to %s; starting a fresh one", why, aside))
+    end
     decoded = nil
   end
   board = leaderboard.load(decoded)
 end
 
 local function saveLeaderboard()
+  if leaderboardLocked then return log("leaderboard not saved: the old file could not be moved aside") end
   writeFile(leaderboardPath, Util.JsonPrettify(Util.JsonEncode(board)))
 end
 
@@ -608,6 +616,7 @@ function handlers.set(pid, cmd)
   local shown = cfg[key]
   if type(shown) == "table" then shown = table.concat(shown, ", ") end
   reply(pid, key .. " = " .. tostring(shown))
+  pushBoard()
 end
 
 function handlers.addstation(pid)
@@ -728,6 +737,7 @@ local function panelSettings(pid, values, id)
   current = round.new(cfg)
   answer(true, "Saved", keys)
   pushPanel()
+  pushBoard()
 end
 
 function cnrOnPanel(pid, data)

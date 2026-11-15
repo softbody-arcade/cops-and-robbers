@@ -88,6 +88,12 @@ local function boot(opts)
   local tmp = os.tmpname(); os.remove(tmp)
   env.dir = tmp .. "_cnr/"
   os.execute("mkdir -p '" .. env.dir .. "'")
+  for name, text in pairs(opts.files or {}) do
+    os.execute("mkdir -p '" .. env.dir .. "data'")
+    local ef = assert(io.open(env.dir .. name, "w"))
+    ef:write(text)
+    ef:close()
+  end
   if opts.leaderboard then
     os.execute("mkdir -p '" .. env.dir .. "data'")
     local lf = assert(io.open(env.dir .. "data/leaderboard.json", "w"))
@@ -129,7 +135,15 @@ local function boot(opts)
   _G.FS = {
     CreateDirectory = function(p) os.execute("mkdir -p '" .. p .. "'") end,
     Remove = function(p) os.remove(p) end,
-    Rename = function(a, b) os.rename(a, b) end,
+    Rename = function(a, b)
+      if opts.renameFails and a:find("leaderboard.json$") then return false, "denied" end
+      return os.rename(a, b) ~= nil
+    end,
+    Exists = function(p)
+      local f = io.open(p)
+      if f then f:close() end
+      return f ~= nil
+    end,
   }
 
   local realPrint = print
@@ -1141,5 +1155,38 @@ test("a recorded run stores cops by key with their sight time", function()
   assertEq(text:find('"cops":["name:Bob"]', 1, true) ~= nil, true)
   assertEq(text:find('"copSightSeconds":%[0') ~= nil, true)
   assertEq(text:find('"copIds"', 1, true), nil)
+  env.cleanup()
+end)
+
+test("if the old leaderboard can't be moved aside, it is never overwritten", function()
+  local env = boot({ leaderboard = '{"runs":[{"player":"Old","survivedSeconds":999,"map":"west_coast_usa","endedAt":1}]}', renameFails = true })
+  env.startRound(); env.go()
+  for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.call("onChatMessage", 1, "Reinder", "/cnr end")
+  assertEq(readFileAt(env.dir .. "data/leaderboard.json"):find("Old", 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("an existing backup name is never reused", function()
+  local env = boot({ leaderboard = '{"runs":[{"player":"Second","survivedSeconds":5,"map":"x","endedAt":1}]}',
+    files = { ["data/leaderboard-1.6.json"] = "first backup" } })
+  assertEq(readFileAt(env.dir .. "data/leaderboard-1.6.json"), "first backup")
+  local found = false
+  for name in io.popen('ls "' .. env.dir .. 'data"'):lines() do
+    if name:match("^leaderboard%-1%.6%-%d+%.json$") then found = true end
+  end
+  assertEq(found, true)
+  env.cleanup()
+end)
+
+test("changing a setting refreshes open leaderboards", function()
+  local env = boot()
+  env.call("cnr_board", 2, '{"action":"open"}')
+  env.sent = {}
+  env.call("cnr_panel", 1, '{"action":"settings","id":1,"values":{"assistMinSightPercent":40}}')
+  assertEq(env.lastSent("cnr_boardState") ~= nil, true)
+  env.sent = {}
+  env.call("onChatMessage", 1, "Reinder", "/cnr set assistMinSightPercent 30")
+  assertEq(env.lastSent("cnr_boardState") ~= nil, true)
   env.cleanup()
 end)

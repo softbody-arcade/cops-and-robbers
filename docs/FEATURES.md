@@ -116,7 +116,7 @@ A BeamMP server plugin with a client mod that BeamMP downloads automatically. Th
 - **Players:** runs, best, catches and assists per player; click a player for all stats:
   - **Runs, best and average survival, escapes** (outlasted the time limit).
   - **Catches:** rounds credited with the catch.
-  - **Assists:** caught rounds where the cop had sight of the runner for at least `assistMinSightPercent` (20%) of the chase without being credited. Seeing him only at release doesn't count. Changing the setting re-scores past rounds.
+  - **Assists:** caught rounds where the cop had sight of the runner for at least `assistMinSightPercent` (20%) of the chase without being credited. Sight counts from the release, so seeing him at the start alone only earns an assist in a very short chase. Changing the setting re-scores past rounds.
   - **Hidden from cops:** the share of his chases the runner spent out of every cop's sight.
   - **Lost the cops:** how often he broke all cops' sight.
   - Rounds played with sight off (`sightMaxMeters = 0`) show "–" for the last two.
@@ -250,4 +250,4 @@ Options > Controls > Gameplay contains "Cops & Robbers: ..." actions that can be
 - **Mods panel:** the zip carries a title, description, version and icon (`mod_info`) for mod panels.
 - **Stuck controls:** `/cnr stop` always unlocks everyone, and so does a plugin restart.
 - **Bad files:** a broken `config.json` gives a warning and uses the defaults. A broken or malformed leaderboard is moved aside.
-- **Tests:** 313 automated tests cover the rules, the server wiring and the client, which runs against stubbed game functions in `tests/test_client.lua` (run with `make test`).
+- **Tests:** 322 automated tests cover the rules, the server wiring and the client, which runs against stubbed game functions in `tests/test_client.lua` (run with `make test`).
