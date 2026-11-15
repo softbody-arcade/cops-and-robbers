@@ -2,7 +2,6 @@ local M = {}
 
 local EXTRAPOLATE_MAX = 0.3
 local CHANGE_LINES = 4
-local DEFAULT_RULES = { catchMaxSpeedKmh = 3, catchRadiusMeters = 10, catchHoldSeconds = 7, headStartSeconds = 7 }
 local COUNTDOWNS = {
   ["Runner starts in"] = { label = "RUNNER STARTS IN", tone = "runner" },
   ["Cops released in"] = { label = "COPS RELEASED IN", tone = "cop" },
@@ -41,21 +40,8 @@ function M.catchAt(state, now)
   return math.max(0, math.min(1, value))
 end
 
-local function rule(rules, key)
-  return tonumber(type(rules) == "table" and rules[key]) or DEFAULT_RULES[key]
-end
-
 local function knownName(name)
   return type(name) == "string" and name ~= "" and name or nil
-end
-
-function M.ruleLine(role, runnerName, rules)
-  local catch = string.format("under %g km/h within %g m for %g s.",
-    rule(rules, "catchMaxSpeedKmh"), rule(rules, "catchRadiusMeters"), rule(rules, "catchHoldSeconds"))
-  if role == "runner" then return "Survive as long as you can. Cops catch you by holding you " .. catch end
-  local line = string.format("You're released %g s after the runner. Catch them by holding them %s", rule(rules, "headStartSeconds"), catch)
-  if knownName(runnerName) then return runnerName .. " is the runner. " .. line end
-  return line
 end
 
 local function waitingText(prep, applying)
@@ -93,7 +79,6 @@ local function center(info, now)
   return {
     kind = "role", role = runner and "runner" or "cop", car = prep.car,
     title = runner and "YOU'RE THE RUNNER" or "YOU'RE A COP",
-    rule = M.ruleLine(prep.role, prep.runner, info.rules),
     runner = not runner and knownName(prep.runner) or nil,
   }
 end

@@ -7,10 +7,7 @@
     <template v-else-if="center.kind === 'role'">
       <div v-if="center.car" class="kick muted">{{ center.car }}</div>
       <div class="title" :class="'tone-' + center.role">{{ center.title }}</div>
-      <div v-if="center.rule" class="rule">
-        <template v-if="ruleRest !== null"><b class="runner-name">{{ center.runner }}</b>{{ ruleRest }}</template>
-        <template v-else>{{ center.rule }}</template>
-      </div>
+      <div v-if="center.role === 'cop' && center.runner" class="runner-line"><b class="runner-name">{{ center.runner }}</b> is the runner</div>
     </template>
     <div v-else-if="center.kind === 'flash'" class="title tone-good">{{ center.text }}</div>
     <div v-else-if="center.kind === 'applying'" class="title applying">{{ center.text }}</div>
@@ -18,16 +15,8 @@
 </template>
 
 <script setup>
-import { computed } from "vue"
-
-const props = defineProps({
+defineProps({
   center: Object,
-})
-
-const ruleRest = computed(() => {
-  const c = props.center
-  if (!c || typeof c.runner !== "string" || !c.runner || typeof c.rule !== "string") return null
-  return c.rule.startsWith(`${c.runner} is the runner.`) ? c.rule.slice(c.runner.length) : null
 })
 </script>
 
@@ -58,7 +47,7 @@ const ruleRest = computed(() => {
   line-height: 1.1;
   letter-spacing: 0.01em;
 }
-.rule {
+.runner-line {
   max-width: 36rem;
   margin-top: 0.5rem;
   font-size: 1.125rem;

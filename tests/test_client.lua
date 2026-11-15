@@ -1024,13 +1024,13 @@ test("a mid-round joiner sees the round, not the lobby", function()
   assertEq(h.center, nil)
 end)
 
-test("a cop's prep names the runner and the rules", function()
+test("a cop's prep names the runner and leaves the rules to How to play", function()
   local env = bootClient({ files = { [HELP_FILE] = { seen = true } } })
   env.mpPlayers[2] = { name = "Bob" }
   join(env)
   startCop(env)
-  assertEq(env.hud().center.rule, "Bob is the runner. You're released 7 s after the runner. Catch them by holding them under 3 km/h within 10 m for 7 s.")
-  assertEq(env.hud().center.runner, "Bob")
+  assertEq(env.hud().center.title, "YOU'RE A COP")
+  assertEq(env.hud().center.runner, "Bob"); assertEq(env.hud().center.rule, nil)
 end)
 
 test("the chase line shows the time limit when one is set", function()
