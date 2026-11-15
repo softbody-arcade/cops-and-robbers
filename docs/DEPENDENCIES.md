@@ -10,7 +10,7 @@ Versions in use on 2026-11-15:
 
 ## After any update: the quick check (about 15 minutes)
 
-1. Run `make test` and `make vuecheck`. The tests show our own logic is intact, but the game APIs are stubbed, so they say nothing about the update itself. `vuecheck` compiles every Vue file against the installed game's UI sources and checks that each icon name exists (see the UI section).
+1. Run `make test` and `make vuecheck`. The tests show our own logic is intact, but the game APIs are stubbed, so they say nothing about the update itself. `vuecheck` compiles every Vue file (SCSS imports resolve against the installed game's UI sources), syntax-checks our `.js` files and checks that each icon name exists (see the UI section).
 2. Run `make deploy`. The deploy log must say `Cops and Robbers <version> loaded`, with no `LUA ERROR`.
 3. Check the client log after joining: `~/.local/share/BeamNG/BeamNG.drive/current/beamng.log`. Run `grep -n "copsAndRobbers\|CnR" beamng.log`. Look for Lua errors, plus the `Adding new Event Handler to "cnr_..."` lines.
 4. Play a practice round from the panel (Practice: as cop), then press GO. Check:
@@ -45,7 +45,7 @@ Then do the checks for whatever actually updated.
   - `MP.Get(MP.Settings.Map)` (the map path; we parse `levels/<name>/`)
   - `Util.JsonEncode` / `JsonDecode` / `JsonPrettify`, `FS.CreateDirectory` / `Remove` / `Rename`
 - **Events and the data shapes we parse:**
-  - `onChatMessage(pid, name, msg)`: returning `1` hides the message. We use it only to hide a typed `/cnr ...`.
+  - `onChatMessage(pid, name, msg)`: returning `1` hides the message. We use it only to hide a typed `/cnr ...` from chat; the sender gets a HUD notice pointing to the Cops and Robbers card instead.
   - `onVehicleSpawn(pid, vid, data)` and `onVehicleEdited(pid, vid, data)`. The data is `...:pid-vid:{json}`, and we parse from the first `{`. The JSON has `jbm` (model) and `vcf.partConfigFilename` / `vcf.parts`. Returning `1` from an edit **deletes the car**.
   - `onVehicleDeleted`, `onVehicleReset`, `onPlayerJoin`, `onPlayerDisconnect`.
 - **Loading:**
@@ -205,9 +205,9 @@ Then do the checks for whatever actually updated.
 - **Debugging:** every app captures Vue errors and writes them to the game log as `log("E","cnr_ui","[cnr_ui] <app> <component> <info>: <message> | <at>")`, so a broken component names itself: `grep cnr_ui beamng.log`.
 
 **On update, check:**
-- **`make vuecheck`** passes: it compiles every Vue file and its SCSS, resolves imports and checks the icon names.
+- **`make vuecheck`** passes: it compiles every Vue file's script, template and SCSS (SCSS imports resolve against the game's UI sources), syntax-checks the `.js` files under `client/ui` with `node --check`, and checks the icon names. It does not resolve JavaScript imports, so a renamed or removed game export only shows up in game (see Changed imports below).
 - **All apps load:** no "Runtime compile error" for our apps and no `cnr_ui` lines in the client log.
-- **Announcements and HUD:** they sit at top middle and bottom centre, scale with Options > Display > UI scale, can't be removed, and don't block clicks anywhere except on their cards and buttons.
+- **Announcements and HUD:** they sit at top middle and bottom centre, scale with Options > Display > UI scale, come back by themselves if removed, and don't block clicks anywhere except on their cards and buttons.
 - **Changed imports:** if an import broke, grep the game's `ui/ui-vue/src` for the name. Check the component props in `common/components/base/bng*.vue`. Check whether `@/bridge` still exports `useBridge` with `api.engineLua`.
 - **Panel and leaderboard:**
   - The panel's buttons do something, which proves `engineLua` reaches `copsAndRobbers.panel`.

@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs'
 import { join, dirname, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
+import { spawnSync } from 'node:child_process'
 import { parse, compileScript, compileTemplate, compileStyle } from '@vue/compiler-sfc'
 import * as sass from 'sass'
 
@@ -18,14 +19,24 @@ if (existsSync(iconFile)) {
 const errors = []
 const fail = (file, msg) => errors.push(`${file}: ${msg}`)
 
-function walk(dir, out = []) {
+function walk(dir, ext, out = []) {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, e.name)
     if (e.isDirectory()) {
-      if (e.name !== 'node_modules') walk(p, out)
-    } else if (e.name.endsWith('.vue')) out.push(p)
+      if (e.name !== 'node_modules') walk(p, ext, out)
+    } else if (e.name.endsWith(ext)) out.push(p)
   }
   return out
+}
+
+function checkJs(file) {
+  const r = spawnSync(process.execPath, ['--input-type=module', '--check'], { input: readFileSync(file, 'utf8'), encoding: 'utf8' })
+  if (r.error) return fail(file, r.error.message)
+  if (r.status === 0) return
+  const lines = (r.stderr || '').split('\n').map(l => l.trim()).filter(Boolean)
+  const at = ((lines.find(l => /^\[stdin\]:\d+/.test(l)) || '').match(/\d+/) || [])[0]
+  const msg = lines.find(l => /Error/.test(l)) || `node --check exited with ${r.status}`
+  fail(file, at ? `line ${at}: ${msg}` : msg)
 }
 
 function iconNames(text) {
@@ -111,10 +122,12 @@ if (!dirs.length) {
   console.error('usage: check.mjs <dir>...')
   process.exit(2)
 }
-const files = dirs.flatMap(d => walk(d))
+const files = dirs.flatMap(d => walk(d, '.vue'))
+const scripts = dirs.flatMap(d => walk(d, '.js'))
 for (const f of files) check(f)
+for (const f of scripts) checkJs(f)
 if (errors.length) {
   console.error(errors.join('\n'))
   process.exit(1)
 }
-console.log(`vuecheck: ${files.length} files ok`)
+console.log(`vuecheck: ${files.length} Vue files and ${scripts.length} .js files ok`)

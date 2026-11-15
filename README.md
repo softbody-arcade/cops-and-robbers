@@ -28,7 +28,7 @@ The mod talks to players only through five apps. It sends no chat messages or po
 | **Cops and Robbers Panel** | The Host panel button on the lobby card or the prep line, or Esc > UI Apps. |
 | **Cops and Robbers Leaderboard** | The Leaderboard button on the lobby card, or Esc > UI Apps. |
 
-Announcements and the HUD can be moved and resized in the layout editor but not removed. Every app is removed from the layout again on leaving the server. The Panel and the Leaderboard show a ✕ to close them, and the Leaderboard and How to play hide themselves during a round.
+Announcements and the HUD can be moved and resized in the layout editor; if removed, they come back by themselves. Every app is removed from the layout again on leaving the server. The Panel and the Leaderboard show a ✕ to close them, and the Leaderboard and How to play hide themselves during a round.
 
 ## Evolving car mode
 
