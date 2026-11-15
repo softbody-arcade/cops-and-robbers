@@ -77,6 +77,11 @@ on/off, Leaderboard, Practice as runner / cop. They send the same commands as ch
 | `crashSpeedLossKmh` | 50 | Speed lost within 0.5 s that counts as a crash (~2.8 G) |
 | `crashPenaltySeconds` | 10 | Freeze for the cop at fault |
 | `lastSeenIntervalSeconds` | 30 | Runner location ping for cops (0 = off) |
+| `sightMaxMeters` | 400 | How far cops can see the runner (0 = sight off) |
+| `sightLiveIntervalSeconds` | 1 | Live runner position for all cops while one sees him (at least 3 s on BeamNG.Earth) |
+| `sightNoRouteSeconds` | 5 | A cop who sees the runner within his speed × this many seconds gets no route |
+| `sightNoRouteMinMeters` | 50 | ...and always within this distance |
+| `sightGraceSeconds` | 1.5 | Sight still counts this long after a cop loses it |
 | `roundTimeLimitSeconds` | 0 | Runner escapes after this long (0 = no limit) |
 | `excludedModels` | citybus, us_semi, md_series, percheron, rockbouncer | Never picked |
 | `explodeOnCatch` | false | Runner's car explodes when caught |

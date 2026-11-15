@@ -1,4 +1,4 @@
-# Cops and Robbers 1.6.0: features
+# Cops and Robbers 1.7.0: features
 
 A BeamMP server plugin with a client mod that BeamMP downloads automatically. The mod enforces the group's cops-and-robbers rules. It is one mod for every map, and it switches to geo mode on BeamNG.Earth by itself.
 
@@ -78,7 +78,12 @@ A BeamMP server plugin with a client mod that BeamMP downloads automatically. Th
 - **Last seen:** every 30 s cops get the runner's last position:
   - **Normal maps:** a route line on the road and minimap, plus "Runner seen 640 m NE".
   - **BeamNG.Earth:** a destination in BeamNG.Earth's own GPS ("Runner last seen"). The status line shows the distance by road, for example "Runner 2.4 km by road NE".
-- **Runner:** sees "Nearest cop 1.2 km".
+- **Line of sight:** each cop's game checks 4 times a second whether it can see the runner: rays from eye height to the runner's car, blocked by terrain and buildings (not by other cars), up to `sightMaxMeters` (400 m), mirrors included.
+  - While any cop sees him, every cop gets his position live (every second, every 3 s on BeamNG.Earth) instead of the 30 s ping: "Runner 640 m NE · live".
+  - A cop who sees him and is within his own speed × 5 s (at least 50 m) gets no route and reads "IN SIGHT".
+  - When all cops lose sight (after a 1.5 s grace), one "last seen" ping goes out at that spot, then the normal pings resume.
+  - The client log notes each change ("runner in sight (120 m)"), handy to check what blocks sight on BeamNG.Earth.
+- **Runner:** sees "SPOTTED" or "HIDDEN" plus "Nearest cop 1.2 km".
 - **Cop placement:** cops are spread out so they do not overlap. The search widens up to 2 km when no road is near. If no road is found at all, there is a message and the cop starts where they are.
 - **Late joiners and reconnects:**
   - Someone who joins mid-round becomes a cop.
@@ -211,6 +216,11 @@ Options > Controls > Gameplay contains "Cops & Robbers: ..." actions that can be
 | `crashSpeedLossKmh` | 50 | Speed lost within 0.5 s that counts as a crash |
 | `crashPenaltySeconds` | 10 | Freeze for the cop at fault |
 | `lastSeenIntervalSeconds` | 30 | Runner location ping for cops (0 = off) |
+| `sightMaxMeters` | 400 | How far cops can see the runner (0 = sight off) |
+| `sightLiveIntervalSeconds` | 1 | Live runner position for all cops while one sees him (at least 3 s on BeamNG.Earth) |
+| `sightNoRouteSeconds` | 5 | A cop who sees the runner within his speed × this many seconds gets no route |
+| `sightNoRouteMinMeters` | 50 | ...and always within this distance |
+| `sightGraceSeconds` | 1.5 | Sight still counts this long after a cop loses it |
 | `roundTimeLimitSeconds` | 0 | Runner escapes after this long (0 = no limit) |
 | `autoNextRound` | false | Prepare the next round automatically |
 | `autoNextDelaySeconds` | 15 | Delay before the next round is prepared |
@@ -224,4 +234,4 @@ Options > Controls > Gameplay contains "Cops & Robbers: ..." actions that can be
 - **Mods panel:** the zip carries a title, description, version and icon (`mod_info`) for mod panels.
 - **Stuck controls:** `/cnr stop` always unlocks everyone, and so does a plugin restart.
 - **Bad files:** a broken `config.json` gives a warning and uses the defaults. A broken or malformed leaderboard is moved aside.
-- **Tests:** 275 automated tests cover the rules, the server wiring and the client, which runs against stubbed game functions in `tests/test_client.lua` (run with `make test`).
+- **Tests:** 299 automated tests cover the rules, the server wiring and the client, which runs against stubbed game functions in `tests/test_client.lua` (run with `make test`).

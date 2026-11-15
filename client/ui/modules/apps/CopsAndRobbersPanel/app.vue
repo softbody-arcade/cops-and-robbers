@@ -117,6 +117,11 @@ const GROUPS = [
     { key: "copSpawnMinMeters", label: "Spawn min", unit: "m", step: 10, min: 0 },
     { key: "copSpawnMaxMeters", label: "Spawn max", unit: "m", step: 10, min: 0 },
     { key: "lastSeenIntervalSeconds", label: "Last seen every", unit: "s", step: 5, min: 0 },
+    { key: "sightMaxMeters", label: "Sight range (0 = off)", unit: "m", step: 50, min: 0 },
+    { key: "sightLiveIntervalSeconds", label: "Live update every", unit: "s", step: 1, min: 1 },
+    { key: "sightNoRouteSeconds", label: "No route within", unit: "s", step: 1, min: 0 },
+    { key: "sightNoRouteMinMeters", label: "No route at least", unit: "m", step: 10, min: 0 },
+    { key: "sightGraceSeconds", label: "Sight grace", unit: "s", step: 0.5, min: 0 },
   ] },
   { title: "Cars", items: [
     { key: "includeModVehicles", label: "Include mod cars", kind: "bool" },
