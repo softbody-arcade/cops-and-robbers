@@ -2,6 +2,7 @@ local M = {}
 
 local hud = require("copsAndRobbers/hud")
 local lightbar = require("copsAndRobbers/lightbar")
+local placement = require("copsAndRobbers/placement")
 
 local CLIENT_VERSION = "1.3.0"
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
@@ -49,7 +50,7 @@ local hudVisibleSent = false
 local lastHudPush = 0
 local lastPlacementCheck = 0
 local loadedAt
-local placedLayouts = {}
+local placementState = placement.new(HUD_APP, HUD_PLACEMENT)
 local active = false
 local role
 local runnerId
@@ -778,53 +779,50 @@ local function layoutsApi()
   return rawget(_G, "ui_appLayouts") or (extensions and extensions.ui_appLayouts)
 end
 
-local function hudIndex(layout)
-  for i, app in ipairs(type(layout) == "table" and layout.apps or {}) do
-    if app.appName == HUD_APP then return i end
-  end
-  return nil
-end
-
 local function refreshUiApps()
   local files = {}
   for _, f in ipairs(HUD_FILES) do files[#files + 1] = { filename = f, type = "added" } end
   pcall(extensions.hook, "onFilesChanged", files)
 end
 
-local function ensureHudPlaced()
+local function placementEnv()
   local api = layoutsApi()
-  if not api or not api.getCurrentLayout or not api.addApp then hudPlaced = false return end
-  local ok, layout = pcall(api.getCurrentLayout)
-  if not ok or type(layout) ~= "table" or not layout.filename then hudPlaced = false return end
-  if hudIndex(layout) then hudPlaced = true return end
-  local okAdd, added = pcall(api.addApp, layout.filename, HUD_APP, deepcopy(HUD_PLACEMENT))
-  if okAdd and added then
-    placedLayouts[layout.filename] = true
-    if api.setCurrentLayout then pcall(api.setCurrentLayout, layout.filename) end
-    hudPlaced = true
-  else
-    hudPlaced = false
+  if not api or not api.getCurrentLayout or not api.addApp or not api.removeApp
+    or not api.setCurrentLayout or not api.getAvailableLayouts then
+    return nil
   end
+  return {
+    api = api,
+    appExists = FS:fileExists(HUD_FILES[1]),
+    readLayout = function(filename)
+      local ok, data = pcall(jsonReadFile, filename)
+      if ok and type(data) == "table" then
+        data.filename = filename
+        return data
+      end
+      return nil
+    end,
+  }
 end
 
-local function removeHud()
-  local api = layoutsApi()
+local function placementTick()
+  local env = placementEnv()
+  if not env then hudPlaced = false return end
+  local ok, placed = pcall(placement.tick, placementState, env)
+  hudPlaced = ok and placed == true
+end
+
+local function placementStart()
+  loadedAt = clock
+  placement.activate(placementState)
+end
+
+local function placementLeave()
+  loadedAt = nil
   hudPlaced = false
-  if not api then placedLayouts = {} return end
-  local okList, layouts = pcall(function() return api.getAvailableLayouts and api.getAvailableLayouts() or {} end)
-  for filename in pairs(placedLayouts) do
-    for _, layout in ipairs(okList and layouts or {}) do
-      if layout.filename == filename then
-        local idx = hudIndex(layout)
-        if idx and api.removeApp then pcall(api.removeApp, filename, idx - 1) end
-      end
-    end
-  end
-  placedLayouts = {}
-  local okCur, current = pcall(function() return api.getCurrentLayout and api.getCurrentLayout() end)
-  if okCur and type(current) == "table" and current.filename and api.setCurrentLayout then
-    pcall(api.setCurrentLayout, current.filename)
-  end
+  local env = placementEnv()
+  if env then pcall(placement.leave, placementState, env) end
+  placementState.active = false
 end
 
 local function onState(data)
@@ -1003,7 +1001,7 @@ local function onUpdate(dtReal)
   end
   if loadedAt and clock - loadedAt >= PLACEMENT_DELAY and clock - lastPlacementCheck >= PLACEMENT_INTERVAL then
     lastPlacementCheck = clock
-    ensureHudPlaced()
+    placementTick()
   end
   if timerEnd then
     local left = math.ceil(timerEnd - clock)
@@ -1097,7 +1095,7 @@ end
 local function onExtensionLoaded()
   refreshActions()
   refreshUiApps()
-  loadedAt = clock
+  placementStart()
   if AddEventHandler then
     AddEventHandler("cnr_pickVehicle", onPickVehicle)
     AddEventHandler("cnr_roundSetup", onRoundSetup)
@@ -1122,12 +1120,19 @@ end
 M.onExtensionLoaded = onExtensionLoaded
 M.onExtensionUnloaded = function()
   endRound()
-  removeHud()
+  placementLeave()
   refreshActions()
 end
 M.onClientEndMission = function()
   endRound()
-  removeHud()
+  placementLeave()
+end
+M.onBeamMPServerLeave = function()
+  endRound()
+  placementLeave()
+end
+M.onWorldReadyState = function(st)
+  if st == 2 then placementStart() end
 end
 M.onUpdate = onUpdate
 M.onVehicleResetted = onVehicleResetted
