@@ -1,15 +1,17 @@
 {
   "domElement": "<cops-and-robbers-leaderboard></cops-and-robbers-leaderboard>",
   "name": "Cops and Robbers Leaderboard",
-  "types": ["ui.apps.categories.info"],
-  "description": "Best survival times, top cops and player stats for Cops and Robbers.",
+  "types": [
+    "ui.apps.categories.info"
+  ],
+  "description": "Best survival times, top cops, player stats and every recorded round for Cops and Robbers.",
   "css": {
-    "left": "1.25em",
-    "top": "36em",
-    "width": "27.5em",
-    "height": "25em",
-    "min-width": "22.5em",
-    "min-height": "12.5em"
+    "left": "1em",
+    "top": "6em",
+    "width": "25em",
+    "height": "32em",
+    "min-width": "22em",
+    "min-height": "16em"
   },
   "author": "ReinderN",
   "version": "1.0",
