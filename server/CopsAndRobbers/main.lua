@@ -108,11 +108,17 @@ local function send(pid, event, payload)
   if type(pid) ~= "number" or (pid < 0 and pid ~= -1) then return end
   MP.TriggerClientEvent(pid, event, Util.JsonEncode(payload or {}))
 end
-local function reply(pid, msg)
-  MP.SendChatMessage(pid, PREFIX .. msg)
-  if panelMirror and pid == panelMirror then send(pid, "cnr_panelReply", { text = msg }) end
+local function notify(pid, msg, tone)
+  send(pid, "cnr_notice", { msg = msg, tone = tone or "info" })
 end
-local function broadcast(msg) MP.SendChatMessage(-1, PREFIX .. msg) end
+local function reply(pid, msg)
+  if panelMirror and pid == panelMirror then
+    send(pid, "cnr_panelReply", { text = msg })
+  else
+    notify(pid, msg)
+  end
+end
+local function broadcast(msg, tone) notify(-1, msg, tone) end
 
 local function loadConfig()
   local raw, corrupt = decodeFile(pluginDir .. "config.json")
@@ -393,7 +399,7 @@ local function applyEffects(effects)
     if e.kind == "reply" then
       reply(e.pid, e.msg)
     elseif e.kind == "broadcast" then
-      if e.to then reply(e.to, e.msg) else broadcast(e.msg) end
+      if e.to then notify(e.to, e.msg, e.tone) else broadcast(e.msg, e.tone) end
     elseif e.kind == "pickVehicle" then
       send(e.pid, "cnr_pickVehicle", { includeMods = cfg.includeModVehicles, excludedModels = cfg.excludedModels })
     elseif e.kind == "setup" then
@@ -435,7 +441,7 @@ local function applyEffects(effects)
     elseif e.kind == "runnerGo" then
       send(e.to or -1, "cnr_runnerGo", { headStartSeconds = e.headStartSeconds })
     elseif e.kind == "penalty" then
-      send(current.test and current.issuerId or -1, "cnr_notice", { msg = string.format("%s: crash penalty %gs", tostring(e.name), e.seconds), about = e.pid })
+      send(current.test and current.issuerId or -1, "cnr_notice", { msg = string.format("%s: crash penalty %gs", tostring(e.name), e.seconds), tone = "warn", about = e.pid })
       if round.isAI(e.pid) then
         send(current.issuerId, "cnr_penalty", { seconds = e.seconds, aiId = e.pid })
       else
@@ -461,10 +467,7 @@ local function applyEffects(effects)
       activeVid = {}
       partsBaseline = {}
       aiVid = {}
-      if autoNext then
-        autoNextAt = now() + cfg.autoNextDelaySeconds
-        broadcast(string.format("Next round in %gs (turn off Automatic rounds in the panel to stop)", cfg.autoNextDelaySeconds))
-      end
+      if autoNext then autoNextAt = now() + cfg.autoNextDelaySeconds end
     elseif e.kind == "live" then
       if not geoMode or now() - lastLiveSentAt >= GEO_LIVE_MIN_SECONDS - 0.05 then
         lastLiveSentAt = now()
@@ -494,8 +497,6 @@ local function applyEffects(effects)
       end
     elseif e.kind == "applied" then
       send(e.to or -1, "cnr_applied", {})
-      local msg = e.timedOut and "Cars ready (not everyone loaded in time), press GO" or "Cars ready, press GO"
-      if e.to then reply(e.to, msg) else broadcast(msg) end
     elseif e.kind == "spotted" then
       if not round.isAI(current.runnerId) then send(current.runnerId, "cnr_spotted", { spotted = e.spotted }) end
     elseif e.kind == "lastSeen" then
@@ -538,40 +539,12 @@ local function applyEffects(effects)
       local ok, err = pcall(saveLeaderboard)
       if not ok then log("failed to save leaderboard: " .. tostring(err)) end
       pushBoard()
-      local t = leaderboard.formatTime(run.survivedSeconds)
-      if run.endReason == "caught" then
-        local by = (run.catchers and #run.catchers > 0) and (" by " .. table.concat(run.catchers, ", ")) or ""
-        broadcast(string.format("Runner caught%s! %s survived %s", by, run.player, t))
-      elseif run.endReason == "called" then
-        broadcast(string.format("Round ended: %s survived %s", run.player, t))
-      elseif run.endReason == "escaped" then
-        broadcast(string.format("%s escaped! Survived %s", run.player, t))
-      else
-        broadcast(string.format("%s disconnected after %s", run.player, t))
-      end
-      for _, line in ipairs(leaderboard.formatTop(board, 5, mapName)) do broadcast(line) end
       send(-1, "cnr_top", { lines = leaderboard.formatTop(board, 3, mapName) })
     end
   end
 end
 
-local HELP = {
-  "Run rounds and settings with the Cops and Robbers Panel, see times and stats with the Cops and Robbers Leaderboard (Esc > UI Apps)",
-  '"/cnr color <#hex|off>" - your car color for every round',
-  '"/cnr addstation" / "/cnr removestation" - edit this map\'s gas stations',
-  '"/cnr help" / "/cnr version"',
-}
-
 local handlers = {}
-
-function handlers.help(pid)
-  reply(pid, "Cops and Robbers " .. VERSION)
-  for _, line in ipairs(HELP) do reply(pid, line) end
-end
-
-function handlers.version(pid)
-  reply(pid, "Cops and Robbers " .. VERSION)
-end
 
 function handlers.start(pid, cmd)
   if current:isActive() and current.test then
@@ -890,20 +863,12 @@ function cnrOnMissing(pid, data)
     if i > 6 then names[#names + 1] = string.format("+%d more", #d.parts - 6) break end
     names[#names + 1] = tostring(part)
   end
-  send(-1, "cnr_notice", { msg = string.format("⚠ %s is missing: %s", MP.GetPlayerName(pid) or tostring(pid), table.concat(names, ", ")) })
+  send(-1, "cnr_notice", { msg = string.format("⚠ %s is missing: %s", MP.GetPlayerName(pid) or tostring(pid), table.concat(names, ", ")), tone = "warn" })
 end
 
-local CHAT_COMMANDS = { color = true, addstation = true, removestation = true, help = true, version = true }
-
 function cnrOnChatMessage(pid, name, msg)
-  local cmd = commands.parse(msg)
-  if not cmd then return 0 end
-  local handler = CHAT_COMMANDS[cmd.name] and handlers[cmd.name]
-  if handler then
-    handler(pid, cmd)
-  else
-    reply(pid, "Use the Cops and Robbers Panel (Esc > UI Apps)")
-  end
+  if not commands.parse(msg) then return 0 end
+  notify(pid, "Chat commands are gone: use the Cops and Robbers card at the bottom of your screen.")
   return 1
 end
 
@@ -931,7 +896,7 @@ local function checkParts(pid, decoded)
       entry.announced = true
       local msg = string.format("⚠ %s changed parts during the round: %s", MP.GetPlayerName(pid) or tostring(pid), tables.diffKeys(entry.parts, parts, 5))
       log(msg)
-      if current.test then reply(current.issuerId, msg) else broadcast(msg) end
+      if current.test then notify(current.issuerId, msg, "warn") else broadcast(msg, "warn") end
     end
     entry.parts = parts
   end

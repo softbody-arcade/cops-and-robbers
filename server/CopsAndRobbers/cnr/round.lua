@@ -14,8 +14,8 @@ local APPLY_TIMEOUT_SECONDS = 20
 local SETUP_REPLY_TIMEOUT_SECONDS = 5
 local MAX_SIGHT_STEP = 1
 local SIGHT_RANGE_MARGIN = 50
-local COLOR_RUNNER = "#1f5fff"
-local COLOR_COPS = { "#20c020", "#e02020" }
+local COLOR_RUNNER = "#d83a2c"
+local COLOR_COPS = { "#1f6fe0", "#6fb0ff" }
 
 M.AI_FIRST = -10
 
@@ -122,9 +122,6 @@ function Round:finish(now, reason)
     survivedSeconds = survived, reason = reason, catchers = catchers,
     explode = self.cfg.explodeOnCatch and reason == "caught",
   }
-  if self.test and reason == "caught" then
-    fx[#fx + 1] = { kind = "broadcast", msg = string.format("Test round: %s caught after %s", self:runnerName(), leaderboard.formatTime(survived)) }
-  end
   if reason ~= "cancelled" and not self.test then
     fx[#fx + 1] = { kind = "record", run = {
       player = self:runnerName(), survivedSeconds = survived,
@@ -170,10 +167,10 @@ function Round:start(now, runnerId, issuerId, players, opts)
     local a1, a2 = M.AI_FIRST, M.AI_FIRST - 1
     if role == "runner" then
       self.runnerId = issuerId
-      self.players[a1], self.players[a2] = "AI green", "AI red"
+      self.players[a1], self.players[a2] = "AI cop 1", "AI cop 2"
     else
       self.runnerId = a1
-      self.players[a1], self.players[a2] = "AI blue", "AI red"
+      self.players[a1], self.players[a2] = "AI runner", "AI cop"
     end
   else
     self.runnerId = runnerId
@@ -266,14 +263,8 @@ function Round:vehiclePicked(now, pid, model, config, players)
       ai[#ai + 1] = { id = id, role = e.role, index = #ai + 1, colorHex = colorFor(id), name = self.players[id] }
     end
     fx[#fx + 1] = { kind = "setupAI", pid = pid, ai = ai }
-    if self.testRole == "runner" then
-      fx[#fx + 1] = { kind = "broadcast", msg = "Test round: you are the runner, two AI cops will chase you. Press GO in the panel to start" }
-    else
-      fx[#fx + 1] = { kind = "broadcast", msg = "Test round: you are a cop with an AI runner and an AI partner. Press GO in the panel to start" }
-    end
   else
     for _, p in ipairs(sortedPids(self.players)) do fx[#fx + 1] = self:setupFor(now, p) end
-    fx[#fx + 1] = { kind = "broadcast", msg = string.format("%s is the runner! Car: %s. Set your color with /cnr color, then press GO in the panel", self:runnerName(), model) }
   end
   return fx
 end
@@ -290,10 +281,7 @@ function Round:go(now, pid)
   end
   self.state = "countdown"
   self.countdownStartedAt = now
-  return {
-    { kind = "countdown", seconds = self.cfg.runnerCountdownSeconds },
-    { kind = "broadcast", msg = string.format("Runner starts in %gs", self.cfg.runnerCountdownSeconds) },
-  }
+  return { { kind = "countdown", seconds = self.cfg.runnerCountdownSeconds } }
 end
 
 function Round:tick(now, cars, stations)
@@ -317,7 +305,6 @@ function Round:tick(now, cars, stations)
     self.startedAt = now
     for _, tracker in pairs(self.resetTrackers) do tracker:grant(now, SETUP_GRACE_SECONDS) end
     fx[#fx + 1] = { kind = "runnerGo", headStartSeconds = self.cfg.headStartSeconds }
-    fx[#fx + 1] = { kind = "broadcast", msg = string.format("%s is off! Cops released in %gs", self:runnerName(), self.cfg.headStartSeconds) }
   end
 
   if self.state == "headstart" and now - self.startedAt >= self.cfg.headStartSeconds then
@@ -325,7 +312,6 @@ function Round:tick(now, cars, stations)
     self.releasedAt = now
     self.lastSeenAt = now
     fx[#fx + 1] = { kind = "release" }
-    fx[#fx + 1] = { kind = "broadcast", msg = "Cops released!" }
   end
 
   local runnerCar = cars[self.runnerId]
@@ -390,7 +376,7 @@ function Round:tick(now, cars, stations)
         and not (tracker and tracker:inGrace(now)) then
         if not self.teleportAnnounced[pid] or now - self.teleportAnnounced[pid] >= TELEPORT_ANNOUNCE_GAP then
           self.teleportAnnounced[pid] = now
-          fx[#fx + 1] = { kind = "broadcast", msg = string.format("%s teleported", self.players[pid]) }
+          fx[#fx + 1] = { kind = "broadcast", msg = string.format("%s teleported", self.players[pid]), tone = "warn" }
         end
       end
     end
@@ -541,7 +527,7 @@ function Round:vehicleReset(now, pid)
     if self.crashDetectors[pid] then self.crashDetectors[pid]:reset() end
     return {}
   end
-  return { { kind = "broadcast", msg = string.format("%s reset illegally", self.players[pid] or tostring(pid)) } }
+  return { { kind = "broadcast", msg = string.format("%s reset illegally", self.players[pid] or tostring(pid)), tone = "warn" } }
 end
 
 function Round:relocated(now, pid)
@@ -571,10 +557,7 @@ function Round:reroll(now, pid)
   self.state = "picking"
   self.issuerId = pid
   self.pickStartedAt = now
-  return {
-    { kind = "pickVehicle", pid = pid },
-    { kind = "broadcast", msg = "Picking a new car..." },
-  }
+  return { { kind = "pickVehicle", pid = pid } }
 end
 
 function Round:stop(now, issuerId)
