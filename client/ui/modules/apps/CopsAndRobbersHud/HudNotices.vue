@@ -44,6 +44,6 @@ const items = computed(() => (Array.isArray(props.notices) ? props.notices.slice
   color: var(--cnr-warn);
 }
 .info {
-  color: var(--cnr-muted);
+  color: var(--cnr-text);
 }
 </style>

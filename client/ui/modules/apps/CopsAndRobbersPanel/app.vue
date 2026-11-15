@@ -3,7 +3,7 @@
     <div v-if="barShown" class="p-bar">
       <span class="p-dot p-dot-runner"></span>
       <span class="bar-phase">{{ barPhase }} <span v-if="state.phase === 'running'" class="p-mono">{{ formatTime(state.elapsed || 0) }}</span></span>
-      <span class="bar-runner">{{ state.runner ? `${state.runner} running` : "" }}</span>
+      <span class="bar-runner">{{ barRunner }}</span>
       <BngButton v-if="can.end" class="p-btn p-fit" :accent="ACCENTS.main" @click="command('end')">End chase</BngButton>
       <BngButton v-if="can.stop" class="p-btn p-fit" :accent="ACCENTS.destructive" @click="cancelChase">
         {{ armed === "cancel" ? "Click again" : "Cancel" }}
@@ -70,6 +70,11 @@ const connected = computed(() => !!state.value.phase)
 const can = computed(() => state.value.can || {})
 const barShown = computed(() => folded.value && connected.value && DRIVING.has(state.value.phase))
 const barPhase = computed(() => BAR_PHASES[state.value.phase] || "")
+const barRunner = computed(() => {
+  const r = state.value.runner
+  if (!r) return ""
+  return state.value.test ? `Practice round · ${r} runs` : `${r} running`
+})
 const mapLabel = computed(() => {
   const m = state.value.mapName
   const info = m && typeof m === "object" ? m : { id: state.value.map, pretty: state.value.map }

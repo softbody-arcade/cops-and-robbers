@@ -148,6 +148,6 @@ function resetAll() {
   color: var(--cnr-me);
 }
 .set-value.pending {
-  opacity: 0.7;
+  font-style: italic;
 }
 </style>

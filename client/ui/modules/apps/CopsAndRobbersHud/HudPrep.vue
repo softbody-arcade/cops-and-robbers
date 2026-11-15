@@ -40,7 +40,6 @@ const emit = defineEmits(["color", "help", "toggle"])
   min-width: 0;
   font-size: 1rem;
   font-weight: 700;
-  color: var(--cnr-muted);
   --bng-icon-size: 1.25rem;
 }
 .buttons {

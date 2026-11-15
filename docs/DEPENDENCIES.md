@@ -177,7 +177,7 @@ Then do the checks for whatever actually updated.
 - **Design tokens** (on `:root`, no import needed; `ui/ui-vue/src/styles/modules/_colors.scss`), mapped to our meanings in `CnrRoot.vue` as `--cnr-*`:
   - Runner `--bng-add-red-500` (fills) and `-400` (text); cop `--bng-add-blue-500` and `-400`; attention `--bng-ter-yellow-200`; good `--bng-add-green-400`.
   - Accent `--bng-orange-b400`, main button `--bng-orange-500`, your own row `--bng-orange-300`.
-  - Text `--bng-off-white`, muted `--bng-cool-gray-300`, surfaces `rgba(var(--bng-off-black-rgb), …)`, corners `--bng-corners-1` / `-2`.
+  - Text `--bng-off-white`, muted `--bng-cool-gray-100` (only inside cards), surfaces `rgba(var(--bng-off-black-rgb), …)`, corners `--bng-corners-1` / `-2`.
   - Also read: `--bng-orange-200`, `--bng-orange-600`, `--bng-cool-gray-50` / `-400`, `--bng-ter-peach-100` / `-500`, `--bng-black-o2`, the `-rgb` triplets of the colours above.
 - **Fonts:** `"Overpass", var(--fnt-defs)` for display text (`--fnt-defs` is Noto Sans), `var(--fnt-mono)` (Overpass Mono) with tabular numbers for times and counts.
 - **Icons** (from `ui/ui-vue/src/assets/fonts/bngIcons/bngIcons.js`; an unknown name renders as a red placeholder): `abandon`, `arrowSmallDown`, `arrowSmallLeft`, `arrowSmallRight`, `arrowSmallUp`, `carChase01`, `caution`, `checkmarkBold`, `cogSolid`, `cup`, `danger`, `eyeSolidClosed`, `eyeSolidOpened`, `flag`, `info`, `lockClosed`, `mapPoint`, `minus`, `play`, `plus`, `restart`, `stopwatchArrows02`, `strobeLights`, `timer`, `undo`. `make vuecheck` checks every name against that file.

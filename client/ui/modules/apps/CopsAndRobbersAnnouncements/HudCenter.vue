@@ -5,9 +5,9 @@
       <div class="number" :class="'tone-' + center.tone">{{ center.number }}</div>
     </template>
     <template v-else-if="center.kind === 'role'">
-      <div v-if="center.car" class="kick muted">{{ center.car }}</div>
+      <div v-if="center.car" class="kick">{{ center.car }}</div>
       <div class="title" :class="'tone-' + center.role">{{ center.title }}</div>
-      <div v-if="center.role === 'cop' && center.runner" class="runner-line"><b class="runner-name">{{ center.runner }}</b> is the runner</div>
+      <div v-if="center.role === 'cop' && center.runner" class="runner-line"><b class="runner-name">{{ center.runner }}</b> {{ runnerVerb }}</div>
     </template>
     <div v-else-if="center.kind === 'flash'" class="title tone-good">{{ center.text }}</div>
     <div v-else-if="center.kind === 'applying'" class="title applying">{{ center.text }}</div>
@@ -15,9 +15,15 @@
 </template>
 
 <script setup>
-defineProps({
+import { computed } from "vue"
+
+const AI_NAME = /^AI (runner|cop)( \d+)?$/
+
+const props = defineProps({
   center: Object,
 })
+
+const runnerVerb = computed(() => (AI_NAME.test((props.center && props.center.runner) || "") ? "runs" : "is the runner"))
 </script>
 
 <style scoped>
@@ -60,9 +66,6 @@ defineProps({
 .applying {
   animation: cnr-pulse 1.2s ease-in-out infinite alternate;
 }
-.muted {
-  color: var(--cnr-muted);
-}
 .tone-runner {
   color: var(--cnr-runner-text);
 }
@@ -80,7 +83,7 @@ defineProps({
     opacity: 1;
   }
   to {
-    opacity: 0.6;
+    opacity: 0.85;
   }
 }
 </style>

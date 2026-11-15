@@ -9,7 +9,7 @@
       <span v-else class="item">
         <BngIcon :type="icons.stopwatchArrows02" />
         <span class="mono">{{ status.time }}</span>
-        <span v-if="status.limit" class="mono muted">/ {{ status.limit }}</span>
+        <span v-if="status.limit" class="mono limit">/ {{ status.limit }}</span>
       </span>
       <span v-if="status.tag" class="item" :class="'tone-' + tagTone">
         <BngIcon :type="status.tag === 'HIDDEN' ? icons.eyeSolidClosed : icons.eyeSolidOpened" />
@@ -40,7 +40,7 @@ import { BngIcon, icons } from "@/common/components/base"
 import RoleChip from "../../copsAndRobbers/RoleChip.vue"
 
 const RESET_READY = "Reset ready"
-const TAG_TONES = { SPOTTED: "warn", HIDDEN: "muted", "IN SIGHT": "good", LIVE: "cop" }
+const TAG_TONES = { SPOTTED: "warn", HIDDEN: "plain", "IN SIGHT": "good", LIVE: "cop" }
 
 const props = defineProps({
   status: Object,
@@ -48,7 +48,7 @@ const props = defineProps({
 })
 
 const role = computed(() => (props.status && props.status.role === "cop" ? "cop" : "runner"))
-const tagTone = computed(() => TAG_TONES[props.status && props.status.tag] || "muted")
+const tagTone = computed(() => TAG_TONES[props.status && props.status.tag] || "plain")
 const barTone = computed(() => (props.bar && props.bar.tone === "cop" ? "cop" : "runner"))
 const percent = computed(() => Math.max(0, Math.min(100, Number(props.bar && props.bar.percent) || 0)))
 </script>
@@ -98,9 +98,8 @@ const percent = computed(() => Math.max(0, Math.min(100, Number(props.bar && pro
   font-family: var(--fnt-mono);
   font-variant-numeric: tabular-nums;
 }
-.muted,
-.tone-muted {
-  color: var(--cnr-muted);
+.limit {
+  font-weight: 600;
 }
 .tone-warn {
   color: var(--cnr-warn);
@@ -147,11 +146,10 @@ const percent = computed(() => Math.max(0, Math.min(100, Number(props.bar && pro
   margin-top: 0.5rem;
   font-size: 0.875rem;
   font-weight: 600;
-  color: var(--cnr-muted);
   --bng-icon-size: 1rem;
 }
 .chase-reset.ready {
-  color: var(--cnr-text);
+  font-weight: 800;
 }
 .chase-reset.flash {
   color: var(--cnr-warn);

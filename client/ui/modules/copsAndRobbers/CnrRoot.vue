@@ -14,10 +14,10 @@
   --cnr-main: var(--bng-orange-500);
   --cnr-me: var(--bng-orange-300);
   --cnr-text: var(--bng-off-white);
-  --cnr-muted: var(--bng-cool-gray-300);
-  --cnr-card: rgba(var(--bng-off-black-rgb), 0.6);
-  --cnr-row: rgba(var(--bng-off-black-rgb), 0.5);
-  --cnr-shadow: 0 0 0.25rem rgba(var(--bng-off-black-rgb), 0.6);
+  --cnr-muted: var(--bng-cool-gray-100);
+  --cnr-card: rgba(var(--bng-off-black-rgb), 0.8);
+  --cnr-row: rgba(var(--bng-off-black-rgb), 0.7);
+  --cnr-shadow-strong: 0 0.0625rem 0.125rem rgba(var(--bng-off-black-rgb), 0.9), 0 0 0.5rem rgba(var(--bng-off-black-rgb), 0.75);
   --cnr-display: "Overpass", var(--fnt-defs);
   color: var(--cnr-text);
   font-family: var(--fnt-defs);

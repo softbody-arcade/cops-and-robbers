@@ -35,7 +35,7 @@ const mode = computed(() => hud.value.mode)
   overflow: hidden;
   pointer-events: none;
   font-family: var(--cnr-display);
-  text-shadow: var(--cnr-shadow);
+  text-shadow: var(--cnr-shadow-strong);
   --bng-icon-color: currentColor;
 }
 .announce {

@@ -27,7 +27,7 @@ const emit = defineEmits(["close"])
   flex-direction: column;
   box-sizing: border-box;
   padding: 0.25rem 1rem 1rem;
-  background: var(--cnr-card, rgba(var(--bng-off-black-rgb), 0.6));
+  background: var(--cnr-card, rgba(var(--bng-off-black-rgb), 0.8));
   border-radius: var(--bng-corners-2);
   color: var(--cnr-text, var(--bng-off-white));
   font-family: var(--fnt-defs);
@@ -44,7 +44,7 @@ const emit = defineEmits(["close"])
 }
 .cnr-card-sub {
   font-size: 0.875rem;
-  color: var(--cnr-muted, var(--bng-cool-gray-300));
+  color: var(--cnr-muted, var(--bng-cool-gray-100));
 }
 .cnr-card-body {
   flex: 1 1 auto;

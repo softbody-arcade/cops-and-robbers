@@ -180,10 +180,16 @@ const subline = computed(() => {
   const s = props.state
   const practice = s.test ? "Practice round" : null
   if (view.value === "idle" || view.value === "auto") return [props.mapLabel, carText.value].filter(Boolean).join(" · ")
-  if (view.value === "picking") return [practice, s.runner ? `${s.runner} is the runner` : null].filter(Boolean).join(" · ")
-  if (view.value === "prep") return [practice, s.runner ? `${s.runner} is the runner` : null, carText.value].filter(Boolean).join(" · ")
-  return [practice, s.runner ? `${s.runner} running` : null].filter(Boolean).join(" · ")
+  const runner = runnerText(s, view.value === "chase")
+  if (view.value === "prep") return [practice, runner, carText.value].filter(Boolean).join(" · ")
+  return [practice, runner].filter(Boolean).join(" · ")
 })
+
+function runnerText(s, chase) {
+  if (!s.runner) return null
+  if (s.test) return `${s.runner} runs`
+  return chase ? `${s.runner} running` : `${s.runner} is the runner`
+}
 
 const nextName = computed(() => props.state.nextRunner || (players.value.find(p => p.next) || {}).name || null)
 const randomPicked = computed(() => props.pick === RANDOM)

@@ -25,7 +25,7 @@ const props = defineProps({
   result: Object,
 })
 
-const titleTone = computed(() => TITLE_TONES[props.result && props.result.title] || "muted")
+const titleTone = computed(() => TITLE_TONES[props.result && props.result.title] || "plain")
 const rows = computed(() => (props.result && Array.isArray(props.result.rows) ? props.result.rows.slice(0, 3) : []))
 </script>
 
@@ -81,7 +81,6 @@ const rows = computed(() => (props.result && Array.isArray(props.result.rows) ? 
   font-size: 1rem;
   font-weight: 800;
   letter-spacing: 0.1em;
-  color: var(--cnr-muted);
 }
 .mono {
   font-family: var(--fnt-mono);
@@ -92,8 +91,5 @@ const rows = computed(() => (props.result && Array.isArray(props.result.rows) ? 
 }
 .tone-good {
   color: var(--cnr-good);
-}
-.tone-muted {
-  color: var(--cnr-muted);
 }
 </style>
