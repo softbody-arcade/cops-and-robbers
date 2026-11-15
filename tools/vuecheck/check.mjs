@@ -33,18 +33,19 @@ function iconNames(text) {
   for (const m of text.matchAll(/\bicons\.(\w+)/g)) names.add(m[1])
   for (const tag of text.matchAll(/<(Bng\w+)\b((?:[^>"']|"[^"]*"|'[^']*')*)>/g)) {
     const attr = tag[1] === 'BngIcon' ? 'type' : 'icon'
-    for (const m of tag[2].matchAll(new RegExp(`(?<![\\w-])${attr}=(?:"([^"]*)"|'([^']*)')`, 'g'))) {
-      const v = m[1] ?? m[2]
+    for (const m of tag[2].matchAll(new RegExp(`(?:^|\\s)(:|v-bind:)?${attr}=(?:"([^"]*)"|'([^']*)')`, 'g'))) {
+      const v = m[2] ?? m[3]
       const q = v.match(/^'([^']+)'$/)
       if (q) names.add(q[1])
-      else if (/^\w+$/.test(v)) names.add(v)
+      else if (!m[1] && /^\w+$/.test(v)) names.add(v)
     }
   }
   return names
 }
 
-function checkIcons(file, text) {
+function checkIcons(file, descriptor) {
   if (!icons) return
+  const text = [descriptor.template, descriptor.scriptSetup, descriptor.script].map(b => b?.content || '').join('\n')
   for (const n of iconNames(text)) {
     if (!icons.has(n)) fail(file, `unknown icon "${n}"`)
   }
@@ -56,17 +57,15 @@ function check(file) {
   const { descriptor, errors: perr } = parse(source, { filename: file })
   for (const e of perr) fail(file, e.message)
   if (perr.length) {
-    checkIcons(file, (descriptor.template?.content || '') + '\n' + (descriptor.scriptSetup?.content || '') + '\n' + (descriptor.script?.content || ''))
+    checkIcons(file, descriptor)
     return
   }
 
   let bindings
-  let scriptText = ''
   if (descriptor.script || descriptor.scriptSetup) {
     try {
       const r = compileScript(descriptor, { id })
       bindings = r.bindings
-      scriptText = (descriptor.script?.content || '') + '\n' + (descriptor.scriptSetup?.content || '')
     } catch (e) {
       fail(file, e.message)
     }
@@ -104,7 +103,7 @@ function check(file) {
     }
   }
 
-  checkIcons(file, (descriptor.template?.content || '') + '\n' + scriptText)
+  checkIcons(file, descriptor)
 }
 
 const dirs = process.argv.slice(2)
