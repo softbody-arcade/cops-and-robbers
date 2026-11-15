@@ -586,3 +586,44 @@ test("earth last seen carries lat/lon", function()
   assertEq(seen.data:find('"lat"', 1, true) ~= nil, true)
   env.cleanup()
 end)
+
+test("earth relocations grant grace for own car and test AI", function()
+  local env = boot({ map = EARTH, vehicles = { [1] = { [0] = "x" } } })
+  env.call("onChatMessage", 1, "Reinder", "/cnr test runner")
+  report(env, 1, geoCar(0))
+  env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  env.go()
+  for _ = 1, 44 do env.clock = env.clock + 0.25; report(env, 1, geoCar(0), geoCar(300, 0, -10), geoCar(900, 0, -11)); env.call("cnr_tick") end
+  env.chats = {}
+  env.call("cnr_relocated", 1, '{"ids":[-10]}')
+  env.call("cnr_relocated", 1, '{}')
+  env.call("onVehicleReset", 1, 0, "")
+  env.clock = env.clock + 0.25
+  report(env, 1, geoCar(5000), geoCar(5300, 0, -10), geoCar(900, 0, -11))
+  env.call("cnr_tick")
+  for _, c in ipairs(env.chats) do
+    assertEq(c[2]:find("illegally", 1, true), nil, c[2])
+    assertEq(c[2]:find("ReinderN teleported", 1, true) or c[2]:find("Reinder teleported", 1, true) or c[2]:find("AI green teleported", 1, true), nil, c[2])
+  end
+  env.cleanup()
+end)
+
+test("earth: an illegal reset waits a second for a relocation report", function()
+  local env = boot({ map = EARTH })
+  env.call("onChatMessage", 2, "Bob", "/cnr start rein")
+  report(env, 1, geoCar(0)); report(env, 2, geoCar(900))
+  env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  env.go()
+  for _ = 1, 44 do env.clock = env.clock + 0.25; report(env, 1, geoCar(0, 60)); report(env, 2, geoCar(900, 60)); env.call("cnr_tick") end
+  env.chats = {}
+  env.call("onVehicleReset", 1, 0, "")
+  env.clock = env.clock + 0.25; report(env, 1, geoCar(0, 60)); report(env, 2, geoCar(900, 60)); env.call("cnr_tick")
+  env.call("cnr_relocated", 1, "{}")
+  for _ = 1, 8 do env.clock = env.clock + 0.25; report(env, 1, geoCar(0, 60)); report(env, 2, geoCar(900, 60)); env.call("cnr_tick") end
+  assertEq(env.chatHas("reset illegally"), false)
+  for _ = 1, 8 do env.clock = env.clock + 0.25; report(env, 1, geoCar(0, 60)); report(env, 2, geoCar(900, 60)); env.call("cnr_tick") end
+  env.call("onVehicleReset", 1, 0, "")
+  for _ = 1, 8 do env.clock = env.clock + 0.25; report(env, 1, geoCar(0, 60)); report(env, 2, geoCar(900, 60)); env.call("cnr_tick") end
+  assertEq(env.chatHas("Reinder reset illegally") or env.chatHas("ReinderN reset illegally"), true)
+  env.cleanup()
+end)

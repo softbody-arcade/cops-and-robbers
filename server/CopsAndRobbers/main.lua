@@ -37,6 +37,8 @@ local lastGeoByName = {}
 local GEO_STALE_SECONDS = 2
 local GEO_STATION_MERGE_METERS = 50
 local GEO_STATION_RADIUS = 20
+local GEO_RESET_VERDICT_DELAY = 1
+local pendingResetVerdicts = {}
 local colorStore = {}
 local serverClock = MP.CreateTimer()
 
@@ -605,6 +607,11 @@ end
 
 function cnrOnVehicleReset(pid, vid)
   if activeVid[pid] and activeVid[pid] ~= vid then return end
+  if geoMode then
+    local fx = current:vehicleReset(now(), pid)
+    if #fx > 0 then pendingResetVerdicts[#pendingResetVerdicts + 1] = { pid = pid, at = now(), fx = fx } end
+    return
+  end
   applyEffects(current:vehicleReset(now(), pid))
 end
 
@@ -689,6 +696,22 @@ function cnrOnGeo(pid, data)
   end
 end
 
+function cnrOnRelocated(pid, data)
+  if not current:isActive() then return end
+  local ok, decoded = pcall(Util.JsonDecode, data)
+  local ids = ok and type(decoded) == "table" and type(decoded.ids) == "table" and decoded.ids or { pid }
+  for _, raw in ipairs(ids) do
+    local id = tonumber(raw)
+    local allowed = id == pid or (round.isAI(id) and current.test and pid == current.issuerId)
+    if allowed then
+      applyEffects(current:relocated(now(), id))
+      for i = #pendingResetVerdicts, 1, -1 do
+        if pendingResetVerdicts[i].pid == id then table.remove(pendingResetVerdicts, i) end
+      end
+    end
+  end
+end
+
 function cnrOnStations(pid, data)
   local ok, decoded = pcall(Util.JsonDecode, data)
   if geoMode then
@@ -715,6 +738,13 @@ function cnrOnStations(pid, data)
 end
 
 function cnrTick()
+  for i = #pendingResetVerdicts, 1, -1 do
+    local v = pendingResetVerdicts[i]
+    if now() - v.at >= GEO_RESET_VERDICT_DELAY then
+      table.remove(pendingResetVerdicts, i)
+      if current:isActive() then applyEffects(v.fx) end
+    end
+  end
   if not current:isActive() then return end
   local cars = {}
   for pid in pairs(current.players) do cars[pid] = carFor(pid) end
@@ -742,6 +772,7 @@ MP.RegisterEvent("cnr_stations", "cnrOnStations")
 MP.RegisterEvent("cnr_myVehicle", "cnrOnMyVehicle")
 MP.RegisterEvent("cnr_aiVehicles", "cnrOnAiVehicles")
 MP.RegisterEvent("cnr_geo", "cnrOnGeo")
+MP.RegisterEvent("cnr_relocated", "cnrOnRelocated")
 MP.RegisterEvent("cnr_tick", "cnrTick")
 MP.CancelEventTimer("cnr_tick")
 MP.CreateEventTimer("cnr_tick", 250)

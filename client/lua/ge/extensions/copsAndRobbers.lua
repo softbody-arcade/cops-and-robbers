@@ -794,7 +794,13 @@ local function onUpdate(dtReal)
 end
 
 local function onVehicleResetted(gameVid)
-  if not active or clock < suppressResetUntil or not lastPose then return end
+  if not active or clock < suppressResetUntil then return end
+  if geoMode then
+    local veh = ownVehicle()
+    if veh and veh:getID() == gameVid then sendServer("cnr_relocated", {}) end
+    return
+  end
+  if not lastPose then return end
   local veh = ownVehicle()
   if not veh or veh:getID() ~= gameVid then return end
   teleport(veh, lastPose.pos, lastPose.rot)
@@ -818,6 +824,38 @@ local function requestReset(kind)
 end
 
 M.requestReset = requestReset
+
+local AI_REPLACE_MIN, AI_REPLACE_MAX = 80, 200
+
+local function onBeamNGEarthRebased(info)
+  if not active then return end
+  suppressResetUntil = clock + 3
+  lastPose = nil
+  local purpose = type(info) == "table" and info.purpose or "rebase"
+  local own = ownVehicle()
+  if purpose ~= "teleport" then
+    sendServer("cnr_relocated", {})
+    return
+  end
+  local ids = {}
+  local center = own and own:getPosition()
+  local index = 0
+  for id, car in pairs(aiCars) do
+    local obj = car.gameId and getObjectByID(car.gameId)
+    if obj and center then
+      index = index + 1
+      local pos, rot = findCopSpot(center, AI_REPLACE_MIN, AI_REPLACE_MAX, index)
+      if pos then
+        spawn.safeTeleport(obj, pos, rot)
+        if car.frozen then obj:queueLuaCommand("controller.setFreeze(1)") end
+        ids[#ids + 1] = id
+      end
+    end
+  end
+  if #ids > 0 then sendServer("cnr_relocated", { ids = ids }) end
+end
+
+M.onBeamNGEarthRebased = onBeamNGEarthRebased
 
 local function onExtensionLoaded()
   if AddEventHandler then

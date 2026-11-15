@@ -390,6 +390,15 @@ function Round:vehicleReset(now, pid)
   return { { kind = "broadcast", msg = string.format("%s reset illegally", self.players[pid] or tostring(pid)) } }
 end
 
+function Round:relocated(now, pid)
+  local tracker = self.resetTrackers[pid]
+  if not tracker then return {} end
+  tracker:grant(now, SETUP_GRACE_SECONDS)
+  if self.crashDetectors[pid] then self.crashDetectors[pid]:reset() end
+  self.prevCars[pid] = nil
+  return {}
+end
+
 function Round:endCalled(now, pid)
   if self.state ~= "running" then
     if self.state == "idle" then return { { kind = "reply", pid = pid, msg = "No round running" } } end
@@ -418,7 +427,7 @@ function Round:stop(now, issuerId)
   return self:cancel(now, "Round cancelled")
 end
 
-for _, name in ipairs({ "start", "vehiclePicked", "go", "tick", "playerJoined", "playerLeft", "vehicleReset", "stop", "endCalled", "reroll" }) do
+for _, name in ipairs({ "start", "vehiclePicked", "go", "tick", "playerJoined", "playerLeft", "vehicleReset", "stop", "endCalled", "reroll", "relocated" }) do
   local method = Round[name]
   Round[name] = function(self, ...)
     local issuer = self.test and self.issuerId
