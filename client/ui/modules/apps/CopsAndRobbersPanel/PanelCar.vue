@@ -56,8 +56,13 @@
     >
       Include mod cars
     </BngSwitch>
-    <div class="p-field">
-      <span>Excluded cars</span>
+    <div class="excluded">
+      <span class="p-grow">
+        Excluded: <span class="p-muted">{{ excludedText }}</span>
+      </span>
+      <BngButton v-if="!locked" class="p-btn p-fit" :accent="ACCENTS.ghost" @click="editing = !editing">{{ editing ? "Done" : "Edit" }}</BngButton>
+    </div>
+    <div v-if="editing && !locked" class="p-field">
       <span class="p-muted">Model names, separated by commas</span>
       <input
         v-bng-text-input
@@ -94,12 +99,21 @@ const { armed, confirm } = useConfirm()
 
 const configs = ref([])
 const choice = ref(null)
+const editing = ref(false)
 
 const can = computed(() => props.state.can || {})
 const locked = computed(() => can.value.build !== true)
 const evolving = computed(() => props.store.valueOf("carMode") === "evolving")
 const build = computed(() => (props.state.build && typeof props.state.build === "object" ? props.state.build : null))
 const choiceLabel = computed(() => (configs.value.find(c => c.value === choice.value) || {}).label || "")
+
+const excludedText = computed(() => {
+  const list = props.store.valueOf("excludedModels")
+  const names = props.state.excludedNames
+  const known = names && typeof names === "object" && !Array.isArray(names) ? names : {}
+  const shown = Array.isArray(list) ? list.map(m => known[m] || m) : []
+  return shown.length ? shown.join(", ") : "none"
+})
 
 const lastChangeText = computed(() => {
   const c = build.value && build.value.lastChange
@@ -143,6 +157,12 @@ events.on("CnRConfigs", data => {
 </script>
 
 <style scoped>
+.excluded {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
 .car-pick {
   flex: 1 1 0;
   min-width: 0;

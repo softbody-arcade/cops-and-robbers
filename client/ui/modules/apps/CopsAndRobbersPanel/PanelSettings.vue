@@ -19,6 +19,7 @@
               :icon="icons.undo"
               @click="store.resetOne(item.key)"
             />
+            <span v-if="item.kind === 'bool' && store.changed(item.key)" class="p-mono changed">{{ shown(item, store.valueOf(item.key)) }}</span>
             <BngSwitch
               v-if="item.kind === 'bool'"
               :model-value="store.valueOf(item.key) === true"
@@ -143,8 +144,7 @@ function resetAll() {
   min-width: 4rem;
   text-align: center;
 }
-.set-value.changed,
-.set-list.changed {
+.changed {
   color: var(--cnr-me);
 }
 .set-value.pending {

@@ -1244,6 +1244,26 @@ test("the panel gets the map name", function()
   assertEq(env.lastTrigger("CnRPanel").mapName, nil)
 end)
 
+test("the panel gets names for the excluded cars", function()
+  local env = bootClient()
+  local getModel = core_vehicles.getModel
+  core_vehicles.getModel = function(model)
+    if model == "citybus" then return { model = { Name = "City Bus", Brand = "Wentward" } } end
+    error("no such model")
+  end
+  env.fire("cnr_panelState", { settings = { excludedModels = { "citybus", "gone_mod" } } })
+  core_vehicles.getModel = getModel
+  local names = env.lastTrigger("CnRPanel").excludedNames
+  assertEq(names.citybus, "Wentward City Bus")
+  assertEq(names.gone_mod, "gone_mod")
+  env.fire("cnr_panelState", { settings = { excludedModels = {} } })
+  assertEq(next(env.lastTrigger("CnRPanel").excludedNames), nil)
+  env.fire("cnr_panelState", { settings = { excludedModels = "citybus" } })
+  assertEq(env.lastTrigger("CnRPanel").excludedNames, nil)
+  env.fire("cnr_panelState", {})
+  assertEq(env.lastTrigger("CnRPanel").excludedNames, nil)
+end)
+
 test("station list gives the nearest three and whether one can be removed", function()
   local env = bootClient()
   env.veh.pos = vec3(0, 0, 0)

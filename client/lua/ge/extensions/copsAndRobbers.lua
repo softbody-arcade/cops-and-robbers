@@ -482,6 +482,14 @@ end
 local function onPanelState(data)
   local d = jsonDecode(data) or {}
   if type(d.map) == "string" and d.map ~= "" then d.mapName = game.mapTitle(d.map) end
+  local excluded = type(d.settings) == "table" and d.settings.excludedModels
+  if type(excluded) == "table" then
+    local names = {}
+    for _, model in ipairs(excluded) do
+      if type(model) == "string" and model ~= "" then names[model] = game.carName(model) end
+    end
+    d.excludedNames = names
+  end
   guihooks.trigger("CnRPanel", d)
 end
 

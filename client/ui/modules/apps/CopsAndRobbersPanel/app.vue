@@ -8,7 +8,7 @@
       <BngButton v-if="can.stop" class="p-btn p-fit" :accent="ACCENTS.destructive" @click="cancelChase">
         {{ armed === "cancel" ? "Click again" : "Cancel" }}
       </BngButton>
-      <BngButton v-bng-tooltip:top="'Open the panel'" class="p-icon-btn" :accent="ACCENTS.ghost" :icon="icons.arrowSmallDown" @click="folded = false" />
+      <BngButton v-bng-tooltip:top="'Open the panel'" class="p-icon-btn" :accent="ACCENTS.ghost" :icon="icons.arrowSmallDown" @click="unfold" />
     </div>
     <CnrCard v-else class="panel-card" title="Host panel" :sub="state.version ? `v${state.version}` : undefined" closable @close="close">
       <div v-if="!connected" class="p-empty">Not on a Cops and Robbers server</div>
@@ -117,6 +117,11 @@ function station(op) {
   refreshStations()
 }
 
+function unfold() {
+  folded.value = false
+  tab.value = 0
+}
+
 function close() {
   api.engineLua(`if copsAndRobbers then copsAndRobbers.ui(${api.serializeToLua({ action: "toggleApp", name: "panel" })}) end`)
 }
@@ -124,6 +129,7 @@ function close() {
 watch(
   () => state.value.phase,
   (phase, prev) => {
+    if (phase !== "idle") runnerPick.value = null
     if (DRIVING.has(phase) && !DRIVING.has(prev)) {
       folded.value = true
     } else if (phase === "idle" && prev && prev !== "idle") {
