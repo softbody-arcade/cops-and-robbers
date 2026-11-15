@@ -545,9 +545,15 @@ M.onExtensionLoaded = onExtensionLoaded
 M.onExtensionUnloaded = function()
   leaveServer()
   refreshActions()
+  for name in pairs(package.loaded) do
+    if name:find("^copsAndRobbers/") then package.loaded[name] = nil end
+  end
 end
 M.onClientEndMission = leaveServer
 M.onBeamMPServerLeave = leaveServer
+M.onGameStateUpdate = function()
+  hudfeed.layoutChanged(clock)
+end
 M.onWorldReadyState = function(st)
   if st == 2 then hudfeed.start(clock) end
 end

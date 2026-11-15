@@ -10,6 +10,7 @@ local HUD_FILES = { "/ui/modules/apps/CopsAndRobbersHud/app.json", "/ui/modules/
 local PUSH_INTERVAL = 0.1
 local PLACEMENT_INTERVAL = 2
 local PLACED_INTERVAL = 10
+local LAYOUT_SETTLE_SECONDS = 0.5
 local USER_LAYOUTS, ORIGINAL_LAYOUTS = "/settings/ui_apps/layouts/", "/settings/ui_apps/originalLayouts/"
 local PLACEMENT_DELAY = 3
 local BANNER_LABELS = { ["Runner starts in"] = "RUNNER STARTS IN", ["Cops released in"] = "COPS RELEASED IN", ["Crash penalty"] = "CRASH PENALTY" }
@@ -23,6 +24,7 @@ local placed = false
 local visibleSent = false
 local lastPush = 0
 local lastPlacementCheck = 0
+local forcedCheckAt
 local loadedAt
 local placementState = placement.new(HUD_APP, HUD_PLACEMENT)
 
@@ -142,6 +144,10 @@ function M.start(clock)
   placement.activate(placementState)
 end
 
+function M.layoutChanged(clock)
+  forcedCheckAt = clock + LAYOUT_SETTLE_SECONDS
+end
+
 function M.leave()
   loadedAt = nil
   placed = false
@@ -167,8 +173,10 @@ function M.update(clock, info)
     guihooks.trigger("CnRHud", { visible = false })
   end
   local interval = placed and PLACED_INTERVAL or PLACEMENT_INTERVAL
-  if loadedAt and clock - loadedAt >= PLACEMENT_DELAY and clock - lastPlacementCheck >= interval then
+  local due = clock - lastPlacementCheck >= interval or (forcedCheckAt and clock >= forcedCheckAt)
+  if loadedAt and clock - loadedAt >= PLACEMENT_DELAY and due then
     lastPlacementCheck = clock
+    forcedCheckAt = nil
     placementTick()
   end
 end

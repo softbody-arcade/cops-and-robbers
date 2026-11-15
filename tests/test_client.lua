@@ -165,20 +165,23 @@ test("picking a vehicle sends an official car config", function()
 end)
 
 local function fakeLayouts()
-  local L = { disk = { ["/settings/ui_apps/layouts/beammp.uilayout.json"] = { apps = {} } }, added = {} }
   local name = "/settings/ui_apps/layouts/beammp.uilayout.json"
+  local other = "/settings/ui_apps/layouts/earth.uilayout.json"
+  local L = { disk = { [name] = { apps = {} }, [other] = { apps = {} } }, added = {}, current = name }
   L.api = {
-    getCurrentLayout = function() return { filename = name, apps = L.disk[name].apps, userFileExists = true } end,
+    getCurrentLayout = function() return { filename = L.current, apps = L.disk[L.current].apps, userFileExists = true } end,
     setCurrentLayout = function() end,
-    getAvailableLayouts = function() return { { filename = name, apps = L.disk[name].apps } } end,
-    addApp = function(_, app, placement)
-      table.insert(L.disk[name].apps, { appName = app, placement = placement })
+    getAvailableLayouts = function()
+      return { { filename = name, apps = L.disk[name].apps }, { filename = other, apps = L.disk[other].apps } }
+    end,
+    addApp = function(file, app, placement)
+      table.insert(L.disk[file].apps, { appName = app, placement = placement })
       L.added[#L.added + 1] = placement
       return true
     end,
-    removeApp = function(_, idx0) table.remove(L.disk[name].apps, idx0 + 1); return true end,
+    removeApp = function(file, idx0) table.remove(L.disk[file].apps, idx0 + 1); return true end,
   }
-  L.name = name
+  L.name, L.other = name, other
   return L
 end
 
@@ -193,4 +196,25 @@ test("the HUD is placed centred in em units and checked less often once placed",
   local before = env.reads[L.name]
   env.tick(20, 0.5)
   assertEq(env.reads[L.name] - before <= 3, true)
+end)
+
+test("a layout switch is picked up right away, not after the slow check", function()
+  local L = fakeLayouts()
+  local env = bootClient({ layouts = L })
+  env.tick(4, 0.5)
+  assertEq(#L.added, 1)
+  L.current = L.other
+  env.M.onGameStateUpdate({})
+  env.tick(1, 0.25)
+  assertEq(#L.added, 2)
+  assertEq(#L.disk[L.other].apps, 1)
+end)
+
+test("unloading drops the cached helper modules so a rejoin loads fresh code", function()
+  local env = bootClient()
+  assertEq(package.loaded["copsAndRobbers/hudfeed"] ~= nil, true)
+  env.M.onExtensionUnloaded()
+  for name in pairs(package.loaded) do
+    assertEq(name:find("^copsAndRobbers/") == nil, true, name)
+  end
 end)
