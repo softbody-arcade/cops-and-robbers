@@ -27,6 +27,7 @@ local BASELINE_DELAY = 1.5
 local MODES_INTERVAL = 3
 local MODES_SETTLE = 2.5
 local HELP_FILE = "settings/cnr_help_seen.json"
+local BINDING_WARNING = "Bind a reset or recover button to reset during rounds"
 
 local sendServer, ownVehicle = game.sendServer, game.ownVehicle
 
@@ -134,6 +135,12 @@ local function setupPosition(d)
   return pos, rot
 end
 
+local function checkBinding(notice)
+  local bound = inputs.resetIsBound()
+  hudfeed.warning("binding", not bound and BINDING_WARNING or nil)
+  if notice and not bound then hudfeed.event(BINDING_WARNING, clock, "warn") end
+end
+
 local function playerName(id)
   local players = MPVehicleGE and MPVehicleGE.getPlayers and MPVehicleGE.getPlayers() or {}
   local p = players[id] or players[tostring(id)]
@@ -163,7 +170,7 @@ local function onRoundSetup(data)
   local mayChange = d.phase == "prep" and evolving and role == "runner"
   inputs.setPartsMenu(mayChange)
   inputs.lockEditing(mayChange and "paint" or "all")
-  hudfeed.warning("binding", not inputs.resetIsBound() and "Bind a reset or recover button to reset during rounds" or nil)
+  checkBinding(true)
 
   local pos, rot = setupPosition(d)
   placeVehicle(d.model, roundConfig, pos, rot, d.color)
@@ -721,6 +728,7 @@ local function onExtensionLoaded()
   apps.start(clock)
   inputs.setNotify(function(msg, tone) hudfeed.event(msg, clock, tone) end)
   ai.setNotify(function(msg, tone) hudfeed.event(msg, clock, tone) end)
+  hudfeed.onLobbyRefresh(checkBinding)
   if not AddEventHandler then return end
   AddEventHandler("cnr_pickVehicle", onPickVehicle)
   AddEventHandler("cnr_roundSetup", onRoundSetup)
@@ -735,7 +743,10 @@ local function onExtensionLoaded()
   AddEventHandler("cnr_autoNext", onAutoNext)
   AddEventHandler("cnr_mode", onMode)
   AddEventHandler("cnr_rules", function(data) hudfeed.rules(jsonDecode(data)) end)
-  AddEventHandler("cnr_lobby", function(data) hudfeed.lobby(jsonDecode(data)) end)
+  AddEventHandler("cnr_lobby", function(data)
+    hudfeed.lobby(jsonDecode(data))
+    checkBinding()
+  end)
   AddEventHandler("cnr_myColor", onMyColor)
   AddEventHandler("cnr_lastSeen", onLastSeen)
   AddEventHandler("cnr_nearestCop", onNearestCop)

@@ -18,6 +18,7 @@ local connected, helpOpen = false, false
 local rules, lobby, color
 local appsOpen, appsCheckedAt = {}, -math.huge
 local lastClock, lastInfo = 0, {}
+local lobbyCheck
 
 function M.warning(key, text)
   if text == nil then
@@ -138,6 +139,10 @@ function M.help(open)
   helpOpen = open == true
 end
 
+function M.onLobbyRefresh(fn)
+  lobbyCheck = fn
+end
+
 local function hide()
   visibleSent = false
   guihooks.trigger("CnRHud", { visible = false })
@@ -171,6 +176,7 @@ local function push(clock, info)
   if not info.active and clock - appsCheckedAt >= APPS_CHECK_INTERVAL then
     appsCheckedAt = clock
     appsOpen = { panel = apps.isOpen("panel"), board = apps.isOpen("board") }
+    if lobbyCheck then lobbyCheck() end
   end
   guihooks.trigger("CnRHud", hud.payload(state, clock, {
     active = info.active, role = info.role, chaseStart = info.chaseStart,

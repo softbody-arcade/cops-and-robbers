@@ -539,6 +539,45 @@ test("a missing reset binding is a standing warning until bound", function()
   assertEq(#hudfeed.warnings(), 0)
 end)
 
+test("a missing reset binding also shows a warn notice at round setup", function()
+  local env = bootClient()
+  local text = "Bind a reset or recover button to reset during rounds"
+  core_input_bindings.bindings = {}
+  env.fire("cnr_roundSetup", copy(SETUP))
+  env.tick(0.2)
+  local n = env.hud().notices[1]
+  assertEq(n and n.text, text); assertEq(n and n.tone, "warn")
+end)
+
+test("binding a reset key clears the lobby line when the lobby refreshes", function()
+  local env = bootClient()
+  local hudfeed = package.loaded["copsAndRobbers/hudfeed"]
+  local text = "Bind a reset or recover button to reset during rounds"
+  core_input_bindings.bindings = {}
+  env.fire("cnr_roundSetup", copy(SETUP))
+  env.fire("cnr_roundEnd", { reason = "cancelled" })
+  assertEq(hudfeed.warnings()[1], text)
+  core_input_bindings.bindings = { { contents = { bindings = { { action = "reset_physics" } } } } }
+  env.fire("cnr_lobby", { online = 2 })
+  assertEq(#hudfeed.warnings(), 0)
+end)
+
+test("binding a reset key clears the lobby line within a few seconds", function()
+  local env = bootClient()
+  local hudfeed = package.loaded["copsAndRobbers/hudfeed"]
+  env.fire("cnr_mode", { geo = false, version = "2.1.0" })
+  core_input_bindings.bindings = {}
+  env.fire("cnr_roundSetup", copy(SETUP))
+  env.fire("cnr_roundEnd", { reason = "cancelled" })
+  env.tick(0.5)
+  assertEq(#hudfeed.warnings(), 1)
+  core_input_bindings.bindings = { { contents = { bindings = { { action = "reset_physics" } } } } }
+  env.tick(2.5)
+  assertEq(#hudfeed.warnings(), 0)
+  env.tick(8)
+  assertEq(env.hud().mode, "lobby"); assertEq(#env.hud().lobby.warnings, 0)
+end)
+
 test("version mismatch and a missing BeamNG.Earth are standing warnings", function()
   local env = bootClient()
   local hudfeed = package.loaded["copsAndRobbers/hudfeed"]

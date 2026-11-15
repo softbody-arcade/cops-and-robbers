@@ -106,7 +106,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Per-player color:** the Colour button (lobby card or prep line) opens a colour picker with a hex field, "No colour" and Done. The colour is applied to every round car. Set during prep, it repaints straight away; otherwise it applies from the next round. It is saved on the server per player.
 - **How to play:** a five-tab card (Basics, Runner, Cop, Resets, Rules) that opens by itself the first time a player joins (remembered on their own PC in `settings/`) and from the How to play buttons. Every number in it comes from the server's current settings, so it matches the round; settings that are off read "no time limit" or "sight is off". It hides itself during a round.
 - **Identity:** players are recognised by their BeamMP account for the leaderboard, colors and who runs next. Guests are recognised by name, which changes every session.
-- **Warnings:** a yellow line on the lobby card for a standing problem: no reset or recover button bound, an outdated copy of the mod, or a BeamNG.Earth that is too old. It stays until fixed.
+- **Warnings:** a yellow line on the lobby card for a standing problem: no reset or recover button bound, an outdated copy of the mod, or a BeamNG.Earth that is too old. It stays until fixed: bind a reset button and the line goes within a couple of seconds. Without a reset binding, a round also starts with a warning notice.
 
 ## Leaderboards (saved permanently)
 
