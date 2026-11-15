@@ -530,14 +530,51 @@ local function compass(from, to)
   return COMPASS[math.floor((angle + 22.5) / 45) % 8 + 1]
 end
 
+local gpsTarget
+
+local function formatDistance(m)
+  if m >= 1000 then return string.format("%.1f km", m / 1000) end
+  return string.format("%d m", math.floor(m + 0.5))
+end
+
 local function clearRoute()
   if core_groundMarkers then pcall(core_groundMarkers.setPath, nil) end
+  if gpsTarget then
+    local api = earthApi()
+    if api and api.gpsClear then pcall(api.gpsClear) end
+    gpsTarget = nil
+  end
+end
+
+local function gpsInfo()
+  if not gpsTarget then return nil end
+  local api = earthApi()
+  local veh = ownVehicle()
+  local here = veh and veh:getPosition()
+  local target = geoToGame(gpsTarget)
+  local dir = (here and target) and (" " .. compass(here, target)) or ""
+  local ok, g = pcall(function() return api and api.gps and api.gps() end)
+  if ok and type(g) == "table" and type(g.remaining) == "number" and not g.planning then
+    return string.format("Runner %s by road%s", formatDistance(g.remaining), dir)
+  end
+  if here and target then return string.format("Runner %s%s", formatDistance(here:distance(target)), dir) end
+  return nil
 end
 
 local function onLastSeen(data)
   local d = jsonDecode(data) or {}
   local target = d.geo and geoToGame(d.geo) or (d.pos and vec3(d.pos.x, d.pos.y, d.pos.z))
   if not target then return end
+  local api = geoMode and earthApi()
+  if api and api.has and api.has("gps") and d.geo then
+    local ok = pcall(api.gpsSet, d.geo.lat, d.geo.lon, "Runner last seen")
+    if ok then
+      gpsTarget = { lat = d.geo.lat, lon = d.geo.lon, h = d.geo.h }
+      infoText = gpsInfo()
+      if infoText then toast(infoText, 4, "cnr_seen") end
+      return
+    end
+  end
   if core_groundMarkers then pcall(core_groundMarkers.setPath, target) end
   local veh = ownVehicle()
   if veh then
@@ -549,7 +586,7 @@ end
 
 local function onNearestCop(data)
   local d = jsonDecode(data) or {}
-  if d.dist then infoText = string.format("Nearest cop %d m", math.floor(d.dist + 0.5)) end
+  if d.dist then infoText = "Nearest cop " .. formatDistance(d.dist) end
 end
 
 local function onMode(data)
@@ -782,6 +819,7 @@ local function onUpdate(dtReal)
     elseif lastHint then
       parts[#parts + 1] = lastHint
     end
+    if gpsTarget then infoText = gpsInfo() or infoText end
     if infoText then parts[#parts + 1] = infoText end
     toast(table.concat(parts, "  |  "), 1.5, "cnr_status")
   end

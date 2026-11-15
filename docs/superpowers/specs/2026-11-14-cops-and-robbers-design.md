@@ -195,6 +195,8 @@ players are not comparable, and its gas stations are generated at runtime (no fa
 - clients report their car (and AI cars) as lat/lon/h + velocity via `cnr_geo` 4x/s using `beamngEarth_api.toGeo`,
   skipping frames where `api.rebasing()`; the server converts to one WGS84 ENU frame and ignores reports older than 2 s;
 - positions sent to clients (cop placement, last seen, rejoin) are lat/lon, converted with `api.toGame`;
+- last-seen pings set BeamNG.Earth's GPS destination (`api.gpsSet`, "Runner last seen") and the status line shows
+  `api.gps().remaining` as the distance by road (straight line while the route is planning); cleared at round end;
 - clients look up real gas stations with `api.places(..., {categories={'gas_station'}})` every 60 s or 1 km and the
   server merges them (50 m dedupe) into `data/stations/beamng_earth.json` as lat/lon.
 One mod for all maps; a client on Earth without API v1 gets a warning.
