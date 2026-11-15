@@ -961,3 +961,77 @@ test("malformed panel data is ignored", function()
   assertEq(env.lastSent("cnr_panelReply").data:find("Nothing to save", 1, true) ~= nil, true)
   env.cleanup()
 end)
+
+local function capturingLogs(fn)
+  local logs, realPrint = {}, print
+  print = function(...)
+    local parts = {}
+    for i = 1, select("#", ...) do parts[#parts + 1] = tostring((select(i, ...))) end
+    logs[#logs + 1] = table.concat(parts, " ")
+  end
+  local ok, err = pcall(fn)
+  print = realPrint
+  if not ok then error(err, 0) end
+  return function(text)
+    for _, l in ipairs(logs) do if l:find(text, 1, true) then return true end end
+    return false
+  end
+end
+
+test("settings replies echo the request id", function()
+  local env = boot()
+  env.call("cnr_panel", 1, '{"action":"settings","id":7,"values":{"headStartSeconds":9}}')
+  assertEq(env.lastSent("cnr_panelReply").data:find('"id":7', 1, true) ~= nil, true)
+  env.call("cnr_panel", 1, '{"action":"settings","id":8,"values":{"catchHoldSeconds":0}}')
+  assertEq(env.lastSent("cnr_panelReply").data:find('"id":8', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("a command the panel may not send gets a reply", function()
+  local env = boot()
+  env.call("cnr_panel", 1, '{"action":"command","text":"set headStartSeconds 1"}')
+  local r = env.lastSent("cnr_panelReply")
+  assertEq(r.pid, 1)
+  assertEq(r.data:find("Not available from the panel", 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("panel start keeps the name's case in replies", function()
+  local env = boot()
+  env.call("cnr_panel", 1, '{"action":"command","text":"start Zed"}')
+  assertEq(env.lastSent("cnr_panelReply").data:find("No player matching 'Zed'", 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("a panel error does not stop the round tick", function()
+  local env = boot()
+  env.startRound()
+  env.call("cnr_panel", 1, '{"action":"open"}')
+  env.go()
+  MP.GetPlayers = function() error("boom") end
+  local logged = capturingLogs(function()
+    for _ = 1, 20 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  end)
+  assertEq(env.lastSent("cnr_runnerGo") ~= nil, true)
+  assertEq(logged("panel update failed"), true)
+  env.cleanup()
+end)
+
+test("auto off tells clients to drop the next round countdown", function()
+  local env = boot()
+  env.call("onChatMessage", 1, "Reinder", "/cnr auto off")
+  local s = env.lastSent("cnr_autoNext")
+  assertEq(s ~= nil and s.pid, -1)
+  env.cleanup()
+end)
+
+test("parts change log names the differing slots", function()
+  local env = boot()
+  env.startRound()
+  local logged = capturingLogs(function()
+    env.call("onVehicleEdited", 1, 0, '1-0:{"jbm":"pickup","vcf":{"parts":{"engine":"v8","tires":"a"}}}')
+    env.call("onVehicleEdited", 1, 0, '1-0:{"jbm":"pickup","vcf":{"parts":{"engine":"v12","tires":"a","wing":"big"}}}')
+  end)
+  assertEq(logged("slots: engine, wing"), true)
+  env.cleanup()
+end)

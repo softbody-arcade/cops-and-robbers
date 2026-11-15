@@ -12,4 +12,23 @@ function M.deepEqual(a, b)
   return true
 end
 
+function M.diffKeys(a, b, limit)
+  if type(a) ~= "table" or type(b) ~= "table" then return "(shape changed)" end
+  local keys, seen = {}, {}
+  for _, t in ipairs({ a, b }) do
+    for k in pairs(t) do
+      if not seen[k] and not M.deepEqual(a[k], b[k]) then
+        seen[k] = true
+        keys[#keys + 1] = tostring(k)
+      end
+    end
+  end
+  table.sort(keys)
+  local shown = {}
+  for i = 1, math.min(#keys, limit or #keys) do shown[i] = keys[i] end
+  local text = table.concat(shown, ", ")
+  if #keys > #shown then text = text .. string.format(" (+%d more)", #keys - #shown) end
+  return text
+end
+
 return M

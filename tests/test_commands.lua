@@ -66,3 +66,11 @@ test("matchPlayer next picks whoever ran least", function()
   assertEq(commands.matchPlayer("next", players, nil, counts), 2)
   assertEq(commands.matchPlayer("next", {[1]="A", [2]="B"}, nil, {}), 1)
 end)
+
+test("matchPlayer =name picks the exact player even when the name is a keyword", function()
+  local players = { [1] = "next", [2] = "Bob", [3] = "Bobby" }
+  assertEq(commands.matchPlayer("=next", players), 1)
+  assertEq(commands.matchPlayer("=BOB", players), 2)
+  local pid, err = commands.matchPlayer("=bo", players)
+  assertEq(pid, nil); assertEq(err, "No player named 'bo'")
+end)

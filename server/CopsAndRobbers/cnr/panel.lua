@@ -12,9 +12,11 @@ local MAX_COMMAND_LENGTH = 64
 
 function M.allow(text)
   if type(text) ~= "string" then return nil end
-  local t = text:lower():match("^%s*(.-)%s*$")
+  local t = text:match("^%s*(.-)%s*$")
   if #t > MAX_COMMAND_LENGTH then return nil end
-  if M.BINDABLE[t] or t:match("^start %S") or t == "auto on" or t == "auto off" then return t end
+  local lower = t:lower()
+  if M.BINDABLE[lower] or lower == "auto on" or lower == "auto off" then return lower end
+  if lower:match("^start %S") then return "start " .. t:sub(7) end
   return nil
 end
 
@@ -69,6 +71,18 @@ function M.signature(t)
   return "{" .. table.concat(parts, ",") .. "}"
 end
 
+local function validListValue(v)
+  if type(v) == "string" then return true end
+  if type(v) ~= "table" then return false end
+  local n = 0
+  for _ in pairs(v) do n = n + 1 end
+  if n ~= #v then return false end
+  for _, item in ipairs(v) do
+    if type(item) ~= "string" and type(item) ~= "number" then return false end
+  end
+  return true
+end
+
 local function toText(v)
   if type(v) == "number" then return string.format("%.10g", v) end
   if type(v) == "table" then
@@ -88,6 +102,11 @@ function M.applyValues(raw, values)
   end
   if #keys == 0 then return nil, "Nothing to save" end
   table.sort(keys)
+  for _, key in ipairs(keys) do
+    if type(config.DEFAULTS[key]) == "table" and not validListValue(values[key]) then
+      return nil, "Invalid value for " .. key
+    end
+  end
   local updated, pending = raw or {}, keys
   while #pending > 0 do
     local failed, firstErr = {}, nil

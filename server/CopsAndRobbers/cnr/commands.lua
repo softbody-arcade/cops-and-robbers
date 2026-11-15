@@ -19,6 +19,13 @@ function M.matchPlayer(query, players, random, runCounts)
   local pids = {}
   for pid in pairs(players) do pids[#pids + 1] = pid end
   table.sort(pids)
+  if query:sub(1, 1) == "=" then
+    local want = query:sub(2):lower()
+    for _, pid in ipairs(pids) do
+      if players[pid]:lower() == want then return pid end
+    end
+    return nil, string.format("No player named '%s'", query:sub(2))
+  end
   local q = query:lower()
   if q == "next" then
     if #pids == 0 then return nil, "No players online" end

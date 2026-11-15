@@ -81,6 +81,7 @@ local function now() return serverClock:GetCurrent() end
 local panelSubs = {}
 local panelMirror
 local lastPanelSig
+local lastPanelError
 
 local function send(pid, event, payload)
   if type(pid) ~= "number" or (pid < 0 and pid ~= -1) then return end
@@ -474,7 +475,10 @@ function handlers.auto(pid, cmd)
   writeFile(pluginDir .. "config.json", Util.JsonPrettify(Util.JsonEncode(updated)))
   loadConfig()
   current.cfg = cfg
-  if arg == "off" then autoNextAt = nil end
+  if arg == "off" then
+    autoNextAt = nil
+    send(-1, "cnr_autoNext", {})
+  end
   reply(pid, "Automatic next round: " .. arg)
 end
 
@@ -656,8 +660,9 @@ local function pushPanel(opener)
   end
 end
 
-local function panelSettings(pid, values)
-  local function answer(ok, text, keys) send(pid, "cnr_panelReply", { ok = ok, text = text, keys = keys }) end
+local function panelSettings(pid, values, id)
+  if type(id) ~= "number" and type(id) ~= "string" then id = nil end
+  local function answer(ok, text, keys) send(pid, "cnr_panelReply", { ok = ok, text = text, keys = keys, id = id }) end
   if current:isActive() then return answer(false, "Stop the round first") end
   local updated, keys = panel.applyValues(rawConfig, values)
   if not updated then return answer(false, keys) end
@@ -677,14 +682,14 @@ function cnrOnPanel(pid, data)
     panelSubs[pid] = nil
   elseif msg.action == "command" then
     local text = panel.allow(msg.text)
-    if not text then return end
+    if not text then return send(pid, "cnr_panelReply", { text = "Not available from the panel" }) end
     panelMirror = pid
     local ran, err = pcall(runCommand, pid, text)
     panelMirror = nil
     pushPanel()
     if not ran then error(err, 0) end
   elseif msg.action == "settings" then
-    panelSettings(pid, msg.values)
+    panelSettings(pid, msg.values, msg.id)
   end
 end
 
@@ -719,7 +724,8 @@ local function checkParts(pid, decoded)
   elseif not tables.deepEqual(parts, entry.parts) then
     if not entry.announced then
       entry.announced = true
-      log(string.format("%s changed parts during the round (not enforced)", MP.GetPlayerName(pid) or tostring(pid)))
+      log(string.format("%s changed parts during the round (not enforced), slots: %s",
+        MP.GetPlayerName(pid) or tostring(pid), tables.diffKeys(entry.parts, parts, 5)))
     end
     entry.parts = parts
   end
@@ -900,7 +906,9 @@ local function startAutoRound()
 end
 
 function cnrTick()
-  pushPanel()
+  local panelOk, panelErr = pcall(pushPanel)
+  if not panelOk and panelErr ~= lastPanelError then log("panel update failed: " .. tostring(panelErr)) end
+  lastPanelError = not panelOk and panelErr or nil
   if autoNextAt and now() >= autoNextAt then startAutoRound() end
   for i = #pendingResetVerdicts, 1, -1 do
     local v = pendingResetVerdicts[i]
