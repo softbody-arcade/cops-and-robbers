@@ -795,6 +795,7 @@ local function panelState()
   return panel.snapshot({
     version = VERSION, map = mapName, phase = current.state,
     runner = current.runnerId and current:runnerName() or nil,
+    car = roundCarActive() and current.vehicle.model or nil,
     test = current.test == true,
     elapsed = running and current.releasedAt and math.max(0, now() - current.releasedAt) or nil,
     players = entries, cfg = cfg, defaults = config.DEFAULTS,

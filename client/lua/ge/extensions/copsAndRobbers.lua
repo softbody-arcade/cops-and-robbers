@@ -489,6 +489,7 @@ end
 local function onPanelState(data)
   local d = jsonDecode(data) or {}
   if type(d.map) == "string" and d.map ~= "" then d.mapName = game.mapTitle(d.map) end
+  if type(d.car) == "string" and d.car ~= "" then d.carName = game.carName(d.car) end
   local excluded = type(d.settings) == "table" and d.settings.excludedModels
   if type(excluded) == "table" then
     local names = {}

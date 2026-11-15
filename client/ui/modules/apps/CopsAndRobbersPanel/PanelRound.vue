@@ -25,36 +25,6 @@
       </div>
     </template>
 
-    <template v-else-if="view === 'idle'">
-      <div class="p-sec">Runner</div>
-      <div v-for="p in players" :key="p.name" class="p-row p-pick" :class="{ sel: isPicked(p) }" @click="emit('update:pick', p.name)">
-        <span class="p-name"><b v-if="isPicked(p)">{{ p.name }}</b><template v-else>{{ p.name }}</template></span>
-        <span class="p-muted">{{ meta(p) }}</span>
-        <RoleChip v-if="isPicked(p)" role="runner" label="Runner" />
-      </div>
-      <div class="p-row p-pick" :class="{ sel: randomPicked }" @click="emit('update:pick', RANDOM)">
-        <span class="p-name p-muted">Random runner</span>
-        <RoleChip v-if="randomPicked" role="runner" label="Runner" />
-      </div>
-      <div class="p-buttons p-gap">
-        <BngButton class="p-btn p-big" :accent="ACCENTS.main" :icon="icons.play" :disabled="!canStart" @click="start">{{ startLabel }}</BngButton>
-      </div>
-      <div v-if="startBlocked" class="p-why">{{ startBlocked }}</div>
-      <div v-if="can.test" class="p-buttons">
-        <BngButton class="p-btn" :accent="ACCENTS.secondary" :disabled="!!startBlocked" @click="emit('command', 'test runner')">Practice as runner</BngButton>
-        <BngButton class="p-btn" :accent="ACCENTS.secondary" :disabled="!!startBlocked" @click="emit('command', 'test cop')">Practice as cop</BngButton>
-      </div>
-      <BngSwitch
-        class="p-switch"
-        :model-value="state.auto === true"
-        label-before
-        :inline="false"
-        @update:modelValue="v => emit('command', v ? 'auto on' : 'auto off')"
-      >
-        Automatic rounds <span class="p-muted">(next one {{ delayText }} after a round)</span>
-      </BngSwitch>
-    </template>
-
     <template v-else-if="view === 'prep'">
       <template v-if="inRound.length">
         <div class="p-sec">Players</div>
@@ -84,6 +54,49 @@
         </BngButton>
       </div>
       <div v-if="armed === 'cancel'" class="p-why">Cancelling throws this run away</div>
+    </template>
+
+    <template v-if="view === 'idle' || practiceStart">
+      <div class="p-sec">{{ practiceStart ? "Start a real round" : "Runner" }}</div>
+      <div v-for="p in players" :key="p.name" class="p-row p-pick" :class="{ sel: isPicked(p) }" @click="emit('update:pick', p.name)">
+        <span class="p-name"><b v-if="isPicked(p)">{{ p.name }}</b><template v-else>{{ p.name }}</template></span>
+        <span class="p-muted">{{ meta(p) }}</span>
+        <RoleChip v-if="isPicked(p)" role="runner" label="Runner" />
+      </div>
+      <div class="p-row p-pick" :class="{ sel: randomPicked }" @click="emit('update:pick', RANDOM)">
+        <span class="p-name p-muted">Random runner</span>
+        <RoleChip v-if="randomPicked" role="runner" label="Runner" />
+      </div>
+      <div class="p-buttons p-gap">
+        <BngButton
+          class="p-btn"
+          :class="{ 'p-big': !practiceStart }"
+          :accent="practiceStart ? ACCENTS.secondary : ACCENTS.main"
+          :icon="icons.play"
+          :disabled="!canStart"
+          @click="start"
+        >
+          {{ startLabel }}
+        </BngButton>
+      </div>
+      <div v-if="startBlocked" class="p-why">{{ startBlocked }}</div>
+      <div v-else-if="practiceStart" class="p-sub">Starting a round ends the practice</div>
+    </template>
+
+    <template v-if="view === 'idle'">
+      <div v-if="can.test" class="p-buttons">
+        <BngButton class="p-btn" :accent="ACCENTS.secondary" :disabled="!!startBlocked" @click="emit('command', 'test runner')">Practice as runner</BngButton>
+        <BngButton class="p-btn" :accent="ACCENTS.secondary" :disabled="!!startBlocked" @click="emit('command', 'test cop')">Practice as cop</BngButton>
+      </div>
+      <BngSwitch
+        class="p-switch"
+        :model-value="state.auto === true"
+        label-before
+        :inline="false"
+        @update:modelValue="v => emit('command', v ? 'auto on' : 'auto off')"
+      >
+        Automatic rounds <span class="p-muted">(next one {{ delayText }} after a round)</span>
+      </BngSwitch>
     </template>
   </div>
 </template>
@@ -158,7 +171,7 @@ const evolvingMode = computed(() => settings.value.carMode === "evolving")
 const build = computed(() => (props.state.build && typeof props.state.build === "object" ? props.state.build : null))
 
 const carText = computed(() => {
-  if (!evolvingMode.value && !props.state.evolving) return "random car"
+  if (!evolvingMode.value && !props.state.evolving) return props.state.carName || "random car"
   if (!build.value) return "evolving build, none yet"
   return `build step ${build.value.step}, ${build.value.name}`
 })
@@ -193,6 +206,7 @@ function meta(p) {
   return tags.join(" · ")
 }
 
+const practiceStart = computed(() => props.state.test === true && can.value.start === true)
 const startBlocked = computed(() => (evolvingMode.value && !build.value ? "Start a new build first, on the Car tab" : ""))
 const canStart = computed(() => can.value.start === true && !startBlocked.value)
 const startLabel = computed(() => {

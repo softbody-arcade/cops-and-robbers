@@ -73,6 +73,7 @@ function M.snapshot(info)
     map = info.map,
     phase = info.phase,
     runner = info.runner,
+    car = info.car,
     test = info.test == true,
     elapsed = info.elapsed and math.floor(info.elapsed) or nil,
     players = M.playerRows(info.players, info.nextRunner, info.lastRunner),

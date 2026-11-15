@@ -41,6 +41,8 @@ test("snapshot sorts players, floors elapsed and copies lists", function()
   assertEq(snap.auto, true)
   assertEq(snap.can["end"], true)
   assertEq(snap.runner, "Ann"); assertEq(snap.phase, "running"); assertEq(snap.test, false)
+  assertEq(snap.car, nil)
+  assertEq(panel.snapshot({ phase = "prep", car = "pickup" }).car, "pickup")
 end)
 
 test("signature is order independent and sees value changes", function()

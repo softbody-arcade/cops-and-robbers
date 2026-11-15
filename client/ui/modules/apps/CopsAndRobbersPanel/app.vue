@@ -129,7 +129,7 @@ function close() {
 watch(
   () => state.value.phase,
   (phase, prev) => {
-    if (phase !== "idle") runnerPick.value = null
+    if (phase !== "idle" && !state.value.test) runnerPick.value = null
     if (DRIVING.has(phase) && !DRIVING.has(prev)) {
       folded.value = true
     } else if (phase === "idle" && prev && prev !== "idle") {

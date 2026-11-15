@@ -176,8 +176,9 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Four tabs:** Round, Car, Map, Settings.
 - **Round tab** shows only what can be done now, with one main button for the next step and a yellow line saying why it can't happen yet:
   - **No round:** the status, the map's real name and the car mode, the player list as the runner picker (runs this session, "next" and "last" marks, and a Random runner row), **Start round with Bob**, Practice as runner / as cop, and the Automatic rounds switch with its delay.
-  - **Prep:** the runner and the car (or build step), the players with their role and state (ready, changing, missing parts; display only), **GO** (disabled with the reason, for example "Waiting for Bob to apply the change"), New car (random mode) and Cancel round.
+  - **Prep:** the runner and the car's name (or build step), the players with their role and state (ready, changing, missing parts; display only), **GO** (disabled with the reason, for example "Waiting for Bob to apply the change"), New car (random mode) and Cancel round.
   - **Countdown, head start, chase:** the panel folds into a bar with the phase, the runner, **End chase** and **Cancel** (a second click during the chase), and ▾ to open it. It folds by itself on GO and opens again when the round ends.
+  - **Someone's practice round:** the practice's own controls, plus the runner picker and **Start round with Bob** under "Start a real round" (starting one ends the practice).
   - **After a round:** the result line ("Bob caught after 8:41"), and with automatic rounds on, "Next round in 12 s with Kim (fewest runs)" with **Start now** and **Stop automatic rounds**.
   - A reply line shows the server's answer to every click. Nothing goes to chat.
 - **Car tab:** a Random car / Evolving build switch. In evolving mode a summary (car, build step, last change and who made it), New build (choose a car, or random; a second click when a build exists) and Reset build (a second click). For both modes: Include mod cars and the excluded cars. Locked during a round.
