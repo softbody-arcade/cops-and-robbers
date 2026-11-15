@@ -1,4 +1,4 @@
-package.path = "server/CopsAndRobbers/?.lua;" .. package.path
+package.path = "server/CopsAndRobbers/?.lua;client/lua/ge/extensions/?.lua;" .. package.path
 
 local passed, failed = 0, 0
 local current
