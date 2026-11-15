@@ -11,6 +11,8 @@ Round.__index = Round
 
 local PICK_TIMEOUT_SECONDS = 10
 local APPLY_TIMEOUT_SECONDS = 20
+local MAX_SIGHT_STEP = 1
+local SIGHT_RANGE_MARGIN = 50
 local COLOR_RUNNER = "#1f5fff"
 local COLOR_COPS = { "#20c020", "#e02020" }
 
@@ -66,6 +68,7 @@ function Round:clear()
   self.lastTickAt = nil
   self.lastSeenAt = nil
   self.sight = sight.new()
+  self.queued = nil
   self.inSight = false
   self.liveAt = nil
   self.sightTickAt = nil
@@ -458,18 +461,21 @@ function Round:sightTick(now, cars, runnerCar, fx)
   local cfg = self.cfg
   if cfg.sightMaxMeters <= 0 then return end
   local cops = self:copPids()
-  local dt = self.sightTickAt and math.max(0, now - self.sightTickAt) or 0
+  local dt = self.sightTickAt and math.min(MAX_SIGHT_STEP, math.max(0, now - self.sightTickAt)) or 0
   self.sightTickAt = now
   local nearest
+  local seeing = {}
+  local inSight = false
   for _, pid in ipairs(cops) do
     local car = cars[pid]
-    if car and car.pos then
-      local d = vec.dist(runnerCar.pos, car.pos)
-      if not nearest or d < nearest then nearest = d end
+    local d = car and car.pos and vec.dist(runnerCar.pos, car.pos)
+    if d and not self.penalties[pid] and (not nearest or d < nearest) then nearest = d end
+    if d and d <= cfg.sightMaxMeters + SIGHT_RANGE_MARGIN and sight.sees(self.sight, pid, now, cfg.sightGraceSeconds) then
+      seeing[pid] = true
+      inSight = true
+      self.copSight[pid] = (self.copSight[pid] or 0) + dt
     end
-    if sight.sees(self.sight, pid, now, cfg.sightGraceSeconds) then self.copSight[pid] = (self.copSight[pid] or 0) + dt end
   end
-  local inSight = sight.any(self.sight, cops, now, cfg.sightGraceSeconds)
   if not inSight then self.hiddenSeconds = self.hiddenSeconds + dt end
   if inSight then
     if not self.inSight then
@@ -482,7 +488,7 @@ function Round:sightTick(now, cars, runnerCar, fx)
     local noRoute = {}
     for _, pid in ipairs(cops) do
       local car = cars[pid]
-      if car and car.pos and car.vel and sight.sees(self.sight, pid, now, cfg.sightGraceSeconds) then
+      if car and car.pos and car.vel and seeing[pid] then
         local limit = sight.noRouteDistance(vec.speedKmh(car.vel) / 3.6, cfg.sightNoRouteSeconds, cfg.sightNoRouteMinMeters)
         if vec.dist(runnerCar.pos, car.pos) <= limit then noRoute[pid] = true end
       end

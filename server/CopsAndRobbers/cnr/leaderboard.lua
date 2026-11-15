@@ -225,39 +225,4 @@ function M.formatTop(board, limit, map)
   return lines
 end
 
-function M.formatTopCops(board, limit)
-  limit = limit or 10
-  local stats = {}
-  for _, r in ipairs(board.runs) do
-    if type(r) == "table" and r.endReason == "caught" and type(r.catchers) == "table" and type(r.survivedSeconds) == "number" then
-      local keys = type(r.catcherKeys) == "table" and r.catcherKeys or {}
-      local at = tonumber(r.endedAt) or 0
-      for i, name in ipairs(r.catchers) do
-        if type(name) == "string" then
-          local key = type(keys[i]) == "string" and keys[i] or name
-          local s = stats[key] or { name = name, catches = 0, fastest = math.huge, nameAt = at }
-          s.catches = s.catches + 1
-          s.fastest = math.min(s.fastest, r.survivedSeconds)
-          if at >= s.nameAt then s.name, s.nameAt = name, at end
-          stats[key] = s
-        end
-      end
-    end
-  end
-  local list = {}
-  for _, s in pairs(stats) do list[#list + 1] = s end
-  if #list == 0 then return { "No catches yet" } end
-  table.sort(list, function(a, b)
-    if a.catches ~= b.catches then return a.catches > b.catches end
-    if a.fastest ~= b.fastest then return a.fastest < b.fastest end
-    return a.name < b.name
-  end)
-  local lines = {}
-  for i, s in ipairs(list) do
-    if i > limit then break end
-    lines[i] = string.format("%d. %s %d %s, fastest %s", i, s.name, s.catches, s.catches == 1 and "catch" or "catches", M.formatTime(s.fastest))
-  end
-  return lines
-end
-
 return M

@@ -337,6 +337,12 @@ local function normalizeConfig(path)
   return (path:gsub("\\", "/"):gsub("^/", ""):lower())
 end
 
+local function anonymous(key)
+  local h = 5381
+  for i = 1, #key do h = (h * 33 + key:byte(i)) % 4294967296 end
+  return string.format("p%08x", h)
+end
+
 local function boardState(sub)
   sub = type(sub) == "table" and sub or { map = mapName }
   local f = {
@@ -345,9 +351,17 @@ local function boardState(sub)
   }
   return {
     map = mapName, maps = leaderboard.maps(board), filter = sub.map or mapName, mode = f.mode or "all",
-    runners = leaderboard.runners(board, f, 20),
+    runners = (function()
+      local list = leaderboard.runners(board, f, 20)
+      for _, e in ipairs(list) do e.key = nil end
+      return list
+    end)(),
     cops = leaderboard.cops(board, f, 20),
-    players = leaderboard.players(board, f, cfg.assistMinSightPercent),
+    players = (function()
+      local list = leaderboard.players(board, f, cfg.assistMinSightPercent)
+      for _, p in ipairs(list) do p.key = anonymous(tostring(p.key)) end
+      return list
+    end)(),
   }
 end
 
@@ -437,7 +451,7 @@ local function applyEffects(effects)
         broadcast(string.format("Next round in %gs (turn off Automatic rounds in the panel to stop)", cfg.autoNextDelaySeconds))
       end
     elseif e.kind == "live" then
-      if not geoMode or now() - lastLiveSentAt >= GEO_LIVE_MIN_SECONDS then
+      if not geoMode or now() - lastLiveSentAt >= GEO_LIVE_MIN_SECONDS - 0.05 then
         lastLiveSentAt = now()
         local g = geoMode and geoPoint(geoOf(current.runnerId)) or nil
         for pid in pairs(current.players) do
@@ -790,6 +804,22 @@ function cnrOnPanel(pid, data)
   end
 end
 
+local MAX_CHANGES, MAX_TEXT = 30, 80
+
+local function cleanChanges(list)
+  local out = {}
+  for _, c in ipairs(type(list) == "table" and list or {}) do
+    if #out >= MAX_CHANGES then break end
+    if type(c) == "table" then
+      out[#out + 1] = {
+        label = tostring(c.label or ""):sub(1, MAX_TEXT), from = tostring(c.from or ""):sub(1, MAX_TEXT),
+        to = tostring(c.to or ""):sub(1, MAX_TEXT), extra = tonumber(c.extra),
+      }
+    end
+  end
+  return out
+end
+
 function cnrOnSetup(pid, data)
   local ok, d = pcall(Util.JsonDecode, data)
   if not ok or type(d) ~= "table" or type(d.parts) ~= "table" then return end
@@ -798,7 +828,7 @@ function cnrOnSetup(pid, data)
   local valid = build.normalize({ model = current.vehicle.model, parts = d.parts, vars = d.vars })
   if not valid then return log("ignored a malformed setup from " .. tostring(pid)) end
   local setup = { parts = valid.parts, vars = valid.vars }
-  local changes = type(d.changes) == "table" and d.changes or {}
+  local changes = cleanChanges(d.changes)
   if not current.test and currentBuild then
     local name = MP.GetPlayerName(pid) or tostring(pid)
     local nb, changed = build.apply(currentBuild, setup, changes, name, os.time())
@@ -818,10 +848,9 @@ function cnrOnChange(pid, data)
   local ok, d = pcall(Util.JsonDecode, data)
   if not ok or type(d) ~= "table" then return end
   if not current.evolving or current.state ~= "prep" or pid ~= current.runnerId then return end
-  local runnerName = MP.GetPlayerName(pid) or tostring(pid)
-  local changes = type(d.changes) == "table" and d.changes or {}
+  current.queued = { runner = MP.GetPlayerName(pid) or tostring(pid), changes = cleanChanges(d.changes) }
   for p in pairs(current.players) do
-    if not round.isAI(p) then send(p, "cnr_queued", { runner = runnerName, changes = changes }) end
+    if not round.isAI(p) then send(p, "cnr_queued", current.queued) end
   end
 end
 
@@ -919,6 +948,9 @@ function cnrOnPlayerJoin(pid)
   send(pid, "cnr_mode", { geo = geoMode, version = VERSION })
   requestStations(pid)
   applyEffects(current:playerJoined(now(), pid, MP.GetPlayerName(pid)))
+  if current.evolving and current.state == "prep" and current.queued and current.players[pid] then
+    send(pid, "cnr_queued", current.queued)
+  end
 end
 
 function cnrOnPlayerDisconnect(pid)

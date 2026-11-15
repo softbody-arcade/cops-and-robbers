@@ -710,7 +710,7 @@ end)
 
 test("spotted is announced once when sight starts", function()
   local r = chasing()
-  r:sightReport(12, 3, true)
+  r:sightReport(12, 2, true)
   assertEq(find(r:tick(12, farCars(), {}), "spotted").spotted, true)
   assertEq(find(r:tick(13, farCars(), {}), "spotted"), nil)
 end)
@@ -795,11 +795,12 @@ end)
 test("sight time stays with the cop's name when they leave, not with the reused pid", function()
   local r = chasing()
   r:sightReport(11, 3, true)
-  for t = 12, 20 do r:tick(t, farCars(), {}) end
+  local near = {[1]=kmh(0, 50), [2]=kmh(300, 50), [3]=kmh(200, 50)}
+  for t = 12, 20 do r:tick(t, near, {}) end
   r:playerLeft(20, 3)
   r:playerJoined(21, 3, "Cid")
   r:playerJoined(21, 4, "Ann")
-  for t = 22, 25 do r:tick(t, {[1]=kmh(0, 50), [2]=kmh(300, 50), [3]=kmh(900, 50), [4]=kmh(900, 50)}, {}) end
+  for t = 22, 25 do r:tick(t, {[1]=kmh(0, 50), [2]=kmh(300, 50), [3]=kmh(900, 50), [4]=kmh(200, 50)}, {}) end
   local run = find(r:endCalled(25, 1), "record").run
   local byPid = {}
   for i, pid in ipairs(run.copIds) do byPid[pid] = run.copSight[i] end
@@ -919,4 +920,26 @@ test("evolving runs don't store the whole build config in the leaderboard", func
   r:go(4, 2)
   r:tick(7, stillCars(), {}); r:tick(14, stillCars(), {})
   assertEq(find(r:endCalled(30, 1), "record").run.config, nil)
+end)
+
+test("live nearest-cop distance ignores cops serving a penalty", function()
+  local r = chasing()
+  r.penalties[2] = 999
+  r:sightReport(12, 3, true)
+  local cars = {[1]=kmh(0, 50), [2]=kmh(20, 50), [3]=kmh(300, 50)}
+  assertNear(find(r:tick(12, cars, {}), "live").nearestCop, 300, 1e-9)
+end)
+
+test("a gap without the runner's position isn't credited all at once", function()
+  local r = chasing()
+  r:tick(12, farCars(), {})
+  r:tick(32, farCars(), {})
+  local run = find(r:endCalled(33, 1), "record").run
+  assertEq(run.hiddenSeconds <= 3, true)
+end)
+
+test("a sight report from a cop far beyond sight range doesn't count", function()
+  local r = chasing({sightMaxMeters=400})
+  r:sightReport(12, 3, true)
+  assertEq(find(r:tick(12, {[1]=kmh(0, 50), [2]=kmh(300, 50), [3]=kmh(900, 50)}, {}), "live"), nil)
 end)

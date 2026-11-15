@@ -1371,3 +1371,43 @@ test("in practice as cop, whoever started it applies", function()
   assertEq(env.lastSent("cnr_notice") == nil or env.lastSent("cnr_notice").data:find("Cars ready", 1, true) == nil, true)
   env.cleanup()
 end)
+
+test("someone joining during prep sees the runner's queued change", function()
+  local env = boot()
+  evolving(env); newBuild(env)
+  env.panel(2, "start rein")
+  env.call("cnr_change", 1, '{"changes":[{"label":"Engine","from":"a","to":"b"}]}')
+  env.sent = {}
+  env.names = { "Reinder", "Bob", "Cid" }
+  env.vehicles[3] = { [0] = "x" }
+  env.call("onPlayerJoin", 3)
+  local q = env.lastSent("cnr_queued")
+  assertEq(q ~= nil and q.pid, 3)
+  env.cleanup()
+end)
+
+test("queued change lists are capped", function()
+  local env = boot()
+  evolving(env); newBuild(env)
+  env.panel(2, "start rein")
+  local items = {}
+  for i = 1, 60 do items[i] = '{"label":"P' .. i .. '","from":"a","to":"b"}' end
+  env.call("cnr_change", 1, '{"changes":[' .. table.concat(items, ",") .. ']}')
+  local data = env.lastSent("cnr_queued").data
+  assertEq(data:find('"P30"', 1, true) ~= nil, true)
+  assertEq(data:find('"P31"', 1, true), nil)
+  env.cleanup()
+end)
+
+test("the leaderboard app never receives account ids", function()
+  local env = boot()
+  env.ids = { [1] = { beammp = "12345" } }
+  env.startRound(); env.go()
+  for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.call("cnr_board", 2, '{"action":"open"}')
+  env.call("onChatMessage", 1, "Reinder", "/cnr help")
+  env.panel(1, "end")
+  env.call("cnr_board", 2, '{"action":"open"}')
+  assertEq(env.lastSent("cnr_boardState").data:find("12345", 1, true), nil)
+  env.cleanup()
+end)

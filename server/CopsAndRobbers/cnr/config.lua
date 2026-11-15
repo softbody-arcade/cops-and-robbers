@@ -54,8 +54,11 @@ local function validList(v)
   return true
 end
 
+local MAXIMA = { assistMinSightPercent = 100 }
+
 local function validNumber(key, v)
   if type(v) ~= "number" or v ~= v or v == math.huge or v == -math.huge then return false end
+  if MAXIMA[key] and v > MAXIMA[key] then return false end
   if strictlyPositive[key] then return v > 0 end
   return v >= 0
 end
