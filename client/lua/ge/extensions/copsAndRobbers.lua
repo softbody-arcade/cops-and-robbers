@@ -51,6 +51,11 @@ local lastHudPush = 0
 local lastPlacementCheck = 0
 local loadedAt
 local placementState = placement.new(HUD_APP, HUD_PLACEMENT)
+local BANNER_LABELS = { ["Runner starts in"] = "RUNNER STARTS IN", ["Cops released in"] = "COPS RELEASED IN", ["Crash penalty"] = "CRASH PENALTY" }
+local RESULT_TITLES = { caught = "RUNNER CAUGHT", called = "ROUND ENDED", escaped = "ESCAPED", disconnect = "RUNNER LEFT", cancelled = "ROUND CANCELLED" }
+local FLASH_SECONDS, EVENT_SECONDS, RESET_FLASH_SECONDS, RESULT_SECONDS = 2, 4, 1.5, 10
+local hudFlash, hudPrep, hudResetFlashUntil, hudResult
+local hudEvents = {}
 local active = false
 local role
 local runnerId
@@ -103,6 +108,25 @@ local function gameToGeo(pos)
   local lat, lon, h = api.toGeo(pos.x, pos.y, pos.z)
   if not lat then return nil end
   return lat, lon, h
+end
+
+local function setFlash(text)
+  hudFlash = { text = text, untilT = clock + FLASH_SECONDS }
+end
+
+local function addEvent(text)
+  hudEvents[#hudEvents + 1] = { text = text, untilT = clock + EVENT_SECONDS }
+  while #hudEvents > 5 do table.remove(hudEvents, 1) end
+end
+
+local function carName(model)
+  local ok, m = pcall(core_vehicles.getModel, model)
+  local info = ok and type(m) == "table" and m.model
+  if type(info) == "table" and type(info.Name) == "string" and info.Name ~= "" then
+    local brand = type(info.Brand) == "string" and info.Brand ~= "" and (info.Brand .. " ") or ""
+    return brand .. info.Name
+  end
+  return tostring(model)
 end
 
 local function toast(msg, ttl, category)
@@ -501,6 +525,8 @@ end
 local function onRoundSetup(data)
   local d = jsonDecode(data) or {}
   hudState = hud.new()
+  hudResult, hudFlash, hudPrep, hudResetFlashUntil = nil, nil, nil, nil
+  hudEvents = {}
   active = true
   role = d.role
   runnerId = d.runnerId
@@ -537,7 +563,10 @@ local function onRoundSetup(data)
   local phase = d.phase or "running"
   frozen = phase == "prep" or phase == "countdown" or (phase == "headstart" and role == "cop")
   if phase == "prep" then
-    toast(role == "runner" and 'You are the runner! Change your paint if you like, waiting for "/cnr go"' or 'You are a cop! Change your paint if you like, waiting for "/cnr go"', 8, "cnr_go")
+    hudPrep = { role = role, car = carName(d.model) }
+    if not hudPlaced then
+      toast(role == "runner" and 'You are the runner! Change your paint if you like, waiting for "/cnr go"' or 'You are a cop! Change your paint if you like, waiting for "/cnr go"', 8, "cnr_go")
+    end
     timerEnd = nil
   elseif phase == "countdown" then
     startTimer(tonumber(d.countdownRemaining), "Runner starts in")
@@ -550,6 +579,7 @@ end
 
 local function onCountdown(data)
   local d = jsonDecode(data) or {}
+  hudPrep = nil
   setPartsMenu(false)
   startTimer(tonumber(d.seconds), "Runner starts in")
 end
@@ -565,7 +595,8 @@ local function onRunnerGo(data)
   if role == "runner" then
     timerEnd = nil
     setFreeze(false)
-    toast("GO! Run!", 4, "cnr_go")
+    setFlash("GO! RUN!")
+    if not hudPlaced then toast("GO! Run!", 4, "cnr_go") end
   else
     startTimer(tonumber(d.headStartSeconds), "Cops released in")
   end
@@ -583,14 +614,6 @@ local function onPaint(data)
   repaintInPlace(d.color)
 end
 
-local function onRestoreConfig(data)
-  local d = jsonDecode(data) or {}
-  roundModel = d.model or roundModel
-  if d.config then roundConfig = role == "cop" and copConfig(roundModel, d.config) or d.config end
-  toast("Only paint can be changed, car reset to the round setup", 5, "cnr_reset")
-  repaintInPlace(d.color or roundColor)
-end
-
 local function onPenalty(data)
   local d = jsonDecode(data) or {}
   if d.aiId then
@@ -598,7 +621,8 @@ local function onPenalty(data)
     if car then
       setAIFreeze(car, true)
       aiCommand(car, 'ai.setMode("disabled")')
-      toast(tostring(car.name) .. " crashed: penalty", 3, "cnr_reset")
+      addEvent(tostring(car.name) .. " crashed: penalty")
+      if not hudPlaced then toast(tostring(car.name) .. " crashed: penalty", 3, "cnr_reset") end
     end
     return
   end
@@ -621,7 +645,8 @@ local function onPenaltyEnd(data)
   lastHint = nil
   timerEnd = nil
   setFreeze(false)
-  toast("Penalty over, go!", 3, "cnr_go")
+  setFlash("PENALTY OVER")
+  if not hudPlaced then toast("Penalty over, go!", 3, "cnr_go") end
 end
 
 local COMPASS = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
@@ -672,7 +697,7 @@ local function onLastSeen(data)
     if ok then
       gpsTarget = { lat = d.geo.lat, lon = d.geo.lon, h = d.geo.h }
       infoText = gpsInfo()
-      if infoText then toast(infoText, 4, "cnr_seen") end
+      if infoText and not hudPlaced then toast(infoText, 4, "cnr_seen") end
       return
     end
   end
@@ -681,7 +706,7 @@ local function onLastSeen(data)
   if veh then
     local here = veh:getPosition()
     infoText = string.format("Runner seen %d m %s", math.floor(here:distance(target) + 0.5), compass(here, target))
-    toast(infoText, 4, "cnr_seen")
+    if not hudPlaced then toast(infoText, 4, "cnr_seen") end
   end
 end
 
@@ -753,7 +778,10 @@ end
 local function onNotice(data)
   local d = jsonDecode(data) or {}
   if d.about ~= nil and MPConfig and d.about == MPConfig.getPlayerServerID() then return end
-  if d.msg then toast(d.msg, 4, "cnr_notice") end
+  if d.msg then
+    addEvent(d.msg)
+    if not hudPlaced then toast(d.msg, 4, "cnr_notice") end
+  end
 end
 
 local function startStatus()
@@ -772,7 +800,10 @@ local function onRelease()
   end
   timerEnd = nil
   if frozen then setFreeze(false) end
-  if role == "cop" then toast("GO!", 3, "cnr_go") end
+  if role == "cop" then
+    setFlash("GO!")
+    if not hudPlaced then toast("GO!", 3, "cnr_go") end
+  end
   startStatus()
 end
 local function layoutsApi()
@@ -854,6 +885,8 @@ end
 
 local function endRound()
   hudState = hud.new()
+  hudFlash, hudPrep, hudResetFlashUntil = nil, nil, nil
+  hudEvents = {}
   local own = ownVehicle()
   if active and role == "cop" and own then own:queueLuaCommand(LIGHTS_OFF) end
   active = false
@@ -872,10 +905,7 @@ local function endRound()
   unlockAll()
 end
 
-local function onRoundEnd(data)
-  local d = jsonDecode(data) or {}
-  local wasRunner = MPConfig and MPConfig.getPlayerServerID() == d.runnerId
-  endRound()
+local function showEndToast(d)
   if d.reason == "caught" then
     local by = (type(d.catchers) == "table" and #d.catchers > 0) and (" by " .. table.concat(d.catchers, ", ")) or ""
     toast(string.format("Runner caught%s! %s survived %s", by, tostring(d.runnerName), formatTime(d.survivedSeconds)), 8, "cnr_end")
@@ -888,10 +918,29 @@ local function onRoundEnd(data)
   else
     toast("Round cancelled", 5, "cnr_end")
   end
+end
+
+local function onRoundEnd(data)
+  local d = jsonDecode(data) or {}
+  local wasRunner = MPConfig and MPConfig.getPlayerServerID() == d.runnerId
+  endRound()
+  local catchers = (type(d.catchers) == "table" and #d.catchers > 0) and table.concat(d.catchers, ", ") or nil
+  hudResult = {
+    title = RESULT_TITLES[d.reason] or RESULT_TITLES.cancelled,
+    runner = tostring(d.runnerName or ""), time = formatTime(d.survivedSeconds), catchers = catchers,
+    untilT = clock + RESULT_SECONDS,
+    nextAt = tonumber(d.autoNextSeconds) and (clock + tonumber(d.autoNextSeconds)) or nil,
+  }
+  if not hudPlaced then showEndToast(d) end
   if d.explode and wasRunner then
     local veh = ownVehicle()
     if veh then veh:queueLuaCommand("fire.explodeVehicle()") end
   end
+end
+
+local function onTop(data)
+  local d = jsonDecode(data) or {}
+  if hudResult and type(d.lines) == "table" then hudResult.top = d.lines end
 end
 
 local function onRequestStations(data)
@@ -988,14 +1037,18 @@ local function onUpdate(dtReal)
     if infoText then parts[#parts + 1] = infoText end
     if not hudPlaced then toast(table.concat(parts, "  |  "), 1.5, "cnr_status") end
   end
-  if active and clock - lastHudPush >= HUD_PUSH_INTERVAL then
+  local resultShowing = hudResult and clock < hudResult.untilT
+  if (active or resultShowing) and clock - lastHudPush >= HUD_PUSH_INTERVAL then
     lastHudPush = clock
     hudVisibleSent = true
     guihooks.trigger("CnRHud", hud.payload(hudState, clock, {
-      active = true, role = role, chaseStart = statusActive and chaseStart or nil,
+      active = active, role = role, chaseStart = statusActive and chaseStart or nil,
       resetAllowed = resetAllowed, resetHint = lastHint, penalty = penaltyActive, infoText = infoText,
+      timer = timerEnd and { label = BANNER_LABELS[timerLabel] or timerLabel, endsAt = timerEnd } or nil,
+      flash = hudFlash, prep = hudPrep, events = hudEvents, resetFlashUntil = hudResetFlashUntil,
+      result = hudResult,
     }))
-  elseif not active and hudVisibleSent then
+  elseif not active and not resultShowing and hudVisibleSent then
     hudVisibleSent = false
     guihooks.trigger("CnRHud", { visible = false })
   end
@@ -1007,7 +1060,7 @@ local function onUpdate(dtReal)
     local left = math.ceil(timerEnd - clock)
     if left > 0 and left ~= lastCountdown then
       lastCountdown = left
-      toast(string.format("%s %d", timerLabel, left), 1.2, "cnr_go")
+      if not hudPlaced then toast(string.format("%s %d", timerLabel, left), 1.2, "cnr_go") end
     elseif left <= 0 then
       timerEnd = nil
     end
@@ -1032,7 +1085,10 @@ local function requestReset(kind)
   local veh = ownVehicle()
   if not veh then return end
   if not resetAllowed then
-    toast(penaltyActive and "No reset during a crash penalty" or (lastHint or "Reset not available"), 3, "cnr_reset")
+    hudResetFlashUntil = clock + RESET_FLASH_SECONDS
+    if not hudPlaced then
+      toast(penaltyActive and "No reset during a crash penalty" or (lastHint or "Reset not available"), 3, "cnr_reset")
+    end
     return
   end
   resetAllowed = false
@@ -1106,11 +1162,11 @@ local function onExtensionLoaded()
     AddEventHandler("cnr_penalty", onPenalty)
     AddEventHandler("cnr_setupAI", onSetupAI)
     AddEventHandler("cnr_notice", onNotice)
+    AddEventHandler("cnr_top", onTop)
     AddEventHandler("cnr_mode", onMode)
     AddEventHandler("cnr_lastSeen", onLastSeen)
     AddEventHandler("cnr_nearestCop", onNearestCop)
     AddEventHandler("cnr_penaltyEnd", onPenaltyEnd)
-    AddEventHandler("cnr_restoreConfig", onRestoreConfig)
     AddEventHandler("cnr_state", onState)
     AddEventHandler("cnr_roundEnd", onRoundEnd)
     AddEventHandler("cnr_requestStations", onRequestStations)
