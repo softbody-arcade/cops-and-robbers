@@ -49,6 +49,7 @@
           </template>
           <template v-else-if="item.kind === 'list'">
             <input
+              v-bng-text-input
               class="cnr-text"
               :disabled="!can.settings"
               :value="drafts[item.key] ?? listText(valueOf(item.key))"
@@ -80,6 +81,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from "vue"
 import { useBridge } from "@/bridge"
 import { useEvents } from "@/services/events"
 import { BngButton, BngSwitch, BngDropdown } from "@/common/components/base"
+import { vBngTextInput } from "@/common/directives"
 
 const GROUPS = [
   { title: "Round", items: [
