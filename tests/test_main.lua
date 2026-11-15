@@ -88,6 +88,12 @@ local function boot(opts)
   local tmp = os.tmpname(); os.remove(tmp)
   env.dir = tmp .. "_cnr/"
   os.execute("mkdir -p '" .. env.dir .. "'")
+  if opts.leaderboard then
+    os.execute("mkdir -p '" .. env.dir .. "data'")
+    local lf = assert(io.open(env.dir .. "data/leaderboard.json", "w"))
+    lf:write(opts.leaderboard)
+    lf:close()
+  end
   local f = assert(io.open(env.dir .. "config.json", "w"))
   f:write(opts.config or assert(io.open("server/CopsAndRobbers/config.json")):read("*a"))
   f:close()
@@ -1076,5 +1082,64 @@ test("round setup tells clients the sight range", function()
   local env = boot()
   env.startRound()
   assertEq(env.lastSent("cnr_roundSetup").data:find('"sightMaxMeters":400', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+local function readFileAt(path)
+  local f = io.open(path)
+  if not f then return nil end
+  local text = f:read("*a")
+  f:close()
+  return text
+end
+
+test("an old leaderboard is moved aside and the board starts fresh", function()
+  local env = boot({ leaderboard = '{"runs":[{"player":"Old","survivedSeconds":999,"map":"west_coast_usa","endedAt":1}]}' })
+  assertEq(readFileAt(env.dir .. "data/leaderboard-1.6.json"):find("Old", 1, true) ~= nil, true)
+  env.call("onChatMessage", 1, "Reinder", "/cnr top")
+  assertEq(env.chatHas("Old"), false)
+  env.cleanup()
+end)
+
+test("the board app gets state on open, after a run and on a filter change", function()
+  local env = boot()
+  env.call("cnr_board", 2, '{"action":"open"}')
+  local s = env.lastSent("cnr_boardState")
+  assertEq(s.pid, 2)
+  assertEq(s.data:find('"filter":"west_coast_usa"', 1, true) ~= nil, true)
+  env.startRound(); env.go()
+  for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.sent = {}
+  env.call("onChatMessage", 1, "Reinder", "/cnr end")
+  s = env.lastSent("cnr_boardState")
+  assertEq(s.pid, 2)
+  assertEq(s.data:find("Reinder", 1, true) ~= nil, true)
+  env.call("cnr_board", 2, '{"action":"filter","map":"all"}')
+  assertEq(env.lastSent("cnr_boardState").data:find('"filter":"all"', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("a board subscriber who leaves gets no more pushes", function()
+  local env = boot()
+  env.call("cnr_board", 2, '{"action":"open"}')
+  env.call("onPlayerDisconnect", 2)
+  env.sent = {}
+  env.startRound(); env.go()
+  for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.call("onChatMessage", 1, "Reinder", "/cnr end")
+  assertEq(env.lastSent("cnr_boardState"), nil)
+  env.cleanup()
+end)
+
+test("a recorded run stores cops by key with their sight time", function()
+  local env = boot()
+  env.startRound(); env.go()
+  for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.call("onChatMessage", 1, "Reinder", "/cnr end")
+  local text = readFileAt(env.dir .. "data/leaderboard.json")
+  assertEq(text:find('"format":2', 1, true) ~= nil, true)
+  assertEq(text:find('"cops":["name:Bob"]', 1, true) ~= nil, true)
+  assertEq(text:find('"copSightSeconds":%[0') ~= nil, true)
+  assertEq(text:find('"copIds"', 1, true), nil)
   env.cleanup()
 end)

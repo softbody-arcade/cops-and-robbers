@@ -26,6 +26,7 @@ M.DEFAULTS = {
   sightLiveIntervalSeconds = 1,
   sightNoRouteSeconds = 5,
   sightNoRouteMinMeters = 50,
+  assistMinSightPercent = 20,
 }
 
 local strictlyPositive = {

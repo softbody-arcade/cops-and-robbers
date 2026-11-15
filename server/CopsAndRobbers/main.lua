@@ -80,6 +80,7 @@ end
 
 local function now() return serverClock:GetCurrent() end
 
+local boardSubs = {}
 local panelSubs = {}
 local panelMirror
 local lastPanelSig
@@ -114,6 +115,12 @@ local function loadLeaderboard()
     local aside = leaderboardPath .. ".corrupt-" .. os.time()
     FS.Rename(leaderboardPath, aside)
     log("leaderboard.json was unreadable, moved to " .. aside)
+  elseif not leaderboard.isCurrent(decoded) then
+    local aside = dataDir .. "leaderboard-1.6.json"
+    if readFile(aside) then aside = dataDir .. "leaderboard-1.6-" .. os.time() .. ".json" end
+    FS.Rename(leaderboardPath, aside)
+    log("old leaderboard moved to " .. aside .. ", starting a fresh one")
+    decoded = nil
   end
   board = leaderboard.load(decoded)
 end
@@ -284,6 +291,25 @@ local function normalizeConfig(path)
   return (path:gsub("\\", "/"):gsub("^/", ""):lower())
 end
 
+local function boardState(filter)
+  local map = filter ~= "all" and filter or nil
+  return {
+    map = mapName, maps = leaderboard.maps(board), filter = filter,
+    runners = leaderboard.runners(board, map, 20),
+    cops = leaderboard.cops(board, map, 20),
+    players = leaderboard.players(board, map, cfg.assistMinSightPercent),
+  }
+end
+
+local function sendBoard(pid)
+  local ok, state = pcall(boardState, boardSubs[pid])
+  if ok then send(pid, "cnr_boardState", state) else log("board update failed: " .. tostring(state)) end
+end
+
+local function pushBoard()
+  for pid in pairs(boardSubs) do sendBoard(pid) end
+end
+
 local function applyEffects(effects)
   for _, e in ipairs(effects) do
     if e.kind == "reply" then
@@ -400,6 +426,13 @@ local function applyEffects(effects)
       run.releasedAt = endedAt - math.floor(run.survivedSeconds + 0.5)
       run.endedAt = endedAt
       run.key = currentRunnerKey
+      run.cops, run.copNames, run.copSightSeconds = {}, {}, {}
+      for i, pid in ipairs(run.copIds or {}) do
+        run.cops[i] = playerKey(pid)
+        run.copNames[i] = MP.GetPlayerName(pid) or tostring(pid)
+        run.copSightSeconds[i] = math.floor((run.copSight[i] or 0) * 10 + 0.5) / 10
+      end
+      run.copIds, run.copSight = nil, nil
       if type(run.catchers) == "table" and #run.catchers > 0 then
         local byName = {}
         for pid, name in pairs(MP.GetPlayers() or {}) do byName[name] = pid end
@@ -412,6 +445,7 @@ local function applyEffects(effects)
       leaderboard.add(board, run)
       local ok, err = pcall(saveLeaderboard)
       if not ok then log("failed to save leaderboard: " .. tostring(err)) end
+      pushBoard()
       local t = leaderboard.formatTime(run.survivedSeconds)
       if run.endReason == "caught" then
         local by = (run.catchers and #run.catchers > 0) and (" by " .. table.concat(run.catchers, ", ")) or ""
@@ -801,6 +835,7 @@ end
 function cnrOnPlayerDisconnect(pid)
   stationsRequested[pid] = nil
   panelSubs[pid] = nil
+  boardSubs[pid] = nil
   local name = MP.GetPlayerName(pid)
   if name and geoReports[pid] then lastGeoByName[name] = geoPoint(geoReports[pid]) end
   geoReports[pid] = nil
@@ -871,6 +906,18 @@ function cnrOnGeo(pid, data)
         ve = tonumber(c.ve) or 0, vn = tonumber(c.vn) or 0, vu = tonumber(c.vu) or 0, t = now(),
       }
     end
+  end
+end
+
+function cnrOnBoard(pid, data)
+  local ok, msg = pcall(Util.JsonDecode, data)
+  if not ok or type(msg) ~= "table" then return end
+  if msg.action == "close" then
+    boardSubs[pid] = nil
+  elseif msg.action == "open" or msg.action == "filter" then
+    local filter = msg.action == "filter" and type(msg.map) == "string" and msg.map or boardSubs[pid] or mapName
+    boardSubs[pid] = filter
+    sendBoard(pid)
   end
 end
 
@@ -977,6 +1024,7 @@ MP.RegisterEvent("cnr_relocated", "cnrOnRelocated")
 MP.RegisterEvent("cnr_command", "cnrOnCommand")
 MP.RegisterEvent("cnr_panel", "cnrOnPanel")
 MP.RegisterEvent("cnr_sight", "cnrOnSight")
+MP.RegisterEvent("cnr_board", "cnrOnBoard")
 MP.RegisterEvent("cnr_tick", "cnrTick")
 MP.CancelEventTimer("cnr_tick")
 MP.CreateEventTimer("cnr_tick", 250)
