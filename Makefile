@@ -1,10 +1,13 @@
 LUA := $(shell command -v lua5.3 2>/dev/null || command -v lua)
 TESTSERVER := .testserver
 
-.PHONY: test package install-local clean deploy
+.PHONY: test vuecheck package install-local clean deploy
 
 test:
 	$(LUA) tests/run.lua tests/test_*.lua
+
+vuecheck:
+	cd tools/vuecheck && npm install --silent --no-audit --no-fund && node check.mjs ../../client/ui
 
 package: clean
 	mkdir -p dist/Client dist/Server

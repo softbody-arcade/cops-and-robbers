@@ -3,3 +3,4 @@ dist/
 .superpowers/
 server/CopsAndRobbers/data/
 .lightcheck/
+tools/vuecheck/node_modules/
