@@ -12,7 +12,7 @@ local geo = require("cnr.geo")
 local build = require("cnr.build")
 local panel = require("cnr.panel")
 
-local VERSION = "2.0.6"
+local VERSION = "2.0.7"
 local PREFIX = "[CnR] "
 local dataDir = pluginDir .. "data/"
 local stationsDir = dataDir .. "stations/"
@@ -43,6 +43,7 @@ local geoStations = {}
 local localStationsCache
 local lastGeoByName = {}
 local GEO_STALE_SECONDS = 2
+local PARTS_PLACING_SECONDS, PARTS_SETTLE_SECONDS = 10, 3
 local GEO_STATION_MERGE_METERS = 50
 local GEO_STATION_RADIUS = 20
 local GEO_RESET_VERDICT_DELAY = 1
@@ -82,6 +83,19 @@ local function decodeFile(path)
 end
 
 local function now() return serverClock:GetCurrent() end
+
+local function placing(pid)
+  local entry = partsBaseline[pid] or {}
+  partsBaseline[pid] = { announced = entry.announced, quietUntil = now() + PARTS_PLACING_SECONDS, placing = true }
+end
+
+local function placed(pid)
+  local entry = partsBaseline[pid]
+  if entry and entry.placing then
+    entry.placing = nil
+    entry.quietUntil = now() + PARTS_SETTLE_SECONDS
+  end
+end
 
 local boardSubs = {}
 local leaderboardLocked = false
@@ -316,7 +330,7 @@ local function carFor(pid)
     if not r then return nil end
     local pos = geo.toLocal(ensureRef(r.lat, r.lon), r.lat, r.lon, r.h)
     pos.z = 0
-    return { pos = pos, vel = { x = r.ve, y = r.vn, z = r.vu } }
+    return { pos = pos, vel = { x = r.ve, y = r.vn, z = r.vu }, geo = geoPoint(r) }
   end
   local owner, vid = pid, nil
   if round.isAI(pid) then
@@ -392,6 +406,7 @@ local function applyEffects(effects)
       local runnerCar = carFor(current.runnerId)
       local resumeGeo
       if geoMode and e.resumePos then resumeGeo = lastGeoByName[MP.GetPlayerName(e.pid) or ""] end
+      placing(e.pid)
       send(e.pid, "cnr_roundSetup", {
         geo = geoMode, runnerGeo = geoMode and geoPoint(geoOf(current.runnerId)) or nil,
         resumeGeo = resumeGeo,
@@ -404,7 +419,7 @@ local function applyEffects(effects)
         runnerPos = not geoMode and runnerCar and runnerCar.pos or nil,
         copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
         sightMaxMeters = cfg.sightMaxMeters,
-        evolving = current.evolving or nil,
+        evolving = current.evolving or nil, rebuild = current.rebuildId,
       })
     elseif e.kind == "setupAI" then
       local list = {}
@@ -453,7 +468,7 @@ local function applyEffects(effects)
     elseif e.kind == "live" then
       if not geoMode or now() - lastLiveSentAt >= GEO_LIVE_MIN_SECONDS - 0.05 then
         lastLiveSentAt = now()
-        local g = geoMode and geoPoint(geoOf(current.runnerId)) or nil
+        local g = geoMode and e.geo or nil
         for pid in pairs(current.players) do
           if pid ~= current.runnerId and not round.isAI(pid) then
             local route = not (e.noRoute and e.noRoute[pid])
@@ -472,7 +487,10 @@ local function applyEffects(effects)
       send(e.pid, "cnr_requestSetup", {})
     elseif e.kind == "rebuild" then
       for pid in pairs(current.players) do
-        if not round.isAI(pid) then send(pid, "cnr_rebuild", { model = current.vehicle.model, config = e.config }) end
+        if not round.isAI(pid) then
+          placing(pid)
+          send(pid, "cnr_rebuild", { model = current.vehicle.model, config = e.config, rebuild = e.id })
+        end
       end
     elseif e.kind == "applied" then
       send(e.to or -1, "cnr_applied", {})
@@ -484,8 +502,7 @@ local function applyEffects(effects)
       for pid in pairs(current.players) do
         if pid ~= current.runnerId and not round.isAI(pid) then
           if geoMode then
-            local g = geoPoint(geoOf(current.runnerId))
-            if g then send(pid, "cnr_lastSeen", { geo = g }) end
+            if e.geo then send(pid, "cnr_lastSeen", { geo = e.geo }) end
           else
             send(pid, "cnr_lastSeen", { pos = e.pos })
           end
@@ -629,6 +646,7 @@ function handlers.color(pid, cmd)
   saveColors()
   if current.state == "prep" and current.players[pid] then
     reply(pid, "Your car color is now " .. c.hex)
+    placing(pid)
     send(pid, "cnr_paint", { color = colorFor(pid) })
   elseif roundCarActive() then
     reply(pid, "Your car color is now " .. c.hex .. " (applies from the next round)")
@@ -804,7 +822,16 @@ function cnrOnPanel(pid, data)
   end
 end
 
-local MAX_CHANGES, MAX_TEXT = 30, 80
+local MAX_CHANGES, MAX_TEXT, MAX_PARTS, MAX_PART_ID = 30, 80, 20, 120
+
+local function cleanParts(list)
+  local out = {}
+  for _, id in ipairs(type(list) == "table" and list or {}) do
+    if #out >= MAX_PARTS then break end
+    if type(id) == "string" and id ~= "" then out[#out + 1] = id:sub(1, MAX_PART_ID) end
+  end
+  return #out > 0 and out or nil
+end
 
 local function cleanChanges(list)
   local out = {}
@@ -813,7 +840,7 @@ local function cleanChanges(list)
     if type(c) == "table" then
       out[#out + 1] = {
         label = tostring(c.label or ""):sub(1, MAX_TEXT), from = tostring(c.from or ""):sub(1, MAX_TEXT),
-        to = tostring(c.to or ""):sub(1, MAX_TEXT), extra = tonumber(c.extra),
+        to = tostring(c.to or ""):sub(1, MAX_TEXT), extra = tonumber(c.extra), parts = cleanParts(c.parts),
       }
     end
   end
@@ -894,13 +921,17 @@ local function checkParts(pid, decoded)
   if not decoded or type(decoded.vcf) ~= "table" or decoded.vcf.parts == nil then return end
   local parts = decoded.vcf.parts
   local entry = partsBaseline[pid]
+  local mayChange = current.evolving and (current.state == "prep" or current.state == "applying") and pid == current.runnerId
   if entry == nil then
     partsBaseline[pid] = { parts = parts, announced = false }
+  elseif entry.parts == nil or mayChange or (entry.quietUntil and now() < entry.quietUntil) then
+    entry.parts = parts
   elseif not tables.deepEqual(parts, entry.parts) then
     if not entry.announced then
       entry.announced = true
-      log(string.format("%s changed parts during the round (not enforced), slots: %s",
-        MP.GetPlayerName(pid) or tostring(pid), tables.diffKeys(entry.parts, parts, 5)))
+      local msg = string.format("⚠ %s changed parts during the round: %s", MP.GetPlayerName(pid) or tostring(pid), tables.diffKeys(entry.parts, parts, 5))
+      log(msg)
+      if current.test then reply(current.issuerId, msg) else broadcast(msg) end
     end
     entry.parts = parts
   end
@@ -975,7 +1006,8 @@ function cnrOnMyVehicle(pid, data)
   local vid = ok and type(decoded) == "table" and tonumber(decoded.vid)
   if not vid or not current:isActive() then return end
   activeVid[pid] = vid
-  applyEffects(current:vehicleReady(now(), pid))
+  placed(pid)
+  applyEffects(current:vehicleReady(now(), pid, tonumber(decoded.rebuild)))
   if current.test then return end
   local vehicles = MP.GetPlayerVehicles(pid)
   if type(vehicles) ~= "table" then return end

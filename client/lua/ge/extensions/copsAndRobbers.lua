@@ -12,7 +12,7 @@ local sight = require("copsAndRobbers/sight")
 local buildDiff = require("copsAndRobbers/build")
 local modes = require("copsAndRobbers/modes")
 
-local CLIENT_VERSION = "2.0.6"
+local CLIENT_VERSION = "2.0.7"
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
 local LIGHTS_OFF = "electrics.set_lightbar_signal(0)"
 local SETUP_DELAY = 0.5
@@ -45,6 +45,7 @@ local chaseStart
 local lastStatusAt = 0
 local infoText
 local pendingPlacement
+local rebuildId
 local suppressResetUntil = 0
 local lastPose
 local lastFreezeAssert = 0
@@ -89,7 +90,7 @@ local function placeVehicle(model, config, pos, rot, color)
   else
     core_vehicles.spawnNewVehicle(model, vehicles.options(config, color))
   end
-  pendingPlacement = { at = clock + SETUP_DELAY, deadline = clock + PLACEMENT_TIMEOUT, pos = pos, rot = rot }
+  pendingPlacement = { at = clock + SETUP_DELAY, deadline = clock + PLACEMENT_TIMEOUT, pos = pos, rot = rot, rebuild = rebuildId }
 end
 
 local function startStatus()
@@ -140,6 +141,7 @@ local function onRoundSetup(data)
   role = d.role
   runnerId = d.runnerId
   evolving = d.evolving == true
+  rebuildId = tonumber(d.rebuild)
   buildBaseline, lastChangeKey, lastChanges = nil, nil, {}
   buildBaselineAt = (evolving and d.role == "runner" and d.phase == "prep") and (clock + BASELINE_DELAY) or nil
   sightMax = tonumber(d.sightMaxMeters) or 0
@@ -226,7 +228,7 @@ local function labelledChanges(setup)
     list[#list + 1] = {
       label = vehicles.slotLabel(roundModel, c.slot, setup.parts) or buildDiff.label(c.slot, roundModel),
       from = vehicles.partName(roundModel, c.from), to = vehicles.partName(roundModel, c.to),
-      extra = c.extra > 0 and c.extra or nil,
+      extra = c.extra > 0 and c.extra or nil, parts = c.parts,
     }
   end
   for _, c in ipairs(buildDiff.varsDiff(buildBaseline.vars, setup.vars, setup.steps)) do
@@ -271,6 +273,7 @@ end
 local function onRebuild(data)
   local d = jsonDecode(data) or {}
   if not active or type(d.config) ~= "table" then return end
+  rebuildId = tonumber(d.rebuild)
   buildBaselineAt, buildBaseline = nil, nil
   inputs.setPartsMenu(false)
   inputs.lockEditing("all")
@@ -279,6 +282,7 @@ local function onRebuild(data)
   roundConfig = role == "cop" and vehicles.copConfig(roundModel, d.config) or d.config
   local veh = ownVehicle()
   placeVehicle(roundModel, roundConfig, veh and veh:getPosition(), veh and game.uprightRotation(veh), roundColor)
+  ai.rebuild(roundModel, d.config)
   local missing = {}
   for _, part in pairs(type(d.config.parts) == "table" and d.config.parts or {}) do
     if not vehicles.hasPart(roundModel, part) then missing[#missing + 1] = part end
@@ -507,7 +511,7 @@ local function updatePendingPlacement()
     if restore then veh:queueLuaCommand(restore) end
     modesHoldUntil = clock + MODES_SETTLE
     if frozen then setFreeze(true) end
-    sendServer("cnr_myVehicle", { vid = vid })
+    sendServer("cnr_myVehicle", { vid = vid, rebuild = p.rebuild })
   elseif clock >= p.deadline then
     pendingPlacement = nil
   end
@@ -737,11 +741,21 @@ local function onExtensionLoaded()
   AddEventHandler("cnr_queued", function(data)
     local d = jsonDecode(data) or {}
     local mine = role == "runner" and evolving and (buildBaseline ~= nil or buildBaselineAt ~= nil)
-    hudfeed.queued(d.runner, d.changes, mine)
-    local first = type(d.changes) == "table" and d.changes[1]
+    local changes, anyMissing = {}, false
+    for i, c in ipairs(type(d.changes) == "table" and d.changes or {}) do
+      local missing
+      for _, id in ipairs(type(c.parts) == "table" and c.parts or {}) do
+        if not vehicles.hasPart(roundModel, id) then missing = true end
+      end
+      anyMissing = anyMissing or missing == true
+      changes[i] = { label = c.label, from = c.from, to = c.to, extra = c.extra, missing = missing }
+    end
+    hudfeed.queued(d.runner, changes, mine)
+    local first = changes[1]
     local summary = first and string.format("%s %s → %s", tostring(first.label), tostring(first.from), tostring(first.to)) or "none yet"
-    local more = type(d.changes) == "table" and #d.changes > 1 and string.format(" (+%d more)", #d.changes - 1) or ""
-    hudfeed.notify(string.format("%s's change: %s%s", tostring(d.runner), summary, more), 6, "cnr_change")
+    local more = #changes > 1 and string.format(" (+%d more)", #changes - 1) or ""
+    local warn = anyMissing and " (⚠ you're missing parts for it)" or ""
+    hudfeed.notify(string.format("%s's change: %s%s%s", tostring(d.runner), summary, more, warn), 6, "cnr_change")
   end)
   AddEventHandler("cnr_penaltyEnd", onPenaltyEnd)
   AddEventHandler("cnr_state", onState)

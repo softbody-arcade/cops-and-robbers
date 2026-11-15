@@ -210,6 +210,23 @@ test("a layout switch is picked up right away, not after the slow check", functi
   assertEq(#L.disk[L.other].apps, 1)
 end)
 
+test("leaving deletes the HUD's copy of BeamMP's own layout, which comes from the BeamMP zip", function()
+  local L = fakeLayouts()
+  local env = bootClient({ layouts = L, origins = { [L.name] = "/mods/multiplayer/beammp.zip" } })
+  env.tick(4, 0.5)
+  assertEq(#L.added, 1)
+  env.M.onBeamMPServerLeave()
+  assertEq(#env.removedFiles, 1); assertEq(env.removedFiles[1], L.name)
+end)
+
+test("leaving keeps a layout file that is the player's own", function()
+  local L = fakeLayouts()
+  local env = bootClient({ layouts = L, origins = { [L.name] = "" } })
+  env.tick(4, 0.5)
+  env.M.onBeamMPServerLeave()
+  assertEq(#env.removedFiles, 0)
+end)
+
 test("unloading drops the cached helper modules so a rejoin loads fresh code", function()
   local env = bootClient()
   assertEq(package.loaded["copsAndRobbers/hudfeed"] ~= nil, true)
@@ -368,6 +385,7 @@ test("the evolving runner's change is diffed against his own build and sent once
   local sent = env.lastSent("cnr_change")
   assertEq(#sent.changes, 1)
   assertEq(sent.changes[1].label, "Engine"); assertEq(sent.changes[1].from, "4.5L V8"); assertEq(sent.changes[1].to, "6.0L V8")
+  assertEq(sent.changes[1].parts[1], "v8_60")
   local n = 0
   for _, s in ipairs(env.sent) do if s.ev == "cnr_change" then n = n + 1 end end
   env.tick(3)
@@ -406,6 +424,48 @@ test("a rebuild replaces the car in place, closes the parts menu and reports mis
   assertEq(env.hud().banner == nil or env.hud().banner.label ~= "APPLYING CHANGES", true)
 end)
 
+test("the car report after a rebuild carries the rebuild id", function()
+  local env = bootClient()
+  env.fire("cnr_roundSetup", copy(EVOLVING_RUNNER))
+  env.tick(2)
+  assertEq(env.lastSent("cnr_myVehicle").rebuild, nil)
+  env.fire("cnr_rebuild", { model = "pickup", rebuild = 7, config = { format = 2, model = "pickup", parts = { pickup_engine = "v8_60" }, vars = {} } })
+  env.tick(1)
+  assertEq(env.lastSent("cnr_myVehicle").rebuild, 7)
+end)
+
+test("a player who joins while applying reports with the rebuild id from his setup", function()
+  local env = bootClient()
+  local setup = copy(EVOLVING_RUNNER)
+  setup.role, setup.runnerId, setup.phase, setup.rebuild = "cop", 2, "applying", 5
+  env.fire("cnr_roundSetup", setup)
+  env.tick(1)
+  assertEq(env.lastSent("cnr_myVehicle").rebuild, 5)
+end)
+
+test("practice as runner: a rebuild respawns the AI cops in place with the new build and reports them again", function()
+  local env = bootClient()
+  env.fire("cnr_roundSetup", copy(EVOLVING_RUNNER))
+  env.fire("cnr_setupAI", { model = "pickup", config = EVOLVING_RUNNER.config, runnerId = 1,
+    ai = { { id = -10, role = "cop", name = "AI green", index = 1, color = { r = 0, g = 1, b = 0 } } } })
+  env.tick(1)
+  assertEq(#env.spawned, 1)
+  local old = env.spawned[1].veh
+  old.pos = vec3(30, 40, 0)
+  env.fire("cnr_rebuild", { model = "pickup", rebuild = 3, config = { format = 2, model = "pickup", parts = { pickup_engine = "v8_60" }, vars = {} } })
+  assertEq(#env.spawned, 2)
+  assertEq(env.objects[old.id], nil)
+  local new = env.spawned[2]
+  assertEq(new.opt.config.parts.pickup_engine, "v8_60")
+  assertEq(new.opt.pos.x, 30); assertEq(new.opt.pos.y, 40)
+  assertEq(new.opt.paint.y, 1)
+  assertEq(new.opt.autoEnterVehicle, false)
+  env.sent = {}
+  env.tick(0.2)
+  local report = env.lastSent("cnr_aiVehicles")
+  assertEq(report.ai[1].id, -10); assertEq(report.ai[1].vid, new.veh.id)
+end)
+
 test("everyone sees the queued change in the HUD", function()
   local env = bootClient()
   local setup = copy(SETUP)
@@ -414,6 +474,21 @@ test("everyone sees the queued change in the HUD", function()
   env.fire("cnr_queued", { runner = "Bob", changes = { { label = "Engine", from = "4.5L V8", to = "6.0L V8" } } })
   env.tick(0.2)
   assertEq(env.hud().change.title, "BOB'S CHANGE (1)")
+end)
+
+test("a player who lacks a part of the queued change sees it marked missing", function()
+  local env = bootClient()
+  local setup = copy(SETUP)
+  setup.evolving = true
+  env.fire("cnr_roundSetup", setup)
+  env.fire("cnr_queued", { runner = "Bob", changes = {
+    { label = "Engine", from = "4.5L V8", to = "6.0L V8", parts = { "v8_60" } },
+    { label = "Turbo", from = "(none)", to = "Meo Turbo", parts = { "meo_turbo" } },
+  } })
+  env.tick(0.2)
+  local lines = env.hud().change.lines
+  assertEq(lines[1].missing, nil); assertEq(lines[1].parts, nil)
+  assertEq(lines[2].missing, true)
 end)
 
 test("a repaint during evolving prep keeps the runner's queued change", function()

@@ -44,6 +44,18 @@ test("parts that come with a swap are grouped under it", function()
   assertEq(roots[2].slot, "pickup_wheel_F"); assertEq(roots[2].extra, 0)
 end)
 
+test("a grouped change lists its new part ids, including the parts that come with it", function()
+  local changes = build.diff(
+    { pickup_engine = "v8", pickup_intake = "small", pickup_exhaust = "exhaust_single", pickup_tips = "tip", pickup_wheel_F = "steel" },
+    { pickup_engine = "v8_60", pickup_intake = "big", pickup_exhaust = "exhaust_dual", pickup_tips = "", pickup_wheel_F = "alloy" })
+  local roots = build.group(changes, slotsOf)
+  local ids = {}
+  for _, id in ipairs(roots[1].parts) do ids[id] = true end
+  assertEq(roots[1].parts[1], "v8_60")
+  assertEq(#roots[1].parts, 3); assertEq(ids.big, true); assertEq(ids.exhaust_dual, true)
+  assertEq(#roots[2].parts, 1); assertEq(roots[2].parts[1], "alloy")
+end)
+
 test("without part information every change stands on its own", function()
   local roots = build.group(build.diff({ a = "x", b = "y" }, { a = "x2", b = "y2" }), function() return nil end)
   assertEq(#roots, 2)

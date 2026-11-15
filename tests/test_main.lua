@@ -247,20 +247,62 @@ test("edit in real pid-vid format with round car is allowed", function()
   env.cleanup()
 end)
 
-test("parts changes never replace the car and are only logged once per round", function()
+local BASE_EDIT = '1-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc","parts":{"engine":"v8"}}}'
+local TUNED_EDIT = '1-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc","parts":{"engine":"v12"}}}'
+
+local function placed(env, pid)
+  env.call("cnr_myVehicle", pid or 1, '{"vid":0}')
+  env.clock = env.clock + 4
+end
+
+local function partsLines(env)
+  local n = 0
+  for _, c in ipairs(env.chats) do if c[2]:find("changed parts", 1, true) then n = n + 1 end end
+  return n
+end
+
+test("a parts change during a round is announced to everyone once and never replaces the car", function()
   local env = boot()
   env.startRound()
-  local base = '1-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc","parts":{"engine":"v8"}}}'
-  local tuned = '1-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc","parts":{"engine":"v12"}}}'
-  env.call("onVehicleEdited", 1, 0, base)
+  placed(env)
+  env.call("onVehicleEdited", 1, 0, BASE_EDIT)
   env.sent = {}
   env.chats = {}
   for _ = 1, 10 do
-    assertEq(env.call("onVehicleEdited", 1, 0, tuned), 0)
-    assertEq(env.call("onVehicleEdited", 1, 0, base), 0)
+    assertEq(env.call("onVehicleEdited", 1, 0, TUNED_EDIT), 0)
+    assertEq(env.call("onVehicleEdited", 1, 0, BASE_EDIT), 0)
   end
   assertEq(env.lastSent("cnr_restoreConfig"), nil)
-  for _, c in ipairs(env.chats) do assertEq(c[2]:find("changed parts", 1, true), nil, c[2]) end
+  assertEq(env.chatHas("⚠ Reinder changed parts during the round: engine"), true)
+  assertEq(partsLines(env), 1)
+  env.cleanup()
+end)
+
+test("parts reports right after the mod places a car are never announced", function()
+  local env = boot()
+  env.startRound()
+  env.call("onVehicleEdited", 1, 0, BASE_EDIT)
+  env.call("onVehicleEdited", 1, 0, TUNED_EDIT)
+  env.call("cnr_myVehicle", 1, '{"vid":0}')
+  env.clock = env.clock + 2
+  env.call("onVehicleEdited", 1, 0, BASE_EDIT)
+  assertEq(partsLines(env), 0)
+  env.clock = env.clock + 2
+  env.call("onVehicleEdited", 1, 0, TUNED_EDIT)
+  assertEq(partsLines(env), 1)
+  env.cleanup()
+end)
+
+test("a repaint is not a parts change", function()
+  local env = boot()
+  env.startRound()
+  placed(env, 2)
+  local bob = function(text) return (text:gsub("^1%-0", "2-0")) end
+  env.call("onVehicleEdited", 2, 0, bob(BASE_EDIT))
+  env.call("onChatMessage", 2, "Bob", "/cnr color #00ff00")
+  assertEq(env.lastSent("cnr_paint").pid, 2)
+  env.call("onVehicleEdited", 2, 0, bob(TUNED_EDIT))
+  assertEq(partsLines(env), 0)
   env.cleanup()
 end)
 
@@ -595,6 +637,42 @@ test("earth last seen carries lat/lon", function()
   env.cleanup()
 end)
 
+test("earth sight pings still go out when the runner's report turns stale during the tick", function()
+  local env = boot({ map = EARTH })
+  env.panel(2, "start rein")
+  report(env, 1, geoCar(0)); report(env, 2, geoCar(300))
+  env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  env.go()
+  local function step()
+    env.clock = env.clock + 0.25
+    report(env, 1, geoCar(0)); report(env, 2, geoCar(300))
+    env.call("cnr_tick")
+  end
+  for _ = 1, 60 do step() end
+  local Round = getmetatable(require("cnr.round").new({}))
+  local tick = Round.tick
+  Round.tick = function(...)
+    local fx = tick(...)
+    env.clock = env.clock + 3
+    return fx
+  end
+  local ok, err = pcall(function()
+    env.sent = {}
+    env.call("cnr_sight", 2, '{"seen":true}')
+    step()
+    local live = env.lastSent("cnr_lastSeen")
+    assertEq(live ~= nil and live.data:find('"live":true', 1, true) ~= nil, true)
+    env.sent = {}
+    env.call("cnr_sight", 2, '{"seen":false}')
+    step()
+    local lost = env.lastSent("cnr_lastSeen")
+    assertEq(lost ~= nil and lost.data:find('"lat"', 1, true) ~= nil, true)
+  end)
+  Round.tick = tick
+  env.cleanup()
+  if not ok then error(err, 0) end
+end)
+
 test("earth relocations grant grace for own car and test AI", function()
   local env = boot({ map = EARTH, vehicles = { [1] = { [0] = "x" } } })
   env.panel(1, "test runner")
@@ -714,10 +792,10 @@ end)
 
 test("version is shown in help and the log", function()
   local env = boot()
-  assertEq(env.logHas("Cops and Robbers 2.0.6 loaded"), true)
+  assertEq(env.logHas("Cops and Robbers 2.0.7 loaded"), true)
   env.call("onChatMessage", 1, "Reinder", "/cnr help")
-  assertEq(env.chatHas("Cops and Robbers 2.0.6"), true)
-  assertEq(env.lastSent("cnr_mode").data:find('"version":"2.0.6"', 1, true) ~= nil, true)
+  assertEq(env.chatHas("Cops and Robbers 2.0.7"), true)
+  assertEq(env.lastSent("cnr_mode").data:find('"version":"2.0.7"', 1, true) ~= nil, true)
   env.cleanup()
 end)
 
@@ -988,11 +1066,12 @@ end)
 test("parts change log names the differing slots", function()
   local env = boot()
   env.startRound()
+  placed(env)
   local logged = capturingLogs(function()
     env.call("onVehicleEdited", 1, 0, '1-0:{"jbm":"pickup","vcf":{"parts":{"engine":"v8","tires":"a"}}}')
     env.call("onVehicleEdited", 1, 0, '1-0:{"jbm":"pickup","vcf":{"parts":{"engine":"v12","tires":"a","wing":"big"}}}')
   end)
-  assertEq(logged("slots: engine, wing"), true)
+  assertEq(logged("changed parts during the round: engine, wing"), true)
   env.cleanup()
 end)
 
@@ -1203,6 +1282,10 @@ local function newBuild(env)
   env.call("cnr_panel", 1, '{"action":"build","op":"new","model":"pickup","name":"Gavril D-Series","parts":{"pickup_engine":"v8"},"vars":{}}')
 end
 
+local function rebuildId(env)
+  return assert(env.lastSent("cnr_rebuild").data:match('"rebuild":(%d+)'))
+end
+
 local function lsData(env, pattern)
   for name in io.popen('ls "' .. env.dir .. 'data"'):lines() do
     if name:match(pattern) then return name end
@@ -1251,12 +1334,75 @@ test("a full evolving round: prep, apply, rebuild, ready, GO", function()
   assertEq(countSent(env, "cnr_rebuild"), 2)
   assertEq(env.chatHas("Change 1 by Reinder: Engine 4.5L V8 → 6.0L V8"), true)
   assertEq(readFileAt(env.dir .. "data/build.json"):find('"pickup_engine":"v8_60"', 1, true) ~= nil, true)
-  env.call("cnr_myVehicle", 1, '{"vid":0}')
-  env.call("cnr_myVehicle", 2, '{"vid":0}')
+  local id = rebuildId(env)
+  env.call("cnr_myVehicle", 1, '{"vid":0,"rebuild":' .. id .. '}')
+  env.call("cnr_myVehicle", 2, '{"vid":0,"rebuild":' .. id .. '}')
   assertEq(env.chatHas("Cars ready, press GO"), true)
   assertEq(env.lastSent("cnr_notice") == nil or env.lastSent("cnr_notice").data:find("Cars ready", 1, true) == nil, true)
   env.go()
   assertEq(env.lastSent("cnr_countdown") ~= nil, true)
+  env.cleanup()
+end)
+
+test("a car report from before the rebuild doesn't make a player ready", function()
+  local env = boot()
+  evolving(env); newBuild(env)
+  env.panel(2, "start rein")
+  env.call("cnr_panel", 1, '{"action":"apply"}')
+  env.call("cnr_setup", 1, '{"parts":{"pickup_engine":"v8_60"},"vars":{},"changes":[]}')
+  local id = rebuildId(env)
+  env.call("cnr_myVehicle", 1, '{"vid":0,"rebuild":' .. id .. '}')
+  env.call("cnr_myVehicle", 2, '{"vid":0}')
+  assertEq(env.chatHas("Cars ready, press GO"), false)
+  env.call("cnr_myVehicle", 2, '{"vid":0,"rebuild":' .. id .. '}')
+  assertEq(env.chatHas("Cars ready, press GO"), true)
+  env.cleanup()
+end)
+
+test("a player who joins while applying gets the rebuild id with his setup", function()
+  local env = boot()
+  evolving(env); newBuild(env)
+  env.panel(2, "start rein")
+  env.call("cnr_panel", 1, '{"action":"apply"}')
+  env.call("cnr_setup", 1, '{"parts":{"pickup_engine":"v8_60"},"vars":{},"changes":[]}')
+  local id = rebuildId(env)
+  env.names = { "Reinder", "Bob", "Cid" }
+  env.vehicles[3] = { [0] = "x" }
+  env.call("onPlayerJoin", 3)
+  local setup = env.lastSent("cnr_roundSetup")
+  assertEq(setup.pid, 3)
+  assertEq(setup.data:find('"rebuild":' .. id, 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("an Apply rebuild and the runner's own prep change are not parts changes", function()
+  local env = boot()
+  evolving(env); newBuild(env)
+  env.panel(2, "start rein")
+  placed(env, 1); placed(env, 2)
+  local v8 = '%d-0:{"jbm":"pickup","vcf":{"parts":{"pickup_engine":"v8"}}}'
+  local v8_60 = '%d-0:{"jbm":"pickup","vcf":{"parts":{"pickup_engine":"v8_60"}}}'
+  env.call("onVehicleEdited", 1, 0, v8:format(1)); env.call("onVehicleEdited", 2, 0, v8:format(2))
+  env.call("onVehicleEdited", 1, 0, v8_60:format(1))
+  env.call("cnr_panel", 1, '{"action":"apply"}')
+  env.call("cnr_setup", 1, '{"parts":{"pickup_engine":"v8_60"},"vars":{},"changes":[]}')
+  env.call("onVehicleEdited", 2, 0, v8_60:format(2))
+  local id = rebuildId(env)
+  env.call("cnr_myVehicle", 2, '{"vid":0,"rebuild":' .. id .. '}')
+  env.call("cnr_myVehicle", 1, '{"vid":0,"rebuild":' .. id .. '}')
+  assertEq(partsLines(env), 0)
+  env.cleanup()
+end)
+
+test("a late report of the runner's prep change after Apply is not a parts change", function()
+  local env = boot()
+  evolving(env); newBuild(env)
+  env.panel(2, "start rein")
+  placed(env, 1)
+  env.call("onVehicleEdited", 1, 0, '1-0:{"jbm":"pickup","vcf":{"parts":{"pickup_engine":"v8"}}}')
+  env.call("cnr_panel", 1, '{"action":"apply"}')
+  env.call("onVehicleEdited", 1, 0, '1-0:{"jbm":"pickup","vcf":{"parts":{"pickup_engine":"v8_60"}}}')
+  assertEq(partsLines(env), 0)
   env.cleanup()
 end)
 
@@ -1383,6 +1529,19 @@ test("someone joining during prep sees the runner's queued change", function()
   env.call("onPlayerJoin", 3)
   local q = env.lastSent("cnr_queued")
   assertEq(q ~= nil and q.pid, 3)
+  env.cleanup()
+end)
+
+test("the queued change keeps the part ids, as text and capped", function()
+  local env = boot()
+  evolving(env); newBuild(env)
+  env.panel(2, "start rein")
+  local many = {}
+  for i = 1, 40 do many[i] = '"p' .. i .. '"' end
+  env.call("cnr_change", 1, '{"changes":[{"label":"Engine","from":"a","to":"b","parts":["v8_60",7,{"x":1},' .. table.concat(many, ",") .. ']}]}')
+  local q = env.lastSent("cnr_queued").data
+  assertEq(q:find('"parts":["v8_60","p1"', 1, true) ~= nil, true)
+  assertEq(q:find('"p30"', 1, true) ~= nil, false)
   env.cleanup()
 end)
 

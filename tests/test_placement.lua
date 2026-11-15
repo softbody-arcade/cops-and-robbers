@@ -161,3 +161,42 @@ test("leave never resets a layout that already had a user file", function()
   placement.leave(s, g.env)
   assertEq(#g.resets, 0)
 end)
+
+local function modLayout()
+  local g = fakeGame({ beammp = { { appName = "chat" } } }, "beammp")
+  g.cache.userFileExists = true
+  g.deleted = {}
+  g.env.fromMod = function(name) return name == "beammp" end
+  g.env.removeUserFile = function(name) g.deleted[#g.deleted + 1] = name end
+  return g
+end
+
+test("leave deletes the copy that hides a mod's layout when only the app was added", function()
+  local g = modLayout()
+  local s = placement.new("hud", PLACE)
+  placement.activate(s)
+  placement.tick(s, g.env)
+  placement.leave(s, g.env)
+  assertEq(#g.deleted, 1); assertEq(g.deleted[1], "beammp")
+  assertEq(#g.resets, 0)
+end)
+
+test("leave keeps a copy of a mod's layout the player changed meanwhile", function()
+  local g = modLayout()
+  local s = placement.new("hud", PLACE)
+  placement.activate(s)
+  placement.tick(s, g.env)
+  table.insert(g.disk.beammp.apps, { appName = "speedo" })
+  placement.leave(s, g.env)
+  assertEq(#g.deleted, 0)
+end)
+
+test("leave never deletes a layout file that was already the player's own", function()
+  local g = modLayout()
+  g.env.fromMod = function() return false end
+  local s = placement.new("hud", PLACE)
+  placement.activate(s)
+  placement.tick(s, g.env)
+  placement.leave(s, g.env)
+  assertEq(#g.deleted, 0)
+end)

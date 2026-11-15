@@ -11,6 +11,7 @@ Round.__index = Round
 
 local PICK_TIMEOUT_SECONDS = 10
 local APPLY_TIMEOUT_SECONDS = 20
+local SETUP_REPLY_TIMEOUT_SECONDS = 5
 local MAX_SIGHT_STEP = 1
 local SIGHT_RANGE_MARGIN = 50
 local COLOR_RUNNER = "#1f5fff"
@@ -26,6 +27,7 @@ local RELOCATE_GRACE_SECONDS = 3
 local TELEPORT_BASE_METERS = 60
 local TELEPORT_MAX_SPEED = 100
 local TELEPORT_ANNOUNCE_GAP = 5
+local lastRebuildId = 0
 
 local function copy(t)
   local c = {}
@@ -53,7 +55,7 @@ function Round:clear()
   self.vehicle = nil
   self.evolving = false
   self.buildStep, self.buildName = nil, nil
-  self.applyStartedAt, self.setupDone, self.readyPids = nil, false, {}
+  self.applyStartedAt, self.setupDone, self.readyPids, self.rebuildId = nil, false, {}, nil
   self.startedAt = nil
   self.countdownStartedAt = nil
   self.releasedAt = nil
@@ -201,6 +203,15 @@ function Round:markApplied(timedOut)
   return { { kind = "applied", timedOut = timedOut or nil } }
 end
 
+function Round:rebuild(now, config)
+  self.setupDone = true
+  self.readyPids = {}
+  self.applyStartedAt = now
+  lastRebuildId = lastRebuildId + 1
+  self.rebuildId = lastRebuildId
+  return { { kind = "rebuild", config = config, id = self.rebuildId } }
+end
+
 function Round:apply(now, pid)
   if not self.evolving or self.state ~= "prep" then
     return { { kind = "reply", pid = pid, msg = "Apply only works during prep in evolving mode" } }
@@ -215,15 +226,13 @@ end
 
 function Round:setupReceived(now, pid, newConfig)
   if self.state ~= "applying" or pid ~= self.runnerId or self.setupDone then return {} end
-  self.setupDone = true
   self.vehicle.config = newConfig
-  self.readyPids = {}
-  self.applyStartedAt = now
-  return { { kind = "rebuild", config = newConfig } }
+  return self:rebuild(now, newConfig)
 end
 
-function Round:vehicleReady(now, pid)
+function Round:vehicleReady(now, pid, rebuildId)
   if self.state ~= "applying" or not self.setupDone or self.players[pid] == nil then return {} end
+  if rebuildId ~= self.rebuildId then return {} end
   self.readyPids[pid] = true
   if self:allReady() then return self:markApplied() end
   return {}
@@ -295,14 +304,10 @@ function Round:tick(now, cars, stations)
     end
     return fx
   end
-  if self.state == "applying" and now - self.applyStartedAt >= APPLY_TIMEOUT_SECONDS - 1e-9 then
-    if not self.setupDone then
-      self.setupDone = true
-      self.readyPids = {}
-      self.applyStartedAt = now
-      return { { kind = "rebuild", config = self.vehicle.config } }
-    end
-    return self:markApplied(true)
+  if self.state == "applying" then
+    local waited = now - self.applyStartedAt
+    if not self.setupDone and waited >= SETUP_REPLY_TIMEOUT_SECONDS - 1e-9 then return self:rebuild(now, self.vehicle.config) end
+    if self.setupDone and waited >= APPLY_TIMEOUT_SECONDS - 1e-9 then return self:markApplied(true) end
   end
   if self.state == "idle" or self.state == "prep" or self.state == "applying" or self.state == "ready" then return fx end
 
@@ -356,7 +361,7 @@ function Round:tick(now, cars, stations)
         local d = vec.dist(runnerCar.pos, car.pos)
         if not nearest or d < nearest then nearest = d end
       end
-      fx[#fx + 1] = { kind = "lastSeen", pos = runnerCar.pos, nearestCop = nearest }
+      fx[#fx + 1] = { kind = "lastSeen", pos = runnerCar.pos, geo = runnerCar.geo, nearestCop = nearest }
     end
   end
 
@@ -493,14 +498,14 @@ function Round:sightTick(now, cars, runnerCar, fx)
         if vec.dist(runnerCar.pos, car.pos) <= limit then noRoute[pid] = true end
       end
     end
-    fx[#fx + 1] = { kind = "live", pos = runnerCar.pos, noRoute = noRoute, nearestCop = nearest }
+    fx[#fx + 1] = { kind = "live", pos = runnerCar.pos, geo = runnerCar.geo, noRoute = noRoute, nearestCop = nearest }
   elseif self.inSight then
     self.inSight = false
     self.lostCount = self.lostCount + 1
     self.liveAt = nil
     self.lastSeenAt = now
     fx[#fx + 1] = { kind = "spotted", spotted = false }
-    fx[#fx + 1] = { kind = "lastSeen", pos = runnerCar.pos, nearestCop = nearest }
+    fx[#fx + 1] = { kind = "lastSeen", pos = runnerCar.pos, geo = runnerCar.geo, nearestCop = nearest }
   end
 end
 

@@ -6,6 +6,13 @@ local function copy(t)
   return c
 end
 
+local function deepCopy(t)
+  if type(t) ~= "table" then return t end
+  local c = {}
+  for k, v in pairs(t) do c[k] = deepCopy(v) end
+  return c
+end
+
 local function appIndex(layout, appName)
   for i, app in ipairs(type(layout) == "table" and layout.apps or {}) do
     if app.appName == appName then return i end
@@ -25,7 +32,7 @@ local function same(a, b)
 end
 
 function M.new(appName, placement)
-  return { appName = appName, placement = placement, active = false, placed = {}, optedOut = {}, createdCopy = {} }
+  return { appName = appName, placement = placement, active = false, placed = {}, optedOut = {}, createdCopy = {}, hidMod = {} }
 end
 
 function M.activate(state)
@@ -33,9 +40,9 @@ function M.activate(state)
 end
 
 function M.leave(state, env)
-  local createdCopy = state.createdCopy or {}
+  local createdCopy, hidMod = state.createdCopy or {}, state.hidMod or {}
   state.active = false
-  state.placed, state.optedOut, state.createdCopy = {}, {}, {}
+  state.placed, state.optedOut, state.createdCopy, state.hidMod = {}, {}, {}, {}
   local api = env.api
   for _, layout in ipairs(api.getAvailableLayouts() or {}) do
     local fresh = env.readLayout(layout.filename) or layout
@@ -49,6 +56,8 @@ function M.leave(state, env)
       local original = env.readOriginal(layout.filename)
       if type(original) == "table" and same(original.apps or {}, fresh.apps or {}) then api.resetLayout(layout.filename) end
     end
+    local modApps = hidMod[layout.filename]
+    if modApps and env.removeUserFile and same(modApps, fresh.apps or {}) then env.removeUserFile(layout.filename) end
   end
   local current = api.getCurrentLayout()
   if type(current) == "table" and current.filename then api.setCurrentLayout(current.filename) end
@@ -76,9 +85,11 @@ function M.tick(state, env)
   end
   if state.optedOut[name] then return false end
   local makesCopy = current.userFileExists == false
+  local modApps = not makesCopy and env.fromMod and env.fromMod(name) and deepCopy(fresh.apps or {})
   if api.addApp(name, state.appName, copy(state.placement)) then
     state.placed[name] = true
     if makesCopy then state.createdCopy[name] = true end
+    if modApps then state.hidMod[name] = modApps end
     api.setCurrentLayout(name)
     return true
   end

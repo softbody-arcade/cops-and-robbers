@@ -667,6 +667,24 @@ end
 
 local function farCars() return {[1]=kmh(0, 50), [2]=kmh(300, 50), [3]=kmh(900, 50)} end
 
+test("sight pings carry the exact runner position the round used, geo included", function()
+  local r = chasing({lastSeenIntervalSeconds=30})
+  local function cars()
+    local c = farCars()
+    c[1].geo = { lat = 52, lon = 5, h = 0 }
+    return c
+  end
+  r:sightReport(12, 2, true)
+  assertEq(find(r:tick(12, cars(), {}), "live").geo.lat, 52)
+  r:sightReport(12.5, 2, false)
+  local lost
+  for t = 13, 16 do lost = lost or find(r:tick(t, cars(), {}), "lastSeen") end
+  assertEq(lost.geo.lat, 52)
+  local regular
+  for t = 17, 50 do regular = regular or find(r:tick(t, cars(), {}), "lastSeen") end
+  assertEq(regular.geo.lat, 52)
+end)
+
 test("a cop's sight sends live updates and holds back the regular ping", function()
   local r = chasing({lastSeenIntervalSeconds=30})
   r:sightReport(12, 2, true)
@@ -818,6 +836,14 @@ end
 
 local NEW = { format = 2, model = "pickup", parts = { pickup_engine = "v8_60" }, vars = {} }
 
+local function rebuilt(r, now)
+  return find(r:setupReceived(now or 2, 1, NEW), "rebuild").id
+end
+
+local function allReady(r, id, now)
+  for _, p in ipairs({ 1, 2, 3 }) do r:vehicleReady(now or 3, p, id) end
+end
+
 test("an evolving start skips picking and sets everyone up with the build", function()
   local r, fx = evolvingPrep()
   assertEq(r.state, "prep"); assertEq(r.evolving, true)
@@ -831,11 +857,43 @@ test("apply asks the runner for his setup, then rebuilds every car until all are
   local fx = r:apply(1, 2)
   assertEq(r.state, "applying"); assertEq(find(fx, "requestSetup").pid, 1)
   fx = r:setupReceived(2, 1, NEW)
+  local id = find(fx, "rebuild").id
   assertEq(find(fx, "rebuild").config, NEW); assertEq(r.vehicle.config, NEW)
-  assertEq(#r:vehicleReady(3, 1), 0); assertEq(#r:vehicleReady(3, 2), 0)
+  assertEq(#r:vehicleReady(3, 1, id), 0); assertEq(#r:vehicleReady(3, 2, id), 0)
   assertEq(r.state, "applying")
-  fx = r:vehicleReady(3, 3)
+  fx = r:vehicleReady(3, 3, id)
   assertEq(find(fx, "applied") ~= nil, true); assertEq(r.state, "ready")
+end)
+
+test("a car report from before the rebuild doesn't count as ready", function()
+  local r = evolvingPrep()
+  r:apply(1, 2)
+  local id = rebuilt(r)
+  allReady(r, nil)
+  assertEq(r.state, "applying")
+  r:vehicleReady(3, 1, id); r:vehicleReady(3, 2, id)
+  assertEq(find(r:vehicleReady(3, 3, id), "applied") ~= nil, true)
+end)
+
+test("a car report for an earlier rebuild doesn't count as ready", function()
+  local old = evolvingPrep()
+  old:apply(1, 2)
+  local oldId = rebuilt(old)
+  local r = evolvingPrep()
+  r:apply(1, 2)
+  local id = rebuilt(r)
+  assertEq(id ~= oldId, true)
+  allReady(r, oldId)
+  assertEq(r.state, "applying")
+end)
+
+test("the rebuild after a missing setup reply has its own id", function()
+  local r = evolvingPrep()
+  r:apply(1, 2)
+  local id = find(r:tick(6, stillCars(), {}), "rebuild").id
+  assertEq(id ~= nil, true)
+  allReady(r, id, 7)
+  assertEq(r.state, "ready")
 end)
 
 test("only the runner's setup counts, and only once", function()
@@ -847,28 +905,34 @@ test("only the runner's setup counts, and only once", function()
   assertEq(r.vehicle.config, NEW)
 end)
 
-test("applying moves on after 20 s, with or without a setup reply", function()
+test("applying moves on 20 s after the rebuild", function()
   local r = evolvingPrep()
   r:apply(1, 2)
   r:setupReceived(2, 1, NEW)
   assertEq(find(r:tick(21.9, stillCars(), {}), "applied"), nil)
   local e = find(r:tick(22, stillCars(), {}), "applied")
   assertEq(e.timedOut, true); assertEq(r.state, "ready")
-  local r2 = evolvingPrep()
-  r2:apply(1, 2)
-  local fx = r2:tick(21, stillCars(), {})
+end)
+
+test("without a setup reply the cars rebuild with the current build after 5 s", function()
+  local r = evolvingPrep()
+  r:apply(1, 2)
+  assertEq(find(r:tick(5.9, stillCars(), {}), "rebuild"), nil)
+  local fx = r:tick(6, stillCars(), {})
   assertEq(find(fx, "rebuild").config, BUILD.config)
   assertEq(find(fx, "applied"), nil)
-  assertEq(find(r2:tick(41, stillCars(), {}), "applied") ~= nil, true)
-  assertEq(r2.vehicle.config, BUILD.config)
+  assertEq(find(r:tick(25.9, stillCars(), {}), "applied"), nil)
+  assertEq(find(r:tick(26, stillCars(), {}), "applied") ~= nil, true)
+  assertEq(r.vehicle.config, BUILD.config)
 end)
 
 test("GO needs the change applied first in evolving mode", function()
   local r = evolvingPrep()
   assertEq(find(r:go(1, 2), "reply").msg, "Apply the change first")
-  r:apply(1, 2); r:setupReceived(2, 1, NEW)
+  r:apply(1, 2)
+  local id = rebuilt(r)
   assertEq(find(r:go(2.5, 2), "reply").msg, "Apply the change first")
-  for _, p in ipairs({ 1, 2, 3 }) do r:vehicleReady(3, p) end
+  allReady(r, id)
   assertEq(find(r:go(4, 2), "countdown") ~= nil, true)
 end)
 
@@ -895,16 +959,17 @@ end)
 
 test("a cop leaving while applying no longer holds the round up", function()
   local r = evolvingPrep()
-  r:apply(1, 2); r:setupReceived(2, 1, NEW)
-  r:vehicleReady(3, 1); r:vehicleReady(3, 2)
+  r:apply(1, 2)
+  local id = rebuilt(r)
+  r:vehicleReady(3, 1, id); r:vehicleReady(3, 2, id)
   local fx = r:playerLeft(4, 3)
   assertEq(find(fx, "applied") ~= nil, true); assertEq(r.state, "ready")
 end)
 
 test("the record keeps the mode and the build", function()
   local r = evolvingPrep()
-  r:apply(1, 2); r:setupReceived(2, 1, NEW)
-  for _, p in ipairs({ 1, 2, 3 }) do r:vehicleReady(3, p) end
+  r:apply(1, 2)
+  allReady(r, rebuilt(r))
   r:go(4, 2)
   r:tick(7, stillCars(), {}); r:tick(14, stillCars(), {})
   local run = find(r:endCalled(30, 1), "record").run
@@ -915,8 +980,8 @@ end)
 
 test("evolving runs don't store the whole build config in the leaderboard", function()
   local r = evolvingPrep()
-  r:apply(1, 2); r:setupReceived(2, 1, NEW)
-  for _, p in ipairs({ 1, 2, 3 }) do r:vehicleReady(3, p) end
+  r:apply(1, 2)
+  allReady(r, rebuilt(r))
   r:go(4, 2)
   r:tick(7, stillCars(), {}); r:tick(14, stillCars(), {})
   assertEq(find(r:endCalled(30, 1), "record").run.config, nil)

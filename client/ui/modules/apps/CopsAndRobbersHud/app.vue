@@ -27,6 +27,7 @@
             <span v-else class="cnr-change-value">
               <span class="cnr-muted">{{ line.from }}</span> → <span class="cnr-change-to">{{ line.to }}</span>
             </span>
+            <span v-if="line.missing" class="cnr-change-missing">⚠ missing</span>
           </div>
           <div v-if="line.extra" class="cnr-change-extra">+ {{ line.extra }} {{ line.extra === 1 ? "part comes" : "parts come" }} with it</div>
         </template>
@@ -155,6 +156,11 @@ events.on("CnRHud", data => {
 }
 .cnr-change-to {
   color: #9fe870;
+}
+.cnr-change-missing {
+  flex: 0 0 auto;
+  font-weight: 700;
+  color: #ffd54f;
 }
 .cnr-prep, .cnr-event {
   display: flex;

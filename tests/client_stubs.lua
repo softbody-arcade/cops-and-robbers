@@ -29,7 +29,7 @@ end
 
 function bootClient(opts)
   opts = opts or {}
-  local env = { actionFilter = {}, handlers = {}, sent = {}, triggers = {}, toasts = {}, objects = {}, replaced = {}, spawned = {}, nextId = 200 }
+  local env = { actionFilter = {}, handlers = {}, sent = {}, triggers = {}, toasts = {}, objects = {}, replaced = {}, spawned = {}, nextId = 200, removedFiles = {} }
   for name in pairs(package.loaded) do
     if name:find("^copsAndRobbers") then package.loaded[name] = nil end
   end
@@ -137,7 +137,7 @@ function bootClient(opts)
   _G.extensions = { hook = function() end, load = function() end }
   _G.FS = {
     fileExists = function() return true end,
-    removeFile = function() end,
+    removeFile = function(_, path) env.removedFiles[#env.removedFiles + 1] = path end,
     getFileOriginInfo = function(_, path) return { archivePath = (opts.origins or {})[path] } end,
   }
   _G.TriggerServerEvent = function(ev, data) env.sent[#env.sent + 1] = { ev = ev, data = data } end

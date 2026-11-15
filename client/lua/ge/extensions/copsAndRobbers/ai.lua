@@ -52,6 +52,15 @@ function M.remove()
   cars = {}
 end
 
+local function spawnCar(model, config, a, pos, rot)
+  local opt = vehicles.options(a.role == "cop" and vehicles.copConfig(model, config) or config, a.color)
+  opt.autoEnterVehicle = false
+  opt.pos, opt.rot = pos, rot
+  local veh = core_vehicles.spawnNewVehicle(model, opt)
+  if not veh then game.toast("Could not spawn " .. tostring(a.name) .. ", is MaxCars high enough?", 6, "cnr_reset") end
+  return veh
+end
+
 function M.setup(d)
   M.remove()
   local own = game.ownVehicle()
@@ -59,14 +68,23 @@ function M.setup(d)
   for _, a in ipairs(d.ai or {}) do
     local pos, rot
     if center then pos, rot = roads.findCopSpot(center, d.copSpawnMin or 50, d.copSpawnMax or 150, a.index or 1) end
-    local opt = vehicles.options(a.role == "cop" and vehicles.copConfig(d.model, d.config) or d.config, a.color)
-    opt.autoEnterVehicle = false
-    opt.pos, opt.rot = pos, rot
-    local veh = core_vehicles.spawnNewVehicle(d.model, opt)
+    local veh = spawnCar(d.model, d.config, a, pos, rot)
     if veh then
-      cars[a.id] = { id = a.id, role = a.role, name = a.name, gameId = veh:getID(), frozen = true, reported = false }
-    else
-      game.toast("Could not spawn " .. tostring(a.name) .. ", is MaxCars high enough?", 6, "cnr_reset")
+      cars[a.id] = { id = a.id, role = a.role, name = a.name, color = a.color, gameId = veh:getID(), frozen = true, reported = false }
+    end
+  end
+end
+
+function M.rebuild(model, config)
+  for _, car in pairs(cars) do
+    local obj = car.gameId and getObjectByID(car.gameId)
+    if obj then
+      local pos, rot = obj:getPosition(), game.uprightRotation(obj)
+      obj:queueLuaCommand('ai.setMode("disabled")')
+      obj:delete()
+      local veh = spawnCar(model, config, car, pos, rot)
+      car.gameId = veh and veh:getID()
+      car.reported, car.lastFreeze = false, nil
     end
   end
 end

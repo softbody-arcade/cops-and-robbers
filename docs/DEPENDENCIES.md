@@ -55,7 +55,7 @@ Then do the checks for whatever actually updated.
 **On update, check:**
 - The deploy log line (step 2 above) and `/cnr version`.
 - **Vehicle data format:** start a round. A car that's wrongly refused or deleted means the spawn or edit data format changed (`parseVehicleData`, `vehicleAllowed`).
-- **Parts edits:** during a round, change a part and look in the server log for `changed parts during the round ... slots: ...`. If every edit shows up as a change even when nothing changed, the `vcf.parts` shape changed.
+- **Parts edits:** during a round, change a part (through the console, since the menus are locked) and check that chat shows `⚠ <name> changed parts during the round: <slots>`. If it shows up after a round setup, repaint or Apply, or when nothing changed, the `vcf.parts` shape changed or BeamMP reports it later than the quiet window in `main.lua` (`PARTS_SETTLE_SECONDS`).
 - **Account identity:** play a round and check that the leaderboard app shows the account names. If they're missing, the `GetPlayerIdentifiers` format changed.
 - **Positions and catching:** catching needs `GetPositionRaw`. If the catch bar never fills, check its return shape.
 
@@ -176,6 +176,7 @@ Then do the checks for whatever actually updated.
   - `getCurrentLayout()`, which returns `filename`, `apps` and `userFileExists`.
   - `getAvailableLayouts()`, `addApp(filename, app, placement)` (it writes silently), `removeApp(filename, index0)`, `setCurrentLayout(filename)` and `resetLayout(filename)`.
   - User layouts live in `/settings/ui_apps/layouts/` and the stock originals in `/settings/ui_apps/originalLayouts/`.
+  - BeamMP ships its `beammp` layout inside `mods/multiplayer/beammp.zip` at the user path (`settings/ui_apps/layouts/default/beammp.uilayout.json`), not as an original. So `userFileExists` is already true, `resetLayout` has no original, and `addApp` writes a disk file that hides the zip's. We tell them apart with `FS:getFileOriginInfo(path).archivePath`.
 - **Placement format** (`ui/ui-vue/src/modules/apps/placementResolve.js`): centred axes are `"50%"` and sizes are in `em`. `margin: auto` is deprecated and read-only.
 
 **On update, check:**
@@ -186,7 +187,7 @@ Then do the checks for whatever actually updated.
 - **Panel:**
   - Its buttons do something, which proves `engineLua` reaches `copsAndRobbers.panel`.
   - The dropdown opens inside the app.
-- **Layout files:** leaving the server removes the HUD from the layout file in `settings/ui_apps/layouts/`. A stock layout copy we created gets deleted again.
+- **Layout files:** leaving the server removes the HUD from the layout file in `settings/ui_apps/layouts/`. A stock layout copy we created gets deleted again, and so does the disk copy of BeamMP's `beammp` layout (check that `settings/ui_apps/layouts/default/beammp.uilayout.json` is gone from the user folder after leaving).
 - **Placement format:** read the header comment of `placementResolve.js` again. If it changed, update `HUD_PLACEMENT` in `hudfeed.lua` and the `css` in both `app.json` files.
 
 ## BeamNG.Earth (mod API)

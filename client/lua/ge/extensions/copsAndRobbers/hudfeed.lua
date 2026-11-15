@@ -136,6 +136,15 @@ local function placementEnv()
       if type(filename) ~= "string" or filename:sub(1, #USER_LAYOUTS) ~= USER_LAYOUTS then return nil end
       return readJson(ORIGINAL_LAYOUTS .. filename:sub(#USER_LAYOUTS + 1))
     end,
+    fromMod = function(filename)
+      if type(filename) ~= "string" or not FS.getFileOriginInfo then return false end
+      local ok, origin = pcall(FS.getFileOriginInfo, FS, filename)
+      local archive = ok and type(origin) == "table" and origin.archivePath
+      return type(archive) == "string" and archive ~= ""
+    end,
+    removeUserFile = function(filename)
+      if type(filename) == "string" and filename:sub(1, #USER_LAYOUTS) == USER_LAYOUTS then pcall(FS.removeFile, FS, filename) end
+    end,
   }
 end
 

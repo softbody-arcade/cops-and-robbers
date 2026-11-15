@@ -1,4 +1,4 @@
-# Cops and Robbers 2.0.6: features
+# Cops and Robbers 2.0.7: features
 
 A BeamMP server plugin with a client mod that BeamMP downloads automatically. The mod enforces the group's cops-and-robbers rules. It is one mod for every map, and it switches to geo mode on BeamNG.Earth by itself.
 
@@ -9,7 +9,7 @@ All round controls are in the Cops and Robbers Panel (Esc > UI Apps).
 | Step | What happens |
 |---|---|
 | Start round | Picks a random car and config (or the evolving build). Everyone gets the same one. Cops are placed on a road 50–150 m from the runner. Everyone is frozen. |
-| Prep | No time limit. Colors come from `/cnr color` only: the game's parts and paint menu is closed for everyone (except the runner in evolving mode, for his one change). Parts changes during the round are logged (with the slots that changed) but not undone yet. New car picks another car (random mode). |
+| Prep | No time limit. Colors come from `/cnr color` only: the game's parts and paint menu is closed for everyone (except the runner in evolving mode, for his one change). A parts change the mod didn't make is announced to everyone in chat (with the slots that changed), but not undone. New car picks another car (random mode). |
 | Apply change (evolving only, the runner's HUD button) | Locks in the runner's change and rebuilds every car; the HUD shows APPLYING CHANGES until everyone has loaded (at most 20 s). |
 | GO | "Runner starts in 3", then the runner is released. |
 | Head start | Cops stay frozen for 7 s and see a countdown. |
@@ -23,7 +23,7 @@ All round controls are in the Cops and Robbers Panel (Esc > UI Apps).
 ## Evolving car mode
 
 - **The build:** one shared car (model, parts and tuning) instead of a random car each round. Switch "Evolving car" on in the panel. Start a build from a random car or a chosen one: vanilla configs and base cars from mods the server distributes only, never a player's own saved car, so everyone can spawn it.
-- **One change per round:** during prep only the runner can change parts and tuning (from any menu). The group's rule: one change that works on its own (an engine swap, one performance stage, wheels one axle at a time, plus whatever a swap needs). The mod doesn't enforce it: everyone sees the queued change live in the HUD: "BOB'S CHANGE (1)", "Engine 2.0L I4 → 3.0L I6, + 12 parts come with it" (parts that come with a swap are grouped under it, names from the game), and tuning values that really changed (within half a step) and keeps each other honest.
+- **One change per round:** during prep only the runner can change parts and tuning (from any menu). The group's rule: one change that works on its own (an engine swap, one performance stage, wheels one axle at a time, plus whatever a swap needs). The mod doesn't enforce it: everyone sees the queued change live in the HUD: "BOB'S CHANGE (1)", "Engine 2.0L I4 → 3.0L I6, + 12 parts come with it" (parts that come with a swap are grouped under it, names from the game), and tuning values that really changed (within half a step) and keeps each other honest. A player whose game lacks a part of the change sees that line marked "⚠ missing" right away.
 - **Apply change:** the runner presses **Apply change** on his own change line in the HUD (only the runner sees it; in practice as cop, whoever started it can apply). The runner's exact setup becomes the build (liveries are paint and stay out), every car is rebuilt in place (cops keep their emergency lights), and the HUD shows APPLYING CHANGES until everyone's car has loaded (at most 20 s). GO only works after that. Each game checks it has every part and the HUD warns "⚠ Ann is missing: …" if not.
 - **Record:** chat logs each change ("Change 7 by Bob: Engine 4.5L V8 → 6.0L V8"). The build is saved after every change in `data/build.json` and continues next session until "Reset build"; resetting or starting a new build keeps a backup (`data/build-<time>.json`). Practice rounds use the build but never change it.
 - **Leaderboard:** runs record the mode and build step, and the leaderboard app filters by mode (all, random, evolving).
@@ -70,6 +70,7 @@ All round controls are in the Cops and Robbers Panel (Esc > UI Apps).
 ### Locked during a round
 - **Teleporting and recovery:** home, set home, drop the car at the camera, reload, reset all cars.
 - **Parts, tuning and paint:** locked for everyone during a round, whichever menu is used (the game's part, tuning and paint functions refuse with a message). Only the evolving runner may change parts and tuning, in prep until Apply. Color comes from `/cnr color`.
+- **Parts check on the server:** a client that gets around the lock anyway is caught by the server: "⚠ Ann changed parts during the round: engine, intake" goes to everyone, once per player per round. The car is never replaced. Changes the mod makes itself (round setup, repaint, Apply rebuild) and the evolving runner's prep change never count; for a few seconds after the mod places a car, BeamMP's reports only set the new baseline.
 - **Physics:** slow motion and the node grabber.
 - **Cameras and modes:** switching vehicles, free camera, photo mode, walking mode.
 - **Tools:** the editor, track builder, AI traffic, and the "fun stuff" (fire, boost, fling, force field and so on).
@@ -139,6 +140,7 @@ All round controls are in the Cops and Robbers Panel (Esc > UI Apps).
 - All rules apply, including crash penalties for the AI.
 - Leaving the server, or another player starting a round, ends the test round.
 - On BeamNG.Earth, the AI cars are placed near you again after you teleport.
+- In evolving mode, Apply rebuilds the AI cops in place with the new build too.
 - The AI needs `MaxCars` of 3 or more. On BeamNG.Earth it also needs BeamNG.Earth traffic turned on (for the road graph).
 
 ## Gas stations

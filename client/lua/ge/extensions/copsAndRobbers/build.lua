@@ -75,13 +75,22 @@ function M.group(changes, slotsOf)
     end
     return i
   end
-  local extra, roots = {}, {}
+  local extra, roots, byRoot = {}, {}, {}
   for i in ipairs(changes) do
     local r = root(i)
     if r ~= i then extra[r] = (extra[r] or 0) + 1 end
   end
   for i, c in ipairs(changes) do
-    if root(i) == i then roots[#roots + 1] = { slot = c.slot, from = c.from, to = c.to, extra = extra[i] or 0 } end
+    if root(i) == i then
+      local entry = { slot = c.slot, from = c.from, to = c.to, extra = extra[i] or 0, parts = {} }
+      if c.to ~= "" then entry.parts[1] = c.to end
+      roots[#roots + 1] = entry
+      byRoot[i] = entry
+    end
+  end
+  for i, c in ipairs(changes) do
+    local entry = byRoot[root(i)]
+    if root(i) ~= i and entry and c.to ~= "" then entry.parts[#entry.parts + 1] = c.to end
   end
   return roots
 end
