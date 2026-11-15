@@ -9,6 +9,7 @@
 - [ ] Escape route: the runner gets a random destination a few km away; reaching it ends the round as "Escaped" with a time bonus (GPS on BeamNG.Earth)
 - [ ] Infection mode: a caught runner becomes a cop and the catcher becomes the next runner, so the round keeps going
 - [ ] Night and weather rounds: the server sets the same time of day and weather for everyone per round (setting or `/cnr night`)
+- [ ] Evolving car mode (friend's idea): the round car is a real player-built car instead of a stock config, so custom setups work. Start from a random or chosen car; after each round the runner may change one part (or tune), that change is synced to every cop's copy, and the evolved car carries over to the next runner. Needs: sending the full config (parts and vars) from the server instead of a .pc path, a one-change rule check for the runner's edit, and saving the car between rounds
 - [ ] Player stats: runs, best and average survival time, catches and assists per player; fits the leaderboard app. Once the cop line-of-sight check exists, also score the runner's time out of sight and how often they lost the cops
 
 ## Rules
