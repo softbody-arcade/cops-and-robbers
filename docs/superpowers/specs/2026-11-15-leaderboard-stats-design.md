@@ -9,7 +9,7 @@ Everyone can see who survives longest, who catches most, and per-player stats, i
   - A broken file is moved aside as before.
 - **Run record:** the existing fields (player, key, survivedSeconds, model, config, map, endedAt, endReason, catchers, catcherKeys), plus:
   - `cops`: keys of every human cop who took part. Names come from the latest run, like today.
-  - `sightedBy`: keys of cops who saw the runner at least once.
+  - `copSightSeconds`: seconds each cop in `cops` had sight, in the same order. The user's rule: "Assist should be seen at least x% of match because you already see them at spawn".
   - `hiddenSeconds`: chase seconds while no cop had sight.
   - `lostCount`: how often all cops lost sight.
   - `chaseSeconds`: equal to survivedSeconds.
@@ -24,7 +24,7 @@ Everyone can see who survives longest, who catches most, and per-player stats, i
   - **best / average:** survival time as runner
   - **escapes:** runs ending `escaped`
   - **catches**
-  - **assists:** caught runs where the player is in `sightedBy` but not in `catcherKeys`
+  - **assists:** caught runs where the player had sight for at least `assistMinSightPercent` (default 20) of the chase, but is not in `catcherKeys`. The setting is applied when stats are shown, so changing it re-scores past runs.
   - **hidden %:** the sum of hiddenSeconds over the sum of chaseSeconds, for runs that have it
   - **lost them:** the sum of lostCount
 - **Map filter:** "this map" (default), "all maps", or any map in the runs.

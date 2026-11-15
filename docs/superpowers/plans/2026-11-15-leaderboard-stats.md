@@ -46,12 +46,12 @@
 **What `round.lua` tracks:**
 - `self.hiddenSeconds` accumulates per running tick while not in sight, but only when sight is on.
 - `self.lostCount` counts lost transitions.
-- `self.sightedBy[pid]` is set when `sightReport` gets seen=true.
+- `self.copSight[pid]` accumulates the running-tick seconds while `sight.sees(pid)`. This replaces sightedBy: assists need `copSight / chase ≥ assistMinSightPercent` (config default 20, 0–100, also in the panel).
 
 **The record gets:**
 - `hiddenSeconds` and `lostCount`, which are nil when sight is off.
-- `sightedBy`: sorted pids.
 - `copIds`: sorted human cop pids still in `players` at the finish.
+- `copSight`: their sight seconds, in the same order.
 
 **Tests:**
 - hidden time with sight lost from 20 to 30 → the record has about that amount of hidden time
@@ -63,7 +63,7 @@
 ### Task 3: server wiring
 **Files:** `main.lua`, `tests/test_main.lua`.
 
-**Record:** `copIds` → `cops` (keys) + `copNames`, and `sightedBy` → keys. The pid lists are dropped before saving.
+**Record:** `copIds` → `cops` (keys) + `copNames` + `copSightSeconds`. The pid lists are dropped before saving. `M.players(board, map, assistPercent)` takes `cfg.assistMinSightPercent`.
 
 **Loading:** a file that isn't current is moved aside and the board starts empty, with a log line.
 
