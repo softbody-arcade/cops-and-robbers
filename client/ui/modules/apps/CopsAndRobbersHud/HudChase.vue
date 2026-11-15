@@ -59,7 +59,6 @@ const percent = computed(() => Math.max(0, Math.min(100, Number(props.bar && pro
   flex-direction: column;
   align-items: stretch;
   width: 100%;
-  --bng-icon-size: 1.25em;
 }
 .chase-top {
   display: flex;
@@ -70,6 +69,7 @@ const percent = computed(() => Math.max(0, Math.min(100, Number(props.bar && pro
   font-size: 1.25rem;
   font-weight: 700;
   white-space: nowrap;
+  --bng-icon-size: 1.5rem;
 }
 .chase-top .chase-chip {
   font-size: 0.875rem;
@@ -147,6 +147,7 @@ const percent = computed(() => Math.max(0, Math.min(100, Number(props.bar && pro
   font-size: 0.875rem;
   font-weight: 600;
   color: var(--cnr-muted);
+  --bng-icon-size: 1rem;
 }
 .chase-reset.ready {
   color: var(--cnr-text);

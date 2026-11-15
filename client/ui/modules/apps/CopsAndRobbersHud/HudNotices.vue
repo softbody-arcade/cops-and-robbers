@@ -25,7 +25,7 @@ const items = computed(() => (Array.isArray(props.notices) ? props.notices.slice
   align-items: center;
   gap: 0.25rem;
   max-width: 100%;
-  --bng-icon-size: 1.25em;
+  --bng-icon-size: 1.25rem;
 }
 .notice {
   display: inline-flex;

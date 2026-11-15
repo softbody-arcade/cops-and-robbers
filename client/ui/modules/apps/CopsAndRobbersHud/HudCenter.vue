@@ -7,7 +7,10 @@
     <template v-else-if="center.kind === 'role'">
       <div v-if="center.car" class="kick muted">{{ center.car }}</div>
       <div class="title" :class="'tone-' + center.role">{{ center.title }}</div>
-      <div v-if="center.rule" class="rule">{{ center.rule }}</div>
+      <div v-if="center.rule" class="rule">
+        <template v-if="ruleRest !== null"><b class="runner-name">{{ center.runner }}</b>{{ ruleRest }}</template>
+        <template v-else>{{ center.rule }}</template>
+      </div>
     </template>
     <div v-else-if="center.kind === 'flash'" class="title tone-good">{{ center.text }}</div>
     <div v-else-if="center.kind === 'applying'" class="title applying">{{ center.text }}</div>
@@ -15,8 +18,16 @@
 </template>
 
 <script setup>
-defineProps({
+import { computed } from "vue"
+
+const props = defineProps({
   center: Object,
+})
+
+const ruleRest = computed(() => {
+  const c = props.center
+  if (!c || typeof c.runner !== "string" || !c.runner || typeof c.rule !== "string") return null
+  return c.rule.startsWith(`${c.runner} is the runner.`) ? c.rule.slice(c.runner.length) : null
 })
 </script>
 
@@ -53,6 +64,9 @@ defineProps({
   font-size: 1.125rem;
   font-weight: 600;
   line-height: 1.4;
+}
+.runner-name {
+  font-weight: 900;
 }
 .applying {
   animation: cnr-pulse 1.2s ease-in-out infinite alternate;

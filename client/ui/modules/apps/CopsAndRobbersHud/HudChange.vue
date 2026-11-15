@@ -1,5 +1,5 @@
 <template>
-  <CnrCard class="hud-change" :title="change.title">
+  <CnrCard class="hud-change" :title="change.title" :sub="sub">
     <div v-if="lines.length || change.more" class="lines">
       <div v-for="(line, i) in lines" :key="i" class="line">
         <div class="line-main">
@@ -33,12 +33,19 @@ const props = defineProps({
 const emit = defineEmits(["apply"])
 
 const lines = computed(() => (Array.isArray(props.change.lines) ? props.change.lines : []))
+const sub = computed(() => {
+  const n = Number(props.change.count)
+  if (!Number.isFinite(n)) return undefined
+  if (n === 0) return "none yet"
+  return n === 1 ? "1 change" : `${n} changes`
+})
 </script>
 
 <style scoped>
 .hud-change {
   width: 100%;
   text-shadow: none;
+  pointer-events: auto;
 }
 .hud-change :deep(.cnr-card-title) {
   font-size: 1.125rem;
@@ -57,7 +64,7 @@ const lines = computed(() => (Array.isArray(props.change.lines) ? props.change.l
   align-items: center;
   gap: 0.75rem;
   white-space: nowrap;
-  --bng-icon-size: 1.25em;
+  --bng-icon-size: 1rem;
 }
 .label {
   flex: 0 1 auto;
