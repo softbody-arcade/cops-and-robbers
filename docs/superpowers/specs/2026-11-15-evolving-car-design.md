@@ -139,12 +139,13 @@ This is a friend's idea, refined with the user. Instead of a random stock config
 - All chat commands and key bindings are removed except color, addstation, removestation, help and version.
 
 ## My calls (confirm or correct)
-- Both the runner and whoever runs the game can press Apply.
+- Apply works from any open panel, like every other panel button. The server can't tell who "runs the game", and the runner usually doesn't have the panel open.
 - The ready timeout is 20 s.
 - Apply with no change is allowed, and the step stays the same.
 - New car (reroll) is disabled in evolving mode.
 - Practice rounds use the build, but their Apply never changes the saved build.
-- Reset keeps a backup file.
+- Reset keeps a backup file. **New build** also backs up the current build first.
+- **Liveries count as paint:** the `paint_design` slot is left out of the queued change and out of Apply.
 - Leaderboard runs record the mode, and the app gets a mode filter.
 
 ## Left to the builder
@@ -154,6 +155,11 @@ This is a friend's idea, refined with the user. Instead of a random stock config
 - The exact panel layout.
 - How the server asks the runner's game for its setup on Apply (request/response events).
 - Test design, which follows the existing patterns (pure modules first).
+
+## Watch out (existing code that breaks in evolving mode)
+- **The vehicle rule:** the server compares the spawned car's `.pc` filename with the round config (`vehicleAllowed`). In evolving mode there's no `.pc` file, so the check needs another basis, for example the model only.
+- **Cop lights:** `copConfig` only accepts a `.pc` path. It needs to accept a config table too.
+- **`/cnr color` during prep:** it respawns the car, which would wipe the runner's queued change. In evolving mode the runner's repaint has to keep his current setup, or the repaint waits until Apply.
 
 ## Verify early (risk)
 - **Reading the config:** before building on it, spike reading `getPlayerVehicleData().config` on 0.40.5. Check whether it gives `parts` and `vars` directly or only a parts tree, and that spawning a second car from that table reproduces the same car (engine and tuning).
