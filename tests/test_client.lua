@@ -218,3 +218,75 @@ test("unloading drops the cached helper modules so a rejoin loads fresh code", f
     assertEq(name:find("^copsAndRobbers/") == nil, true, name)
   end
 end)
+
+local function copInChase(env)
+  local setup = copy(SETUP)
+  setup.sightMaxMeters = 400
+  env.fire("cnr_roundSetup", setup)
+  env.tick(1)
+  env.addObject(300, vec3(0, 100, 0))
+  env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
+  env.fire("cnr_release", {})
+end
+
+local function countSentEv(env, ev)
+  local n = 0
+  for _, s in ipairs(env.sent) do if s.ev == ev then n = n + 1 end end
+  return n
+end
+
+test("a cop who can see the runner reports it once, then as a keep-alive", function()
+  local env = bootClient()
+  copInChase(env)
+  env.tick(0.3)
+  assertEq(env.lastSent("cnr_sight").seen, true)
+  local n = countSentEv(env, "cnr_sight")
+  env.tick(2)
+  assertEq(countSentEv(env, "cnr_sight"), n)
+  env.tick(4)
+  assertEq(countSentEv(env, "cnr_sight"), n + 1)
+end)
+
+test("a blocked view or a runner out of range reports out of sight", function()
+  local env = bootClient()
+  copInChase(env)
+  env.blockAt = 5
+  env.tick(0.3)
+  assertEq(env.lastSent("cnr_sight").seen, false)
+  env.blockAt = nil
+  env.objects[300].pos = vec3(0, 900, 0)
+  env.tick(0.3)
+  assertEq(env.lastSent("cnr_sight").seen, false)
+  env.objects[300].pos = vec3(0, 100, 0)
+  env.tick(0.3)
+  assertEq(env.lastSent("cnr_sight").seen, true)
+end)
+
+test("a live update without route shows IN SIGHT, with route the live distance", function()
+  local env = bootClient()
+  copInChase(env)
+  env.veh.pos = vec3(0, 0, 0)
+  env.fire("cnr_lastSeen", { live = true, route = false, pos = { x = 0, y = 100, z = 0 } })
+  env.tick(0.2)
+  assertEq(env.hud().status.info, "IN SIGHT")
+  env.fire("cnr_lastSeen", { live = true, route = true, pos = { x = 0, y = 640, z = 0 } })
+  env.tick(0.2)
+  assertEq(env.hud().status.info, "Runner 640 m N · live")
+  env.fire("cnr_lastSeen", { pos = { x = 0, y = 640, z = 0 } })
+  env.tick(0.2)
+  assertEq(env.hud().status.info, "Runner seen 640 m N")
+end)
+
+test("the runner sees SPOTTED or HIDDEN with the nearest cop", function()
+  local env = bootClient()
+  env.fire("cnr_roundSetup", { role = "runner", runnerId = 1, model = "pickup", config = "vehicles/pickup/base.pc", phase = "prep" })
+  env.tick(1)
+  env.fire("cnr_release", {})
+  env.fire("cnr_nearestCop", { dist = 1200 })
+  env.fire("cnr_spotted", { spotted = true })
+  env.tick(0.2)
+  assertEq(env.hud().status.info, "SPOTTED · Nearest cop 1.2 km")
+  env.fire("cnr_spotted", { spotted = false })
+  env.tick(0.2)
+  assertEq(env.hud().status.info, "HIDDEN · Nearest cop 1.2 km")
+end)

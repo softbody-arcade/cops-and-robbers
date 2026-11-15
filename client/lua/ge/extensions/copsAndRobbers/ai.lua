@@ -131,6 +131,13 @@ function M.lightsOn()
   end
 end
 
+function M.runnerObject()
+  for _, car in pairs(cars) do
+    if car.role == "runner" then return car.gameId and getObjectByID(car.gameId) end
+  end
+  return nil
+end
+
 function M.objects()
   local list = {}
   for _, car in pairs(cars) do

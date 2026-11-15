@@ -8,6 +8,7 @@ local vehicles = require("copsAndRobbers/vehicles")
 local ai = require("copsAndRobbers/ai")
 local geo = require("copsAndRobbers/geo")
 local hudfeed = require("copsAndRobbers/hudfeed")
+local sight = require("copsAndRobbers/sight")
 
 local CLIENT_VERSION = "1.6.0"
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
@@ -17,6 +18,7 @@ local PLACEMENT_TIMEOUT = 5
 local FREEZE_REASSERT = 0.5
 local POSE_JUMP = 30
 local GEO_SEND_INTERVAL = 0.25
+local SIGHT_CHECK_INTERVAL = 0.25
 local ACTIONS_FILE = "/lua/ge/extensions/core/input/actions/copsAndRobbers.json"
 
 local toast, sendServer, ownVehicle = game.toast, game.sendServer, game.ownVehicle
@@ -41,6 +43,12 @@ local pendingPlacement
 local suppressResetUntil = 0
 local lastPose
 local lastFreezeAssert = 0
+local runnerId
+local sightMax = 0
+local sightState = sight.new()
+local lastSightCheck = 0
+local infoSuffix = ""
+local spotted, nearestText
 local requestReset
 
 local function setFreeze(on)
@@ -120,6 +128,9 @@ local function onRoundSetup(data)
   hudfeed.clearResult()
   active = true
   role = d.role
+  runnerId = d.runnerId
+  sightMax = tonumber(d.sightMaxMeters) or 0
+  sightState = sight.new()
   roundModel, roundColor = d.model, d.color
   roundConfig = d.role == "cop" and vehicles.copConfig(d.model, d.config) or d.config
   resetAllowed = false
@@ -204,25 +215,52 @@ end
 
 local function onLastSeen(data)
   local d = jsonDecode(data) or {}
+  infoSuffix = d.live and " · live" or ""
+  if d.live and d.route == false then
+    geo.clearRoute()
+    infoText = "IN SIGHT"
+    return
+  end
   local target = d.geo and geo.toGame(d.geo) or (d.pos and vec3(d.pos.x, d.pos.y, d.pos.z))
   if not target then return end
   if geoMode and d.geo and geo.setGpsTarget(d.geo) then
-    infoText = geo.gpsInfo()
-    if infoText then hudfeed.notify(infoText, 4, "cnr_seen") end
+    local info = geo.gpsInfo()
+    infoText = info and (info .. infoSuffix) or infoText
+    if info and not d.live then hudfeed.notify(infoText, 4, "cnr_seen") end
     return
   end
   if core_groundMarkers then pcall(core_groundMarkers.setPath, target) end
   local veh = ownVehicle()
   if veh then
     local here = veh:getPosition()
-    infoText = string.format("Runner seen %d m %s", math.floor(here:distance(target) + 0.5), geo.compass(here, target))
-    hudfeed.notify(infoText, 4, "cnr_seen")
+    local meters = math.floor(here:distance(target) + 0.5)
+    if d.live then
+      infoText = string.format("Runner %s %s · live", geo.formatDistance(meters), geo.compass(here, target))
+    else
+      infoText = string.format("Runner seen %d m %s", meters, geo.compass(here, target))
+      hudfeed.notify(infoText, 4, "cnr_seen")
+    end
   end
+end
+
+local function runnerInfo()
+  local tag = spotted == true and "SPOTTED" or spotted == false and "HIDDEN" or nil
+  if tag and nearestText then return tag .. " · " .. nearestText end
+  return tag or nearestText
 end
 
 local function onNearestCop(data)
   local d = jsonDecode(data) or {}
-  if d.dist then infoText = "Nearest cop " .. geo.formatDistance(d.dist) end
+  if d.dist then
+    nearestText = "Nearest cop " .. geo.formatDistance(d.dist)
+    infoText = runnerInfo()
+  end
+end
+
+local function onSpotted(data)
+  local d = jsonDecode(data) or {}
+  spotted = d.spotted == true
+  infoText = runnerInfo()
 end
 
 local function onMode(data)
@@ -284,6 +322,9 @@ local function endRound()
   role = nil
   statusActive = false
   infoText = nil
+  infoSuffix = ""
+  spotted, nearestText = nil, nil
+  runnerId = nil
   geo.clearRoute()
   ai.remove()
   penaltyActive = false
@@ -408,7 +449,10 @@ local function updateStatusToast()
   elseif lastHint then
     parts[#parts + 1] = lastHint
   end
-  if geo.hasTarget() then infoText = geo.gpsInfo() or infoText end
+  if geo.hasTarget() then
+    local info = geo.gpsInfo()
+    if info then infoText = info .. infoSuffix end
+  end
   if infoText then parts[#parts + 1] = infoText end
   hudfeed.notify(table.concat(parts, "  |  "), 1.5, "cnr_status")
 end
@@ -424,6 +468,37 @@ local function updateCountdownToast()
   end
 end
 
+local function runnerObject()
+  local aiRunner = ai.runnerObject()
+  if aiRunner then return aiRunner end
+  if not runnerId or not MPVehicleGE or not MPVehicleGE.getVehicles then return nil end
+  local prefix = tostring(runnerId) .. "-"
+  for key, v in pairs(MPVehicleGE.getVehicles() or {}) do
+    if type(key) == "string" and key:sub(1, #prefix) == prefix and type(v) == "table"
+      and v.isSpawned ~= false and not v.isDeleted and v.gameVehicleID then
+      local obj = getObjectByID(v.gameVehicleID)
+      if obj then return obj end
+    end
+  end
+  return nil
+end
+
+local function updateSight()
+  if role ~= "cop" or not statusActive or sightMax <= 0 or clock - lastSightCheck < SIGHT_CHECK_INTERVAL then return end
+  lastSightCheck = clock
+  local veh, target = ownVehicle(), runnerObject()
+  local seen, dist = false, nil
+  if veh and target and castRayStatic then
+    seen, dist = sight.visible(veh:getPosition(), target:getPosition(), target:getDirectionVector(), sightMax, castRayStatic)
+  end
+  local changed = seen ~= sightState.seen
+  if not sight.step(sightState, clock, seen) then return end
+  if changed and log then
+    log("I", "cnr_sight", string.format("runner %s (%s m)", seen and "in sight" or "out of sight", dist and string.format("%.0f", dist) or "?"))
+  end
+  sendServer("cnr_sight", { seen = seen })
+end
+
 local function onUpdate(dtReal)
   clock = clock + (dtReal or 0)
   updatePendingPlacement()
@@ -432,6 +507,7 @@ local function onUpdate(dtReal)
   if #report > 0 then sendServer("cnr_aiVehicles", { ai = report }) end
   updateLightsAndPatch()
   updateGeo()
+  updateSight()
   updateStatusToast()
   hudfeed.update(clock, {
     active = active, role = role, chaseStart = statusActive and chaseStart or nil,
@@ -523,6 +599,7 @@ local function onExtensionLoaded()
   AddEventHandler("cnr_mode", onMode)
   AddEventHandler("cnr_lastSeen", onLastSeen)
   AddEventHandler("cnr_nearestCop", onNearestCop)
+  AddEventHandler("cnr_spotted", onSpotted)
   AddEventHandler("cnr_penaltyEnd", onPenaltyEnd)
   AddEventHandler("cnr_state", onState)
   AddEventHandler("cnr_roundEnd", onRoundEnd)

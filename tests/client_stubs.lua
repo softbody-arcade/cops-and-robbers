@@ -62,7 +62,11 @@ function bootClient(opts)
   env.veh = fakeVehicle(env, 100, v3(0, 0, 0))
   _G.getPlayerVehicle = function() return env.veh end
   _G.getObjectByID = function(id) return env.objects[id] end
+  env.mpVehicles = {}
+  _G.castRayStatic = function(origin, dir, len) return env.blockAt or (len + 100) end
+  _G.log = function() end
   _G.MPVehicleGE = {
+    getVehicles = function() return env.mpVehicles end,
     isOwn = function(id) return env.veh and id == env.veh.id end,
     getVehicleByGameID = function(id) return { serverVehicleString = "1-" .. tostring(id) } end,
   }
@@ -105,6 +109,7 @@ function bootClient(opts)
   _G.core_groundMarkers = nil
   _G.resetGameplay = function() end
 
+  function env.addObject(id, pos) return fakeVehicle(env, id, pos) end
   env.M = assert(loadfile("client/lua/ge/extensions/copsAndRobbers.lua"))()
   function env.fire(ev, data) return env.handlers[ev](data) end
   function env.tick(seconds, step)
