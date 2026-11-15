@@ -177,6 +177,11 @@ Then do the checks for whatever actually updated.
   - `getAvailableLayouts()`, `addApp(filename, app, placement)` (it writes silently), `removeApp(filename, index0)`, `setCurrentLayout(filename)` and `resetLayout(filename)`.
   - User layouts live in `/settings/ui_apps/layouts/` and the stock originals in `/settings/ui_apps/originalLayouts/`.
   - BeamMP ships its `beammp` layout inside `mods/multiplayer/beammp.zip` at the user path (`settings/ui_apps/layouts/default/beammp.uilayout.json`), not as an original. So `userFileExists` is already true, `resetLayout` has no original, and `addApp` writes a disk file that hides the zip's. We tell them apart with `FS:getFileOriginInfo(path).archivePath`.
+- **Shared kit** (verified in game): `client/ui/modules/copsAndRobbers/` (`CnrRoot.vue`, `CnrCard.vue`, `RoleChip.vue`, `format.js`) is imported by relative path from an app, e.g. `../../copsAndRobbers/CnrCard.vue`.
+- **Full-screen apps** (verified in game): `interactive: "no"` with `css` at `0/0/100%/100%`, a `pointer-events: none` container and `pointer-events: auto` on the cards and buttons. Clicks still reach the game and other apps under the empty area, and other apps can still be selected and moved in the layout editor.
+- **`BngColorPicker`**: the model is `{hue, saturation, luminosity}`, all 0..1; `view="compact_luminosity"` works.
+- **Opening and closing apps:** `ui_appLayouts.addApp(ui_appLayouts.getCurrentLayout().filename, "<app>", placement)` and `removeApp(filename, index0)`, where the index is found in `getCurrentLayout().apps` by `appName`. Verified for the leaderboard.
+- **UI Apps picker:** `isAuxiliary: true` hides an app unless "Include auxiliary content" is on (`ui/appSelector/general.lua`). In simple-menu mode apps with `interactive: "required"` are hidden too.
 - **Placement format** (`ui/ui-vue/src/modules/apps/placementResolve.js`): centred axes are `"50%"` and sizes are in `em`. `margin: auto` is deprecated and read-only.
 
 **On update, check:**
