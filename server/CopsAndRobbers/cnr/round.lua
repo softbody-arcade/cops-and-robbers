@@ -3,6 +3,7 @@ local resets = require("cnr.resets")
 local crash = require("cnr.crash")
 local leaderboard = require("cnr.leaderboard")
 local vec = require("cnr.vec")
+local sight = require("cnr.sight")
 
 local M = {}
 local Round = {}
@@ -60,6 +61,9 @@ function Round:clear()
   self.teleportAnnounced = {}
   self.lastTickAt = nil
   self.lastSeenAt = nil
+  self.sight = sight.new()
+  self.inSight = false
+  self.liveAt = nil
   self.test = false
   self.lastState = {}
   self.nextCopIndex = 1
@@ -263,6 +267,7 @@ function Round:tick(now, cars, stations)
     end
     progress, caught = self.catchTracker:update(now, runnerCar, cops)
     if caught then self.catchers = self:copsNear(runnerCar, cars) end
+    if not caught and runnerCar then self:sightTick(now, cars, runnerCar, fx) end
     local interval = self.cfg.lastSeenIntervalSeconds
     if not caught and interval > 0 and runnerCar and now - self.lastSeenAt >= interval - 1e-9 then
       self.lastSeenAt = now
@@ -357,8 +362,61 @@ function Round:playerJoined(now, pid, name)
   return fx
 end
 
+function Round:sightReport(now, pid, seen)
+  if self.state ~= "running" or self.players[pid] == nil or pid == self.runnerId or M.isAI(pid) then return end
+  sight.report(self.sight, pid, seen == true, now)
+end
+
+function Round:copPids()
+  local pids = {}
+  for pid in pairs(self.players) do
+    if pid ~= self.runnerId then pids[#pids + 1] = pid end
+  end
+  table.sort(pids)
+  return pids
+end
+
+function Round:sightTick(now, cars, runnerCar, fx)
+  local cfg = self.cfg
+  if cfg.sightMaxMeters <= 0 then return end
+  local cops = self:copPids()
+  local nearest
+  for _, pid in ipairs(cops) do
+    local car = cars[pid]
+    if car and car.pos then
+      local d = vec.dist(runnerCar.pos, car.pos)
+      if not nearest or d < nearest then nearest = d end
+    end
+  end
+  if sight.any(self.sight, cops, now, cfg.sightGraceSeconds) then
+    if not self.inSight then
+      self.inSight = true
+      fx[#fx + 1] = { kind = "spotted", spotted = true }
+    end
+    self.lastSeenAt = now
+    if self.liveAt and now - self.liveAt < cfg.sightLiveIntervalSeconds - 1e-9 then return end
+    self.liveAt = now
+    local noRoute = {}
+    for _, pid in ipairs(cops) do
+      local car = cars[pid]
+      if car and car.pos and car.vel and sight.sees(self.sight, pid, now, cfg.sightGraceSeconds) then
+        local limit = sight.noRouteDistance(vec.speedKmh(car.vel) / 3.6, cfg.sightNoRouteSeconds, cfg.sightNoRouteMinMeters)
+        if vec.dist(runnerCar.pos, car.pos) <= limit then noRoute[pid] = true end
+      end
+    end
+    fx[#fx + 1] = { kind = "live", pos = runnerCar.pos, noRoute = noRoute, nearestCop = nearest }
+  elseif self.inSight then
+    self.inSight = false
+    self.liveAt = nil
+    self.lastSeenAt = now
+    fx[#fx + 1] = { kind = "spotted", spotted = false }
+    fx[#fx + 1] = { kind = "lastSeen", pos = runnerCar.pos, nearestCop = nearest }
+  end
+end
+
 function Round:playerLeft(now, pid)
   if self.state == "idle" or self.players[pid] == nil then return {} end
+  sight.forget(self.sight, pid)
   if pid == self.runnerId then
     if self.state == "running" then return self:finish(now, "disconnect") end
     return self:cancel(now, "Runner left, round cancelled")
