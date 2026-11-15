@@ -1181,3 +1181,16 @@ test("no player-facing text tells people to type a removed command", function()
     end
   end
 end)
+
+test("a saved build is loaded at startup", function()
+  local env = boot({ files = { ["data/build.json"] = '{"model":"pickup","name":"Gavril D-Series","parts":{"pickup_engine":"v8"},"vars":null,"step":3,"history":null}' } })
+  assertEq(env.logHas("Build: Gavril D-Series · change 3"), true)
+  env.cleanup()
+end)
+
+test("a broken build file is moved aside and there is no build", function()
+  local env = boot({ files = { ["data/build.json"] = '{"model":' } })
+  assertEq(env.logHas("no build"), true)
+  assertEq(readFileAt(env.dir .. "data/build.json"), nil)
+  env.cleanup()
+end)

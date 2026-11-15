@@ -27,7 +27,10 @@ M.DEFAULTS = {
   sightNoRouteSeconds = 5,
   sightNoRouteMinMeters = 50,
   assistMinSightPercent = 20,
+  carMode = "random",
 }
+
+M.CHOICES = { carMode = { random = true, evolving = true } }
 
 local strictlyPositive = {
   catchHoldSeconds = true, catchRadiusMeters = true, crashSpeedLossKmh = true,
@@ -71,6 +74,13 @@ function M.merge(raw)
         cfg[key] = copyList(default)
         warnings[#warnings + 1] = string.format("%s must be a list of names, using the default", key)
       end
+    elseif type(default) == "string" then
+      if type(v) == "string" and (not M.CHOICES[key] or M.CHOICES[key][v]) then
+        cfg[key] = v
+      else
+        cfg[key] = default
+        warnings[#warnings + 1] = string.format("%s has invalid value %s, using %s", key, tostring(v), default)
+      end
     elseif type(default) == "boolean" then
       if type(v) == "boolean" then
         cfg[key] = v
@@ -106,6 +116,8 @@ local function parseValue(default, text)
     if t == "true" or t == "on" or t == "yes" then return true end
     if t == "false" or t == "off" or t == "no" then return false end
     return nil
+  elseif type(default) == "string" then
+    return text
   elseif type(default) == "table" then
     local list = {}
     for item in text:gmatch("[^,%s]+") do list[#list + 1] = item end

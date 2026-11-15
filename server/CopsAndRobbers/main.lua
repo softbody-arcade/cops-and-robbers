@@ -9,6 +9,7 @@ local commands = require("cnr.commands")
 local colors = require("cnr.colors")
 local tables = require("cnr.tables")
 local geo = require("cnr.geo")
+local build = require("cnr.build")
 local panel = require("cnr.panel")
 
 local VERSION = "1.7.0"
@@ -16,6 +17,8 @@ local PREFIX = "[CnR] "
 local dataDir = pluginDir .. "data/"
 local stationsDir = dataDir .. "stations/"
 local leaderboardPath = dataDir .. "leaderboard.json"
+local buildPath = dataDir .. "build.json"
+local currentBuild
 local colorsPath = dataDir .. "colors.json"
 
 local cfg
@@ -130,6 +133,26 @@ local function loadLeaderboard()
     decoded = nil
   end
   board = leaderboard.load(decoded)
+end
+
+local function loadBuild()
+  local decoded, corrupt = decodeFile(buildPath)
+  currentBuild = not corrupt and build.normalize(decoded) or nil
+  if decoded ~= nil and not currentBuild or corrupt then
+    local aside = buildPath .. ".corrupt-" .. os.time()
+    FS.Rename(buildPath, aside)
+    log("build.json was unreadable, moved to " .. aside .. "; no build")
+  elseif currentBuild then
+    log("Build: " .. build.label(currentBuild))
+  end
+end
+
+local function saveBuild()
+  if currentBuild then writeFile(buildPath, Util.JsonPrettify(Util.JsonEncode(currentBuild))) end
+end
+
+local function backupBuild()
+  if FS.Exists(buildPath) then FS.Rename(buildPath, dataDir .. "build-" .. os.time() .. ".json") end
 end
 
 local function saveLeaderboard()
@@ -957,6 +980,7 @@ end
 FS.CreateDirectory(stationsDir)
 loadConfig()
 loadLeaderboard()
+loadBuild()
 loadColors()
 mapName = (tostring(MP.Get(MP.Settings.Map) or ""):match("levels/([^/]+)/")) or "unknown"
 geoMode = mapName == "beamng_earth"
