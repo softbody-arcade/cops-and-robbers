@@ -1,0 +1,122 @@
+local vecMeta = {}
+vecMeta.__index = vecMeta
+local function v3(x, y, z) return setmetatable({ x = x or 0, y = y or 0, z = z or 0 }, vecMeta) end
+vecMeta.__add = function(a, b) return v3(a.x + b.x, a.y + b.y, a.z + b.z) end
+vecMeta.__sub = function(a, b) return v3(a.x - b.x, a.y - b.y, a.z - b.z) end
+vecMeta.__mul = function(a, b)
+  if type(a) == "number" then a, b = b, a end
+  return v3(a.x * b, a.y * b, a.z * b)
+end
+vecMeta.__div = function(a, b) return v3(a.x / b, a.y / b, a.z / b) end
+function vecMeta:length() return math.sqrt(self.x * self.x + self.y * self.y + self.z * self.z) end
+function vecMeta:distance(o) return (self - o):length() end
+function vecMeta:normalized()
+  local l = self:length()
+  return l > 0 and self / l or v3(0, 0, 0)
+end
+
+local function fakeVehicle(env, id, pos)
+  local veh = { id = id, pos = pos or v3(0, 0, 0), commands = {} }
+  function veh:getID() return self.id end
+  function veh:getPosition() return self.pos end
+  function veh:getVelocity() return v3(0, 0, 0) end
+  function veh:getDirectionVector() return v3(0, 1, 0) end
+  function veh:queueLuaCommand(cmd) self.commands[#self.commands + 1] = cmd end
+  function veh:delete() env.objects[self.id] = nil end
+  env.objects[id] = veh
+  return veh
+end
+
+function bootClient(opts)
+  opts = opts or {}
+  local env = { handlers = {}, sent = {}, triggers = {}, toasts = {}, objects = {}, replaced = {}, spawned = {}, nextId = 200 }
+  for name in pairs(package.loaded) do
+    if name:find("^copsAndRobbers") then package.loaded[name] = nil end
+  end
+  math.atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
+  _G.vec3 = v3
+  _G.quatFromDir = function(dir, up) return { dir = dir, up = up } end
+  _G.jsonEncode = function(t) return t end
+  _G.jsonDecode = function(d)
+    if type(d) == "table" then return d end
+    if d == "{}" then return {} end
+    return nil
+  end
+  _G.jsonReadFile = function(path) return (opts.files or {})[path] end
+  _G.deepcopy = function(t)
+    local function cp(x)
+      if type(x) ~= "table" then return x end
+      local c = {}
+      for k, v in pairs(x) do c[k] = cp(v) end
+      return c
+    end
+    return cp(t)
+  end
+  _G.guihooks = { trigger = function(name, data) env.triggers[#env.triggers + 1] = { name = name, data = data } end }
+  _G.ui_message = function(msg) env.toasts[#env.toasts + 1] = msg end
+  env.veh = fakeVehicle(env, 100, v3(0, 0, 0))
+  _G.getPlayerVehicle = function() return env.veh end
+  _G.getObjectByID = function(id) return env.objects[id] end
+  _G.MPVehicleGE = {
+    isOwn = function(id) return env.veh and id == env.veh.id end,
+    getVehicleByGameID = function(id) return { serverVehicleString = "1-" .. tostring(id) } end,
+  }
+  _G.MPConfig = { getPlayerServerID = function() return 1 end }
+  _G.core_vehicles = {
+    getModel = function() return { model = { Name = "Pickup", Brand = "Gavril", Type = "Car" }, configs = {} } end,
+    replaceVehicle = function(model, opt) env.replaced[#env.replaced + 1] = { model = model, opt = opt } end,
+    spawnNewVehicle = function(model, opt)
+      env.nextId = env.nextId + 1
+      local veh = fakeVehicle(env, env.nextId, opt and opt.pos)
+      env.spawned[#env.spawned + 1] = { model = model, opt = opt, veh = veh }
+      return veh
+    end,
+    getConfigList = function() return { configs = opts.configs or {} } end,
+  }
+  _G.core_input_actionFilter = {
+    getActionTemplates = function() return { competitive = {} } end,
+    setGroup = function() end,
+    addAction = function() end,
+  }
+  _G.core_input_bindings = { bindings = { { contents = { bindings = { { action = "reset_physics" } } } } } }
+  local nodes = {
+    a = { pos = v3(0, 60, 0), links = { b = true } },
+    b = { pos = v3(0, 200, 0), links = { a = true } },
+  }
+  _G.map = { getMap = function() return { nodes = nodes } end, findClosestRoad = function() return "a", "b" end }
+  _G.spawn = {
+    safeTeleport = function(veh, pos) veh.pos = pos; env.teleported = (env.teleported or 0) + 1 end,
+    teleportToLastRoad = function() end,
+  }
+  _G.createVehiclePaint = function(c) return c end
+  _G.extensions = { hook = function() end, load = function() end }
+  _G.FS = { fileExists = function() return true end, removeFile = function() end }
+  _G.TriggerServerEvent = function(ev, data) env.sent[#env.sent + 1] = { ev = ev, data = data } end
+  _G.AddEventHandler = function(ev, fn) env.handlers[ev] = fn end
+  _G.getCurrentLevelIdentifier = function() return "west_coast_usa" end
+  _G.ui_appLayouts = nil
+  _G.beamngEarth_api = nil
+  _G.freeroam_facilities, _G.freeroam_gasStations, _G.freeroam_bigMapMode = nil, nil, nil
+  _G.core_groundMarkers = nil
+  _G.resetGameplay = function() end
+
+  env.M = assert(loadfile("client/lua/ge/extensions/copsAndRobbers.lua"))()
+  function env.fire(ev, data) return env.handlers[ev](data) end
+  function env.tick(seconds, step)
+    step = step or 0.1
+    for _ = 1, math.max(1, math.floor(seconds / step + 0.5)) do env.M.onUpdate(step) end
+  end
+  function env.lastTrigger(name)
+    for i = #env.triggers, 1, -1 do
+      if env.triggers[i].name == name then return env.triggers[i].data end
+    end
+  end
+  function env.lastSent(ev)
+    for i = #env.sent, 1, -1 do
+      if env.sent[i].ev == ev then return env.sent[i].data end
+    end
+  end
+  function env.hud() return env.lastTrigger("CnRHud") end
+  env.M.onExtensionLoaded()
+  return env
+end

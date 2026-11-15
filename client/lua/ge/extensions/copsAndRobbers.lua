@@ -602,8 +602,6 @@ local function onPenalty(data)
     if car then
       setAIFreeze(car, true)
       aiCommand(car, 'ai.setMode("disabled")')
-      addEvent(tostring(car.name) .. " crashed: penalty")
-      if not hudPlaced then toast(tostring(car.name) .. " crashed: penalty", 3, "cnr_reset") end
     end
     return
   end
@@ -700,6 +698,7 @@ local function onMode(data)
   local d = jsonDecode(data) or {}
   geoMode = d.geo == true
   lastPlacesAt, lastPlacesGeo = -math.huge, nil
+  guihooks.trigger("CnRPanel", {})
   if geoMode and not earthApi() then
     toast("Cops and Robbers needs a newer BeamNG.Earth (API v1) on this map", 10, "cnr_mode")
   end
@@ -917,12 +916,19 @@ local function onRoundEnd(data)
     catchers = catchers,
     untilT = math.max(clock + RESULT_SECONDS, nextAt or 0),
     nextAt = nextAt,
+    shownAt = clock,
   }
   if not hudPlaced then showEndToast(d) end
   if d.explode and wasRunner then
     local veh = ownVehicle()
     if veh then veh:queueLuaCommand("fire.explodeVehicle()") end
   end
+end
+
+local function onAutoNext()
+  if not hudResult then return end
+  hudResult.nextAt = nil
+  hudResult.untilT = math.min(hudResult.untilT, hudResult.shownAt + RESULT_SECONDS)
 end
 
 local function onTop(data)
@@ -1157,6 +1163,7 @@ local function onExtensionLoaded()
     AddEventHandler("cnr_setupAI", onSetupAI)
     AddEventHandler("cnr_notice", onNotice)
     AddEventHandler("cnr_top", onTop)
+    AddEventHandler("cnr_autoNext", onAutoNext)
     AddEventHandler("cnr_mode", onMode)
     AddEventHandler("cnr_lastSeen", onLastSeen)
     AddEventHandler("cnr_nearestCop", onNearestCop)
@@ -1169,23 +1176,20 @@ local function onExtensionLoaded()
   end
 end
 
+local function leaveServer()
+  endRound()
+  hudResult = nil
+  placementLeave()
+  guihooks.trigger("CnRPanel", {})
+end
+
 M.onExtensionLoaded = onExtensionLoaded
 M.onExtensionUnloaded = function()
-  endRound()
-  placementLeave()
+  leaveServer()
   refreshActions()
-  guihooks.trigger("CnRPanel", {})
 end
-M.onClientEndMission = function()
-  endRound()
-  placementLeave()
-  guihooks.trigger("CnRPanel", {})
-end
-M.onBeamMPServerLeave = function()
-  endRound()
-  placementLeave()
-  guihooks.trigger("CnRPanel", {})
-end
+M.onClientEndMission = leaveServer
+M.onBeamMPServerLeave = leaveServer
 M.onWorldReadyState = function(st)
   if st == 2 then placementStart() end
 end
