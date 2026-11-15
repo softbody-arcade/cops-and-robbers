@@ -88,11 +88,26 @@ function M.applyValues(raw, values)
   end
   if #keys == 0 then return nil, "Nothing to save" end
   table.sort(keys)
-  local updated = raw or {}
-  for _, key in ipairs(keys) do
-    local err
-    updated, err = config.setValue(updated, key, toText(values[key]))
-    if not updated then return nil, err end
+  local updated, pending = raw or {}, keys
+  while #pending > 0 do
+    local failed, firstErr = {}, nil
+    for _, key in ipairs(pending) do
+      local nextCfg, err = config.setValue(updated, key, toText(values[key]))
+      if nextCfg then
+        updated = nextCfg
+      else
+        failed[#failed + 1] = key
+        firstErr = firstErr or err
+      end
+    end
+    if #failed == #pending then return nil, firstErr end
+    pending = failed
+  end
+  local _, warnings = config.merge(updated)
+  for _, w in ipairs(warnings) do
+    for _, key in ipairs(keys) do
+      if w:find(key, 1, true) == 1 then return nil, "Invalid value for " .. key .. ": " .. toText(values[key]) end
+    end
   end
   return updated, keys
 end
