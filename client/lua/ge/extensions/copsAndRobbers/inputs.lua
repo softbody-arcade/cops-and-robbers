@@ -24,6 +24,54 @@ M.VEHICLE_PATCH = table.concat({
   "recovery.loadHome = function() obj:queueGameEngineLua('if copsAndRobbers then copsAndRobbers.requestReset(\"road\") end') end",
 }, " ")
 
+local PART_EDITS = {
+  "setNewParts", "setConfig", "setConfigOfVehicle", "setPartsConfig", "setPartsTreeConfig",
+  "resetConfig", "reset", "loadLocal", "setConfigVars",
+}
+local PAINT_EDITS = { { "core_vehicle_partmgmt", "setConfigPaints" }, { "core_vehicle_colors", "setVehicleColor" }, { "core_vehicle_colors", "setVehiclePaint" } }
+local LOCK_MESSAGE = "Parts and paint are locked during a round. Set your color with /cnr color"
+
+local editMode
+local wrapped = {}
+
+local function blocker()
+  ui_message(LOCK_MESSAGE, 4, "cnr_parts", "directions_car")
+end
+
+local function wrap(moduleName, name)
+  local key = moduleName .. "." .. name
+  local tbl = rawget(_G, moduleName)
+  if type(tbl) ~= "table" or type(tbl[name]) ~= "function" then return end
+  local w = wrapped[key]
+  if w and w.tbl == tbl and tbl[name] == blocker then return end
+  wrapped[key] = { tbl = tbl, name = name, fn = tbl[name] }
+  tbl[name] = blocker
+end
+
+local function restore(moduleName, name)
+  local key = moduleName .. "." .. name
+  local w = wrapped[key]
+  if not w then return end
+  if w.tbl[name] == blocker then w.tbl[name] = w.fn end
+  wrapped[key] = nil
+end
+
+function M.enforceEditLock()
+  local lockParts = editMode == "all"
+  local lockPaint = editMode == "all" or editMode == "paint"
+  for _, name in ipairs(PART_EDITS) do
+    if lockParts then wrap("core_vehicle_partmgmt", name) else restore("core_vehicle_partmgmt", name) end
+  end
+  for _, e in ipairs(PAINT_EDITS) do
+    if lockPaint then wrap(e[1], e[2]) else restore(e[1], e[2]) end
+  end
+end
+
+function M.lockEditing(mode)
+  editMode = mode
+  M.enforceEditLock()
+end
+
 local originalBigMapTeleport, originalResetGameplay, originalLastRoad
 local lastVehiclePatch = -math.huge
 
@@ -102,6 +150,7 @@ function M.unlockAll()
   M.lock(false)
   M.setResetKey()
   M.setPartsMenu(true)
+  M.lockEditing(nil)
 end
 
 function M.resetIsBound()

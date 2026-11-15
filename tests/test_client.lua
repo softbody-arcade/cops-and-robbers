@@ -484,3 +484,33 @@ test("an engine swap is sent as one change with the parts that came with it", fu
   assertEq(#sent.changes, 1)
   assertEq(sent.changes[1].label, "Engine"); assertEq(sent.changes[1].to, "6.0L V8"); assertEq(sent.changes[1].extra, 1)
 end)
+
+test("during a round no menu can change a cop's parts or paint", function()
+  local env = bootClient()
+  env.fire("cnr_roundSetup", copy(SETUP))
+  env.toasts = {}
+  core_vehicle_partmgmt.setNewParts({})
+  core_vehicle_partmgmt.setConfigVars({})
+  core_vehicle_colors.setVehiclePaint({})
+  assertEq(#env.edits, 0)
+  local warned = false
+  for _, t in ipairs(env.toasts) do if t:find("locked", 1, true) then warned = true end end
+  assertEq(warned, true)
+  env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 30, runnerId = 2 })
+  core_vehicle_partmgmt.setNewParts({})
+  assertEq(#env.edits, 1)
+end)
+
+test("the evolving runner may change parts and tuning in prep, but not paint, and nothing after apply", function()
+  local env = bootClient()
+  env.fire("cnr_roundSetup", copy(EVOLVING_RUNNER))
+  core_vehicle_partmgmt.setNewParts({})
+  core_vehicle_partmgmt.setConfigVars({})
+  assertEq(#env.edits, 2)
+  core_vehicle_partmgmt.setConfigPaints({})
+  core_vehicle_colors.setVehicleColor({})
+  assertEq(#env.edits, 2)
+  env.fire("cnr_rebuild", { model = "pickup", config = { format = 2, model = "pickup", parts = { pickup_engine = "v8" }, vars = {} } })
+  core_vehicle_partmgmt.setNewParts({})
+  assertEq(#env.edits, 2)
+end)

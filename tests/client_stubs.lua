@@ -106,7 +106,15 @@ function bootClient(opts)
   env.liveConfig = { partsTree = { tree = true }, vars = { gear1 = 3.1 } }
   env.liveParts = { pickup_engine = "v8", pickup_paint_design = "stripes" }
   _G.core_vehicle_manager = { getPlayerVehicleData = function() return { model = "pickup", config = env.liveConfig } end }
-  _G.core_vehicle_partmgmt = { partsTreeToPartsMap = function() return deepcopy(env.liveParts) end }
+  env.edits = {}
+  local function edit(name) return function() env.edits[#env.edits + 1] = name end end
+  _G.core_vehicle_partmgmt = {
+    partsTreeToPartsMap = function() return deepcopy(env.liveParts) end,
+    setNewParts = edit("setNewParts"), setConfig = edit("setConfig"), setConfigOfVehicle = edit("setConfigOfVehicle"),
+    setConfigPaints = edit("setConfigPaints"), setConfigVars = edit("setConfigVars"), setPartsConfig = edit("setPartsConfig"),
+    setPartsTreeConfig = edit("setPartsTreeConfig"), resetConfig = edit("resetConfig"), reset = edit("reset"), loadLocal = edit("loadLocal"),
+  }
+  _G.core_vehicle_colors = { setVehicleColor = edit("setVehicleColor"), setVehiclePaint = edit("setVehiclePaint") }
   env.jbeamParts = opts.jbeamParts or { v8 = { information = { name = "4.5L V8" } }, v8_60 = { information = { name = "6.0L V8" } } }
   package.loaded["jbeam/io"] = {
     startLoading = function() return {} end,

@@ -146,7 +146,9 @@ local function onRoundSetup(data)
   lastPose = nil
   inputs.lock(true, requestReset)
   inputs.setResetKey()
-  inputs.setPartsMenu(d.phase == "prep" and evolving and role == "runner")
+  local mayChange = d.phase == "prep" and evolving and role == "runner"
+  inputs.setPartsMenu(mayChange)
+  inputs.lockEditing(mayChange and "paint" or "all")
   if not inputs.resetIsBound() then
     toast("Bind a reset or recover button to reset during rounds", 10, "cnr_binding")
   end
@@ -177,6 +179,7 @@ local function onCountdown(data)
   local d = jsonDecode(data) or {}
   hudfeed.prep(nil)
   inputs.setPartsMenu(false)
+  inputs.lockEditing("all")
   startTimer(tonumber(d.seconds), "Runner starts in")
 end
 
@@ -259,6 +262,7 @@ local function onRebuild(data)
   if not active or type(d.config) ~= "table" then return end
   buildBaselineAt, buildBaseline = nil, nil
   inputs.setPartsMenu(false)
+  inputs.lockEditing("all")
   hudfeed.applying(true)
   roundConfig = role == "cop" and vehicles.copConfig(roundModel, d.config) or d.config
   local veh = ownVehicle()
@@ -604,6 +608,7 @@ local function onUpdate(dtReal)
   updateGeo()
   updateSight()
   updateBuild()
+  if active then inputs.enforceEditLock() end
   updateStatusToast()
   hudfeed.update(clock, {
     active = active, role = role, chaseStart = statusActive and chaseStart or nil,
