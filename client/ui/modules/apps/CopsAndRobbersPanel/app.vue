@@ -75,6 +75,7 @@
         </div>
       </div>
       <div class="cnr-row cnr-end">
+        <BngButton :disabled="!can.settings" accent="secondary" @click="command('reload')">Reload config.json</BngButton>
         <BngButton :disabled="!can.settings" accent="attention" @click="resetClick">{{ resetArmed ? "Click again to reset" : "Reset to default" }}</BngButton>
       </div>
     </div>

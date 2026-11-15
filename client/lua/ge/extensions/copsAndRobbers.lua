@@ -19,7 +19,6 @@ local FREEZE_REASSERT = 0.5
 local POSE_JUMP = 30
 local GEO_SEND_INTERVAL = 0.25
 local SIGHT_CHECK_INTERVAL = 0.25
-local ACTIONS_FILE = "/lua/ge/extensions/core/input/actions/copsAndRobbers.json"
 
 local toast, sendServer, ownVehicle = game.toast, game.sendServer, game.ownVehicle
 local formatTime = hud.formatTime
@@ -150,8 +149,7 @@ local function onRoundSetup(data)
   frozen = phase == "prep" or phase == "countdown" or (phase == "headstart" and role == "cop")
   if phase == "prep" then
     hudfeed.prep(role, game.carName(d.model))
-    hudfeed.notify(role == "runner" and 'You are the runner! Change your paint if you like, waiting for "/cnr go"'
-      or 'You are a cop! Change your paint if you like, waiting for "/cnr go"', 8, "cnr_go")
+    hudfeed.notify(string.format("You are the %s! Set your color with /cnr color, waiting for GO", role == "runner" and "runner" or "cop"), 8, "cnr_go")
     timerEnd = nil
   elseif phase == "countdown" then
     startTimer(tonumber(d.countdownRemaining), "Runner starts in")
@@ -585,10 +583,6 @@ local function onBeamNGEarthRebased(info)
   if #ids > 0 then sendServer("cnr_relocated", { ids = ids }) end
 end
 
-local function refreshActions()
-  extensions.hook("onFileChanged", ACTIONS_FILE, "modified")
-end
-
 local function leaveServer()
   endRound()
   hudfeed.clearResult()
@@ -598,7 +592,6 @@ local function leaveServer()
 end
 
 local function onExtensionLoaded()
-  refreshActions()
   hudfeed.refreshApps()
   hudfeed.start(clock)
   if not AddEventHandler then return end
@@ -626,10 +619,6 @@ local function onExtensionLoaded()
   AddEventHandler("cnr_panelReply", function(data) guihooks.trigger("CnRPanelReply", jsonDecode(data) or {}) end)
 end
 
-function M.command(text)
-  if TriggerServerEvent then TriggerServerEvent("cnr_command", tostring(text)) end
-end
-
 function M.board(msg)
   if TriggerServerEvent and type(msg) == "table" then TriggerServerEvent("cnr_board", jsonEncode(msg)) end
 end
@@ -643,7 +632,6 @@ M.onBeamNGEarthRebased = onBeamNGEarthRebased
 M.onExtensionLoaded = onExtensionLoaded
 M.onExtensionUnloaded = function()
   leaveServer()
-  refreshActions()
   for name in pairs(package.loaded) do
     if name:find("^copsAndRobbers/") then package.loaded[name] = nil end
   end

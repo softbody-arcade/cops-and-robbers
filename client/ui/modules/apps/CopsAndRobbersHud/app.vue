@@ -20,7 +20,7 @@
       <div v-if="hud.prep" class="cnr-panel cnr-prep">
         <span class="cnr-role" :class="hud.prep.role === 'RUNNER' ? 'is-runner' : 'is-cop'">{{ hud.prep.role }}</span>
         <span class="cnr-item">{{ hud.prep.car }}</span>
-        <span class="cnr-item cnr-muted">waiting for "/cnr go"</span>
+        <span class="cnr-item cnr-muted">waiting for GO</span>
       </div>
       <div v-for="(text, i) in (hud.events || [])" :key="'e' + i" class="cnr-panel cnr-event">{{ text }}</div>
       <div v-if="hud.status" class="cnr-panel cnr-status">

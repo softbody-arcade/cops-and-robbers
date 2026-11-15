@@ -171,11 +171,14 @@ local function boot(opts)
     return false
   end
   function env.startRound()
-    env.call("onChatMessage", 2, "Bob", "/cnr start rein")
+    env.panel(2, "start rein")
     env.positions[1], env.positions[2] = 0, 5
     env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
   end
-  function env.go() env.call("onChatMessage", 1, "Reinder", "/cnr go") end
+  function env.panel(pid, text)
+    env.call("cnr_panel", pid, '{"action":"command","text":"' .. text .. '"}')
+  end
+  function env.go() env.panel(1, "go") end
   function env.cleanup() os.execute("rm -rf '" .. env.dir .. "'") end
   return env
 end
@@ -190,8 +193,8 @@ end)
 
 test("plugin dir resolves without @ chunk name, so config.json is read", function()
   local env = boot({ config = '{"headStartSeconds": 3}' })
-  env.call("onChatMessage", 1, "Reinder", "/cnr config")
-  assertEq(env.chatHas("headStartSeconds = 3"), true)
+  env.call("cnr_panel", 1, '{"action":"open"}')
+  assertEq(env.lastSent("cnr_panelState").data:find('"headStartSeconds":3', 1, true) ~= nil, true)
   env.cleanup()
 end)
 
@@ -294,7 +297,7 @@ end)
 test("stop while idle replies and still unlocks clients", function()
   local env = boot()
   env.sent = {}
-  env.call("onChatMessage", 1, "Reinder", "/cnr stop")
+  env.panel(1, "stop")
   assertEq(env.chatHas("No round running"), true)
   assertEq(env.lastSent("cnr_roundEnd") ~= nil, true)
   env.cleanup()
@@ -342,7 +345,7 @@ end)
 
 test("/cnr test runner: AI vehicles are tracked as cops", function()
   local env = boot({ vehicles = { [1] = { [0] = "x" } } })
-  env.call("onChatMessage", 1, "Reinder", "/cnr test runner")
+  env.panel(1, "test runner")
   assertEq(env.lastSent("cnr_pickVehicle").pid, 1)
   env.positions[1] = 0
   env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
@@ -365,13 +368,6 @@ test("/cnr test runner: AI vehicles are tracked as cops", function()
   for _, m in ipairs(env.sent) do assertEq(m.pid >= -1, true) end
   local f = io.open(env.dir .. "data/leaderboard.json")
   assertEq(f, nil)
-  env.cleanup()
-end)
-
-test("/cnr test without role shows usage", function()
-  local env = boot()
-  env.call("onChatMessage", 1, "Reinder", "/cnr test")
-  assertEq(env.chatHas('Usage: "/cnr test <runner|cop>"'), true)
   env.cleanup()
 end)
 
@@ -418,12 +414,12 @@ test("test round events reach only the issuer", function()
   local env = boot({ vehicles = { [1] = { [0] = "x" } } })
   env.sent = {}
   env.chats = {}
-  env.call("onChatMessage", 1, "Reinder", "/cnr test cop")
+  env.panel(1, "test cop")
   env.positions[1] = 0
   env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
   env.go()
   for _ = 1, 50 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
-  env.call("onChatMessage", 1, "Reinder", "/cnr stop")
+  env.panel(1, "stop")
   for _, m in ipairs(env.sent) do
     if m.ev ~= "cnr_roundEnd" or not m.data:find("cancelled") then assertEq(m.pid, 1, m.ev) end
   end
@@ -433,8 +429,8 @@ end)
 
 test("/cnr start cancels a running test round", function()
   local env = boot()
-  env.call("onChatMessage", 1, "Reinder", "/cnr test cop")
-  env.call("onChatMessage", 2, "Bob", "/cnr start bob")
+  env.panel(1, "test cop")
+  env.panel(2, "start bob")
   assertEq(env.lastSent("cnr_pickVehicle").pid, 2)
   env.cleanup()
 end)
@@ -442,7 +438,7 @@ end)
 test("/cnr end records the run", function()
   local env = boot()
   runToChase(env)
-  env.call("onChatMessage", 2, "Bob", "/cnr end")
+  env.panel(2, "end")
   assertEq(env.chatHas("Round ended: Reinder survived"), true)
   local f = io.open(env.dir .. "data/leaderboard.json")
   assertEq(f ~= nil, true)
@@ -450,38 +446,18 @@ test("/cnr end records the run", function()
   env.cleanup()
 end)
 
-test("/cnr set validates, saves and reloads", function()
-  local env = boot()
-  env.call("onChatMessage", 1, "Reinder", "/cnr set headStartSeconds 12")
-  assertEq(env.chatHas("headStartSeconds = 12"), true)
-  local saved = assert(io.open(env.dir .. "config.json")):read("*a")
-  assertEq(saved:find('"headStartSeconds":12', 1, true) ~= nil, true)
-  env.call("onChatMessage", 1, "Reinder", "/cnr set catchRadiusMeters -1")
-  assertEq(env.chatHas("Invalid value for catchRadiusMeters: -1"), true)
-  env.cleanup()
-end)
-
-test("/cnr top variants", function()
-  local env = boot()
-  env.call("onChatMessage", 1, "Reinder", "/cnr top cops")
-  assertEq(env.chatHas("No catches yet"), true)
-  env.call("onChatMessage", 1, "Reinder", "/cnr top all")
-  assertEq(env.chatHas("No runs yet"), true)
-  env.cleanup()
-end)
-
 test("/cnr start next and again", function()
   local env = boot()
-  env.call("onChatMessage", 1, "Reinder", "/cnr start next")
+  env.panel(1, "start next")
   env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
   assertEq(env.chatHas("Bob is the runner"), true)
-  env.call("onChatMessage", 1, "Reinder", "/cnr stop")
-  env.call("onChatMessage", 1, "Reinder", "/cnr start next")
+  env.panel(1, "stop")
+  env.panel(1, "start next")
   env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
   assertEq(env.chatHas("Reinder is the runner"), true)
-  env.call("onChatMessage", 1, "Reinder", "/cnr stop")
+  env.panel(1, "stop")
   env.chats = {}
-  env.call("onChatMessage", 2, "Bob", "/cnr start again")
+  env.panel(2, "start again")
   env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
   assertEq(env.chatHas("Reinder is the runner"), true)
   env.cleanup()
@@ -500,7 +476,7 @@ end)
 
 test("pick request carries the excluded models", function()
   local env = boot()
-  env.call("onChatMessage", 2, "Bob", "/cnr start rein")
+  env.panel(2, "start rein")
   assertEq(env.lastSent("cnr_pickVehicle").data:find("citybus", 1, true) ~= nil, true)
   env.cleanup()
 end)
@@ -535,7 +511,7 @@ end)
 test("earth catch uses geo reports, not raw positions", function()
   local env = boot({ map = EARTH })
   env.positions[1], env.positions[2] = 0, 5000
-  env.call("onChatMessage", 2, "Bob", "/cnr start rein")
+  env.panel(2, "start rein")
   report(env, 1, geoCar(0)); report(env, 2, geoCar(5))
   env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
   local setup
@@ -554,7 +530,7 @@ end)
 
 test("stale geo reports do not count", function()
   local env = boot({ map = EARTH })
-  env.call("onChatMessage", 2, "Bob", "/cnr start rein")
+  env.panel(2, "start rein")
   report(env, 1, geoCar(0)); report(env, 2, geoCar(5))
   env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
   env.go()
@@ -578,7 +554,7 @@ end)
 test("earth gas station reset uses geo positions", function()
   local env = boot({ map = EARTH })
   env.call("cnr_stations", 1, string.format('{"map":"beamng_earth","geo":true,"stations":[{"lat":%.9f,"lon":%.9f}]}', LAT + 400 / M_PER_DEG, LON))
-  env.call("onChatMessage", 2, "Bob", "/cnr start rein")
+  env.panel(2, "start rein")
   report(env, 1, geoCar(0)); report(env, 2, geoCar(900))
   env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
   env.go()
@@ -593,7 +569,7 @@ end)
 
 test("earth AI cars are reported by the test issuer", function()
   local env = boot({ map = EARTH, vehicles = { [1] = { [0] = "x" } } })
-  env.call("onChatMessage", 1, "Reinder", "/cnr test runner")
+  env.panel(1, "test runner")
   report(env, 1, geoCar(0))
   env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
   env.go()
@@ -608,7 +584,7 @@ end)
 
 test("earth last seen carries lat/lon", function()
   local env = boot({ map = EARTH, config = '{"lastSeenIntervalSeconds": 5}' })
-  env.call("onChatMessage", 2, "Bob", "/cnr start rein")
+  env.panel(2, "start rein")
   report(env, 1, geoCar(0)); report(env, 2, geoCar(900))
   env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
   env.go()
@@ -621,7 +597,7 @@ end)
 
 test("earth relocations grant grace for own car and test AI", function()
   local env = boot({ map = EARTH, vehicles = { [1] = { [0] = "x" } } })
-  env.call("onChatMessage", 1, "Reinder", "/cnr test runner")
+  env.panel(1, "test runner")
   report(env, 1, geoCar(0))
   env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
   env.go()
@@ -642,7 +618,7 @@ end)
 
 test("earth: an illegal reset waits a second for a relocation report", function()
   local env = boot({ map = EARTH })
-  env.call("onChatMessage", 2, "Bob", "/cnr start rein")
+  env.panel(2, "start rein")
   report(env, 1, geoCar(0)); report(env, 2, geoCar(900))
   env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
   env.go()
@@ -665,7 +641,7 @@ test("players are recognised by BeamMP account across name changes", function()
   env.ids = { [1] = { beammp = "7" }, [2] = { beammp = "9" } }
   env.call("onChatMessage", 1, "Reinder", "/cnr color #ff0000")
   env.names = { "guest555", "Bob" }
-  env.call("onChatMessage", 2, "Bob", "/cnr start guest")
+  env.panel(2, "start guest")
   env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
   local setup
   for _, m in ipairs(env.sent) do if m.ev == "cnr_roundSetup" and m.pid == 1 then setup = m.data end end
@@ -678,7 +654,7 @@ test("players are recognised by BeamMP account across name changes", function()
   assertEq(saved:find('"catcherKeys"', 1, true) ~= nil, true)
   env.names = { "Reinder", "Bob" }
   env.chats = {}
-  env.call("onChatMessage", 2, "Bob", "/cnr start again")
+  env.panel(2, "start again")
   env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
   assertEq(env.chatHas("Reinder is the runner"), true)
   env.cleanup()
@@ -714,7 +690,7 @@ end)
 
 test("/cnr auto toggles and saves the setting", function()
   local env = boot()
-  env.call("onChatMessage", 1, "Reinder", "/cnr auto on")
+  env.panel(1, "auto on")
   assertEq(env.chatHas("Automatic next round: on"), true)
   local saved = assert(io.open(env.dir .. "config.json")):read("*a")
   assertEq(saved:find('"autoNextRound":true', 1, true) ~= nil, true)
@@ -729,7 +705,7 @@ test("manual start cancels a pending automatic round", function()
     env.clock = env.clock + 0.25; env.call("cnr_tick")
     if env.chatHas("Next round in 5s") then break end
   end
-  env.call("onChatMessage", 1, "Reinder", "/cnr start reinder")
+  env.panel(1, "start reinder")
   env.sent = {}
   for _ = 1, 24 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
   assertEq(env.lastSent("cnr_pickVehicle"), nil)
@@ -764,48 +740,6 @@ test("leaderboard with a wrong shape is moved aside", function()
   local moved = false
   for _, l in ipairs(logs) do if l:find("moved to", 1, true) then moved = true end end
   assertEq(moved, true)
-  env.cleanup()
-end)
-
-test("key binding commands run like chat commands", function()
-  local env = boot()
-  env.call("cnr_command", 2, "start next")
-  assertEq(env.lastSent("cnr_pickVehicle").pid, 2)
-  env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
-  env.call("cnr_command", 1, "go")
-  assertEq(env.lastSent("cnr_countdown") ~= nil, true)
-  env.cleanup()
-end)
-
-test("key binding commands outside the allowed set are ignored", function()
-  local env = boot()
-  env.chats = {}
-  env.call("cnr_command", 1, "set headStartSeconds 1")
-  env.call("cnr_command", 1, "addstation")
-  assertEq(#env.chats, 0)
-  env.cleanup()
-end)
-
-test("/cnr continue sets up a round, then starts it", function()
-  local env = boot()
-  env.call("onChatMessage", 1, "Reinder", "/cnr continue")
-  local pick = env.lastSent("cnr_pickVehicle")
-  assertEq(pick.pid, 1)
-  env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
-  env.call("onChatMessage", 2, "Bob", "/cnr continue")
-  assertEq(env.lastSent("cnr_countdown") ~= nil, true)
-  env.chats = {}
-  env.call("onChatMessage", 2, "Bob", "/cnr continue")
-  assertEq(env.chatHas("Round already started"), true)
-  env.cleanup()
-end)
-
-test("/cnr auto without argument toggles", function()
-  local env = boot()
-  env.call("onChatMessage", 1, "Reinder", "/cnr auto")
-  assertEq(env.chatHas("Automatic next round: on"), true)
-  env.call("onChatMessage", 1, "Reinder", "/cnr auto")
-  assertEq(env.chatHas("Automatic next round: off"), true)
   env.cleanup()
 end)
 
@@ -858,7 +792,12 @@ end
 
 local function showConfig(env)
   env.chats = {}
-  env.call("onChatMessage", 1, "Reinder", "/cnr config")
+  env.call("cnr_panel", 1, '{"action":"open"}')
+  local st = decodeJson(env.lastSent("cnr_panelState").data)
+  for k, v in pairs(st.settings) do
+    if type(v) == "table" then v = table.concat(v, ", ") end
+    env.chats[#env.chats + 1] = { 1, "[CnR] " .. k .. " = " .. tostring(v) }
+  end
 end
 
 test("panel open sends state to the opener", function()
@@ -879,17 +818,18 @@ test("panel state is pushed on change, not every tick", function()
   assertEq(countSent(env, "cnr_panelState", 1), n)
   env.startRound()
   env.call("cnr_tick")
-  assertEq(countSent(env, "cnr_panelState", 1), n + 1)
+  local m = countSent(env, "cnr_panelState", 1)
+  assertEq(m > n, true)
   assertEq(env.lastSent("cnr_panelState").data:find('"phase":"prep"', 1, true) ~= nil, true)
   env.call("cnr_tick")
-  assertEq(countSent(env, "cnr_panelState", 1), n + 1)
+  assertEq(countSent(env, "cnr_panelState", 1), m)
   env.cleanup()
 end)
 
 test("chat change is pushed to panel subscribers", function()
   local env = boot()
   env.call("cnr_panel", 1, '{"action":"open"}')
-  env.call("onChatMessage", 2, "Bob", "/cnr auto on")
+  env.panel(2, "auto on")
   env.call("cnr_tick")
   local s = env.lastSent("cnr_panelState")
   assertEq(s.pid, 1)
@@ -956,7 +896,7 @@ test("panel settings are refused during a round", function()
   env.startRound()
   env.call("cnr_panel", 1, '{"action":"settings","values":{"headStartSeconds":9}}')
   assertEq(env.lastSent("cnr_panelReply").data:find("Stop the round first", 1, true) ~= nil, true)
-  env.call("onChatMessage", 1, "Reinder", "/cnr stop")
+  env.panel(1, "stop")
   showConfig(env)
   assertEq(chatLine(env, "headStartSeconds = 7"), true)
   env.cleanup()
@@ -967,7 +907,7 @@ test("disconnect drops the panel subscriber", function()
   env.call("cnr_panel", 1, '{"action":"open"}')
   env.call("onPlayerDisconnect", 1)
   local n = countSent(env, "cnr_panelState", 1)
-  env.call("onChatMessage", 2, "Bob", "/cnr auto on")
+  env.panel(2, "auto on")
   env.call("cnr_tick")
   assertEq(countSent(env, "cnr_panelState", 1), n)
   env.cleanup()
@@ -1039,7 +979,7 @@ end)
 
 test("auto off tells clients to drop the next round countdown", function()
   local env = boot()
-  env.call("onChatMessage", 1, "Reinder", "/cnr auto off")
+  env.panel(1, "auto off")
   local s = env.lastSent("cnr_autoNext")
   assertEq(s ~= nil and s.pid, -1)
   env.cleanup()
@@ -1124,7 +1064,7 @@ test("the board app gets state on open, after a run and on a filter change", fun
   env.startRound(); env.go()
   for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
   env.sent = {}
-  env.call("onChatMessage", 1, "Reinder", "/cnr end")
+  env.panel(1, "end")
   s = env.lastSent("cnr_boardState")
   assertEq(s.pid, 2)
   assertEq(s.data:find("Reinder", 1, true) ~= nil, true)
@@ -1140,7 +1080,7 @@ test("a board subscriber who leaves gets no more pushes", function()
   env.sent = {}
   env.startRound(); env.go()
   for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
-  env.call("onChatMessage", 1, "Reinder", "/cnr end")
+  env.panel(1, "end")
   assertEq(env.lastSent("cnr_boardState"), nil)
   env.cleanup()
 end)
@@ -1149,7 +1089,7 @@ test("a recorded run stores cops by key with their sight time", function()
   local env = boot()
   env.startRound(); env.go()
   for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
-  env.call("onChatMessage", 1, "Reinder", "/cnr end")
+  env.panel(1, "end")
   local text = readFileAt(env.dir .. "data/leaderboard.json")
   assertEq(text:find('"format":2', 1, true) ~= nil, true)
   assertEq(text:find('"cops":["name:Bob"]', 1, true) ~= nil, true)
@@ -1162,7 +1102,7 @@ test("if the old leaderboard can't be moved aside, it is never overwritten", fun
   local env = boot({ leaderboard = '{"runs":[{"player":"Old","survivedSeconds":999,"map":"west_coast_usa","endedAt":1}]}', renameFails = true })
   env.startRound(); env.go()
   for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
-  env.call("onChatMessage", 1, "Reinder", "/cnr end")
+  env.panel(1, "end")
   assertEq(readFileAt(env.dir .. "data/leaderboard.json"):find("Old", 1, true) ~= nil, true)
   env.cleanup()
 end)
@@ -1185,8 +1125,59 @@ test("changing a setting refreshes open leaderboards", function()
   env.sent = {}
   env.call("cnr_panel", 1, '{"action":"settings","id":1,"values":{"assistMinSightPercent":40}}')
   assertEq(env.lastSent("cnr_boardState") ~= nil, true)
-  env.sent = {}
-  env.call("onChatMessage", 1, "Reinder", "/cnr set assistMinSightPercent 30")
-  assertEq(env.lastSent("cnr_boardState") ~= nil, true)
   env.cleanup()
+end)
+
+test("chat commands other than the five point to the panel", function()
+  local env = boot()
+  assertEq(env.call("onChatMessage", 1, "Reinder", "/cnr go"), 1)
+  assertEq(env.chatHas("Use the Cops and Robbers Panel (Esc > UI Apps)"), true)
+  env.chats = {}
+  env.call("onChatMessage", 1, "Reinder", "/cnr start bob")
+  assertEq(env.lastSent("cnr_pickVehicle"), nil)
+  assertEq(env.chatHas("Use the Cops and Robbers Panel"), true)
+  env.cleanup()
+end)
+
+test("chat keeps color, help, version, addstation and removestation", function()
+  local env = boot()
+  env.call("onChatMessage", 1, "Reinder", "/cnr color #ff0000")
+  assertEq(env.chatHas("Your car color is now"), true)
+  env.chats = {}
+  env.call("onChatMessage", 1, "Reinder", "/cnr help")
+  for _, c in ipairs(env.chats) do
+    local text = c[2]
+    for word in text:gmatch('"/cnr (%a+)') do
+      assertEq(word == "color" or word == "addstation" or word == "removestation" or word == "help" or word == "version", true, text)
+    end
+  end
+  assertEq(env.chatHas("Panel"), true)
+  env.cleanup()
+end)
+
+test("key binding commands are gone", function()
+  local env = boot()
+  assertEq(env.events.cnr_command, nil)
+  env.cleanup()
+end)
+
+test("the panel can reload config.json, but not during a round", function()
+  local env = boot()
+  env.panel(1, "reload")
+  assertEq(env.lastSent("cnr_panelReply").data:find("Config reloaded", 1, true) ~= nil, true)
+  env.startRound()
+  env.panel(1, "reload")
+  assertEq(env.lastSent("cnr_panelReply").data:find("Stop the round before reloading", 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("no player-facing text tells people to type a removed command", function()
+  local files = { "server/CopsAndRobbers/main.lua", "server/CopsAndRobbers/cnr/round.lua", "server/CopsAndRobbers/cnr/commands.lua",
+    "client/lua/ge/extensions/copsAndRobbers.lua", "client/ui/modules/apps/CopsAndRobbersHud/app.vue" }
+  for _, f in ipairs(files) do
+    local text = assert(io.open(f)):read("*a")
+    for _, removed in ipairs({ '"/cnr go"', '"/cnr start', '"/cnr auto', '"/cnr stop"', '"/cnr test', '"/cnr set', '"/cnr top', '"/cnr continue', '"/cnr reload', '"/cnr config' }) do
+      assertEq(text:find(removed, 1, true), nil, f .. " " .. removed)
+    end
+  end
 end)

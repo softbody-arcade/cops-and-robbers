@@ -2,10 +2,9 @@ local config = require("cnr.config")
 
 local M = {}
 
-M.BINDABLE = {
-  ["continue"] = true, ["start next"] = true, ["start again"] = true, ["start random"] = true,
-  ["go"] = true, ["reroll"] = true, ["end"] = true, ["stop"] = true, ["auto"] = true, ["top"] = true,
-  ["test runner"] = true, ["test cop"] = true, ["help"] = true,
+M.COMMANDS = {
+  ["go"] = true, ["reroll"] = true, ["end"] = true, ["stop"] = true, ["auto on"] = true, ["auto off"] = true,
+  ["test runner"] = true, ["test cop"] = true, ["reload"] = true,
 }
 
 local MAX_COMMAND_LENGTH = 64
@@ -15,7 +14,7 @@ function M.allow(text)
   local t = text:match("^%s*(.-)%s*$")
   if #t > MAX_COMMAND_LENGTH then return nil end
   local lower = t:lower()
-  if M.BINDABLE[lower] or lower == "auto on" or lower == "auto off" then return lower end
+  if M.COMMANDS[lower] then return lower end
   if lower:match("^start %S") then return "start " .. t:sub(7) end
   return nil
 end

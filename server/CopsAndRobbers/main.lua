@@ -391,7 +391,7 @@ local function applyEffects(effects)
       aiVid = {}
       if autoNext then
         autoNextAt = now() + cfg.autoNextDelaySeconds
-        broadcast(string.format('Next round in %gs ("/cnr auto off" to stop)', cfg.autoNextDelaySeconds))
+        broadcast(string.format("Next round in %gs (turn off Automatic rounds in the panel to stop)", cfg.autoNextDelaySeconds))
       end
     elseif e.kind == "live" then
       if not geoMode or now() - lastLiveSentAt >= GEO_LIVE_MIN_SECONDS then
@@ -472,20 +472,10 @@ local function applyEffects(effects)
 end
 
 local HELP = {
-  '"/cnr start <name|random|next|again>" - set up a round with that runner',
-  '"/cnr go" - start the countdown',
-  '"/cnr auto [on|off]" - prepare the next round automatically after each round',
-  '"/cnr continue" - next step: set up a round, or start it (handy on a button)',
-  '"/cnr reroll" - new car during prep',
-  '"/cnr end" - end the chase and record the time',
-  '"/cnr stop" - cancel the current round',
+  "Run rounds and settings with the Cops and Robbers Panel, see times and stats with the Cops and Robbers Leaderboard (Esc > UI Apps)",
   '"/cnr color <#hex|off>" - your car color for every round',
-  '"/cnr test <runner|cop>" - practice round against AI',
-  '"/cnr top [cops|all|<map>]" - leaderboards',
-  '"/cnr set <setting> <value>" - change a setting',
-  '"/cnr config" - show settings',
-  '"/cnr reload" - reload config.json',
   '"/cnr addstation" / "/cnr removestation" - edit this map\'s gas stations',
+  '"/cnr help" / "/cnr version"',
 }
 
 local handlers = {}
@@ -583,18 +573,6 @@ function handlers.stop(pid)
   if not wasActive then send(-1, "cnr_roundEnd", { reason = "cancelled" }) end
 end
 
-function handlers.top(pid, cmd)
-  local arg = cmd.args[1] and cmd.args[1]:lower()
-  local lines
-  if arg == "cops" then
-    lines = leaderboard.formatTopCops(board, 10)
-  elseif arg == "all" then
-    lines = leaderboard.formatTop(board, 10)
-  else
-    lines = leaderboard.formatTop(board, 10, arg or mapName)
-  end
-  for _, line in ipairs(lines) do reply(pid, line) end
-end
 
 handlers["end"] = function(pid)
   applyEffects(current:endCalled(now(), pid))
@@ -604,20 +582,6 @@ function handlers.reroll(pid)
   applyEffects(current:reroll(now(), pid))
 end
 
-function handlers.set(pid, cmd)
-  local key, value = cmd.args[1], cmd.rest and cmd.rest:match("^%S+%s+(.+)$")
-  if not key or not value then return reply(pid, 'Usage: "/cnr set <setting> <value>"') end
-  if current:isActive() then return reply(pid, "Stop the round before changing settings") end
-  local updated, err = config.setValue(rawConfig, key, value)
-  if not updated then return reply(pid, err) end
-  writeFile(pluginDir .. "config.json", Util.JsonPrettify(Util.JsonEncode(updated)))
-  loadConfig()
-  current = round.new(cfg)
-  local shown = cfg[key]
-  if type(shown) == "table" then shown = table.concat(shown, ", ") end
-  reply(pid, key .. " = " .. tostring(shown))
-  pushBoard()
-end
 
 function handlers.addstation(pid)
   if geoMode then
@@ -663,16 +627,6 @@ function handlers.removestation(pid)
   reply(pid, string.format("Gas station removed (%d left on %s)", #stations, mapName))
 end
 
-function handlers.config(pid)
-  local keys = {}
-  for k in pairs(cfg) do keys[#keys + 1] = k end
-  table.sort(keys)
-  for _, k in ipairs(keys) do
-    local v = cfg[k]
-    if type(v) == "table" then v = table.concat(v, ", ") end
-    reply(pid, k .. " = " .. tostring(v))
-  end
-end
 
 function handlers.reload(pid)
   if current:isActive() then return reply(pid, "Stop the round before reloading") end
@@ -681,12 +635,6 @@ function handlers.reload(pid)
   reply(pid, "Config reloaded")
 end
 
-function handlers.continue(pid)
-  if current.state == "idle" then
-    return handlers.start(pid, { name = "start", args = { "next" }, rest = "next" })
-  end
-  applyEffects(current:go(now(), pid))
-end
 
 local function runCommand(pid, text)
   local cmd = commands.parse("/cnr " .. text)
@@ -694,11 +642,6 @@ local function runCommand(pid, text)
   if handler then handler(pid, cmd) end
 end
 
-function cnrOnCommand(pid, data)
-  local text = type(data) == "string" and data:lower():match("^%s*(.-)%s*$") or ""
-  if not panel.BINDABLE[text] then return end
-  runCommand(pid, text)
-end
 
 local function panelState()
   local running = current.state == "running"
@@ -760,14 +703,16 @@ function cnrOnPanel(pid, data)
   end
 end
 
+local CHAT_COMMANDS = { color = true, addstation = true, removestation = true, help = true, version = true }
+
 function cnrOnChatMessage(pid, name, msg)
   local cmd = commands.parse(msg)
   if not cmd then return 0 end
-  local handler = handlers[cmd.name]
+  local handler = CHAT_COMMANDS[cmd.name] and handlers[cmd.name]
   if handler then
     handler(pid, cmd)
   else
-    reply(pid, 'Unknown command, try "/cnr help"')
+    reply(pid, "Use the Cops and Robbers Panel (Esc > UI Apps)")
   end
   return 1
 end
@@ -1031,7 +976,6 @@ MP.RegisterEvent("cnr_myVehicle", "cnrOnMyVehicle")
 MP.RegisterEvent("cnr_aiVehicles", "cnrOnAiVehicles")
 MP.RegisterEvent("cnr_geo", "cnrOnGeo")
 MP.RegisterEvent("cnr_relocated", "cnrOnRelocated")
-MP.RegisterEvent("cnr_command", "cnrOnCommand")
 MP.RegisterEvent("cnr_panel", "cnrOnPanel")
 MP.RegisterEvent("cnr_sight", "cnrOnSight")
 MP.RegisterEvent("cnr_board", "cnrOnBoard")
