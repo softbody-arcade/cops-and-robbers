@@ -148,6 +148,7 @@ const drafts = ref({})
 const resetArmed = ref(false)
 const collapsed = ref(false)
 let inFlight = []
+let nextRequestId = 1
 let saveTimer = null
 let openTimer = null
 let resetTimer = null
@@ -160,7 +161,7 @@ const runnerItems = computed(() => [
   { value: "next", label: "Next (fewest runs)" },
   { value: "again", label: "Same as last" },
   { value: "random", label: "Random" },
-  ...players.value.map(n => ({ value: n, label: n })),
+  ...players.value.map(n => ({ value: `=${n}`, label: n })),
 ])
 
 watch(
@@ -236,15 +237,20 @@ function same(a, b) {
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
+function saveSettings(values, reset) {
+  const id = nextRequestId++
+  inFlight.push({ id, keys: Object.keys(values), values, reset })
+  replyText.value = ""
+  send({ action: "settings", id, values })
+}
+
 function flush() {
   clearTimeout(saveTimer)
   saveTimer = null
   const values = { ...pending.value }
   const keys = Object.keys(values)
   if (!keys.length) return
-  inFlight.push({ keys, values, reset: false })
-  replyText.value = ""
-  send({ action: "settings", values })
+  saveSettings(values, false)
 }
 
 function change(key, value) {
@@ -254,9 +260,10 @@ function change(key, value) {
 }
 
 function stepBy(item, dir) {
-  const v = Number(valueOf(item.key)) || 0
-  const next = Math.round((v + dir * item.step) / item.step) * item.step
-  change(item.key, Math.max(item.min, Math.round(next * 10000) / 10000))
+  const q = (Number(valueOf(item.key)) || 0) / item.step
+  const onGrid = Math.abs(q - Math.round(q)) < 1e-6
+  const n = onGrid ? Math.round(q) + dir : dir > 0 ? Math.ceil(q) : Math.floor(q)
+  change(item.key, Math.max(item.min, Math.round(n * item.step * 10000) / 10000))
 }
 
 function commitList(key) {
@@ -287,11 +294,8 @@ function resetClick() {
   for (const [k, v] of Object.entries(state.value.defaults || {})) {
     if (k !== "autoNextRound") values[k] = v
   }
-  const keys = Object.keys(values)
-  if (!keys.length) return
-  inFlight.push({ keys, values, reset: true })
-  replyText.value = ""
-  send({ action: "settings", values })
+  if (!Object.keys(values).length) return
+  saveSettings(values, true)
 }
 
 events.on("CnRPanel", data => {
@@ -309,7 +313,9 @@ events.on("CnRPanelReply", data => {
     replyText.value = data.text || ""
     return
   }
-  const req = inFlight.shift()
+  const idx = data.id === undefined ? 0 : inFlight.findIndex(r => r.id === data.id)
+  if (idx < 0) return
+  const req = inFlight.splice(idx, 1)[0]
   if (req) {
     const p = { ...pending.value }
     for (const k of req.keys) {
@@ -337,6 +343,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  for (const key of Object.keys(drafts.value)) commitList(key)
+  flush()
   send({ action: "close" })
   clearInterval(openTimer)
   clearTimeout(saveTimer)
@@ -351,35 +359,35 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  padding: 10px 12px;
-  border-radius: 8px;
+  padding: 0.625rem 0.75rem;
+  border-radius: 0.5rem;
   background: rgba(10, 12, 18, 0.72);
   color: #fff;
   font-family: sans-serif;
-  font-size: 14px;
+  font-size: 0.875rem;
   overflow: hidden;
 }
 .cnr-panel.collapsed {
   height: auto;
-  padding: 6px 10px;
+  padding: 0.375rem 0.625rem;
 }
 .cnr-head {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
+  gap: 0.375rem;
+  margin-bottom: 0.5rem;
 }
 .cnr-panel.collapsed .cnr-head {
   margin-bottom: 0;
 }
 .cnr-toggle {
-  width: 24px;
-  height: 24px;
+  width: 1.5rem;
+  height: 1.5rem;
   border: 0;
-  border-radius: 4px;
+  border-radius: 0.25rem;
   background: rgba(255, 255, 255, 0.12);
   color: #fff;
-  font-size: 13px;
+  font-size: 0.8125rem;
   cursor: pointer;
 }
 .cnr-mini {
@@ -395,10 +403,10 @@ onUnmounted(() => {
   border: 0;
   border-bottom: 2px solid transparent;
   color: rgba(255, 255, 255, 0.6);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 700;
   letter-spacing: 0.06em;
-  padding: 4px 8px;
+  padding: 0.25rem 0.5rem;
   cursor: pointer;
 }
 .cnr-tab.active {
@@ -407,7 +415,7 @@ onUnmounted(() => {
 }
 .cnr-version {
   margin-left: auto;
-  font-size: 12px;
+  font-size: 0.75rem;
   color: rgba(255, 255, 255, 0.5);
 }
 .cnr-empty {
@@ -419,10 +427,10 @@ onUnmounted(() => {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0.5rem;
 }
 .cnr-status {
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 700;
 }
 .cnr-runner {
@@ -431,14 +439,14 @@ onUnmounted(() => {
 .cnr-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
 }
 .cnr-end {
   justify-content: flex-end;
-  margin-top: 4px;
+  margin-top: 0.25rem;
 }
 .cnr-label {
-  min-width: 64px;
+  min-width: 4rem;
   color: rgba(255, 255, 255, 0.7);
 }
 .cnr-grow {
@@ -447,17 +455,17 @@ onUnmounted(() => {
 .cnr-buttons {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 0.375rem;
 }
 .cnr-locked {
-  padding: 6px 8px;
-  border-radius: 4px;
+  padding: 0.375rem 0.5rem;
+  border-radius: 0.25rem;
   background: rgba(255, 102, 0, 0.25);
   font-weight: 700;
 }
 .cnr-group-title {
-  margin: 4px 0 2px;
-  font-size: 12px;
+  margin: 0.25rem 0 2px;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -467,8 +475,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  min-height: 30px;
+  gap: 0.5rem;
+  min-height: 1.875rem;
 }
 .cnr-setting-label {
   color: rgba(255, 255, 255, 0.85);
@@ -476,16 +484,16 @@ onUnmounted(() => {
 .cnr-stepper {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem;
 }
 .cnr-step {
-  width: 26px;
-  height: 26px;
+  width: 1.625rem;
+  height: 1.625rem;
   border: 0;
-  border-radius: 4px;
+  border-radius: 0.25rem;
   background: rgba(255, 255, 255, 0.15);
   color: #fff;
-  font-size: 16px;
+  font-size: 1rem;
   cursor: pointer;
 }
 .cnr-step:disabled {
@@ -493,7 +501,7 @@ onUnmounted(() => {
   cursor: default;
 }
 .cnr-value {
-  min-width: 76px;
+  min-width: 4.75rem;
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
@@ -502,19 +510,19 @@ onUnmounted(() => {
 }
 .cnr-text {
   flex: 1;
-  max-width: 230px;
-  padding: 4px 6px;
+  max-width: 14.375rem;
+  padding: 0.25rem 0.375rem;
   border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 4px;
+  border-radius: 0.25rem;
   background: rgba(0, 0, 0, 0.35);
   color: #fff;
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 .cnr-reply {
-  margin-top: 8px;
-  padding-top: 6px;
+  margin-top: 0.5rem;
+  padding-top: 0.375rem;
   border-top: 1px solid rgba(255, 255, 255, 0.15);
   color: rgba(255, 255, 255, 0.85);
-  font-size: 13px;
+  font-size: 0.8125rem;
 }
 </style>

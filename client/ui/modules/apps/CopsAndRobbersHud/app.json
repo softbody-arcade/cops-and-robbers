@@ -1,17 +1,18 @@
 {
   "domElement": "<cops-and-robbers-hud></cops-and-robbers-hud>",
   "name": "Cops and Robbers HUD",
-  "types": ["ui.apps.categories.info"],
+  "types": [
+    "ui.apps.categories.info"
+  ],
   "description": "Cops and Robbers countdowns, status line, catch bar and round results.",
   "css": {
-    "left": "0",
-    "right": "0",
-    "margin": "auto",
-    "bottom": "70px",
-    "width": "520px",
-    "height": "230px",
-    "min-width": "320px",
-    "min-height": "60px"
+    "left": "50%",
+    "right": "",
+    "bottom": "4.375em",
+    "width": "32.5em",
+    "height": "14.375em",
+    "min-width": "20em",
+    "min-height": "3.75em"
   },
   "author": "ReinderN",
   "version": "1.0",
