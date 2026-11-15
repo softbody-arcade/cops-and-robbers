@@ -1,6 +1,5 @@
 local M = {}
 
-local hud = require("copsAndRobbers/hud")
 local game = require("copsAndRobbers/game")
 local inputs = require("copsAndRobbers/inputs")
 local roads = require("copsAndRobbers/roads")
