@@ -28,7 +28,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from "vue"
+import { ref, computed, watch, onMounted, onErrorCaptured } from "vue"
 import { useEvents } from "@/services/events"
 import { useBridge } from "@/bridge"
 import CnrRoot from "../../copsAndRobbers/CnrRoot.vue"
@@ -60,6 +60,21 @@ function ui(msg) {
   api.engineLua(`if copsAndRobbers then copsAndRobbers.ui(${api.serializeToLua(msg)}) end`)
 }
 
+function report(where, err) {
+  try {
+    const message = err && err.message ? err.message : String(err)
+    const lines = err && typeof err.stack === "string" ? err.stack.split("\n").map(l => l.trim()) : []
+    const at = lines.find(l => l.startsWith("at ")) || lines[0] || ""
+    api.engineLua(`log("E","cnr_ui",${api.serializeToLua(`[cnr_ui] ${where}: ${message} | ${at}`)})`)
+  } catch (e) {}
+}
+
+onErrorCaptured((err, instance, info) => {
+  const options = (instance && instance.$options) || {}
+  report(`${options.name || options.__name || "?"} ${info}`, err)
+  return false
+})
+
 function openHelp() {
   ui({ action: "help", open: true })
 }
@@ -74,7 +89,11 @@ function pickColor(hex) {
 }
 
 events.on("CnRHud", data => {
-  hud.value = data && typeof data === "object" ? data : { visible: false }
+  try {
+    hud.value = data && typeof data === "object" ? data : { visible: false }
+  } catch (err) {
+    report("CnRHud handler", err)
+  }
 })
 
 onMounted(() => ui({ action: "hello" }))
