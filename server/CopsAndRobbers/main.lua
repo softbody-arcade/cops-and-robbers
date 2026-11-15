@@ -8,6 +8,7 @@ local leaderboard = require("cnr.leaderboard")
 local commands = require("cnr.commands")
 local colors = require("cnr.colors")
 local tables = require("cnr.tables")
+local geo = require("cnr.geo")
 
 local PREFIX = "[CnR] "
 local dataDir = pluginDir .. "data/"
@@ -27,6 +28,15 @@ local aiVid = {}
 local runCounts = {}
 local lastRunnerName
 local rawConfig = {}
+local geoMode = false
+local geoRef
+local geoReports = {}
+local geoStations = {}
+local localStationsCache
+local lastGeoByName = {}
+local GEO_STALE_SECONDS = 2
+local GEO_STATION_MERGE_METERS = 50
+local GEO_STATION_RADIUS = 20
 local colorStore = {}
 local serverClock = MP.CreateTimer()
 
@@ -116,6 +126,18 @@ local function stationsPath() return stationsDir .. mapName .. ".json" end
 local function loadStations()
   local decoded = decodeFile(stationsPath())
   stations = {}
+  geoStations = {}
+  localStationsCache = nil
+  if geoMode then
+    for _, s in ipairs(decoded and decoded.stations or {}) do
+      local lat, lon = tonumber(s.lat), tonumber(s.lon)
+      if geo.valid(lat, lon) then
+        geoStations[#geoStations + 1] = { lat = lat, lon = lon, r = tonumber(s.r) or GEO_STATION_RADIUS, name = s.name }
+      end
+    end
+    log(string.format("%d gas stations loaded for %s", #geoStations, mapName))
+    return
+  end
   for _, s in ipairs(decoded and decoded.stations or {}) do
     local v = vec.toVec(s)
     if v then
@@ -127,10 +149,13 @@ local function loadStations()
 end
 
 local function saveStations()
-  writeFile(stationsPath(), Util.JsonPrettify(Util.JsonEncode({ stations = stations })))
+  localStationsCache = nil
+  local list = geoMode and geoStations or stations
+  writeFile(stationsPath(), Util.JsonPrettify(Util.JsonEncode({ stations = list })))
 end
 
 local function requestStations(pid)
+  if geoMode then return end
   if #stations > 0 or stationsRequested[pid] then return end
   stationsRequested[pid] = true
   send(pid, "cnr_requestStations", { map = mapName })
@@ -164,8 +189,45 @@ local function vidFor(pid)
   return vid
 end
 
+local function ensureRef(lat, lon)
+  if not geoRef then geoRef = geo.newRef(lat, lon) end
+  return geoRef
+end
+
+local function geoOf(pid)
+  local r = pid ~= nil and geoReports[pid]
+  if not r or now() - r.t > GEO_STALE_SECONDS then return nil end
+  return r
+end
+
+local function geoPoint(r)
+  return r and { lat = r.lat, lon = r.lon, h = r.h } or nil
+end
+
+local function roundStations()
+  if not geoMode then return stations end
+  if not geoRef then return {} end
+  if not localStationsCache then
+    localStationsCache = {}
+    for _, s in ipairs(geoStations) do
+      local p = geo.toLocal(geoRef, s.lat, s.lon, 0)
+      p.z = nil
+      local here = { x = p.x, y = p.y, z = 0, r = s.r }
+      localStationsCache[#localStationsCache + 1] = here
+    end
+  end
+  return localStationsCache
+end
+
 local function carFor(pid)
   if pid == nil then return nil end
+  if geoMode then
+    local r = geoOf(pid)
+    if not r then return nil end
+    local pos = geo.toLocal(ensureRef(r.lat, r.lon), r.lat, r.lon, r.h)
+    pos.z = 0
+    return { pos = pos, vel = { x = r.ve, y = r.vn, z = r.vu } }
+  end
   local owner, vid = pid, nil
   if round.isAI(pid) then
     owner, vid = current.issuerId, aiVid[pid]
@@ -202,13 +264,18 @@ local function applyEffects(effects)
         end
       end
       local runnerCar = carFor(current.runnerId)
+      local resumeGeo
+      if geoMode and e.resumePos then resumeGeo = lastGeoByName[MP.GetPlayerName(e.pid) or ""] end
       send(e.pid, "cnr_roundSetup", {
+        geo = geoMode, runnerGeo = geoMode and geoPoint(geoOf(current.runnerId)) or nil,
+        resumeGeo = resumeGeo,
         runnerId = current.runnerId, role = e.role, copIndex = e.copIndex,
         model = current.vehicle.model, config = current.vehicle.config,
         phase = e.phase, countdownRemaining = e.countdownRemaining,
-        headStartRemaining = e.headStartRemaining, inPlace = e.inPlace, resumePos = e.resumePos,
+        headStartRemaining = e.headStartRemaining, inPlace = e.inPlace,
+        resumePos = not geoMode and e.resumePos or nil,
         color = e.colorHex and colorTable((colors.parseHex(e.colorHex))) or colorFor(e.pid),
-        runnerPos = runnerCar and runnerCar.pos or nil,
+        runnerPos = not geoMode and runnerCar and runnerCar.pos or nil,
         copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
       })
     elseif e.kind == "setupAI" then
@@ -252,7 +319,12 @@ local function applyEffects(effects)
     elseif e.kind == "lastSeen" then
       for pid in pairs(current.players) do
         if pid ~= current.runnerId and not round.isAI(pid) then
-          send(pid, "cnr_lastSeen", { pos = e.pos })
+          if geoMode then
+            local g = geoPoint(geoOf(current.runnerId))
+            if g then send(pid, "cnr_lastSeen", { geo = g }) end
+          else
+            send(pid, "cnr_lastSeen", { pos = e.pos })
+          end
         end
       end
       if not round.isAI(current.runnerId) and e.nearestCop then
@@ -404,6 +476,13 @@ function handlers.set(pid, cmd)
 end
 
 function handlers.addstation(pid)
+  if geoMode then
+    local r = geoOf(pid)
+    if not r then return reply(pid, "You need to be in a vehicle") end
+    geoStations[#geoStations + 1] = { lat = r.lat, lon = r.lon, r = GEO_STATION_RADIUS }
+    saveStations()
+    return reply(pid, string.format("Gas station added (%d on %s)", #geoStations, mapName))
+  end
   local car = carFor(pid)
   if not car then return reply(pid, "You need to be in a vehicle") end
   stations[#stations + 1] = { x = car.pos.x, y = car.pos.y, z = car.pos.z, r = 0 }
@@ -412,6 +491,21 @@ function handlers.addstation(pid)
 end
 
 function handlers.removestation(pid)
+  if geoMode then
+    local r = geoOf(pid)
+    if not r then return reply(pid, "You need to be in a vehicle") end
+    local ref = geo.newRef(r.lat, r.lon)
+    local bestIndex, bestDist
+    for i, st in ipairs(geoStations) do
+      local p = geo.toLocal(ref, st.lat, st.lon, 0)
+      local d = math.sqrt(p.x * p.x + p.y * p.y)
+      if d <= 50 and (not bestDist or d < bestDist) then bestIndex, bestDist = i, d end
+    end
+    if not bestIndex then return reply(pid, "No gas station within 50 m") end
+    table.remove(geoStations, bestIndex)
+    saveStations()
+    return reply(pid, string.format("Gas station removed (%d left on %s)", #geoStations, mapName))
+  end
   local car = carFor(pid)
   if not car then return reply(pid, "You need to be in a vehicle") end
   local bestIndex, bestDist
@@ -515,12 +609,16 @@ function cnrOnVehicleReset(pid, vid)
 end
 
 function cnrOnPlayerJoin(pid)
+  send(pid, "cnr_mode", { geo = geoMode })
   requestStations(pid)
   applyEffects(current:playerJoined(now(), pid, MP.GetPlayerName(pid)))
 end
 
 function cnrOnPlayerDisconnect(pid)
   stationsRequested[pid] = nil
+  local name = MP.GetPlayerName(pid)
+  if name and geoReports[pid] then lastGeoByName[name] = geoPoint(geoReports[pid]) end
+  geoReports[pid] = nil
   applyEffects(current:playerLeft(now(), pid))
   activeVid[pid] = nil
 end
@@ -554,8 +652,54 @@ function cnrOnAiVehicles(pid, data)
   end
 end
 
+local function mergeGeoStations(list)
+  local added = 0
+  for _, s in ipairs(list or {}) do
+    local lat, lon = tonumber(s.lat), tonumber(s.lon)
+    if geo.valid(lat, lon) then
+      local ref = geo.newRef(lat, lon)
+      local duplicate = false
+      for _, existing in ipairs(geoStations) do
+        local p = geo.toLocal(ref, existing.lat, existing.lon, 0)
+        if math.sqrt(p.x * p.x + p.y * p.y) <= GEO_STATION_MERGE_METERS then duplicate = true break end
+      end
+      if not duplicate then
+        geoStations[#geoStations + 1] = { lat = lat, lon = lon, r = GEO_STATION_RADIUS, name = type(s.name) == "string" and s.name or nil }
+        added = added + 1
+      end
+    end
+  end
+  return added
+end
+
+function cnrOnGeo(pid, data)
+  if not geoMode then return end
+  local ok, decoded = pcall(Util.JsonDecode, data)
+  if not ok or type(decoded) ~= "table" or type(decoded.cars) ~= "table" then return end
+  for _, c in ipairs(decoded.cars) do
+    local lat, lon = tonumber(c.lat), tonumber(c.lon)
+    local id = tonumber(c.id) or pid
+    local allowed = id == pid or (round.isAI(id) and current.test and pid == current.issuerId and current.players[id] ~= nil)
+    if allowed and geo.valid(lat, lon) then
+      geoReports[id] = {
+        lat = lat, lon = lon, h = tonumber(c.h) or 0,
+        ve = tonumber(c.ve) or 0, vn = tonumber(c.vn) or 0, vu = tonumber(c.vu) or 0, t = now(),
+      }
+    end
+  end
+end
+
 function cnrOnStations(pid, data)
   local ok, decoded = pcall(Util.JsonDecode, data)
+  if geoMode then
+    if not ok or type(decoded) ~= "table" or decoded.map ~= mapName then return end
+    local added = mergeGeoStations(decoded.stations)
+    if added > 0 then
+      saveStations()
+      log(string.format("%d new gas stations on %s (%d known)", added, mapName, #geoStations))
+    end
+    return
+  end
   if not ok or type(decoded) ~= "table" or decoded.map ~= mapName or #stations > 0 then return end
   for _, s in ipairs(decoded.stations or {}) do
     local v = vec.toVec(s)
@@ -574,7 +718,7 @@ function cnrTick()
   if not current:isActive() then return end
   local cars = {}
   for pid in pairs(current.players) do cars[pid] = carFor(pid) end
-  applyEffects(current:tick(now(), cars, stations))
+  applyEffects(current:tick(now(), cars, roundStations()))
 end
 
 FS.CreateDirectory(stationsDir)
@@ -582,6 +726,7 @@ loadConfig()
 loadLeaderboard()
 loadColors()
 mapName = (tostring(MP.Get(MP.Settings.Map) or ""):match("levels/([^/]+)/")) or "unknown"
+geoMode = mapName == "beamng_earth"
 loadStations()
 current = round.new(cfg)
 
@@ -596,9 +741,11 @@ MP.RegisterEvent("cnr_vehiclePicked", "cnrOnVehiclePicked")
 MP.RegisterEvent("cnr_stations", "cnrOnStations")
 MP.RegisterEvent("cnr_myVehicle", "cnrOnMyVehicle")
 MP.RegisterEvent("cnr_aiVehicles", "cnrOnAiVehicles")
+MP.RegisterEvent("cnr_geo", "cnrOnGeo")
 MP.RegisterEvent("cnr_tick", "cnrTick")
 MP.CancelEventTimer("cnr_tick")
 MP.CreateEventTimer("cnr_tick", 250)
 
 send(-1, "cnr_roundEnd", { reason = "cancelled" })
+send(-1, "cnr_mode", { geo = geoMode })
 log("Cops and Robbers loaded on " .. mapName .. " (" .. pluginDir .. ")")

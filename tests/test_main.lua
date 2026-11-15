@@ -88,7 +88,7 @@ local function boot(opts)
 
   _G.MP = {
     Settings = { Map = 4 },
-    Get = function() return "/levels/west_coast_usa/info.json" end,
+    Get = function() return opts.map or "/levels/west_coast_usa/info.json" end,
     CreateTimer = function()
       return { GetCurrent = function() return env.clock end, Start = function() end }
     end,
@@ -470,5 +470,119 @@ test("pick request carries the excluded models", function()
   local env = boot()
   env.call("onChatMessage", 2, "Bob", "/cnr start rein")
   assertEq(env.lastSent("cnr_pickVehicle").data:find("citybus", 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+local EARTH = "/levels/beamng_earth/info.json"
+local LAT, LON = 52.0, 5.0
+local M_PER_DEG = 111250
+
+local function geoCar(northMeters, kmh, id)
+  local c = string.format('{"lat":%.9f,"lon":%.9f,"h":0,"ve":0,"vn":%.4f,"vu":0', LAT + northMeters / M_PER_DEG, LON, (kmh or 0) / 3.6)
+  if id then c = c .. string.format(',"id":%d', id) end
+  return c .. "}"
+end
+
+local function report(env, pid, ...)
+  env.call("cnr_geo", pid, '{"cars":[' .. table.concat({ ... }, ",") .. ']}')
+end
+
+test("earth mode is announced on load and join", function()
+  local env = boot({ map = EARTH })
+  local m = env.lastSent("cnr_mode")
+  assertEq(m.pid, -1); assertEq(m.data:find('"geo":true', 1, true) ~= nil, true)
+  env.sent = {}
+  env.call("onPlayerJoin", 2)
+  assertEq(env.lastSent("cnr_mode").pid, 2)
+  env.cleanup()
+  local wc = boot()
+  assertEq(wc.lastSent("cnr_mode").data:find('"geo":false', 1, true) ~= nil, true)
+  wc.cleanup()
+end)
+
+test("earth catch uses geo reports, not raw positions", function()
+  local env = boot({ map = EARTH })
+  env.positions[1], env.positions[2] = 0, 5000
+  env.call("onChatMessage", 2, "Bob", "/cnr start rein")
+  report(env, 1, geoCar(0)); report(env, 2, geoCar(5))
+  env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  local setup
+  for _, m in ipairs(env.sent) do if m.ev == "cnr_roundSetup" and m.pid == 2 then setup = m.data end end
+  assertEq(setup:find('"geo":true', 1, true) ~= nil, true)
+  assertEq(setup:find('"runnerGeo"', 1, true) ~= nil, true)
+  env.go()
+  for _ = 1, 90 do
+    env.clock = env.clock + 0.25
+    report(env, 1, geoCar(0)); report(env, 2, geoCar(5))
+    env.call("cnr_tick")
+  end
+  assertEq(env.chatHas("Runner caught by Bob!"), true)
+  env.cleanup()
+end)
+
+test("stale geo reports do not count", function()
+  local env = boot({ map = EARTH })
+  env.call("onChatMessage", 2, "Bob", "/cnr start rein")
+  report(env, 1, geoCar(0)); report(env, 2, geoCar(5))
+  env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  env.go()
+  for _ = 1, 90 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  assertEq(env.chatHas("Runner caught"), false)
+  env.cleanup()
+end)
+
+test("earth stations merge and dedupe", function()
+  local env = boot({ map = EARTH })
+  local function st(north, name) return string.format('{"lat":%.9f,"lon":%.9f,"name":"%s"}', LAT + north / M_PER_DEG, LON, name) end
+  env.call("cnr_stations", 1, '{"map":"beamng_earth","geo":true,"stations":[' .. st(0, "Shell") .. "," .. st(2000, "BP") .. ']}')
+  env.call("cnr_stations", 2, '{"map":"beamng_earth","geo":true,"stations":[' .. st(20, "Shell") .. "," .. st(4000, "Esso") .. ']}')
+  local saved = assert(io.open(env.dir .. "data/stations/beamng_earth.json")):read("*a")
+  local n = 0
+  for _ in saved:gmatch('"lat"') do n = n + 1 end
+  assertEq(n, 3)
+  env.cleanup()
+end)
+
+test("earth gas station reset uses geo positions", function()
+  local env = boot({ map = EARTH })
+  env.call("cnr_stations", 1, string.format('{"map":"beamng_earth","geo":true,"stations":[{"lat":%.9f,"lon":%.9f}]}', LAT + 400 / M_PER_DEG, LON))
+  env.call("onChatMessage", 2, "Bob", "/cnr start rein")
+  report(env, 1, geoCar(0)); report(env, 2, geoCar(900))
+  env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  env.go()
+  for _ = 1, 44 do env.clock = env.clock + 0.25; report(env, 1, geoCar(0)); report(env, 2, geoCar(900)); env.call("cnr_tick") end
+  env.sent = {}
+  env.clock = env.clock + 0.25; report(env, 1, geoCar(400)); report(env, 2, geoCar(900)); env.call("cnr_tick")
+  local st
+  for _, m in ipairs(env.sent) do if m.ev == "cnr_state" and m.pid == 1 then st = m.data end end
+  assertEq(st:find("gas station", 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("earth AI cars are reported by the test issuer", function()
+  local env = boot({ map = EARTH, vehicles = { [1] = { [0] = "x" } } })
+  env.call("onChatMessage", 1, "Reinder", "/cnr test runner")
+  report(env, 1, geoCar(0))
+  env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  env.go()
+  for _ = 1, 90 do
+    env.clock = env.clock + 0.25
+    report(env, 1, geoCar(0), geoCar(5, 0, -10), geoCar(900, 0, -11))
+    env.call("cnr_tick")
+  end
+  assertEq(env.chatHas("Test round: ReinderN caught") or env.chatHas("Test round: Reinder caught"), true)
+  env.cleanup()
+end)
+
+test("earth last seen carries lat/lon", function()
+  local env = boot({ map = EARTH, config = '{"lastSeenIntervalSeconds": 5}' })
+  env.call("onChatMessage", 2, "Bob", "/cnr start rein")
+  report(env, 1, geoCar(0)); report(env, 2, geoCar(900))
+  env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  env.go()
+  for _ = 1, 70 do env.clock = env.clock + 0.25; report(env, 1, geoCar(0, 60)); report(env, 2, geoCar(900, 60)); env.call("cnr_tick") end
+  local seen = env.lastSent("cnr_lastSeen")
+  assertEq(seen.pid, 2)
+  assertEq(seen.data:find('"lat"', 1, true) ~= nil, true)
   env.cleanup()
 end)
