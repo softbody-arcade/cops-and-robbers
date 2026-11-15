@@ -53,6 +53,12 @@ Players install nothing; BeamMP downloads the client mod on join. Each player sh
 | `explodeOnCatch` | false | Runner's car explodes when caught |
 | `includeModVehicles` | false | Also pick mod vehicles |
 
+## BeamNG.Earth
+
+On `beamng_earth` the mod switches to geo mode automatically: positions are exchanged as latitude/longitude through
+BeamNG.Earth's mod API (each player has their own coordinate origin there), and real gas stations near players are
+looked up and remembered by the server as they drive. Players need a BeamNG.Earth version with API v1.
+
 ## Development
 
 `make test` runs the rule and wiring tests with stock Lua. `make install-local` deploys to `.testserver/`.

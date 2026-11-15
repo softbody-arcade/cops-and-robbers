@@ -186,3 +186,15 @@ Cancelled rounds are not recorded.
 - Polling interval and smoothing.
 - Test approach for `rules.lua` (plain `lua`/`luajit` available locally; `busted` not installed).
 - Packaging script for the client zip.
+
+## BeamNG.Earth (added 2026-11-15)
+
+BeamNG.Earth gives every client its own floating origin (rebases per player), so raw BeamMP positions from different
+players are not comparable, and its gas stations are generated at runtime (no facilities files). On map
+`beamng_earth` the server switches to geo mode and tells clients via `cnr_mode {geo}`:
+- clients report their car (and AI cars) as lat/lon/h + velocity via `cnr_geo` 4x/s using `beamngEarth_api.toGeo`,
+  skipping frames where `api.rebasing()`; the server converts to one WGS84 ENU frame and ignores reports older than 2 s;
+- positions sent to clients (cop placement, last seen, rejoin) are lat/lon, converted with `api.toGame`;
+- clients look up real gas stations with `api.places(..., {categories={'gas_station'}})` every 60 s or 1 km and the
+  server merges them (50 m dedupe) into `data/stations/beamng_earth.json` as lat/lon.
+One mod for all maps; a client on Earth without API v1 gets a warning.

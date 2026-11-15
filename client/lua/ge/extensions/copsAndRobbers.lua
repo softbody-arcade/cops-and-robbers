@@ -31,6 +31,14 @@ local roundColor
 local penaltyActive = false
 local aiCars = {}
 local statusActive = false
+local geoMode = false
+local lastGeoSent = 0
+local lastPlacesAt = -math.huge
+local lastPlacesGeo
+local GEO_SEND_INTERVAL = 0.25
+local PLACES_INTERVAL = 60
+local PLACES_MOVE_METERS = 1000
+local PLACES_RADIUS = 3000
 local chaseStart
 local lastStatusAt = 0
 local infoText
@@ -39,6 +47,28 @@ local pendingPlacement
 local suppressResetUntil = 0
 local lastPose
 local lastFreezeAssert = 0
+
+local function earthApi()
+  local api = rawget(_G, "beamngEarth_api")
+  if api and api.version and api.version() == 1 then return api end
+  return nil
+end
+
+local function geoToGame(g)
+  local api = earthApi()
+  if not api or type(g) ~= "table" or not g.lat or not g.lon then return nil end
+  local x, y, z = api.toGame(g.lat, g.lon, g.h or 0)
+  if not x then return nil end
+  return vec3(x, y, z)
+end
+
+local function gameToGeo(pos)
+  local api = earthApi()
+  if not api or not pos then return nil end
+  local lat, lon, h = api.toGeo(pos.x, pos.y, pos.z)
+  if not lat then return nil end
+  return lat, lon, h
+end
 
 local function toast(msg, ttl, category)
   ui_message(msg, ttl or 4, category or "cnr", "directions_car")
@@ -312,13 +342,14 @@ local function onRoundSetup(data)
   end
 
   local pos, rot
-  if d.resumePos then
-    local back = vec3(d.resumePos.x, d.resumePos.y, d.resumePos.z)
-    pos, rot = nearestRoad(back)
-    if not pos then pos, rot = back, nil end
+  local resume = d.resumeGeo and geoToGame(d.resumeGeo) or (d.resumePos and vec3(d.resumePos.x, d.resumePos.y, d.resumePos.z))
+  if resume then
+    pos, rot = nearestRoad(resume)
+    if not pos then pos, rot = resume, nil end
   elseif role == "cop" and not d.inPlace then
     local own = ownVehicle()
-    local center = d.runnerPos and vec3(d.runnerPos.x, d.runnerPos.y, d.runnerPos.z) or (own and own:getPosition())
+    local runner = d.runnerGeo and geoToGame(d.runnerGeo) or (d.runnerPos and vec3(d.runnerPos.x, d.runnerPos.y, d.runnerPos.z))
+    local center = runner or (own and own:getPosition())
     if center then
       pos, rot = findCopSpot(center, d.copSpawnMin or 50, d.copSpawnMax or 150, math.max(d.copIndex or 1, 1))
     end
@@ -427,8 +458,8 @@ end
 
 local function onLastSeen(data)
   local d = jsonDecode(data) or {}
-  if not d.pos then return end
-  local target = vec3(d.pos.x, d.pos.y, d.pos.z)
+  local target = d.geo and geoToGame(d.geo) or (d.pos and vec3(d.pos.x, d.pos.y, d.pos.z))
+  if not target then return end
   if core_groundMarkers then pcall(core_groundMarkers.setPath, target) end
   local veh = ownVehicle()
   if veh then
@@ -441,6 +472,63 @@ end
 local function onNearestCop(data)
   local d = jsonDecode(data) or {}
   if d.dist then infoText = string.format("Nearest cop %d m", math.floor(d.dist + 0.5)) end
+end
+
+local function onMode(data)
+  local d = jsonDecode(data) or {}
+  geoMode = d.geo == true
+  lastPlacesAt, lastPlacesGeo = -math.huge, nil
+  if geoMode and not earthApi() then
+    toast("Cops and Robbers needs a newer BeamNG.Earth (API v1) on this map", 10, "cnr_mode")
+  end
+end
+
+local function sendGeo()
+  local api = earthApi()
+  if not api or (api.rebasing and api.rebasing()) then return end
+  local cars = {}
+  local function add(obj, id)
+    local pos = obj:getPosition()
+    local lat, lon, h = gameToGeo(pos)
+    if not lat then return end
+    local v = obj:getVelocity()
+    cars[#cars + 1] = { id = id, lat = lat, lon = lon, h = h, ve = v.x, vn = v.y, vu = v.z }
+  end
+  local veh = ownVehicle()
+  if veh then add(veh, nil) end
+  for _, car in pairs(aiCars) do
+    local obj = car.gameId and getObjectByID(car.gameId)
+    if obj then add(obj, car.id) end
+  end
+  if #cars > 0 then sendServer("cnr_geo", { cars = cars }) end
+end
+
+local function geoDistance(a, b)
+  local dLat = (a.lat - b.lat) * 111320
+  local dLon = (a.lon - b.lon) * 111320 * math.cos(math.rad(a.lat))
+  return math.sqrt(dLat * dLat + dLon * dLon)
+end
+
+local function lookupStations()
+  local api = earthApi()
+  if not api or not api.has or not api.has("places") then return end
+  local veh = ownVehicle()
+  local lat, lon = gameToGeo(veh and veh:getPosition())
+  if not lat then return end
+  local here = { lat = lat, lon = lon }
+  if lastPlacesGeo and clock - lastPlacesAt < PLACES_INTERVAL and geoDistance(here, lastPlacesGeo) < PLACES_MOVE_METERS then return end
+  lastPlacesAt, lastPlacesGeo = clock, here
+  local level = getCurrentLevelIdentifier()
+  api.places(lat, lon, { radius = PLACES_RADIUS, categories = { "gas_station" } }, function(r)
+    if type(r) ~= "table" or type(r.places) ~= "table" then return end
+    local list = {}
+    for _, p in ipairs(r.places) do
+      if p.lat and p.lon and p.open ~= "permanently_closed" then
+        list[#list + 1] = { lat = p.lat, lon = p.lon, name = p.name }
+      end
+    end
+    if #list > 0 then sendServer("cnr_stations", { map = level, geo = true, stations = list }) end
+  end)
 end
 
 local function onNotice(data)
@@ -594,6 +682,13 @@ local function onUpdate(dtReal)
     end
   end
   if #report > 0 then sendServer("cnr_aiVehicles", { ai = report }) end
+  if geoMode then
+    if clock - lastGeoSent >= GEO_SEND_INTERVAL then
+      lastGeoSent = clock
+      sendGeo()
+    end
+    lookupStations()
+  end
   if statusActive and clock - lastStatusAt >= 1 then
     lastStatusAt = clock
     local parts = { formatTime(clock - chaseStart) }
@@ -641,6 +736,7 @@ local function onExtensionLoaded()
     AddEventHandler("cnr_penalty", onPenalty)
     AddEventHandler("cnr_setupAI", onSetupAI)
     AddEventHandler("cnr_notice", onNotice)
+    AddEventHandler("cnr_mode", onMode)
     AddEventHandler("cnr_lastSeen", onLastSeen)
     AddEventHandler("cnr_nearestCop", onNearestCop)
     AddEventHandler("cnr_penaltyEnd", onPenaltyEnd)
