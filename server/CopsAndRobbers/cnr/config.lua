@@ -21,11 +21,16 @@ M.DEFAULTS = {
   excludedModels = { "citybus", "us_semi", "md_series", "percheron", "rockbouncer" },
   autoNextRound = false,
   autoNextDelaySeconds = 15,
+  sightMaxMeters = 400,
+  sightGraceSeconds = 1.5,
+  sightLiveIntervalSeconds = 1,
+  sightNoRouteSeconds = 5,
+  sightNoRouteMinMeters = 50,
 }
 
 local strictlyPositive = {
   catchHoldSeconds = true, catchRadiusMeters = true, crashSpeedLossKmh = true,
-  catchMaxSpeedKmh = true, stillMaxSpeedKmh = true,
+  catchMaxSpeedKmh = true, stillMaxSpeedKmh = true, sightLiveIntervalSeconds = true,
 }
 
 local function copyList(t)
