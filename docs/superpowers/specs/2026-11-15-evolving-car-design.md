@@ -12,7 +12,7 @@ This is a friend's idea, refined with the user. Instead of a random stock config
   - Everything else runs through the control panel and the leaderboard app.
 - **Part B, the evolving car mode:**
   - A new car mode, `carMode = "evolving"`. It sits next to today's `"random"` mode, which stays the default.
-  - A new build starts from a **random** stock config or from **a chosen player's current car**.
+  - A new build starts from a **random** config or a **chosen** config. It must be one the server provides: vanilla, or a base car from a mod the server distributes. Never a player's own custom car (user: "we always start with a vanilla car, or a base modded car that came with the server. So only pc configs that are provided by the server").
   - The build is **saved** after every applied change and continues in the next session until someone resets it.
   - Round flow in evolving mode: **prep → Apply → GO → countdown → head start → chase**.
   - **Everyone sees the runner's queued change live in the HUD during prep.** The group polices the one-change rule itself (user: "police each other by making everyone able to see what is currently queued as a change").
@@ -56,7 +56,10 @@ This is a friend's idea, refined with the user. Instead of a random stock config
 - **Panel build section** (Round tab, shown when evolving is on):
   - The build's name and step, for example "Gavril D-Series · change 7".
   - **New build: random** picks a random stock config, the same way the random mode picks (excluded cars and mod settings apply).
-  - **New build: from player ▾** uses the same player list as the runner picker. It takes that player's current car (parts, tuning and model) as change 0.
+  - **New build: choose car ▾** lists every allowed config by brand and model, with a search box. It is filled by the panel user's own game:
+    - Official configs, plus configs from mods the server distributes (zips under `mods/multiplayer`), filtered like the random pick: Car and Truck types, `excludedModels`, and mod cars only with `includeModVehicles`.
+    - Never configs saved by a player and never local mods. Those may not exist on other players' games.
+    - The chosen `.pc` file becomes change 0.
   - **Reset build** needs two clicks, like Reset to default. It clears the build, and the next round in evolving mode asks for a new one: the GO/Start buttons show "Start a new build first".
 - **Starting a round in evolving mode with no build** is refused, with the panel reply "Start a new build first".
 - **The New build buttons** are disabled during an active round.
@@ -67,7 +70,7 @@ This is a friend's idea, refined with the user. Instead of a random stock config
    - "New car" (reroll) is not available in evolving mode, because the car is the build.
 2. **Prep.**
    - **Only the runner** has the parts menu, so he can make his change. Cops' parts menus stay closed so their cars can't drift from the build.
-   - **Nobody** can use the game's paint menu to change color; color is `/cnr color` only. The runner's parts menu includes a paint tab, but paint is never taken into the build: Apply ignores paint, and everyone keeps their own `/cnr color`.
+   - **Nobody** can use the game's paint menu to change color, in either mode (user: yes, everywhere); color is `/cnr color` only. The runner's parts menu includes a paint tab, but paint is never taken into the build: Apply ignores paint, and everyone keeps their own `/cnr color`.
    - **The queued change:** the runner's game compares his current car with the build about once a second. When it differs, it sends the list of changes to the server, which forwards it to all players in the round.
    - **Everyone's HUD shows the change** in place of the prep line:
      ```
@@ -120,6 +123,7 @@ This is a friend's idea, refined with the user. Instead of a random stock config
 - **The build is spawned the same way cops' light-modified cars are today:** a format-2 config table passed to `core_vehicles.replaceVehicle`.
 - **Reading the runner's setup:** the runner's game reads `core_vehicle_manager.getPlayerVehicleData().config`. It turns it into format-2 `parts` + `vars` the same way the game's own "save config" does (`core/vehicle/partmgmt.lua`, `savePartConfigFileStage2_Format2`; `partsTreeToPartsMap` if only a parts tree is present).
 - **Payload size:** a full config is a few KB of JSON, which is fine over BeamMP events. The queued-change list is small.
+- **Server-provided cars only:** because builds only start from server-provided configs, every player has the model. Missing parts can then only come from the runner's change, and the Apply check covers that.
 - **Deploying:** only when the server is empty, when the user says so. The release is **1.8.0**.
 
 ## Approaches
@@ -134,8 +138,11 @@ This is a friend's idea, refined with the user. Instead of a random stock config
 - One change per round. The group polices it by seeing the queued change; the code doesn't enforce it.
 - Only the HUD shows the queued change. The panel and leaderboard apps don't (they load less).
 - The stage order is Apply → GO → countdown.
-- A new build starts from random or from a player's car. Builds are saved and continue across sessions, and can be reset.
-- Paint only through `/cnr color`, for everyone.
+- A new build starts from a random or a chosen server-provided config (vanilla, or a base car from a server mod), never a player's custom car. Builds are saved and continue across sessions, and can be reset.
+- Paint only through `/cnr color`, for everyone and in **both** modes. In random mode this means:
+  - The parts menu is closed during prep too: prep is just waiting for GO.
+  - The prep toast and HUD prep line no longer say "Change your paint if you like". They say "set your color with /cnr color".
+  - README and FEATURES are updated to match.
 - All chat commands and key bindings are removed except color, addstation, removestation, help and version.
 
 ## My calls (confirm or correct)
