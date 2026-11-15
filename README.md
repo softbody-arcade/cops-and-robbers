@@ -54,6 +54,13 @@ for excluded cars; changes save automatically half a second after the last click
 "Reset to default" needs a second click. The ▾ button collapses the panel to a one-line status; it collapses by itself
 on GO and opens again when the round ends.
 
+## Leaderboard app
+
+"Cops and Robbers Leaderboard" (Esc > UI Apps) shows each player's best survival time, the top cops by catches,
+and per-player stats (runs, best and average, escapes, catches, assists, time hidden from cops, times they lost the
+cops), filtered by map. It refreshes after every round. The leaderboard started fresh in 1.7.0; the old file is kept
+as `data/leaderboard-1.6.json`.
+
 ## Key bindings
 
 Options > Controls > Gameplay lists the "Cops & Robbers: ..." actions (bind them to wheel buttons): Next step
@@ -82,6 +89,7 @@ on/off, Leaderboard, Practice as runner / cop. They send the same commands as ch
 | `sightNoRouteSeconds` | 5 | A cop who sees the runner within his speed × this many seconds gets no route |
 | `sightNoRouteMinMeters` | 50 | ...and always within this distance |
 | `sightGraceSeconds` | 1.5 | Sight still counts this long after a cop loses it |
+| `assistMinSightPercent` | 20 | Share of the chase a cop needs sight of the runner for an assist |
 | `roundTimeLimitSeconds` | 0 | Runner escapes after this long (0 = no limit) |
 | `excludedModels` | citybus, us_semi, md_series, percheron, rockbouncer | Never picked |
 | `explodeOnCatch` | false | Runner's car explodes when caught |

@@ -103,8 +103,23 @@ A BeamMP server plugin with a client mod that BeamMP downloads automatically. Th
 - `/cnr top all`: best runners across all maps.
 - `/cnr top <map>`: best runners on that map.
 - `/cnr top cops`: catches and fastest catch per cop.
-- **Saved per run:** runner, time, map, car, end reason (caught, called, escaped, disconnect) and catchers.
+- **Saved per run:** runner, time, map, car, end reason (caught, called, escaped, disconnect), catchers, every cop in the round with their seconds of sight, and the runner's hidden time and how often he lost the cops.
 - A cancelled round (`/cnr stop`) and a test round are never recorded.
+- **Fresh start in 1.7.0:** the leaderboard file has a new format. An older file is moved to `data/leaderboard-1.6.json` (kept, not used).
+
+## Leaderboard app
+
+- "Cops and Robbers Leaderboard" (Esc > UI Apps) can be added by anyone. It is not placed automatically, collapses with ▾, and refreshes after every round.
+- **Map filter:** this map (default), all maps, or any map that has runs.
+- **Runners:** each player's best survival time with the car (and the map when showing all maps).
+- **Cops:** catches per player, then the fastest catch.
+- **Players:** runs, best, catches and assists per player; click a player for all stats:
+  - **Runs, best and average survival, escapes** (outlasted the time limit).
+  - **Catches:** rounds credited with the catch.
+  - **Assists:** caught rounds where the cop had sight of the runner for at least `assistMinSightPercent` (20%) of the chase without being credited. Seeing him only at release doesn't count. Changing the setting re-scores past rounds.
+  - **Hidden from cops:** the share of his chases the runner spent out of every cop's sight.
+  - **Lost the cops:** how often he broke all cops' sight.
+  - Rounds played with sight off (`sightMaxMeters = 0`) show "–" for the last two.
 
 ## Test rounds against AI (only you see them)
 
@@ -221,6 +236,7 @@ Options > Controls > Gameplay contains "Cops & Robbers: ..." actions that can be
 | `sightNoRouteSeconds` | 5 | A cop who sees the runner within his speed × this many seconds gets no route |
 | `sightNoRouteMinMeters` | 50 | ...and always within this distance |
 | `sightGraceSeconds` | 1.5 | Sight still counts this long after a cop loses it |
+| `assistMinSightPercent` | 20 | Share of the chase a cop needs sight of the runner for an assist |
 | `roundTimeLimitSeconds` | 0 | Runner escapes after this long (0 = no limit) |
 | `autoNextRound` | false | Prepare the next round automatically |
 | `autoNextDelaySeconds` | 15 | Delay before the next round is prepared |
@@ -234,4 +250,4 @@ Options > Controls > Gameplay contains "Cops & Robbers: ..." actions that can be
 - **Mods panel:** the zip carries a title, description, version and icon (`mod_info`) for mod panels.
 - **Stuck controls:** `/cnr stop` always unlocks everyone, and so does a plugin restart.
 - **Bad files:** a broken `config.json` gives a warning and uses the defaults. A broken or malformed leaderboard is moved aside.
-- **Tests:** 299 automated tests cover the rules, the server wiring and the client, which runs against stubbed game functions in `tests/test_client.lua` (run with `make test`).
+- **Tests:** 313 automated tests cover the rules, the server wiring and the client, which runs against stubbed game functions in `tests/test_client.lua` (run with `make test`).

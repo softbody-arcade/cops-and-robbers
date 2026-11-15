@@ -122,6 +122,7 @@ const GROUPS = [
     { key: "sightNoRouteSeconds", label: "No route within", unit: "s", step: 1, min: 0 },
     { key: "sightNoRouteMinMeters", label: "No route at least", unit: "m", step: 10, min: 0 },
     { key: "sightGraceSeconds", label: "Sight grace", unit: "s", step: 0.5, min: 0 },
+    { key: "assistMinSightPercent", label: "Assist needs sight", unit: "%", step: 5, min: 0 },
   ] },
   { title: "Cars", items: [
     { key: "includeModVehicles", label: "Include mod cars", kind: "bool" },
