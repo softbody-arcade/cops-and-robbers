@@ -1,0 +1,23 @@
+{
+  "domElement": "<cops-and-robbers-hud></cops-and-robbers-hud>",
+  "name": "Cops and Robbers HUD",
+  "types": ["ui.apps.categories.info"],
+  "description": "Cops and Robbers status line and catch bar.",
+  "css": {
+    "left": "0",
+    "right": "0",
+    "margin": "auto",
+    "bottom": "70px",
+    "width": "520px",
+    "height": "90px",
+    "min-width": "320px",
+    "min-height": "60px"
+  },
+  "author": "ReinderN",
+  "version": "1.0",
+  "directive": "copsAndRobbersHud",
+  "vue": true,
+  "category": "Gameplay",
+  "isAuxiliary": true,
+  "interactive": "no"
+}
