@@ -747,3 +747,34 @@ test("no live updates after the runner is caught", function()
   fx = r:tick(13.1, held, {})
   assertEq(find(fx, "live"), nil)
 end)
+
+test("the record carries cops, their sight time, hidden time and lost count", function()
+  local r = chasing({lastSeenIntervalSeconds=30})
+  r:sightReport(11, 2, true)
+  for t = 11, 20 do r:tick(t, farCars(), {}) end
+  r:sightReport(20, 2, false)
+  for t = 21, 31 do r:tick(t, farCars(), {}) end
+  local fx = r:endCalled(31, 1)
+  local run = find(fx, "record").run
+  assertEq(run.copIds[1], 2); assertEq(run.copIds[2], 3); assertEq(#run.copIds, 2)
+  assertNear(run.copSight[1], 10, 1.01); assertEq(run.copSight[2], 0)
+  assertNear(run.hiddenSeconds, 10, 1.01)
+  assertEq(run.lostCount, 1)
+  assertNear(run.chaseSeconds, 20, 1e-9)
+end)
+
+test("without sight the record has no hidden time or lost count", function()
+  local r = chasing({sightMaxMeters=0})
+  for t = 12, 20 do r:tick(t, farCars(), {}) end
+  local run = find(r:endCalled(20, 1), "record").run
+  assertEq(run.hiddenSeconds, nil); assertEq(run.lostCount, nil)
+  assertEq(#run.copIds, 2)
+end)
+
+test("a cop who left before the end is not in the record", function()
+  local r = chasing()
+  for t = 12, 15 do r:tick(t, farCars(), {}) end
+  r:playerLeft(15, 3)
+  local run = find(r:endCalled(20, 1), "record").run
+  assertEq(#run.copIds, 1); assertEq(run.copIds[1], 2)
+end)

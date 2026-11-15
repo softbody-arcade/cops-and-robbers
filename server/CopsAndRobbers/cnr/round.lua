@@ -64,6 +64,10 @@ function Round:clear()
   self.sight = sight.new()
   self.inSight = false
   self.liveAt = nil
+  self.sightTickAt = nil
+  self.hiddenSeconds = 0
+  self.lostCount = 0
+  self.copSight = {}
   self.test = false
   self.lastState = {}
   self.nextCopIndex = 1
@@ -117,7 +121,17 @@ function Round:finish(now, reason)
       player = self:runnerName(), survivedSeconds = survived,
       model = self.vehicle and self.vehicle.model, config = self.vehicle and self.vehicle.config,
       releasedAt = self.releasedAt, endedAt = now, endReason = reason, catchers = catchers,
+      chaseSeconds = survived, copIds = {}, copSight = {},
+      hiddenSeconds = self.cfg.sightMaxMeters > 0 and self.hiddenSeconds or nil,
+      lostCount = self.cfg.sightMaxMeters > 0 and self.lostCount or nil,
     } }
+    local run = fx[#fx].run
+    for _, pid in ipairs(self:copPids()) do
+      if not M.isAI(pid) then
+        run.copIds[#run.copIds + 1] = pid
+        run.copSight[#run.copSight + 1] = self.copSight[pid] or 0
+      end
+    end
   end
   self:clear()
   return fx
@@ -380,6 +394,8 @@ function Round:sightTick(now, cars, runnerCar, fx)
   local cfg = self.cfg
   if cfg.sightMaxMeters <= 0 then return end
   local cops = self:copPids()
+  local dt = self.sightTickAt and math.max(0, now - self.sightTickAt) or 0
+  self.sightTickAt = now
   local nearest
   for _, pid in ipairs(cops) do
     local car = cars[pid]
@@ -387,8 +403,11 @@ function Round:sightTick(now, cars, runnerCar, fx)
       local d = vec.dist(runnerCar.pos, car.pos)
       if not nearest or d < nearest then nearest = d end
     end
+    if sight.sees(self.sight, pid, now, cfg.sightGraceSeconds) then self.copSight[pid] = (self.copSight[pid] or 0) + dt end
   end
-  if sight.any(self.sight, cops, now, cfg.sightGraceSeconds) then
+  local inSight = sight.any(self.sight, cops, now, cfg.sightGraceSeconds)
+  if not inSight then self.hiddenSeconds = self.hiddenSeconds + dt end
+  if inSight then
     if not self.inSight then
       self.inSight = true
       fx[#fx + 1] = { kind = "spotted", spotted = true }
@@ -407,6 +426,7 @@ function Round:sightTick(now, cars, runnerCar, fx)
     fx[#fx + 1] = { kind = "live", pos = runnerCar.pos, noRoute = noRoute, nearestCop = nearest }
   elseif self.inSight then
     self.inSight = false
+    self.lostCount = self.lostCount + 1
     self.liveAt = nil
     self.lastSeenAt = now
     fx[#fx + 1] = { kind = "spotted", spotted = false }
