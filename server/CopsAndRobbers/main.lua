@@ -483,7 +483,7 @@ local function applyEffects(effects)
       local autoNext = cfg.autoNextRound and e.reason ~= "cancelled" and not e.to
       send(e.to or -1, "cnr_roundEnd", {
         runnerId = e.runnerId, runnerName = e.runnerName, survivedSeconds = e.survivedSeconds,
-        reason = e.reason, explode = e.explode, catchers = e.catchers,
+        reason = e.reason, explode = e.explode, catchers = e.catchers, message = e.message,
         autoNextSeconds = autoNext and cfg.autoNextDelaySeconds or nil,
       })
       activeVid = {}

@@ -169,7 +169,7 @@ local function resultBlock(result, now)
     rows[i] = { rank = r.rank, player = r.player, time = r.time, me = r.me == true }
   end
   return {
-    title = result.title, runner = result.runner, time = result.time,
+    title = result.title, runner = result.runner, time = result.time, message = result.message,
     catchers = result.catchers, rows = rows, nextIn = remaining(result.nextAt, now),
   }
 end

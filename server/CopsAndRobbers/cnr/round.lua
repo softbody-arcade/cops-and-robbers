@@ -155,7 +155,10 @@ end
 
 function Round:cancel(now, msg)
   local fx = { { kind = "broadcast", msg = msg } }
-  for _, e in ipairs(self:finish(now, "cancelled")) do fx[#fx + 1] = e end
+  for _, e in ipairs(self:finish(now, "cancelled")) do
+    if e.kind == "roundEnd" then e.message = msg end
+    fx[#fx + 1] = e
+  end
   return fx
 end
 

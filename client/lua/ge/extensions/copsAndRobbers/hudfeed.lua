@@ -40,7 +40,6 @@ end
 function M.clearRound()
   state = hud.new()
   flash, prep, resetFlashUntil, change, applying, releaseAt = nil, nil, nil, nil, nil, nil
-  events = {}
 end
 
 function M.queued(runner, changes, canApply)
@@ -99,11 +98,14 @@ function M.showResult(d, clock)
   local cancelled = d.reason == "cancelled" or not RESULT_TITLES[d.reason]
   local catchers = (type(d.catchers) == "table" and #d.catchers > 0) and table.concat(d.catchers, ", ") or nil
   local nextAt = tonumber(d.autoNextSeconds) and (clock + tonumber(d.autoNextSeconds)) or nil
+  local title = RESULT_TITLES[d.reason] or RESULT_TITLES.cancelled
+  local message = cancelled and type(d.message) == "string" and d.message ~= "" and d.message:lower() ~= title:lower() and d.message or nil
   result = {
-    title = RESULT_TITLES[d.reason] or RESULT_TITLES.cancelled,
+    title = title,
     runner = (not cancelled and d.runnerName) and tostring(d.runnerName) or nil,
     time = not cancelled and hud.formatTime(d.survivedSeconds) or nil,
     catchers = catchers,
+    message = message,
     untilT = math.max(clock + RESULT_SECONDS, nextAt or 0),
     nextAt = nextAt,
     shownAt = clock,
@@ -148,6 +150,7 @@ function M.connect(on)
 end
 
 function M.leave()
+  events = {}
   warningKeys, warningTexts = {}, {}
   rules, lobby, color, helpOpen = nil, nil, nil, false
   appsOpen, appsCheckedAt = {}, -math.huge

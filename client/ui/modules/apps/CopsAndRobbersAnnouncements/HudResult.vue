@@ -5,6 +5,7 @@
       <template v-if="result.runner">{{ result.runner }} survived <span v-if="result.time" class="mono">{{ result.time }}</span></template>
       <template v-if="result.catchers">{{ result.runner ? " · caught by " : "Caught by " }}{{ result.catchers }}</template>
     </div>
+    <div v-else-if="result.message" class="summary">{{ result.message }}</div>
     <div v-if="rows.length" class="rows">
       <div v-for="r in rows" :key="r.rank" class="row" :class="{ me: r.me }">
         <span class="player">{{ r.rank }} · {{ r.player }}</span>

@@ -226,6 +226,21 @@ test("plugin load unlocks any client left in a round", function()
   env.cleanup()
 end)
 
+test("a vehicle pick that times out tells the host why", function()
+  local env = boot()
+  env.panel(2, "start rein")
+  env.sent = {}
+  for _ = 1, 44 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  local notice
+  for _, m in ipairs(env.sent) do
+    if m.ev == "cnr_notice" and m.data:find("Vehicle pick timed out", 1, true) then notice = m end
+  end
+  assertEq(notice ~= nil and (notice.pid == -1 or notice.pid == 2), true)
+  local e = decodeJson(env.lastSent("cnr_roundEnd").data)
+  assertEq(e.reason, "cancelled"); assertEq(e.message, "Vehicle pick timed out")
+  env.cleanup()
+end)
+
 test("non-command chat passes through", function()
   local env = boot()
   assertEq(env.call("onChatMessage", 1, "Reinder", "hello"), 0)
