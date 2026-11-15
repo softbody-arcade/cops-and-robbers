@@ -268,13 +268,13 @@ test("a live update without route shows IN SIGHT, with route the live distance",
   env.veh.pos = vec3(0, 0, 0)
   env.fire("cnr_lastSeen", { live = true, route = false, pos = { x = 0, y = 100, z = 0 } })
   env.tick(0.2)
-  assertEq(env.hud().status.info, "IN SIGHT")
+  assertEq(env.hud().status.tag, "IN SIGHT"); assertEq(env.hud().status.info, nil)
   env.fire("cnr_lastSeen", { live = true, route = true, pos = { x = 0, y = 640, z = 0 } })
   env.tick(0.2)
-  assertEq(env.hud().status.info, "Runner 640 m N · live")
+  assertEq(env.hud().status.tag, "LIVE"); assertEq(env.hud().status.info, "Runner 640 m N")
   env.fire("cnr_lastSeen", { pos = { x = 0, y = 640, z = 0 } })
   env.tick(0.2)
-  assertEq(env.hud().status.info, "Runner seen 640 m N")
+  assertEq(env.hud().status.tag, nil); assertEq(env.hud().status.info, "Runner seen 640 m N")
 end)
 
 test("the runner sees SPOTTED or HIDDEN with the nearest cop", function()
@@ -285,10 +285,10 @@ test("the runner sees SPOTTED or HIDDEN with the nearest cop", function()
   env.fire("cnr_nearestCop", { dist = 1200 })
   env.fire("cnr_spotted", { spotted = true })
   env.tick(0.2)
-  assertEq(env.hud().status.info, "SPOTTED · Nearest cop 1.2 km")
+  assertEq(env.hud().status.tag, "SPOTTED"); assertEq(env.hud().status.info, "Nearest cop 1.2 km")
   env.fire("cnr_spotted", { spotted = false })
   env.tick(0.2)
-  assertEq(env.hud().status.info, "HIDDEN · Nearest cop 1.2 km")
+  assertEq(env.hud().status.tag, "HIDDEN"); assertEq(env.hud().status.info, "Nearest cop 1.2 km")
 end)
 
 test("the leaderboard bridge forwards requests and state with car names", function()
@@ -466,4 +466,21 @@ test("starting a build reads the chosen config and sends its parts", function()
   assertEq(msg.parts.pickup_engine, "v8"); assertEq(msg.vars.gear1, 3.1); assertEq(msg.name, "Gavril Pickup")
   env.M.newBuild({ config = "vehicles/pickup/missing.pc" })
   assertEq(env.lastTrigger("CnRPanelReply").text, "That car can't start a build")
+end)
+
+test("an engine swap is sent as one change with the parts that came with it", function()
+  local env = bootClient({ jbeamParts = {
+    pickup = { slots2 = { { name = "pickup_engine", description = "Engine" } } },
+    v8 = { information = { name = "4.5L V8" }, slots2 = { { name = "pickup_intake", description = "Intake" } } },
+    v8_60 = { information = { name = "6.0L V8" }, slots2 = { { name = "pickup_intake", description = "Intake" } } },
+    intake_big = { information = { name = "Big Intake" } },
+  } })
+  env.fire("cnr_roundSetup", copy(EVOLVING_RUNNER))
+  env.tick(2)
+  env.liveParts.pickup_engine = "v8_60"
+  env.liveParts.pickup_intake = "intake_big"
+  env.tick(1.2)
+  local sent = env.lastSent("cnr_change")
+  assertEq(#sent.changes, 1)
+  assertEq(sent.changes[1].label, "Engine"); assertEq(sent.changes[1].to, "6.0L V8"); assertEq(sent.changes[1].extra, 1)
 end)

@@ -42,7 +42,9 @@ test("label and change line", function()
   local one = { { label = "Engine", from = "4.5L V8", to = "6.0L V8" } }
   assertEq(build.changeLine(7, "Bob", one), "Change 7 by Bob: Engine 4.5L V8 → 6.0L V8")
   local three = { one[1], { label = "Intake", from = "Stock", to = "Big" }, { label = "Gear 1", from = "3.1", to = "3.4" } }
-  assertEq(build.changeLine(7, "Bob", three), "Change 7 by Bob: Engine 4.5L V8 → 6.0L V8 (+2 more)")
+  assertEq(build.changeLine(7, "Bob", three), "Change 7 by Bob: Engine 4.5L V8 → 6.0L V8 and 2 more changes")
+  local swap = { { label = "Engine", from = "2.0L I4", to = "3.0L I6", extra = 12 } }
+  assertEq(build.changeLine(3, "Gizmo", swap), "Change 3 by Gizmo: Engine 2.0L I4 → 3.0L I6 (+12 parts)")
 end)
 
 test("carMode accepts random and evolving only", function()

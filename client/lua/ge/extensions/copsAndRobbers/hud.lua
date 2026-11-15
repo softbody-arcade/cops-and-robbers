@@ -117,6 +117,7 @@ function M.payload(state, now, info)
       reset = resetText(info),
       resetFlash = type(info.resetFlashUntil) == "number" and now < info.resetFlashUntil,
       info = info.infoText,
+      tag = info.infoTag,
     }
   end
   return payload

@@ -134,3 +134,13 @@ test("applying shows a banner", function()
   local p = hud.payload(hud.new(), 0, { active = true, applying = true })
   assertEq(p.banner.label, "APPLYING CHANGES")
 end)
+
+test("the status line carries a sight tag separately from the distance", function()
+  local p = hud.payload(hud.new(), 10, { active = true, role = "runner", chaseStart = 0, infoTag = "SPOTTED", infoText = "Nearest cop 120 m" })
+  assertEq(p.status.tag, "SPOTTED"); assertEq(p.status.info, "Nearest cop 120 m")
+end)
+
+test("change lines keep how many parts came with them", function()
+  local p = hud.payload(hud.new(), 0, { active = true, change = { runner = "Gizmo", changes = { { label = "Engine", from = "2.0L I4", to = "3.0L I6", extra = 12 } } } })
+  assertEq(p.change.title, "GIZMO'S CHANGE (1)"); assertEq(p.change.lines[1].extra, 12)
+end)

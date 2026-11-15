@@ -110,6 +110,38 @@ function M.partName(model, id)
   return type(info) == "table" and type(info.name) == "string" and info.name or id
 end
 
+function M.slotsOf(model, id)
+  if type(id) ~= "string" or id == "" then return nil end
+  local env = envFor(model)
+  local part = env and env.getPart(id)
+  if type(part) ~= "table" or type(part.slots2) ~= "table" then return nil end
+  local map = {}
+  for _, s in ipairs(part.slots2) do
+    if type(s) == "table" and type(s.name) == "string" then map[s.name] = type(s.description) == "string" and s.description or "" end
+  end
+  return map
+end
+
+local slotLabels = {}
+
+function M.slotLabel(model, slot, parts)
+  local key = tostring(model) .. "/" .. tostring(slot)
+  if slotLabels[key] ~= nil then return slotLabels[key] or nil end
+  local found = false
+  local function look(id)
+    local map = M.slotsOf(model, id)
+    local desc = map and map[slot]
+    if type(desc) == "string" and desc ~= "" then found = desc return true end
+  end
+  if not look(model) then
+    for _, id in pairs(type(parts) == "table" and parts or {}) do
+      if look(id) then break end
+    end
+  end
+  slotLabels[key] = found
+  return found or nil
+end
+
 function M.hasPart(model, id)
   if type(id) ~= "string" or id == "" then return true end
   local env = envFor(model)

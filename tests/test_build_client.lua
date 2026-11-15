@@ -26,3 +26,25 @@ test("slot labels drop the model prefix and read like words", function()
   assertEq(build.label("tire_R_15x7", "pickup"), "Tire R 15x7")
   assertEq(build.varLabel("$gear_1"), "Gear 1")
 end)
+
+local SLOTS = {
+  v8 = { pickup_intake = "Intake", pickup_exhaust = "Exhaust" },
+  v8_60 = { pickup_intake = "Intake", pickup_exhaust = "Exhaust" },
+  exhaust_dual = { pickup_tips = "Exhaust Tips" },
+}
+local function slotsOf(id) return SLOTS[id] end
+
+test("parts that come with a swap are grouped under it", function()
+  local changes = build.diff(
+    { pickup_engine = "v8", pickup_intake = "small", pickup_exhaust = "exhaust_single", pickup_tips = "tip", pickup_wheel_F = "steel" },
+    { pickup_engine = "v8_60", pickup_intake = "big", pickup_exhaust = "exhaust_dual", pickup_tips = "dual_tips", pickup_wheel_F = "alloy" })
+  local roots = build.group(changes, slotsOf)
+  assertEq(#roots, 2)
+  assertEq(roots[1].slot, "pickup_engine"); assertEq(roots[1].extra, 3)
+  assertEq(roots[2].slot, "pickup_wheel_F"); assertEq(roots[2].extra, 0)
+end)
+
+test("without part information every change stands on its own", function()
+  local roots = build.group(build.diff({ a = "x", b = "y" }, { a = "x2", b = "y2" }), function() return nil end)
+  assertEq(#roots, 2)
+end)

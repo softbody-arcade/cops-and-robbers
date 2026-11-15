@@ -19,12 +19,15 @@
       </div>
       <div v-if="hud.change" class="cnr-panel cnr-change">
         <div class="cnr-change-title">{{ hud.change.title }}</div>
-        <div v-for="(line, i) in (hud.change.lines || [])" :key="'c' + i" class="cnr-change-line">
-          <span class="cnr-change-label">{{ line.label }}</span>
-          <span class="cnr-muted">{{ line.from }}</span>
-          <span>→</span>
-          <span class="cnr-change-to">{{ line.to }}</span>
-        </div>
+        <template v-for="(line, i) in (hud.change.lines || [])" :key="'c' + i">
+          <div class="cnr-change-line">
+            <span class="cnr-change-label">{{ line.label }}</span>
+            <span class="cnr-muted">{{ line.from }}</span>
+            <span>→</span>
+            <span class="cnr-change-to">{{ line.to }}</span>
+          </div>
+          <div v-if="line.extra" class="cnr-change-extra">+ {{ line.extra }} {{ line.extra === 1 ? "part comes" : "parts come" }} with it</div>
+        </template>
         <div v-if="hud.change.more" class="cnr-muted">+{{ hud.change.more }} more</div>
       </div>
       <div v-else-if="hud.prep" class="cnr-panel cnr-prep">
@@ -34,10 +37,13 @@
       </div>
       <div v-for="(text, i) in (hud.events || [])" :key="'e' + i" class="cnr-panel cnr-event">{{ text }}</div>
       <div v-if="hud.status" class="cnr-panel cnr-status">
-        <span class="cnr-role" :class="hud.status.role === 'RUNNER' ? 'is-runner' : 'is-cop'">{{ hud.status.role }}</span>
-        <span class="cnr-time">{{ hud.status.time }}</span>
-        <span v-if="hud.status.reset" class="cnr-item" :class="{ 'cnr-reset-flash': hud.status.resetFlash }">{{ hud.status.reset }}</span>
-        <span v-if="hud.status.info" class="cnr-item">{{ hud.status.info }}</span>
+        <div class="cnr-status-main">
+          <span class="cnr-role" :class="hud.status.role === 'RUNNER' ? 'is-runner' : 'is-cop'">{{ hud.status.role }}</span>
+          <span class="cnr-time">{{ hud.status.time }}</span>
+          <span v-if="hud.status.tag" class="cnr-tag" :class="'tag-' + hud.status.tag.toLowerCase().replace(' ', '-')">{{ hud.status.tag }}</span>
+          <span v-if="hud.status.info" class="cnr-info">{{ hud.status.info }}</span>
+        </div>
+        <div v-if="hud.status.reset" class="cnr-status-reset" :class="{ 'cnr-reset-flash': hud.status.resetFlash, 'is-ok': hud.status.reset === 'Reset OK' }">{{ hud.status.reset }}</div>
       </div>
       <div v-if="hud.catch && hud.catch.visible" class="cnr-panel cnr-catch" :class="hud.catch.tone === 'runner' ? 'is-runner' : 'is-cop'">
         <div class="cnr-catch-label">{{ hud.catch.label }} {{ hud.catch.percent }}%</div>
@@ -154,15 +160,55 @@ events.on("CnRHud", data => {
 }
 .cnr-status {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 0.875rem;
+  gap: 0.125rem;
   padding: 0.375rem 0.875rem;
   border-radius: 0.5rem;
   background: rgba(10, 12, 18, 0.72);
   font-size: 0.9375rem;
   white-space: nowrap;
   overflow: hidden;
+}
+.cnr-status-main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  max-width: 100%;
+}
+.cnr-info {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cnr-tag {
+  padding: 0.0625rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: rgba(255, 255, 255, 0.15);
+}
+.cnr-tag.tag-spotted, .cnr-tag.tag-in-sight {
+  background: #d93025;
+}
+.cnr-tag.tag-hidden {
+  background: #2e8b57;
+}
+.cnr-tag.tag-live {
+  background: #1f6fd1;
+}
+.cnr-status-reset {
+  font-size: 0.8125rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+.cnr-status-reset.is-ok {
+  color: #9fe870;
+}
+.cnr-change-extra {
+  padding-left: 6.5rem;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
 }
 .cnr-role {
   font-weight: 700;

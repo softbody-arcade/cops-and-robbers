@@ -59,8 +59,10 @@ end
 function M.changeLine(step, by, changes)
   local first = changes and changes[1]
   local head = first and string.format("%s %s → %s", tostring(first.label), tostring(first.from), tostring(first.to)) or "no change"
-  local more = changes and #changes > 1 and string.format(" (+%d more)", #changes - 1) or ""
-  return string.format("Change %d by %s: %s%s", step, tostring(by), head, more)
+  local parts = first and tonumber(first.extra) and first.extra > 0 and string.format(" (+%d parts)", first.extra) or ""
+  local others = changes and #changes - 1 or 0
+  local more = others > 0 and string.format(" and %d more change%s", others, others == 1 and "" or "s") or ""
+  return string.format("Change %d by %s: %s%s%s", step, tostring(by), head, parts, more)
 end
 
 return M

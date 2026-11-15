@@ -173,7 +173,7 @@ function M.update(clock, info)
     local timer = info.timer and { label = BANNER_LABELS[info.timer.label] or info.timer.label, endsAt = info.timer.endsAt } or nil
     guihooks.trigger("CnRHud", hud.payload(state, clock, {
       active = info.active, role = info.role, chaseStart = info.chaseStart,
-      resetAllowed = info.resetAllowed, resetHint = info.resetHint, penalty = info.penalty, infoText = info.infoText,
+      resetAllowed = info.resetAllowed, resetHint = info.resetHint, penalty = info.penalty, infoText = info.infoText, infoTag = info.infoTag,
       timer = timer, flash = flash, prep = prep, events = events, resetFlashUntil = resetFlashUntil,
       change = change, applying = applying,
       result = result,

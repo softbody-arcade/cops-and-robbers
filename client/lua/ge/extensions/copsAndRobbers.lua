@@ -50,7 +50,7 @@ local evolving = false
 local sightMax = 0
 local sightState = sight.new()
 local lastSightCheck = 0
-local infoSuffix = ""
+local infoTag
 local spotted, nearestText
 local buildBaselineAt, buildBaseline
 local lastChangeKey, lastChanges, lastChangeCheck = "", {}, 0
@@ -91,7 +91,7 @@ local function startStatus()
   statusActive = true
   chaseStart = clock
   lastStatusAt = 0
-  infoText = nil
+  infoText, infoTag = nil, nil
 end
 
 local function onSetupAI(data)
@@ -208,8 +208,13 @@ end
 
 local function labelledChanges(setup)
   local list = {}
-  for _, c in ipairs(buildDiff.diff(buildBaseline.parts, setup.parts)) do
-    list[#list + 1] = { label = buildDiff.label(c.slot, roundModel), from = vehicles.partName(roundModel, c.from), to = vehicles.partName(roundModel, c.to) }
+  local roots = buildDiff.group(buildDiff.diff(buildBaseline.parts, setup.parts), function(id) return vehicles.slotsOf(roundModel, id) end)
+  for _, c in ipairs(roots) do
+    list[#list + 1] = {
+      label = vehicles.slotLabel(roundModel, c.slot, setup.parts) or buildDiff.label(c.slot, roundModel),
+      from = vehicles.partName(roundModel, c.from), to = vehicles.partName(roundModel, c.to),
+      extra = c.extra > 0 and c.extra or nil,
+    }
   end
   for _, c in ipairs(buildDiff.varsDiff(buildBaseline.vars, setup.vars)) do
     list[#list + 1] = { label = buildDiff.varLabel(c.name), from = tostring(c.from), to = tostring(c.to) }
@@ -287,17 +292,17 @@ end
 
 local function onLastSeen(data)
   local d = jsonDecode(data) or {}
-  infoSuffix = d.live and " · live" or ""
+  infoTag = d.live and "LIVE" or nil
   if d.live and d.route == false then
     geo.clearRoute()
-    infoText = "IN SIGHT"
+    infoTag, infoText = "IN SIGHT", nil
     return
   end
   local target = d.geo and geo.toGame(d.geo) or (d.pos and vec3(d.pos.x, d.pos.y, d.pos.z))
   if not target then return end
   if geoMode and d.geo and geo.setGpsTarget(d.geo) then
     local info = geo.gpsInfo()
-    infoText = info and (info .. infoSuffix) or infoText
+    infoText = info or infoText
     if info and not d.live then hudfeed.notify(infoText, 4, "cnr_seen") end
     return
   end
@@ -307,7 +312,7 @@ local function onLastSeen(data)
     local here = veh:getPosition()
     local meters = math.floor(here:distance(target) + 0.5)
     if d.live then
-      infoText = string.format("Runner %s %s · live", geo.formatDistance(meters), geo.compass(here, target))
+      infoText = string.format("Runner %s %s", geo.formatDistance(meters), geo.compass(here, target))
     else
       infoText = string.format("Runner seen %d m %s", meters, geo.compass(here, target))
       hudfeed.notify(infoText, 4, "cnr_seen")
@@ -316,9 +321,8 @@ local function onLastSeen(data)
 end
 
 local function runnerInfo()
-  local tag = spotted == true and "SPOTTED" or spotted == false and "HIDDEN" or nil
-  if tag and nearestText then return tag .. " · " .. nearestText end
-  return tag or nearestText
+  infoTag = spotted == true and "SPOTTED" or spotted == false and "HIDDEN" or nil
+  return nearestText
 end
 
 local function onNearestCop(data)
@@ -395,7 +399,7 @@ local function endRound()
   role = nil
   statusActive = false
   infoText = nil
-  infoSuffix = ""
+  infoTag = nil
   spotted, nearestText = nil, nil
   runnerId = nil
   evolving = false
@@ -534,8 +538,9 @@ local function updateStatusToast()
   end
   if geo.hasTarget() then
     local info = geo.gpsInfo()
-    if info then infoText = info .. infoSuffix end
+    if info then infoText = info end
   end
+  if infoTag then parts[#parts + 1] = infoTag end
   if infoText then parts[#parts + 1] = infoText end
   hudfeed.notify(table.concat(parts, "  |  "), 1.5, "cnr_status")
 end
@@ -602,7 +607,7 @@ local function onUpdate(dtReal)
   updateStatusToast()
   hudfeed.update(clock, {
     active = active, role = role, chaseStart = statusActive and chaseStart or nil,
-    resetAllowed = resetAllowed, resetHint = lastHint, penalty = penaltyActive, infoText = infoText,
+    resetAllowed = resetAllowed, resetHint = lastHint, penalty = penaltyActive, infoText = infoText, infoTag = infoTag,
     timer = timerEnd and { label = timerLabel, endsAt = timerEnd } or nil,
   })
   updateCountdownToast()
