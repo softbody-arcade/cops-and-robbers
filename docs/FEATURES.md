@@ -1,4 +1,4 @@
-# Cops and Robbers 1.5.0: features
+# Cops and Robbers 1.6.0: features
 
 A BeamMP server plugin with a client mod that BeamMP downloads automatically. The mod enforces the group's cops-and-robbers rules. It is one mod for every map, and it switches to geo mode on BeamNG.Earth by itself.
 
@@ -7,7 +7,7 @@ A BeamMP server plugin with a client mod that BeamMP downloads automatically. Th
 | Step | What happens |
 |---|---|
 | `/cnr start <runner>` | Picks a random car and config. Everyone gets the same one. Cops are placed on a road 50–150 m from the runner. Everyone is frozen. |
-| Prep | No time limit. Players may change paint only. A parts or tuning change puts the car back to the round setup. `/cnr reroll` picks a new car. |
+| Prep | No time limit. Players change paint here; the parts menu is closed once the countdown starts. Parts changes during the round are logged (with the slots that changed) but not undone yet. `/cnr reroll` picks a new car. |
 | `/cnr go` | "Runner starts in 3", then the runner is released. |
 | Head start | Cops stay frozen for 7 s and see a countdown. |
 | Chase | Cops are released and the survival clock starts. A status line shows `time \| reset status \| distance info`. |
@@ -17,6 +17,7 @@ A BeamMP server plugin with a client mod that BeamMP downloads automatically. Th
 ### Choosing the runner
 - `/cnr start <name>`: case-insensitive. A unique prefix is enough, and ambiguous names give an error.
 - `random`, `next` (whoever has run least this session), and `again` (the same runner).
+- `=<name>` picks exactly that player, for names like `next` or `random` (the control panel always sends this form).
 
 ## Rules enforced
 
@@ -73,7 +74,7 @@ A BeamMP server plugin with a client mod that BeamMP downloads automatically. Th
 
 ## Cops
 
-- **Light bar:** cops drive with the light bar on, with no siren. When the round car has no light bar, cops get the light bar parts from a police config of the same model.
+- **Emergency lights:** cops drive with their emergency lights on, with no siren. When the round car has none, the mod walks the car's actual part tree and fills every empty slot that accepts an emergency light: a light bar first, otherwise a beacon (Burnside, I-Series roof beacon, midtruck beacons). Lights are recognised by their wiring (light bar or beacon signals), so white off-road light bars on fog or high beam are never used, and parts for slots the car doesn't have are never picked. Checked against every stock vehicle config.
 - **Last seen:** every 30 s cops get the runner's last position:
   - **Normal maps:** a route line on the road and minimap, plus "Runner seen 640 m NE".
   - **BeamNG.Earth:** a destination in BeamNG.Earth's own GPS ("Runner last seen"). The status line shows the distance by road, for example "Runner 2.4 km by road NE".
@@ -126,7 +127,8 @@ A BeamMP server plugin with a client mod that BeamMP downloads automatically. Th
 
 ## HUD (UI app)
 
-- **Placement:** "Cops and Robbers HUD" is added automatically at bottom centre of the current UI layout on join. That includes BeamNG.Earth's MP layout after it switches. The app can be moved and resized, and it is removed from the layout again when leaving the server.
+- **Placement:** "Cops and Robbers HUD" is added automatically at bottom centre of the current UI layout on join. That includes BeamNG.Earth's MP layout after it switches. The app can be moved and resized, and it is removed from the layout again when leaving the server. A stock layout copy that only existed because of the HUD is reset to the original on leave.
+- **UI scale:** both apps (and the HUD's placement) follow the game's UI scale setting.
 - **Status line:** during the chase it shows `ROLE  m:ss | reset status | distance info`.
 - **Catch bar:** shown while the catch timer is running. It is red with "BEING CAUGHT" for the runner and blue with "HOLDING RUNNER" for cops, uses 1% steps, and moves smoothly between server updates.
 - **Countdowns:** "RUNNER STARTS IN 3", "COPS RELEASED IN 7" and "CRASH PENALTY 10", with a large number.
@@ -134,7 +136,7 @@ A BeamMP server plugin with a client mod that BeamMP downloads automatically. Th
 - **Prep line:** your role, the car's name, and "waiting for "/cnr go"".
 - **Reset feedback:** pressing reset when it is not allowed briefly highlights the reset part of the status line.
 - **Event line:** for example "Bob: crash penalty 10s", shown for 4 s, at most 2 at once.
-- **Result card:** shown for 10 s after a round. It contains the title, the runner and their time, who caught them, the top 3 for the map, and "Next round in N" when `/cnr auto` is on.
+- **Result card:** shown for 10 s after a round. It contains the title, the runner and their time, who caught them, the top 3 for the map, and "Next round in N" when `/cnr auto` is on (it disappears when someone turns auto off). Leaving the server clears it.
 - **Fallback:** when the app is not in the current layout, the old pop-up messages are used. Chat stays the record, and rare warnings stay pop-ups.
 - **Format:** a Vue 3 app, the newest UI system in BeamNG 0.40.
 
@@ -151,7 +153,7 @@ A BeamMP server plugin with a client mod that BeamMP downloads automatically. Th
   - Every `config.json` setting, grouped into Round, Catching, Resets, Crashes, Cops and Cars. A setting the panel doesn't know yet appears under "Other".
   - Numbers have −/+ steppers, on/off settings have switches, and excluded cars is a comma-separated text field.
   - Changes save automatically 0.5 s after the last click, all at once. Excluded cars save on Enter or when you click away. A value that would be invalid saves nothing and snaps back.
-  - The reply line confirms each save ("Saved: Head start 8 s"). Saves don't post to chat.
+  - The reply line confirms each save ("Saved: Head start 8 s"). Saves don't post to chat. A change still waiting to be saved is saved when the panel closes.
   - "Reset to default" needs a second click within 3 s.
   - Settings are locked during a round ("Stop the round first").
 - **Live:** the panel follows changes made by anyone, including chat commands, within a quarter of a second.
@@ -222,4 +224,4 @@ Options > Controls > Gameplay contains "Cops & Robbers: ..." actions that can be
 - **Mods panel:** the zip carries a title, description, version and icon (`mod_info`) for mod panels.
 - **Stuck controls:** `/cnr stop` always unlocks everyone, and so does a plugin restart.
 - **Bad files:** a broken `config.json` gives a warning and uses the defaults. A broken or malformed leaderboard is moved aside.
-- **Tests:** 217 automated tests cover the rules and the server wiring (run with `make test`).
+- **Tests:** 275 automated tests cover the rules, the server wiring and the client, which runs against stubbed game functions in `tests/test_client.lua` (run with `make test`).

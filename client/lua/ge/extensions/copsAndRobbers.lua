@@ -9,7 +9,7 @@ local ai = require("copsAndRobbers/ai")
 local geo = require("copsAndRobbers/geo")
 local hudfeed = require("copsAndRobbers/hudfeed")
 
-local CLIENT_VERSION = "1.5.0"
+local CLIENT_VERSION = "1.6.0"
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
 local LIGHTS_OFF = "electrics.set_lightbar_signal(0)"
 local SETUP_DELAY = 0.5

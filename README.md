@@ -20,7 +20,7 @@ repair in place for the runner and move cops to the nearest road.
 
 | Command | |
 |---|---|
-| `/cnr start <name\|random\|next\|again>` | Set up a round. `next` = whoever ran least this session, `again` = same runner |
+| `/cnr start <name\|random\|next\|again>` | Set up a round. `next` = whoever ran least this session, `again` = same runner, `=<name>` = exactly that player |
 | `/cnr reroll` | New random car during prep |
 | `/cnr go` | Runner countdown, then cop head start |
 | `/cnr continue` | Next step: set up a round (next runner), or start it during prep |
@@ -98,4 +98,10 @@ looked up and remembered by the server as they drive. Players need a BeamNG.Eart
 
 ## Development
 
-`make test` runs the rule and wiring tests with stock Lua. `make install-local` deploys to `.testserver/`.
+`make test` runs the rule, wiring and client tests with stock Lua (`tests/test_client.lua` loads the real GE
+extension against stubbed game functions). `make install-local` deploys to `.testserver/`, `make deploy` to the server.
+
+Client layout (`client/lua/ge/extensions/`): `copsAndRobbers.lua` holds round state, the server event handlers and the
+`onUpdate` steps; `copsAndRobbers/` has `game` (GE helpers), `inputs` (locks, reset hooks), `roads` (spawn spots),
+`vehicles` (car pick, cop lights), `lightbar` (emergency light planner), `ai` (practice cars), `geo` (BeamNG.Earth),
+`hud` (HUD model), `hudfeed` (HUD state and push) and `placement` (layout handling).
