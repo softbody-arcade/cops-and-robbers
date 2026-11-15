@@ -1200,13 +1200,16 @@ test("the panel can reload config.json, but not during a round", function()
 end)
 
 test("no player-facing text tells people to type a removed command", function()
-  local files = { "server/CopsAndRobbers/main.lua", "server/CopsAndRobbers/cnr/round.lua", "server/CopsAndRobbers/cnr/commands.lua",
-    "client/lua/ge/extensions/copsAndRobbers.lua", "client/ui/modules/apps/CopsAndRobbersHud/app.vue" }
+  local files = { "client/ui/modules/apps/CopsAndRobbersHud/app.vue", "client/mod_info/CopsAndRobbers/info.json" }
+  local list = io.popen("find server client/lua -name '*.lua'")
+  for f in list:lines() do files[#files + 1] = f end
+  list:close()
+  local exact = { '"/cnr go"', '"/cnr start', '"/cnr auto', '"/cnr stop"', '"/cnr test', '"/cnr set', '"/cnr top', '"/cnr continue', '"/cnr reload', '"/cnr config' }
+  local anywhere = { "/cnr color", "/cnr addstation", "/cnr removestation", "/cnr help", "/cnr version" }
   for _, f in ipairs(files) do
     local text = assert(io.open(f)):read("*a")
-    for _, removed in ipairs({ '"/cnr go"', '"/cnr start', '"/cnr auto', '"/cnr stop"', '"/cnr test', '"/cnr set', '"/cnr top', '"/cnr continue', '"/cnr reload', '"/cnr config', '"/cnr color', '/cnr addstation', '/cnr removestation', '/cnr help', '/cnr version' }) do
-      assertEq(text:find(removed, 1, true), nil, f .. " " .. removed)
-    end
+    for _, removed in ipairs(exact) do assertEq(text:find(removed, 1, true), nil, f .. " " .. removed) end
+    for _, removed in ipairs(anywhere) do assertEq(text:find(removed, 1, true), nil, f .. " " .. removed) end
   end
 end)
 

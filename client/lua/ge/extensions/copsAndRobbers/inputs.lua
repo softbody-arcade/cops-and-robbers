@@ -29,7 +29,7 @@ local PART_EDITS = {
   "resetConfig", "reset", "loadLocal", "setConfigVars",
 }
 local PAINT_EDITS = { { "core_vehicle_partmgmt", "setConfigPaints" }, { "core_vehicle_colors", "setVehicleColor" }, { "core_vehicle_colors", "setVehiclePaint" } }
-local LOCK_MESSAGE = "Parts and paint are locked during a round. Set your color with /cnr color"
+local LOCK_MESSAGE = "Parts and paint are locked during a round. Use the Colour button for your car colour"
 
 local editMode
 local wrapped = {}

@@ -362,12 +362,13 @@ test("in evolving prep only the runner gets the parts menu", function()
   assertEq(cop.actionFilter.cnr_parts, true)
 end)
 
-test("the prep message points to /cnr color for paint", function()
+test("the prep message does not mention a chat command", function()
   local env = bootClient()
   env.fire("cnr_roundSetup", copy(SETUP))
   local found = false
-  for _, t in ipairs(env.toasts) do if t:find("Set your color with /cnr color", 1, true) then found = true end end
+  for _, t in ipairs(env.toasts) do if t:find("Waiting for GO", 1, true) then found = true end end
   assertEq(found, true)
+  for _, t in ipairs(env.toasts) do assertEq(t:find("/cnr", 1, true), nil, t) end
 end)
 
 local EVOLVING_RUNNER = { role = "runner", runnerId = 1, model = "pickup", phase = "prep", evolving = true,
@@ -569,7 +570,7 @@ test("during a round no menu can change a cop's parts or paint", function()
   core_vehicle_colors.setVehiclePaint({})
   assertEq(#env.edits, 0)
   local warned = false
-  for _, t in ipairs(env.toasts) do if t:find("locked", 1, true) then warned = true end end
+  for _, t in ipairs(env.toasts) do if t:find("Use the Colour button for your car colour", 1, true) then warned = true end end
   assertEq(warned, true)
   env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 30, runnerId = 2 })
   core_vehicle_partmgmt.setNewParts({})

@@ -172,7 +172,7 @@ local function onRoundSetup(data)
       waiting = role == "runner" and "make your change, then Apply" or "waiting for the runner's change"
     end
     hudfeed.prep(role, game.carName(d.model), waiting)
-    hudfeed.notify(string.format("You are the %s! Set your color with /cnr color, waiting for GO", role == "runner" and "runner" or "cop"), 8, "cnr_go")
+    hudfeed.notify(string.format("You are the %s! Waiting for GO", role == "runner" and "runner" or "cop"), 8, "cnr_go")
     timerEnd = nil
   elseif phase == "countdown" then
     startTimer(tonumber(d.countdownRemaining), "Runner starts in")
