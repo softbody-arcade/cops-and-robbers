@@ -641,3 +641,12 @@ test("catch progress reported at 1% precision", function()
   local fx = r:tick(12.5, stillCars(), {})
   assertNear(find(fx, "state", 2).catchProgress, 0.21, 1e-9)
 end)
+
+test("catch progress is floored, never reported as 1 before the catch", function()
+  local r = running()
+  local fx
+  for i = 1, 27 do fx = r:tick(11 + i * 0.25, stillCars(), {}) end
+  fx = r:tick(17.99, stillCars(), {})
+  assertEq(find(fx, "roundEnd"), nil)
+  assertNear(find(fx, "state", 2).catchProgress, 0.99, 1e-9)
+end)

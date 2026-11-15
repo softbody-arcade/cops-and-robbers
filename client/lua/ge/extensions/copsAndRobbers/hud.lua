@@ -24,8 +24,10 @@ function M.catchAt(state, now)
   local value = last.p
   local prev = s[#s - 1]
   if prev and last.t > prev.t then
-    local rate = (last.p - prev.p) / (last.t - prev.t)
-    value = last.p + rate * math.min(math.max(now - last.t, 0), EXTRAPOLATE_MAX)
+    local step = last.p - prev.p
+    local delta = step / (last.t - prev.t) * math.min(math.max(now - last.t, 0), EXTRAPOLATE_MAX)
+    if math.abs(delta) > math.abs(step) then delta = step end
+    value = last.p + delta
   end
   return math.max(0, math.min(1, value))
 end
@@ -44,11 +46,13 @@ function M.payload(state, now, info)
     visible = info.active == true,
     catch = {
       visible = p > 0,
-      percent = math.floor(p * 100),
+      percent = math.floor(p * 100 + 1e-9),
       label = isRunner and "BEING CAUGHT" or "HOLDING RUNNER",
       tone = isRunner and "runner" or "cop",
     },
   }
+  local last = state.samples[#state.samples]
+  if payload.catch.percent >= 100 and not (last and last.p >= 1) then payload.catch.percent = 99 end
   if info.chaseStart then
     payload.status = {
       role = isRunner and "RUNNER" or "COP",

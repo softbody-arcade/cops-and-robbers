@@ -36,10 +36,6 @@ local function sortedPids(players)
   return pids
 end
 
-local function roundTo(v, step)
-  return math.floor(v / step + 0.5) * step
-end
-
 function M.new(cfg)
   local r = setmetatable({ cfg = cfg }, Round)
   r:clear()
@@ -284,7 +280,7 @@ function Round:tick(now, cars, stations)
       local role = pid == self.runnerId and "runner" or "cop"
       local beingCaught = role == "runner" and progress > 0
       local allowed, hint = tracker:update(now, cars[pid], { role = role, runnerPos = runnerPos, stations = stations, beingCaught = beingCaught })
-      local p = roundTo(progress, 0.01)
+      local p = math.floor(progress * 100 + 1e-9) / 100
       local last = self.lastState[pid]
       if not last or last.resetAllowed ~= allowed or last.resetHint ~= hint or last.catchProgress ~= p then
         local e = { kind = "state", pid = pid, resetAllowed = allowed, resetHint = hint, catchProgress = p }
