@@ -24,6 +24,7 @@ function M.isAI(id)
 end
 local SETUP_GRACE_SECONDS = 5
 local RELOCATE_GRACE_SECONDS = 3
+local MAX_TIMELINE = 50
 local TELEPORT_BASE_METERS = 60
 local TELEPORT_MAX_SPEED = 100
 local TELEPORT_ANNOUNCE_GAP = 5
@@ -76,6 +77,7 @@ function Round:clear()
   self.sightTickAt = nil
   self.hiddenSeconds = 0
   self.lostCount = 0
+  self.timeline = {}
   self.copSight = {}
   self.test = false
   self.lastState = {}
@@ -113,6 +115,13 @@ function Round:setupFor(now, pid)
   return e
 end
 
+function Round:note(now, kind, name, seconds)
+  if (self.state ~= "headstart" and self.state ~= "running") or #self.timeline >= MAX_TIMELINE then return end
+  local t = 0
+  if self.releasedAt then t = math.max(0, math.floor((now - self.releasedAt) * 10 + 0.5) / 10) end
+  self.timeline[#self.timeline + 1] = { t = t, kind = kind, name = name, seconds = seconds }
+end
+
 function Round:finish(now, reason)
   local fx = {}
   local survived = self.releasedAt and (now - self.releasedAt) or 0
@@ -130,6 +139,7 @@ function Round:finish(now, reason)
       chaseSeconds = survived, copIds = {}, copSight = {},
       hiddenSeconds = self.cfg.sightMaxMeters > 0 and self.hiddenSeconds or nil,
       lostCount = self.cfg.sightMaxMeters > 0 and self.lostCount or nil,
+      timeline = self.timeline,
       mode = self.evolving and "evolving" or "random", buildStep = self.buildStep, buildName = self.buildName,
     } }
     local run = fx[#fx].run
@@ -329,6 +339,7 @@ function Round:tick(now, cars, stations)
           self.penalties[pid] = now + seconds
           if self.resetTrackers[pid] then self.resetTrackers[pid]:block(now + seconds) end
           fx[#fx + 1] = { kind = "penalty", pid = pid, seconds = seconds, name = self.players[pid] }
+          self:note(now, "penalty", self.players[pid], seconds)
         end
       end
     end
@@ -377,6 +388,7 @@ function Round:tick(now, cars, stations)
         if not self.teleportAnnounced[pid] or now - self.teleportAnnounced[pid] >= TELEPORT_ANNOUNCE_GAP then
           self.teleportAnnounced[pid] = now
           fx[#fx + 1] = { kind = "broadcast", msg = string.format("%s teleported", self.players[pid]), tone = "warn" }
+          self:note(now, "teleport", self.players[pid])
         end
       end
     end
@@ -488,6 +500,7 @@ function Round:sightTick(now, cars, runnerCar, fx)
   elseif self.inSight then
     self.inSight = false
     self.lostCount = self.lostCount + 1
+    self:note(now, "lost", self:runnerName())
     self.liveAt = nil
     self.lastSeenAt = now
     fx[#fx + 1] = { kind = "spotted", spotted = false }
@@ -527,6 +540,7 @@ function Round:vehicleReset(now, pid)
     if self.crashDetectors[pid] then self.crashDetectors[pid]:reset() end
     return {}
   end
+  self:note(now, "illegalReset", self.players[pid])
   return { { kind = "broadcast", msg = string.format("%s reset illegally", self.players[pid] or tostring(pid)), tone = "warn" } }
 end
 

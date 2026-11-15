@@ -917,6 +917,7 @@ local function checkParts(pid, decoded)
       entry.announced = true
       local msg = string.format("⚠ %s changed parts during the round: %s", MP.GetPlayerName(pid) or tostring(pid), tables.diffKeys(entry.parts, parts, 5))
       log(msg)
+      current:note(now(), "partsChanged", MP.GetPlayerName(pid) or tostring(pid))
       if current.test then notify(current.issuerId, msg, "warn") else broadcast(msg, "warn") end
     end
     entry.parts = parts

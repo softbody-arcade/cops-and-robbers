@@ -1762,3 +1762,17 @@ test("a lobby change still goes out when the panel push errors", function()
   assertEq(env.lastSent("cnr_lobby").data:find('"online":1', 1, true) ~= nil, true)
   env.cleanup()
 end)
+
+test("a parts change is noted and saved", function()
+  local env = boot()
+  env.startRound(); env.go()
+  placed(env)
+  env.call("onVehicleEdited", 1, 0, BASE_EDIT)
+  for _ = 1, 40 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.call("onVehicleEdited", 1, 0, TUNED_EDIT)
+  for _ = 1, 4 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.panel(1, "end")
+  local text = readFileAt(env.dir .. "data/leaderboard.json")
+  assertEq(text:find("partsChanged", 1, true) ~= nil, true)
+  env.cleanup()
+end)

@@ -1014,3 +1014,61 @@ test("a sight report from a cop far beyond sight range doesn't count", function(
   r:sightReport(12, 3, true)
   assertEq(find(r:tick(12, {[1]=kmh(0, 50), [2]=kmh(300, 50), [3]=kmh(900, 50)}, {}), "live"), nil)
 end)
+
+test("an illegal reset is noted", function()
+  local r = running()
+  r:vehicleReset(15.04, 1)
+  local n = r.timeline[1]
+  assertEq(n.kind, "illegalReset"); assertEq(n.name, "Reinder"); assertEq(n.t, 4)
+  assertEq(n.seconds, nil)
+end)
+
+test("a crash penalty is noted with its seconds", function()
+  local r = running()
+  r:tick(11.25, {[1]=kmh(0, 80), [2]=kmh(200, 120), [3]=kmh(500, 0)}, {})
+  r:tick(11.5, {[1]=kmh(0, 80), [2]=kmh(200, 10), [3]=kmh(500, 0)}, {})
+  local n
+  for _, e in ipairs(r.timeline) do if e.kind == "penalty" then n = e end end
+  assertEq(n.kind, "penalty"); assertEq(n.name, "Bob"); assertEq(n.seconds, 10); assertEq(n.t, 0.5)
+end)
+
+test("losing the cops is noted", function()
+  local r = chasing({lastSeenIntervalSeconds=30})
+  r:sightReport(11, 2, true)
+  for t = 11, 20 do r:tick(t, farCars(), {}) end
+  r:sightReport(20, 2, false)
+  for t = 21, 31 do r:tick(t, farCars(), {}) end
+  local lost
+  for _, n in ipairs(r.timeline) do if n.kind == "lost" then lost = n end end
+  assertEq(lost ~= nil, true)
+  assertEq(lost.name, "Reinder")
+end)
+
+test("a teleport is noted", function()
+  local r = running()
+  r:tick(11.25, {[1]=kmh(0, 50), [2]=kmh(10, 50), [3]=kmh(500, 0)}, {})
+  r:tick(11.5, {[1]=kmh(0, 50), [2]=kmh(900, 50), [3]=kmh(500, 0)}, {})
+  local n = r.timeline[1]
+  assertEq(n.kind, "teleport"); assertEq(n.name, "Bob")
+end)
+
+test("the timeline stops at 50", function()
+  local r = running()
+  for i = 1, 60 do r:note(11 + i, "partsChanged", "Bob") end
+  assertEq(#r.timeline, 50)
+  local idle = round.new((config.merge(nil)))
+  idle:note(1, "partsChanged", "Bob")
+  assertEq(#idle.timeline, 0)
+end)
+
+test("the timeline is saved with the run", function()
+  local r = running()
+  r:note(15, "partsChanged", "Bob")
+  r:vehicleReset(16, 1)
+  local run = find(r:endCalled(20, 1), "record").run
+  assertEq(#run.timeline, 2)
+  assertEq(run.timeline[1].kind, "partsChanged"); assertEq(run.timeline[1].t, 4)
+  assertEq(run.timeline[2].kind, "illegalReset")
+  local quiet = find(running():endCalled(20, 1), "record").run
+  assertEq(#quiet.timeline, 0)
+end)
