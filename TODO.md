@@ -8,3 +8,4 @@
 - [ ] Night and weather rounds: the server sets the same time of day and weather for everyone per round (a panel switch)
 
 ## Issues
+- [ ] Cop start spots are picked by straight-line distance from the runner (50-150 m), not by how far it is to drive there. A mountain road above the runner, the other side of a hairpin, or a road across a river or divided highway counts as close even when driving there takes much longer, and switchbacks make it worse. Pick spots by driving distance along the road network instead (the same goes for moving AI cops back near the runner)
