@@ -1,6 +1,7 @@
 local M = {}
 
 local hud = require("copsAndRobbers/hud")
+local lightbar = require("copsAndRobbers/lightbar")
 
 local CLIENT_VERSION = "1.3.0"
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
@@ -379,15 +380,38 @@ local function lightbarParts(model)
   return best and best.parts
 end
 
+local function jbeamLightbarParts(model)
+  local okIo, jbeamIO = pcall(require, "jbeam/io")
+  if not okIo or type(jbeamIO) ~= "table" then return nil end
+  local okCtx, ioCtx = pcall(jbeamIO.startLoading, { "/vehicles/" .. model .. "/" })
+  if not okCtx or type(ioCtx) ~= "table" then return nil end
+  local okParts, available = pcall(jbeamIO.getAvailableParts, ioCtx)
+  if not okParts or type(available) ~= "table" then return nil end
+  local candidates = {}
+  for name in pairs(available) do
+    if name:lower():find("lightbar", 1, true) then
+      local okPart, part = pcall(jbeamIO.getPart, ioCtx, name)
+      if okPart and type(part) == "table" then
+        candidates[#candidates + 1] = { name = name, slots = part.slotType or part.slotTypes }
+      end
+    end
+  end
+  return lightbar.choose(candidates)
+end
+
 local function copConfig(model, configPath)
   if type(configPath) ~= "string" then return configPath end
   local ok, base = pcall(jsonReadFile, "/" .. configPath:gsub("^/", ""))
   if not ok or type(base) ~= "table" or type(base.parts) ~= "table" or base.format == 4 or hasLightbar(base.parts) then return configPath end
-  local extra = lightbarParts(model)
-  if not extra then return configPath end
   local cfg = deepcopy(base)
-  for slot, part in pairs(extra) do cfg.parts[slot] = part end
-  return cfg
+  local extra = lightbarParts(model)
+  if extra then
+    for slot, part in pairs(extra) do cfg.parts[slot] = part end
+    return cfg
+  end
+  local chosen = jbeamLightbarParts(model)
+  if chosen and lightbar.apply(cfg.parts, chosen) then return cfg end
+  return configPath
 end
 
 local function placeVehicle(model, config, pos, rot, color)
