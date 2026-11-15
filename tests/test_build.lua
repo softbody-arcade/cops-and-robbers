@@ -63,3 +63,16 @@ test("carMode accepts random and evolving only", function()
   assertEq(config.setValue({}, "carMode", "evolving").carMode, "evolving")
   assertEq(config.setValue({}, "carMode", "nope"), nil)
 end)
+
+test("lastChange summarises the newest change", function()
+  local b = sample()
+  assertEq(build.lastChange(b), nil)
+  local one = { { label = "Engine", from = "4.5L V8", to = "6.0L V8" } }
+  b = build.apply(b, { parts = { pickup_engine = "a" }, vars = {} }, one, "Bob", 200)
+  local last = build.lastChange(b)
+  assertEq(last.step, 1); assertEq(last.by, "Bob"); assertEq(last.text, "Engine 4.5L V8 → 6.0L V8")
+  local three = { one[1], { label = "Intake", from = "Stock", to = "Big" }, { label = "Gear 1", from = "3.1", to = "3.4" } }
+  b = build.apply(b, { parts = { pickup_engine = "b" }, vars = {} }, three, "Ann", 300)
+  last = build.lastChange(b)
+  assertEq(last.step, 2); assertEq(last.by, "Ann"); assertEq(last.text, "Engine 4.5L V8 → 6.0L V8 and 2 more")
+end)

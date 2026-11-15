@@ -32,9 +32,9 @@ test("snapshot sorts players, floors elapsed and copies lists", function()
   local cfg = { excludedModels = { "citybus" }, autoNextRound = true, headStartSeconds = 7 }
   local snap = panel.snapshot({
     version = "1.5.0", map = "west_coast_usa", phase = "running", runner = "Ann", test = false,
-    elapsed = 12.9, players = { [2] = "bob", [1] = "Ann" }, cfg = cfg, defaults = { excludedModels = { "x" } },
+    elapsed = 12.9, players = { { name = "bob", runs = 0 }, { name = "Ann", runs = 1 } }, cfg = cfg, defaults = { excludedModels = { "x" } },
   })
-  assertEq(snap.players[1], "Ann"); assertEq(snap.players[2], "bob"); assertEq(#snap.players, 2)
+  assertEq(snap.players[1].name, "Ann"); assertEq(snap.players[2].name, "bob"); assertEq(#snap.players, 2)
   assertEq(snap.elapsed, 12)
   snap.settings.excludedModels[1] = "changed"
   assertEq(cfg.excludedModels[1], "citybus")
@@ -112,4 +112,27 @@ test("applyValues accepts list entries that are strings or numbers only", functi
   u, err = panel.applyValues({}, { excludedModels = 5 })
   assertEq(u, nil); assertEq(err:find("excludedModels", 1, true) ~= nil, true)
   assertEq(panel.applyValues({}, { excludedModels = "citybus, us_semi" }).excludedModels[2], "us_semi")
+end)
+
+test("playerRows sorts case-insensitively and flags next and last", function()
+  local rows = panel.playerRows({
+    { name = "bob", runs = 2 }, { name = "Ann", runs = 0, role = "runner", state = "ready" }, { name = "Cy", runs = 1 },
+  }, "Ann", "bob")
+  assertEq(#rows, 3)
+  assertEq(rows[1].name, "Ann"); assertEq(rows[2].name, "bob"); assertEq(rows[3].name, "Cy")
+  assertEq(rows[1].next, true); assertEq(rows[1].last, false); assertEq(rows[1].role, "runner"); assertEq(rows[1].state, "ready")
+  assertEq(rows[2].next, false); assertEq(rows[2].last, true); assertEq(rows[2].runs, 2)
+  assertEq(rows[3].role, nil)
+end)
+
+test("goBlocked says why GO waits", function()
+  assertEq(panel.goBlocked("prep", true, "Bob", 0), "Waiting for Bob to apply the change")
+  assertEq(panel.goBlocked("applying", true, "Bob", 2), "Applying the change: 2 cars still loading")
+  assertEq(panel.goBlocked("applying", true, "Bob", 1), "Applying the change: 1 cars still loading")
+  assertEq(panel.goBlocked("applying", true, "Bob", 0), "Applying the change")
+  assertEq(panel.goBlocked("applying", true, "Bob", nil), "Applying the change")
+  assertEq(panel.goBlocked("prep", false, "Bob", 0), nil)
+  assertEq(panel.goBlocked("applying", false, "Bob", 3), nil)
+  assertEq(panel.goBlocked("running", true, "Bob", 0), nil)
+  assertEq(panel.goBlocked("idle", true, nil, 0), nil)
 end)

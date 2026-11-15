@@ -57,6 +57,16 @@ function M.label(b)
   return string.format("%s · change %d", b.name or b.model, b.step or 0)
 end
 
+function M.lastChange(b)
+  local h = b and b.history and b.history[#b.history]
+  if not h then return nil end
+  local first = h.changes and h.changes[1]
+  local text = first and string.format("%s %s → %s", tostring(first.label), tostring(first.from), tostring(first.to)) or "no change"
+  local others = h.changes and #h.changes - 1 or 0
+  if others > 0 then text = text .. string.format(" and %d more", others) end
+  return { step = h.step, by = h.by, text = text }
+end
+
 function M.changeLine(step, by, changes)
   local first = changes and changes[1]
   local head = first and string.format("%s %s → %s", tostring(first.label), tostring(first.from), tostring(first.to)) or "no change"

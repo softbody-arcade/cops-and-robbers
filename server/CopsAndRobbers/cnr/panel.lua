@@ -40,10 +40,33 @@ local function copy(t)
   return c
 end
 
+function M.playerRows(entries, nextName, lastName)
+  local rows = {}
+  for _, e in ipairs(entries or {}) do
+    rows[#rows + 1] = {
+      name = e.name, runs = e.runs or 0, next = e.name == nextName, last = e.name == lastName,
+      role = e.role, state = e.state, change = e.change, missing = e.missing,
+    }
+  end
+  table.sort(rows, function(a, b)
+    local la, lb = tostring(a.name):lower(), tostring(b.name):lower()
+    if la ~= lb then return la < lb end
+    return tostring(a.name) < tostring(b.name)
+  end)
+  return rows
+end
+
+function M.goBlocked(phase, evolving, runnerName, loading)
+  if not evolving then return nil end
+  if phase == "prep" then return "Waiting for " .. (runnerName or "the runner") .. " to apply the change" end
+  if phase == "applying" then
+    if loading and loading > 0 then return string.format("Applying the change: %d cars still loading", loading) end
+    return "Applying the change"
+  end
+  return nil
+end
+
 function M.snapshot(info)
-  local names = {}
-  for _, name in pairs(info.players or {}) do names[#names + 1] = tostring(name) end
-  table.sort(names)
   local cfg = info.cfg or {}
   return {
     version = info.version,
@@ -52,13 +75,20 @@ function M.snapshot(info)
     runner = info.runner,
     test = info.test == true,
     elapsed = info.elapsed and math.floor(info.elapsed) or nil,
-    players = names,
+    players = M.playerRows(info.players, info.nextRunner, info.lastRunner),
     settings = copy(cfg),
     defaults = copy(info.defaults or {}),
     auto = cfg.autoNextRound == true,
     can = M.can(info.phase, info.test, info.evolving),
     evolving = info.evolving == true,
     build = info.build,
+    nextRunner = info.nextRunner,
+    lastRunner = info.lastRunner,
+    goBlocked = M.goBlocked(info.phase, info.evolving, info.runner, info.loading),
+    autoNext = info.autoNext,
+    lastResult = info.lastResult,
+    stationCount = info.stationCount or 0,
+    geo = info.geo == true,
   }
 end
 

@@ -33,6 +33,8 @@ local partsBaseline = {}
 local aiVid = {}
 local runCounts = {}
 local lastRunnerKey
+local missingCount = {}
+local lastResult
 local currentRunnerKey
 local autoNextAt
 local startAutoRound
@@ -470,6 +472,10 @@ local function applyEffects(effects)
       })
       activeVid = {}
       partsBaseline = {}
+      missingCount = {}
+      if not current.test and not e.to and e.reason ~= "cancelled" then
+        lastResult = { runner = e.runnerName, seconds = e.survivedSeconds, reason = e.reason }
+      end
       aiVid = {}
       if autoNext then autoNextAt = now() + cfg.autoNextDelaySeconds end
     elseif e.kind == "live" then
@@ -573,6 +579,8 @@ function handlers.start(pid, cmd)
   requestStations(pid)
   activeVid = {}
   partsBaseline = {}
+  missingCount = {}
+  lastResult = nil
   applyEffects(current:start(now(), runnerId, pid, players, cfg.carMode == "evolving" and { build = buildOpts() } or nil))
 end
 
@@ -580,6 +588,8 @@ function handlers.test(pid, cmd)
   if current:isActive() then return reply(pid, "A round is already running") end
   activeVid = {}
   partsBaseline = {}
+  missingCount = {}
+  lastResult = nil
   aiVid = {}
   local role = cmd.args[1] and cmd.args[1]:lower()
   if cfg.carMode == "evolving" and not currentBuild then return reply(pid, "Start a new build first") end
@@ -711,16 +721,64 @@ local function runCommand(pid, text)
 end
 
 
+local function nextRunnerName(players)
+  local countsByName = {}
+  for p, name in pairs(players) do countsByName[name] = runCounts[playerKey(p)] or 0 end
+  local pid = commands.matchPlayer("next", players, nil, countsByName)
+  return pid and players[pid] or nil
+end
+
+local function playerEntries(players, realRound)
+  local entries, loading = {}, 0
+  for pid, name in pairs(players) do
+    local entry = { name = name, runs = runCounts[playerKey(pid)] or 0 }
+    if realRound and current.players[pid] ~= nil then
+      local isRunner = pid == current.runnerId
+      entry.role = isRunner and "runner" or "cop"
+      local placingNow = partsBaseline[pid] and partsBaseline[pid].placing
+      if placingNow then loading = loading + 1 end
+      local changes = current.queued and current.queued.changes
+      if placingNow then
+        entry.state = "loading"
+      elseif missingCount[pid] then
+        entry.state, entry.missing = "missing", missingCount[pid]
+      elseif isRunner and current.evolving and current.state == "prep" and changes and changes[1] then
+        entry.state, entry.change = "changing", tostring(changes[1].label)
+      else
+        entry.state = "ready"
+      end
+    end
+    entries[#entries + 1] = entry
+  end
+  return entries, loading
+end
+
 local function panelState()
   local running = current.state == "running"
+  local players = MP.GetPlayers() or {}
+  local realRound = current:isActive() and not current.test
+  local entries, loading = playerEntries(players, realRound)
+  local nextName = not realRound and nextRunnerName(players) or nil
+  local lastPid = lastRunnerKey and pidForKey(lastRunnerKey)
+  local autoNext
+  if autoNextAt and not realRound then
+    autoNext = { seconds = math.max(0, math.ceil(autoNextAt - now())), runner = nextName }
+  end
+  local buildInfo
+  if currentBuild then
+    buildInfo = { label = build.label(currentBuild), step = currentBuild.step, name = currentBuild.name, lastChange = build.lastChange(currentBuild) }
+  end
   return panel.snapshot({
     version = VERSION, map = mapName, phase = current.state,
     runner = current.runnerId and current:runnerName() or nil,
     test = current.test == true,
     elapsed = running and current.releasedAt and math.max(0, now() - current.releasedAt) or nil,
-    players = MP.GetPlayers() or {}, cfg = cfg, defaults = config.DEFAULTS,
+    players = entries, cfg = cfg, defaults = config.DEFAULTS,
     evolving = current.evolving == true,
-    build = currentBuild and { label = build.label(currentBuild), step = currentBuild.step } or nil,
+    build = buildInfo,
+    nextRunner = nextName, lastRunner = lastPid and players[lastPid] or nil,
+    loading = loading, autoNext = autoNext, lastResult = lastResult,
+    stationCount = #(geoMode and geoStations or stations), geo = geoMode,
   })
 end
 
@@ -879,6 +937,7 @@ function cnrOnMissing(pid, data)
   local ok, d = pcall(Util.JsonDecode, data)
   if not ok or type(d) ~= "table" or type(d.parts) ~= "table" or #d.parts == 0 then return end
   if not current:isActive() or current.players[pid] == nil then return end
+  missingCount[pid] = #d.parts
   local names = {}
   for i, part in ipairs(d.parts) do
     if i > 6 then names[#names + 1] = string.format("+%d more", #d.parts - 6) break end
