@@ -1,4 +1,4 @@
-# Cops and Robbers 1.2.0: features
+# Cops and Robbers 1.3.0: features
 
 A BeamMP server plugin with a client mod that BeamMP downloads automatically. The mod enforces the group's cops-and-robbers rules. It is one mod for every map, and it switches to geo mode on BeamNG.Earth by itself.
 
@@ -124,6 +124,14 @@ A BeamMP server plugin with a client mod that BeamMP downloads automatically. Th
 - **Moves by BeamNG.Earth itself** (rebase, resync, setting the car down) do not count as resets or teleports. Teleporting yourself during a round does.
 - **Needs:** BeamNG.Earth with mod API v1. Road resets for cops, cop placement and the AI also need BeamNG.Earth traffic turned on.
 
+## HUD (UI app)
+
+- **Placement:** "Cops and Robbers HUD" is added automatically at bottom centre of the current UI layout on join. That includes BeamNG.Earth's MP layout after it switches. The app can be moved and resized, and it is removed from the layout again when leaving the server.
+- **Status line:** during the chase it shows `ROLE  m:ss | reset status | distance info`.
+- **Catch bar:** shown while the catch timer is running. It is red with "BEING CAUGHT" for the runner and blue with "HOLDING RUNNER" for cops, uses 1% steps, and moves smoothly between server updates.
+- **Fallback:** when the app is not in the current layout, the old pop-up messages are used.
+- **Format:** a Vue 3 app, the newest UI system in BeamNG 0.40.
+
 ## Key bindings
 
 Options > Controls > Gameplay contains "Cops & Robbers: ..." actions that can be bound to wheel buttons. Nothing is bound by default.
@@ -189,4 +197,4 @@ Options > Controls > Gameplay contains "Cops & Robbers: ..." actions that can be
 - **Mods panel:** the zip carries a title, description, version and icon (`mod_info`) for mod panels.
 - **Stuck controls:** `/cnr stop` always unlocks everyone, and so does a plugin restart.
 - **Bad files:** a broken `config.json` gives a warning and uses the defaults. A broken or malformed leaderboard is moved aside.
-- **Tests:** 187 automated tests cover the rules and the server wiring (run with `make test`).
+- **Tests:** 195 automated tests cover the rules and the server wiring (run with `make test`).

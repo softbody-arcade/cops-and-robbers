@@ -35,6 +35,13 @@ repair in place for the runner and move cops to the nearest road.
 | `/cnr version` | Show the mod version |
 | `/cnr addstation` / `/cnr removestation` | Edit this map's gas stations |
 
+## HUD
+
+On join the "Cops and Robbers HUD" app is added automatically to the player's current UI layout, at bottom centre
+(movable and resizable like any app), and removed again on leaving the server. During the chase it shows the status
+line (role, time, reset status, distance info) and a catch bar (red "BEING CAUGHT" for the runner, blue "HOLDING
+RUNNER" for cops) in 1% steps. When the app is not in the current layout, the old pop-up messages are shown instead.
+
 ## Key bindings
 
 Options > Controls > Gameplay lists the "Cops & Robbers: ..." actions (bind them to wheel buttons): Next step
