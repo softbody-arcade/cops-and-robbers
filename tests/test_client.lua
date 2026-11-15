@@ -550,3 +550,20 @@ test("cars ready clears the queued change and closes the parts menu", function()
   assertEq(env.hud().change, nil)
   assertEq(env.actionFilter.cnr_parts, true)
 end)
+
+test("only the tuning value that really changed shows, with the game's title", function()
+  local env = bootClient()
+  env.liveVars = {
+    ["$brakestrength"] = { val = 1, step = 0.01, title = "Brake Force" },
+    ["$camber_FR"] = { val = 1.002, step = 0.001, title = "Camber Front" },
+    ["$caster_FR"] = { val = 1, step = 0.01 },
+  }
+  env.fire("cnr_roundSetup", copy(EVOLVING_RUNNER))
+  env.tick(2)
+  env.liveVars["$brakestrength"].val = 0.6
+  env.liveVars["$camber_FR"].val = 1.0020000004
+  env.tick(1.2)
+  local sent = env.lastSent("cnr_change")
+  assertEq(#sent.changes, 1)
+  assertEq(sent.changes[1].label, "Brake Force"); assertEq(sent.changes[1].from, "1"); assertEq(sent.changes[1].to, "0.6")
+end)

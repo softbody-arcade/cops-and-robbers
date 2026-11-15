@@ -221,7 +221,8 @@ local function labelledChanges(setup)
     }
   end
   for _, c in ipairs(buildDiff.varsDiff(buildBaseline.vars, setup.vars, setup.steps)) do
-    list[#list + 1] = { label = buildDiff.varLabel(c.name), from = buildDiff.formatValue(c.from), to = buildDiff.formatValue(c.to) }
+    local title = setup.titles and setup.titles[c.name]
+    list[#list + 1] = { label = title or buildDiff.varLabel(c.name), from = buildDiff.formatValue(c.from), to = buildDiff.formatValue(c.to) }
   end
   return list
 end

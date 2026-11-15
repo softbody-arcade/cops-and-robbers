@@ -164,19 +164,20 @@ function M.currentSetup()
   for slot, part in pairs(parts) do
     if type(slot) == "string" and not slot:find("paint_design", 1, true) then clean[slot] = type(part) == "string" and part or "" end
   end
-  local vars, steps = {}, {}
+  local vars, steps, titles = {}, {}, {}
   local variables = type(data.vdata) == "table" and data.vdata.variables
   if type(variables) == "table" then
     for name, v in pairs(variables) do
       if type(v) == "table" and v.val ~= nil then
         vars[name] = v.val
         steps[name] = tonumber(v.step) or tonumber(v.stepDis)
+        titles[name] = type(v.title) == "string" and v.title ~= "" and v.title or nil
       end
     end
   else
     vars = deepcopy(type(cfg.vars) == "table" and cfg.vars or {})
   end
-  return { model = data.model or cfg.model, parts = clean, vars = vars, steps = steps }
+  return { model = data.model or cfg.model, parts = clean, vars = vars, steps = steps, titles = titles }
 end
 
 function M.copConfig(model, configPath)

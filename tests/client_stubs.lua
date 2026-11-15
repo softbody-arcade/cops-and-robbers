@@ -110,7 +110,7 @@ function bootClient(opts)
     local data = { model = "pickup", config = env.liveConfig }
     if env.liveVars then
       local variables = {}
-      for name, v in pairs(env.liveVars) do variables[name] = { name = name, val = v.val, step = v.step } end
+      for name, v in pairs(env.liveVars) do variables[name] = { name = name, val = v.val, step = v.step, title = v.title } end
       data.vdata = { variables = variables }
     end
     return data
