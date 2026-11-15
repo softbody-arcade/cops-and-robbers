@@ -352,3 +352,85 @@ test("the prep message points to /cnr color for paint", function()
   for _, t in ipairs(env.toasts) do if t:find("Set your color with /cnr color", 1, true) then found = true end end
   assertEq(found, true)
 end)
+
+local EVOLVING_RUNNER = { role = "runner", runnerId = 1, model = "pickup", phase = "prep", evolving = true,
+  config = { format = 2, model = "pickup", parts = { pickup_engine = "v8" }, vars = { gear1 = 3.1 } } }
+
+test("the evolving runner's change is diffed against his own build and sent once per change", function()
+  local env = bootClient()
+  env.fire("cnr_roundSetup", copy(EVOLVING_RUNNER))
+  env.tick(2)
+  local first = env.lastSent("cnr_change")
+  assertEq(first ~= nil and #first.changes, 0)
+  env.liveParts.pickup_engine = "v8_60"
+  env.liveParts.pickup_paint_design = "flames"
+  env.tick(1.2)
+  local sent = env.lastSent("cnr_change")
+  assertEq(#sent.changes, 1)
+  assertEq(sent.changes[1].label, "Engine"); assertEq(sent.changes[1].from, "4.5L V8"); assertEq(sent.changes[1].to, "6.0L V8")
+  local n = 0
+  for _, s in ipairs(env.sent) do if s.ev == "cnr_change" then n = n + 1 end end
+  env.tick(3)
+  local m = 0
+  for _, s in ipairs(env.sent) do if s.ev == "cnr_change" then m = m + 1 end end
+  assertEq(m, n)
+end)
+
+test("on apply the runner sends his exact setup without the livery", function()
+  local env = bootClient()
+  env.fire("cnr_roundSetup", copy(EVOLVING_RUNNER))
+  env.tick(2)
+  env.liveParts.pickup_engine = "v8_60"
+  env.tick(1.2)
+  env.fire("cnr_requestSetup", {})
+  local s = env.lastSent("cnr_setup")
+  assertEq(s.parts.pickup_engine, "v8_60"); assertEq(s.parts.pickup_paint_design, nil); assertEq(s.vars.gear1, 3.1)
+  assertEq(s.changes[1].label, "Engine")
+end)
+
+test("a rebuild replaces the car in place, closes the parts menu and reports missing parts", function()
+  local env = bootClient()
+  env.fire("cnr_roundSetup", copy(EVOLVING_RUNNER))
+  env.tick(2)
+  local before = #env.replaced
+  env.fire("cnr_rebuild", { model = "pickup", config = { format = 2, model = "pickup", parts = { pickup_engine = "v8_60", pickup_turbo = "meo_turbo" }, vars = {} } })
+  assertEq(#env.replaced, before + 1)
+  assertEq(env.replaced[#env.replaced].opt.config.parts.pickup_engine, "v8_60")
+  assertEq(env.actionFilter.cnr_parts, true)
+  local missing = env.lastSent("cnr_missing")
+  assertEq(#missing.parts, 1); assertEq(missing.parts[1], "meo_turbo")
+  env.tick(0.2)
+  assertEq(env.hud().banner.label, "APPLYING CHANGES")
+  env.fire("cnr_applied", {})
+  env.tick(0.2)
+  assertEq(env.hud().banner == nil or env.hud().banner.label ~= "APPLYING CHANGES", true)
+end)
+
+test("everyone sees the queued change in the HUD", function()
+  local env = bootClient()
+  local setup = copy(SETUP)
+  setup.evolving = true
+  env.fire("cnr_roundSetup", setup)
+  env.fire("cnr_queued", { runner = "Bob", changes = { { label = "Engine", from = "4.5L V8", to = "6.0L V8" } } })
+  env.tick(0.2)
+  assertEq(env.hud().change.title, "BOB'S CHANGE (1)")
+end)
+
+test("a repaint during evolving prep keeps the runner's queued change", function()
+  local env = bootClient()
+  env.fire("cnr_roundSetup", copy(EVOLVING_RUNNER))
+  env.tick(2)
+  env.liveParts.pickup_engine = "v8_60"
+  env.fire("cnr_paint", { color = { r = 1, g = 0, b = 0 } })
+  assertEq(env.replaced[#env.replaced].opt.config.parts.pickup_engine, "v8_60")
+end)
+
+test("a cop's evolving car gets the build with emergency lights checked", function()
+  local env = bootClient()
+  local setup = copy(SETUP)
+  setup.evolving = true
+  setup.config = { format = 2, model = "pickup", parts = { pickup_engine = "v8" }, vars = {} }
+  env.fire("cnr_roundSetup", setup)
+  assertEq(type(env.replaced[#env.replaced].opt.config), "table")
+  assertEq(env.replaced[#env.replaced].opt.config.parts.pickup_engine, "v8")
+end)

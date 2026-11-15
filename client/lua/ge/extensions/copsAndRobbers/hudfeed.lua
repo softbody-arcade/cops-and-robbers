@@ -18,7 +18,7 @@ local RESULT_TITLES = { caught = "RUNNER CAUGHT", called = "ROUND ENDED", escape
 local FLASH_SECONDS, EVENT_SECONDS, RESET_FLASH_SECONDS, RESULT_SECONDS = 2, 4, 1.5, 10
 
 local state = hud.new()
-local flash, prep, resetFlashUntil, result
+local flash, prep, resetFlashUntil, result, change, applying
 local events = {}
 local placed = false
 local visibleSent = false
@@ -38,8 +38,17 @@ end
 
 function M.clearRound()
   state = hud.new()
-  flash, prep, resetFlashUntil = nil, nil, nil
+  flash, prep, resetFlashUntil, change, applying = nil, nil, nil, nil, nil
   events = {}
+end
+
+function M.queued(runner, changes)
+  change = runner and { runner = runner, changes = changes or {} } or nil
+end
+
+function M.applying(on)
+  applying = on and true or nil
+  if on then change = nil end
 end
 
 function M.clearResult()
@@ -166,6 +175,7 @@ function M.update(clock, info)
       active = info.active, role = info.role, chaseStart = info.chaseStart,
       resetAllowed = info.resetAllowed, resetHint = info.resetHint, penalty = info.penalty, infoText = info.infoText,
       timer = timer, flash = flash, prep = prep, events = events, resetFlashUntil = resetFlashUntil,
+      change = change, applying = applying,
       result = result,
     }))
   elseif not info.active and not resultShowing and visibleSent then

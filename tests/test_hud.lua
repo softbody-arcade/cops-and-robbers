@@ -115,3 +115,22 @@ test("result without runner or next round", function()
   local p = hud.payload(s, 1, { active = false, result = { title = "ROUND CANCELLED", untilT = 5 } })
   assertEq(p.result.title, "ROUND CANCELLED"); assertEq(p.result.runner, nil); assertEq(p.result.nextIn, nil)
 end)
+
+test("the queued change replaces the prep line", function()
+  local s = hud.new()
+  local p = hud.payload(s, 0, { active = true, role = "cop", prep = { role = "cop", car = "x" },
+    change = { runner = "Bob", changes = { { label = "Engine", from = "4.5L V8", to = "6.0L V8" }, { label = "Intake", from = "Stock", to = "Big" } } } })
+  assertEq(p.change.title, "BOB'S CHANGE (2)"); assertEq(#p.change.lines, 2); assertEq(p.change.lines[1].to, "6.0L V8")
+  assertEq(p.prep, nil)
+  local none = hud.payload(s, 0, { active = true, change = { runner = "Bob", changes = {} } })
+  assertEq(none.change.title, "BOB'S CHANGE: none yet")
+  local many = {}
+  for i = 1, 6 do many[i] = { label = "P" .. i, from = "a", to = "b" } end
+  local big = hud.payload(s, 0, { active = true, change = { runner = "Bob", changes = many } })
+  assertEq(#big.change.lines, 4); assertEq(big.change.more, 2)
+end)
+
+test("applying shows a banner", function()
+  local p = hud.payload(hud.new(), 0, { active = true, applying = true })
+  assertEq(p.banner.label, "APPLYING CHANGES")
+end)

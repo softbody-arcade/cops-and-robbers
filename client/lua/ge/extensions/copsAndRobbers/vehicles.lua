@@ -58,11 +58,54 @@ local function jbeamEnv(model)
   }
 end
 
+local envs = {}
+
+local function envFor(model)
+  if envs[model] == nil then envs[model] = jbeamEnv(model) or false end
+  return envs[model] or nil
+end
+
+function M.partName(model, id)
+  if type(id) ~= "string" or id == "" then return "(none)" end
+  local env = envFor(model)
+  local part = env and env.getPart(id)
+  local info = type(part) == "table" and part.information
+  return type(info) == "table" and type(info.name) == "string" and info.name or id
+end
+
+function M.hasPart(model, id)
+  if type(id) ~= "string" or id == "" then return true end
+  local env = envFor(model)
+  if not env then return true end
+  return env.getPart(id) ~= nil
+end
+
+function M.currentSetup()
+  local data = core_vehicle_manager and core_vehicle_manager.getPlayerVehicleData and core_vehicle_manager.getPlayerVehicleData()
+  local cfg = type(data) == "table" and data.config
+  if type(cfg) ~= "table" then return nil end
+  local parts = cfg.parts
+  if type(parts) ~= "table" and cfg.partsTree and core_vehicle_partmgmt and core_vehicle_partmgmt.partsTreeToPartsMap then
+    parts = core_vehicle_partmgmt.partsTreeToPartsMap(cfg.partsTree)
+  end
+  if type(parts) ~= "table" then return nil end
+  local clean = {}
+  for slot, part in pairs(parts) do
+    if type(slot) == "string" and not slot:find("paint_design", 1, true) then clean[slot] = type(part) == "string" and part or "" end
+  end
+  return { model = data.model or cfg.model, parts = clean, vars = deepcopy(type(cfg.vars) == "table" and cfg.vars or {}) }
+end
+
 function M.copConfig(model, configPath)
-  if type(configPath) ~= "string" then return configPath end
-  local ok, base = pcall(jsonReadFile, "/" .. configPath:gsub("^/", ""))
-  if not ok or type(base) ~= "table" or type(base.parts) ~= "table" or base.format == 4 then return configPath end
-  local env = jbeamEnv(model)
+  local base
+  if type(configPath) == "table" then
+    base = configPath
+  elseif type(configPath) == "string" then
+    local ok, read = pcall(jsonReadFile, "/" .. configPath:gsub("^/", ""))
+    base = ok and read or nil
+  end
+  if type(base) ~= "table" or type(base.parts) ~= "table" or base.format == 4 then return configPath end
+  local env = envFor(model)
   if not env then return configPath end
   local okPlan, additions = pcall(lightbar.plan, base.mainPartName or model, base.parts, env)
   if not okPlan or not additions then return configPath end

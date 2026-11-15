@@ -43,11 +43,14 @@ local function remaining(untilT, now)
   return math.ceil(untilT - now - 1e-9)
 end
 
+local CHANGE_LINES = 4
+
 local function banner(info, now)
   local flash = info.flash
   if flash and type(flash.untilT) == "number" and now < flash.untilT then
     return { label = flash.text, big = true }
   end
+  if info.applying then return { label = "APPLYING CHANGES", big = true } end
   local timer = info.timer
   local left = timer and remaining(timer.endsAt, now)
   if left then return { label = timer.label, number = left, big = true } end
@@ -94,7 +97,17 @@ function M.payload(state, now, info)
   }
   local last = state.samples[#state.samples]
   if payload.catch.percent >= 100 and not (last and last.p >= 1) then payload.catch.percent = 99 end
-  if info.prep then
+  if type(info.change) == "table" then
+    local changes = type(info.change.changes) == "table" and info.change.changes or {}
+    local who = string.upper(tostring(info.change.runner or "RUNNER")) .. "'S CHANGE"
+    local lines = {}
+    for i = 1, math.min(#changes, CHANGE_LINES) do lines[i] = changes[i] end
+    payload.change = {
+      title = #changes == 0 and (who .. ": none yet") or string.format("%s (%d)", who, #changes),
+      lines = lines,
+      more = #changes > CHANGE_LINES and (#changes - CHANGE_LINES) or nil,
+    }
+  elseif info.prep then
     payload.prep = { role = info.prep.role == "runner" and "RUNNER" or "COP", car = info.prep.car }
   end
   if info.chaseStart then

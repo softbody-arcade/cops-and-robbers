@@ -17,7 +17,17 @@
         <span class="cnr-banner-label">{{ hud.banner.label }}</span>
         <span v-if="hud.banner.number" class="cnr-banner-number">{{ hud.banner.number }}</span>
       </div>
-      <div v-if="hud.prep" class="cnr-panel cnr-prep">
+      <div v-if="hud.change" class="cnr-panel cnr-change">
+        <div class="cnr-change-title">{{ hud.change.title }}</div>
+        <div v-for="(line, i) in (hud.change.lines || [])" :key="'c' + i" class="cnr-change-line">
+          <span class="cnr-change-label">{{ line.label }}</span>
+          <span class="cnr-muted">{{ line.from }}</span>
+          <span>→</span>
+          <span class="cnr-change-to">{{ line.to }}</span>
+        </div>
+        <div v-if="hud.change.more" class="cnr-muted">+{{ hud.change.more }} more</div>
+      </div>
+      <div v-else-if="hud.prep" class="cnr-panel cnr-prep">
         <span class="cnr-role" :class="hud.prep.role === 'RUNNER' ? 'is-runner' : 'is-cop'">{{ hud.prep.role }}</span>
         <span class="cnr-item">{{ hud.prep.car }}</span>
         <span class="cnr-item cnr-muted">waiting for GO</span>
@@ -79,6 +89,30 @@ events.on("CnRHud", data => {
   font-size: 2.125rem;
   line-height: 1;
   font-variant-numeric: tabular-nums;
+}
+.cnr-change {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  font-size: 0.8125rem;
+}
+.cnr-change-title {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #ff9a4d;
+}
+.cnr-change-line {
+  display: flex;
+  gap: 0.5rem;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.cnr-change-label {
+  min-width: 6rem;
+  font-weight: 700;
+}
+.cnr-change-to {
+  color: #9fe870;
 }
 .cnr-prep, .cnr-event {
   display: flex;

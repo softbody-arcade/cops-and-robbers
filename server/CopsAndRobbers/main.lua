@@ -450,6 +450,7 @@ local function applyEffects(effects)
         if not round.isAI(pid) then send(pid, "cnr_rebuild", { model = current.vehicle.model, config = e.config }) end
       end
     elseif e.kind == "applied" then
+      send(e.to or -1, "cnr_applied", {})
       send(e.to or -1, "cnr_notice", { msg = e.timedOut and "Cars ready (not everyone loaded in time), press GO" or "Cars ready, press GO" })
     elseif e.kind == "spotted" then
       if not round.isAI(current.runnerId) then send(current.runnerId, "cnr_spotted", { spotted = e.spotted }) end

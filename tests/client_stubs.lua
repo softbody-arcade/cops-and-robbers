@@ -103,6 +103,17 @@ function bootClient(opts)
     teleportToLastRoad = function() end,
   }
   _G.createVehiclePaint = function(c) return c end
+  env.liveConfig = { partsTree = { tree = true }, vars = { gear1 = 3.1 } }
+  env.liveParts = { pickup_engine = "v8", pickup_paint_design = "stripes" }
+  _G.core_vehicle_manager = { getPlayerVehicleData = function() return { model = "pickup", config = env.liveConfig } end }
+  _G.core_vehicle_partmgmt = { partsTreeToPartsMap = function() return deepcopy(env.liveParts) end }
+  env.jbeamParts = opts.jbeamParts or { v8 = { information = { name = "4.5L V8" } }, v8_60 = { information = { name = "6.0L V8" } } }
+  package.loaded["jbeam/io"] = {
+    startLoading = function() return {} end,
+    getAvailableSlotNameMap = function() return {} end,
+    getPart = function(_, name) return env.jbeamParts[name] end,
+    getCompatiblePartNamesForSlot = function() return {} end,
+  }
   _G.extensions = { hook = function() end, load = function() end }
   _G.FS = { fileExists = function() return true end, removeFile = function() end }
   _G.TriggerServerEvent = function(ev, data) env.sent[#env.sent + 1] = { ev = ev, data = data } end

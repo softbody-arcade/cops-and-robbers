@@ -9,6 +9,7 @@ local ai = require("copsAndRobbers/ai")
 local geo = require("copsAndRobbers/geo")
 local hudfeed = require("copsAndRobbers/hudfeed")
 local sight = require("copsAndRobbers/sight")
+local buildDiff = require("copsAndRobbers/build")
 
 local CLIENT_VERSION = "1.7.0"
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
@@ -19,6 +20,8 @@ local FREEZE_REASSERT = 0.5
 local POSE_JUMP = 30
 local GEO_SEND_INTERVAL = 0.25
 local SIGHT_CHECK_INTERVAL = 0.25
+local CHANGE_CHECK_INTERVAL = 1
+local BASELINE_DELAY = 1.5
 
 local toast, sendServer, ownVehicle = game.toast, game.sendServer, game.ownVehicle
 local formatTime = hud.formatTime
@@ -49,6 +52,8 @@ local sightState = sight.new()
 local lastSightCheck = 0
 local infoSuffix = ""
 local spotted, nearestText
+local buildBaselineAt, buildBaseline
+local lastChangeKey, lastChanges, lastChangeCheck = "", {}, 0
 local requestReset
 
 local function setFreeze(on)
@@ -130,6 +135,8 @@ local function onRoundSetup(data)
   role = d.role
   runnerId = d.runnerId
   evolving = d.evolving == true
+  buildBaseline, lastChangeKey, lastChanges = nil, nil, {}
+  buildBaselineAt = (evolving and d.role == "runner" and d.phase == "prep") and (clock + BASELINE_DELAY) or nil
   sightMax = tonumber(d.sightMaxMeters) or 0
   sightState = sight.new()
   roundModel, roundColor = d.model, d.color
@@ -191,7 +198,72 @@ local function onPaint(data)
   local veh = ownVehicle()
   if not veh or not roundModel then return end
   roundColor = d.color
-  placeVehicle(roundModel, roundConfig, veh:getPosition(), game.uprightRotation(veh), d.color)
+  local config = roundConfig
+  if evolving and role == "runner" and (buildBaseline or buildBaselineAt) then
+    local now = vehicles.currentSetup()
+    if now then config = { format = 2, model = roundModel, parts = now.parts, vars = now.vars } end
+  end
+  placeVehicle(roundModel, config, veh:getPosition(), game.uprightRotation(veh), d.color)
+end
+
+local function labelledChanges(setup)
+  local list = {}
+  for _, c in ipairs(buildDiff.diff(buildBaseline.parts, setup.parts)) do
+    list[#list + 1] = { label = buildDiff.label(c.slot, roundModel), from = vehicles.partName(roundModel, c.from), to = vehicles.partName(roundModel, c.to) }
+  end
+  for _, c in ipairs(buildDiff.varsDiff(buildBaseline.vars, setup.vars)) do
+    list[#list + 1] = { label = buildDiff.varLabel(c.name), from = tostring(c.from), to = tostring(c.to) }
+  end
+  return list
+end
+
+local function changeKey(list)
+  local parts = {}
+  for i, c in ipairs(list) do parts[i] = c.label .. "=" .. c.from .. ">" .. c.to end
+  return table.concat(parts, "|")
+end
+
+local function updateBuild()
+  if not buildBaselineAt or pendingPlacement or clock < buildBaselineAt then return end
+  if not buildBaseline then
+    buildBaseline = vehicles.currentSetup()
+    lastChangeCheck = -math.huge
+    return
+  end
+  if clock - lastChangeCheck < CHANGE_CHECK_INTERVAL then return end
+  lastChangeCheck = clock
+  local setup = vehicles.currentSetup()
+  if not setup then return end
+  lastChanges = labelledChanges(setup)
+  local key = changeKey(lastChanges)
+  if key ~= lastChangeKey then
+    lastChangeKey = key
+    sendServer("cnr_change", { changes = lastChanges })
+  end
+end
+
+local function onRequestSetup()
+  local setup = vehicles.currentSetup()
+  if not setup then return end
+  if buildBaseline then lastChanges = labelledChanges(setup) end
+  sendServer("cnr_setup", { model = setup.model, parts = setup.parts, vars = setup.vars, changes = lastChanges })
+end
+
+local function onRebuild(data)
+  local d = jsonDecode(data) or {}
+  if not active or type(d.config) ~= "table" then return end
+  buildBaselineAt, buildBaseline = nil, nil
+  inputs.setPartsMenu(false)
+  hudfeed.applying(true)
+  roundConfig = role == "cop" and vehicles.copConfig(roundModel, d.config) or d.config
+  local veh = ownVehicle()
+  placeVehicle(roundModel, roundConfig, veh and veh:getPosition(), veh and game.uprightRotation(veh), roundColor)
+  local missing = {}
+  for _, part in pairs(type(d.config.parts) == "table" and d.config.parts or {}) do
+    if not vehicles.hasPart(roundModel, part) then missing[#missing + 1] = part end
+  end
+  table.sort(missing)
+  if #missing > 0 then sendServer("cnr_missing", { parts = missing }) end
 end
 
 local function onPenalty(data)
@@ -327,6 +399,7 @@ local function endRound()
   spotted, nearestText = nil, nil
   runnerId = nil
   evolving = false
+  buildBaselineAt, buildBaseline, lastChangeKey, lastChanges = nil, nil, "", {}
   geo.clearRoute()
   ai.remove()
   penaltyActive = false
@@ -525,6 +598,7 @@ local function onUpdate(dtReal)
   updateLightsAndPatch()
   updateGeo()
   updateSight()
+  updateBuild()
   updateStatusToast()
   hudfeed.update(clock, {
     active = active, role = role, chaseStart = statusActive and chaseStart or nil,
@@ -613,6 +687,13 @@ local function onExtensionLoaded()
   AddEventHandler("cnr_lastSeen", onLastSeen)
   AddEventHandler("cnr_nearestCop", onNearestCop)
   AddEventHandler("cnr_spotted", onSpotted)
+  AddEventHandler("cnr_requestSetup", onRequestSetup)
+  AddEventHandler("cnr_rebuild", onRebuild)
+  AddEventHandler("cnr_applied", function() hudfeed.applying(false) end)
+  AddEventHandler("cnr_queued", function(data)
+    local d = jsonDecode(data) or {}
+    hudfeed.queued(d.runner, d.changes)
+  end)
   AddEventHandler("cnr_penaltyEnd", onPenaltyEnd)
   AddEventHandler("cnr_state", onState)
   AddEventHandler("cnr_roundEnd", onRoundEnd)
