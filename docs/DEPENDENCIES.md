@@ -1,0 +1,202 @@
+# Dependencies and compatibility checks
+
+The mod has no package dependencies. It does lean on three external systems: BeamMP (server and client), BeamNG.drive and BeamNG.Earth. This file lists what we use from each one, where in our code we use it, and what to check when that system updates.
+
+Versions in use on 2026-11-15:
+- BeamNG.drive 0.40.5.0
+- BeamMP Server 3.9.3 (Lua 5.3.5)
+- BeamMP Launcher 2.8.1
+- BeamNG.Earth mod API v1
+
+## After any update: the quick check (about 15 minutes)
+
+1. Run `make test`. This shows our own logic is intact, but the game APIs are stubbed, so it says nothing about the update itself.
+2. Run `make deploy`. The deploy log must say `Cops and Robbers <version> loaded`, with no `LUA ERROR`.
+3. Check the client log after joining: `~/.local/share/BeamNG/BeamNG.drive/current/beamng.log`. Run `grep -n "copsAndRobbers\|CnR" beamng.log`. Look for Lua errors, plus the `Adding new Event Handler to "cnr_..."` lines.
+4. Play a practice round with `/cnr test cop`, then `/cnr go`. Check:
+   - **Setup:** the HUD appears at bottom centre, your car is replaced and frozen, and the AI cars spawn.
+   - **Countdown:** the countdown banner runs and GO releases you.
+   - **Lights:** the light bar or beacon flashes on your car and on the AI cop.
+   - **Reset rules:** pressing your reset button gets refused and highlighted, and after waiting the reset is allowed.
+   - **Catching:** the catch bar fills when you hold the AI runner.
+   - **End:** `/cnr end` shows the result card. Leaving the server removes the HUD from the layout.
+5. Open the control panel (Esc > UI Apps > Cops and Robbers Panel) and check:
+   - The status line is filled in.
+   - A stepper change saves ("Saved: ...").
+   - Typing in Excluded cars doesn't move the car.
+   - It collapses on GO.
+6. Also play one round on BeamNG.Earth if that map is in use (see its section below).
+
+Then do the checks for whatever actually updated.
+
+---
+
+## BeamMP Server (plugin API)
+
+**Used in:** `server/CopsAndRobbers/main.lua`. The `cnr/*.lua` modules are pure Lua and use no API.
+
+**What we use:**
+- **Functions:**
+  - `MP.RegisterEvent`, `MP.TriggerClientEvent`, `MP.SendChatMessage`
+  - `MP.GetPlayers` (pid → name), `MP.GetPlayerName`, `MP.GetPlayerIdentifiers` (expects `beammp` = account id), `MP.GetPlayerVehicles`
+  - `MP.GetPositionRaw` (expects `{pos={x,y,z}, vel={...}}` plus an error string), `MP.RemoveVehicle`
+  - `MP.CreateTimer():GetCurrent()`, `MP.CreateEventTimer` / `MP.CancelEventTimer` (the 250 ms `cnr_tick`)
+  - `MP.Get(MP.Settings.Map)` (the map path; we parse `levels/<name>/`)
+  - `Util.JsonEncode` / `JsonDecode` / `JsonPrettify`, `FS.CreateDirectory` / `Remove` / `Rename`
+- **Events and the data shapes we parse:**
+  - `onChatMessage(pid, name, msg)`: returning `1` hides the message.
+  - `onVehicleSpawn(pid, vid, data)` and `onVehicleEdited(pid, vid, data)`. The data is `...:pid-vid:{json}`, and we parse from the first `{`. The JSON has `jbm` (model) and `vcf.partConfigFilename` / `vcf.parts`. Returning `1` from an edit **deletes the car**.
+  - `onVehicleDeleted`, `onVehicleReset`, `onPlayerJoin`, `onPlayerDisconnect`.
+- **Loading:**
+  - The plugin chunk name has **no `@`**. `pluginDir` handles both forms.
+  - The plugin folder is added to `package.path` and modules load as `require("cnr.x")`.
+- **Lua version:** 5.3. We use integer/float formatting such as `%.10g` and `math.floor`.
+
+**On update, check:**
+- The deploy log line (step 2 above) and `/cnr version`.
+- **Vehicle data format:** start a round. A car that's wrongly refused or deleted means the spawn or edit data format changed (`parseVehicleData`, `vehicleAllowed`).
+- **Parts edits:** during a round, change a part and look in the server log for `changed parts during the round ... slots: ...`. If every edit shows up as a change even when nothing changed, the `vcf.parts` shape changed.
+- **Account identity:** play a round and check that `/cnr top` shows the account names. If they're missing, the `GetPlayerIdentifiers` format changed.
+- **Positions and catching:** catching needs `GetPositionRaw`. If the catch bar never fills, check its return shape.
+
+## BeamMP Client (in-game Lua and launcher)
+
+**Used in:** `client/lua/ge/extensions/copsAndRobbers.lua`, `copsAndRobbers/game.lua` and `copsAndRobbers/ai.lua`.
+
+**What we use:**
+- `AddEventHandler(name, fn)` and `TriggerServerEvent(name, string)`.
+- `MPVehicleGE.isOwn(gameId)` and `MPVehicleGE.getVehicleByGameID(id).serverVehicleString`. That string is `"pid-vid"`, and we take the vid after the last `-`.
+- `MPConfig.getPlayerServerID()`.
+- The GE hook `onBeamMPServerLeave`.
+- **Mod mounting:** the mod is mounted when you join. Our keybindings then need an `onFileChanged` hook for `core/input/actions/copsAndRobbers.json`, and our UI apps need an `onFilesChanged` refresh.
+- **Launcher on Arch:** the wrapper in `~/.local/bin/beammp-launcher` sets argv[0] and the working directory. The AUR binary name broke `CheckName()` before.
+
+**On update, check:**
+- The client log shows our handlers being added, and the round starts at all.
+- `cnr_myVehicle` reaches the server: your own car counts in catch and reset checks. If the vid parse breaks, the server never learns which car is yours.
+- Options > Controls > Gameplay still lists the "Cops & Robbers: ..." actions after you join.
+- The panel and HUD appear in Esc > UI Apps.
+- Rejoin within the same game session. If notices or replies now show twice, `AddEventHandler` re-registration has changed.
+
+## BeamNG.drive: game engine Lua (GE)
+
+**Used in:** the client modules.
+
+**What we use, by area:**
+- **Vehicles** (`vehicles.lua`, main file):
+  - `core_vehicles.getConfigList(true).configs`, using the fields `model_key`, `key`, `pcFilename`, `Type` and `Source`. `Source == "BeamNG - Official"` means stock.
+  - `core_vehicles.getModel(model).model.{Name,Brand,Type}`.
+  - `replaceVehicle` / `spawnNewVehicle(model, {config=<path or format-2 table>, paint, pos, rot, autoEnterVehicle})`.
+  - `createVehiclePaint`, `jsonReadFile`, `deepcopy`.
+  - Configs in `format: 4` are skipped for cop lights.
+- **Placement and roads** (`roads.lua`):
+  - `map.getMap().nodes[id].{pos,links}` and `map.findClosestRoad(pos)` (two node ids).
+  - `spawn.safeTeleport(veh, pos, rot)`, `vec3`, `quatFromDir`.
+- **Inputs** (`inputs.lua`):
+  - `core_input_actionFilter.getActionTemplates().competitive`, `setGroup` and `addAction`.
+  - `core_input_bindings.bindings[].contents.bindings[].action`.
+  - The action names in `LOCKED_ACTIONS` and `RESET_BUTTONS`.
+  - We replace the globals `resetGameplay` and `spawn.teleportToLastRoad`, and `freeroam_bigMapMode.teleportToPoi`.
+- **Gas stations:** `freeroam_facilities.getFacilitiesByType("gasStation")` and `freeroam_gasStations.gasStationCenterRadius(f)`.
+- **Other:**
+  - `core_groundMarkers.setPath`, `guihooks.trigger`, `ui_message`, `extensions.hook` / `load`.
+  - `FS:fileExists`, `getCurrentLevelIdentifier`, `getObjectByID`, `getPlayerVehicle(0)`.
+  - The hooks `onUpdate`, `onVehicleResetted`, `onClientEndMission`, `onExtensionLoaded` / `Unloaded` and `onWorldReadyState`.
+
+**On update, check:**
+- Every global we read still exists. This lists them:
+  `for f in client/lua/ge/extensions/copsAndRobbers.lua client/lua/ge/extensions/copsAndRobbers/*.lua; do luajit -bl "$f" | grep -o 'GGET.*"[a-zA-Z_]*"' | grep -o '"[a-zA-Z_]*"'; done | sort -u`
+  Then grep the game's `lua/` folder for any name you're unsure about.
+- **Reset buttons:** every bound reset or recover button is caught during a round, including recover, recover to road, load home and the big-map teleport.
+  - If one suddenly works freely, an action was renamed or added.
+  - Compare against the game's `lua/ge/extensions/core/input/actions/*.json`.
+  - Also check the `competitive` template in `core/input/actionFilter.lua`.
+- **Cop placement:** cops spawn on a road near the runner (map graph API), and the gas station list loads on West Coast. The server log shows `N gas stations loaded`.
+- **Car pool:** only stock cars and trucks are picked. If mod cars show up, the `Source` naming changed.
+
+## BeamNG.drive: vehicle Lua and jbeam (cop lights, freeze, recovery)
+
+**Used in:** the command strings in `ai.lua`, `inputs.lua` and the main file, plus `lightbar.lua` and `vehicles.lua`.
+
+**What we use:**
+- **Vehicle commands:**
+  - `electrics.set_lightbar_signal(1|0)`: light bar on with no siren. `1` means lights only.
+  - `controller.setFreeze(1|0)`, `fire.explodeVehicle()`, `ai.setMode(...)`, `ai.setTargetObjectID(id)`.
+  - We patch `recovery.startRecovering` / `stopRecovering` / `loadHome` (`VEHICLE_PATCH`) so that recovery buttons go through our rules.
+  - The `beaconSpin` controller spins while `electrics.values.lightbar > 0` (`lua/vehicle/controller/beaconSpin.lua`).
+- **Jbeam loading:**
+  - `require("jbeam/io")`: `startLoading({"/vehicles/<model>/", "/vehicles/common/"})`.
+  - `getPart(ctx, name)` returns a part with processed `slots2` entries (`name`, `allowTypes`, `denyTypes`, `default`).
+  - `getAvailableSlotNameMap(ctx)` and `getCompatiblePartNamesForSlot(ctx, slot, map)`.
+- **Recognising emergency lights:** we check the electrics a part uses. Emergency lights run on `lightbar`, `beaconSpin` or pattern channels such as `L1_b` / `R2_r`. Work lights run on `fog` or `highbeam`.
+- **Part names:** a part only counts as the light itself if its name contains `lightbar` or `beacon`, and not `color`, `pattern` or `bulb`.
+
+**On update, check:**
+- Run the light scan against the new game files. It runs our real planner (`lightbar.plan`) on every stock config:
+  ```
+  python3 -I tools/lights/export.py .lightcheck          # all vehicles, or list models: ... .lightcheck etki burnside
+  lua tools/lights/check.lua .lightcheck
+  ```
+  Compare the result with the last run. As of 0.40.5 these cars got a light on almost every non-police config:
+  - etki: roof beacon, 33/35
+  - burnside: beacon, 23/24
+  - miramar: light bar, 27/27
+  - pickup: police light bar, 61/73
+  - midtruck: four beacons
+
+  A car that drops to "nothing added" means BeamNG renamed parts or electrics, or moved slots.
+- In game, a cop round in a car with a beacon (Burnside) and one with a light bar (Miramar): the lights flash and there's no siren.
+- **Freeze and recovery:**
+  - During prep you can't drive (freeze).
+  - Pressing recover during the chase is refused and doesn't rewind the car. If it rewinds, the `recovery.*` function names changed.
+
+## BeamNG.drive: UI (Vue apps, layouts)
+
+**Used in:** `client/ui/modules/apps/CopsAndRobbersHud/` and `.../CopsAndRobbersPanel/`, plus `hudfeed.lua` and `placement.lua`.
+
+**What we use:**
+- **Mod Vue loader** (`ui/ui-vue/src/services/uiMods/compiler.js`): it compiles `app.vue` at runtime. `app.json` uses `vue: true`, `directive`, `domElement` and `interactive`.
+- **Imports in `app.vue`:**
+  - `useEvents()` from `@/services/events`, and `useBridge().api.engineLua` / `serializeToLua` from `@/bridge`.
+  - `BngButton`, `BngSwitch` and `BngDropdown` from `@/common/components/base`. The dropdown items are `{value,label}`.
+  - `vBngTextInput` from `@/common/directives`. It calls `setCEFTyping` so that typing doesn't drive the car.
+- **UI scale:** the game sets the root font size to 16px × UI scale, so our styles use `rem`.
+- **Layouts** (`ui_appLayouts`):
+  - `getCurrentLayout()`, which returns `filename`, `apps` and `userFileExists`.
+  - `getAvailableLayouts()`, `addApp(filename, app, placement)` (it writes silently), `removeApp(filename, index0)`, `setCurrentLayout(filename)` and `resetLayout(filename)`.
+  - User layouts live in `/settings/ui_apps/layouts/` and the stock originals in `/settings/ui_apps/originalLayouts/`.
+- **Placement format** (`ui/ui-vue/src/modules/apps/placementResolve.js`): centred axes are `"50%"` and sizes are in `em`. `margin: auto` is deprecated and read-only.
+
+**On update, check:**
+- **HUD and panel:**
+  - Both apps load: no "Runtime compile error" for our apps in the client log.
+  - The HUD sits at bottom centre and scales with Options > Display > UI scale.
+- **Changed imports:** if an import broke, grep the game's `ui/ui-vue/src` for the name. Check the component props in `common/components/base/bng*.vue`. Check whether `@/bridge` still exports `useBridge` with `api.engineLua`.
+- **Panel:**
+  - Its buttons do something, which proves `engineLua` reaches `copsAndRobbers.panel`.
+  - The dropdown opens inside the app.
+- **Layout files:** leaving the server removes the HUD from the layout file in `settings/ui_apps/layouts/`. A stock layout copy we created gets deleted again.
+- **Placement format:** read the header comment of `placementResolve.js` again. If it changed, update `HUD_PLACEMENT` in `hudfeed.lua` and the `css` in both `app.json` files.
+
+## BeamNG.Earth (mod API)
+
+**Used in:** `copsAndRobbers/geo.lua` and the main file (geo mode is on when the map is `beamng_earth`). The server side is `cnr/geo.lua`, plus the geo paths in `main.lua`.
+
+**What we use from `beamngEarth_api`:**
+- `version() == 1`, `toGeo(x,y,z)` → `lat, lon, h`, and `toGame(lat, lon, h)` → `x, y, z`.
+- `rebasing()`, `has("gps" | "places")`.
+- `places(lat, lon, {radius, categories={"gas_station"}}, callback)`. The callback gets `{places={{lat, lon, name, open}}}`, and we skip places where `open == "permanently_closed"`.
+- `gpsSet(lat, lon, label)`, `gps()`, which returns `.remaining` (metres) and `.planning`, and `gpsClear()`.
+- The hook `onBeamNGEarthRebased(info)`, where `info.purpose` is `"teleport"` or something else.
+- Each player has their own floating origin. That's why positions travel as lat/lon, and why the server converts with WGS84 → ENU (`cnr/geo.lua`).
+
+**On update, check:**
+- On `beamng_earth`, there's no "needs a newer BeamNG.Earth (API v1)" toast. If it appears, `version()` changed. Read the mod's `docs/ADDONS.md` for the new contract.
+- **Distances:** cops see "Runner 2.4 km by road NE" after a last-seen ping (GPS), and the 1 km cop reset uses real distance.
+- **Gas stations:** the server log shows `N new gas stations on beamng_earth` while you drive, so `places` works.
+- **Teleports:** teleporting far away counts as a teleport for the runner (it's announced), and for a cop it moves the AI cars along with you. If not, the rebase hook changed.
+
+## Development tools
+
+- **Lua:** stock `lua` (5.3 or newer) for `make test`, `luajit` for compile checks (the game runs LuaJIT, so client code stays Lua 5.1 compatible), `node --check` for the Vue script blocks, and `python3` for `tools/lights/export.py`.
+- **Build:** `zip` for `make package`.

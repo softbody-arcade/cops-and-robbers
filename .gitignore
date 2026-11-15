@@ -2,3 +2,4 @@ dist/
 .testserver/
 .superpowers/
 server/CopsAndRobbers/data/
+.lightcheck/
