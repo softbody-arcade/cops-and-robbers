@@ -31,8 +31,8 @@ local function same(a, b)
   return true
 end
 
-function M.new(appName, placement)
-  return { appName = appName, placement = placement, active = false, placed = {}, optedOut = {}, createdCopy = {}, hidMod = {} }
+function M.new(appName, placement, opts)
+  return { appName = appName, placement = placement, sticky = opts and opts.sticky or false, active = false, placed = {}, optedOut = {}, createdCopy = {}, hidMod = {} }
 end
 
 function M.activate(state)
@@ -80,8 +80,10 @@ function M.tick(state, env)
   end
   if state.placed[name] then
     state.placed[name] = nil
-    state.optedOut[name] = true
-    return false
+    if not state.sticky then
+      state.optedOut[name] = true
+      return false
+    end
   end
   if state.optedOut[name] then return false end
   local makesCopy = current.userFileExists == false

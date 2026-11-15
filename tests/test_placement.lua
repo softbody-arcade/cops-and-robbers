@@ -200,3 +200,13 @@ test("leave never deletes a layout file that was already the player's own", func
   placement.leave(s, g.env)
   assertEq(#g.deleted, 0)
 end)
+
+test("a sticky app comes back after the player removes it", function()
+  local g = fakeGame({ beammp = { { appName = "chat" } } }, "beammp")
+  local s = placement.new("hud", PLACE, { sticky = true })
+  placement.activate(s)
+  placement.tick(s, g.env)
+  g.disk.beammp.apps = { { appName = "chat" } }
+  assertEq(placement.tick(s, g.env), true)
+  assertEq(count(g, "beammp"), 1); assertEq(g.adds, 2)
+end)

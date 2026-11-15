@@ -185,17 +185,69 @@ local function fakeLayouts()
   return L
 end
 
-test("the HUD is placed centred in em units and checked less often once placed", function()
+test("the HUD is placed full-screen and checked less often once placed", function()
   local L = fakeLayouts()
   local env = bootClient({ layouts = L })
   env.tick(4, 0.5)
   assertEq(#L.added, 1)
-  assertEq(L.added[1].left, "50%")
+  assertEq(L.added[1].left, "0")
   assertEq(L.added[1].margin, nil)
-  assertEq(L.added[1].width, "32.5em")
+  assertEq(L.added[1].width, "100%")
+  assertEq(L.added[1].height, "100%")
   local before = env.reads[L.name]
   env.tick(20, 0.5)
   assertEq(env.reads[L.name] - before <= 3, true)
+end)
+
+local function names(L)
+  local list = {}
+  for _, a in ipairs(L.disk[L.name].apps) do list[#list + 1] = a.appName end
+  return list
+end
+
+local function has(L, app)
+  for _, n in ipairs(names(L)) do if n == app then return true end end
+  return false
+end
+
+test("toggle opens and closes the leaderboard", function()
+  local L = fakeLayouts()
+  local env = bootClient({ layouts = L })
+  local apps = require("copsAndRobbers/apps")
+  env.tick(4, 0.5)
+  apps.toggle("board")
+  env.tick(0.5, 0.5)
+  assertEq(has(L, "copsAndRobbersLeaderboard"), true)
+  assertEq(apps.isOpen("board"), true)
+  apps.toggle("board")
+  env.tick(0.5, 0.5)
+  assertEq(has(L, "copsAndRobbersLeaderboard"), false)
+  assertEq(apps.isOpen("board"), false)
+  assertEq(has(L, "copsAndRobbersHud"), true)
+end)
+
+test("isOpen sees an app the player added", function()
+  local L = fakeLayouts()
+  local env = bootClient({ layouts = L })
+  local apps = require("copsAndRobbers/apps")
+  assertEq(apps.isOpen("panel"), false)
+  table.insert(L.disk[L.name].apps, { appName = "copsAndRobbersPanel" })
+  assertEq(apps.isOpen("panel"), true)
+  apps.toggle("panel")
+  assertEq(has(L, "copsAndRobbersPanel"), false)
+end)
+
+test("leaving the server removes the HUD and the apps it opened, not ones the player added", function()
+  local L = fakeLayouts()
+  local env = bootClient({ layouts = L })
+  local apps = require("copsAndRobbers/apps")
+  env.tick(4, 0.5)
+  apps.toggle("board")
+  table.insert(L.disk[L.name].apps, { appName = "copsAndRobbersPanel" })
+  env.M.onBeamMPServerLeave()
+  assertEq(has(L, "copsAndRobbersHud"), false)
+  assertEq(has(L, "copsAndRobbersLeaderboard"), false)
+  assertEq(has(L, "copsAndRobbersPanel"), true)
 end)
 
 test("a layout switch is picked up right away, not after the slow check", function()

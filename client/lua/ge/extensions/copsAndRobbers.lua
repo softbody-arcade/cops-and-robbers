@@ -7,6 +7,7 @@ local vehicles = require("copsAndRobbers/vehicles")
 local ai = require("copsAndRobbers/ai")
 local geo = require("copsAndRobbers/geo")
 local hudfeed = require("copsAndRobbers/hudfeed")
+local apps = require("copsAndRobbers/apps")
 local sight = require("copsAndRobbers/sight")
 local buildDiff = require("copsAndRobbers/build")
 local modes = require("copsAndRobbers/modes")
@@ -635,6 +636,7 @@ local function leaveServer()
   endRound()
   hudfeed.clearResult()
   hudfeed.leave()
+  apps.leave()
   guihooks.trigger("CnRPanel", {})
   guihooks.trigger("CnRBoard", {})
 end
@@ -642,8 +644,8 @@ end
 local function onExtensionLoaded()
   local ok, saved = pcall(jsonReadFile, modes.FILE)
   modesState = modes.new(ok and saved or nil)
-  hudfeed.refreshApps()
-  hudfeed.start(clock)
+  apps.refreshApps()
+  apps.start(clock)
   inputs.setNotify(function(msg, tone) hudfeed.event(msg, clock, tone) end)
   ai.setNotify(function(msg, tone) hudfeed.event(msg, clock, tone) end)
   if not AddEventHandler then return end
@@ -747,10 +749,10 @@ end
 M.onClientEndMission = leaveServer
 M.onBeamMPServerLeave = leaveServer
 M.onGameStateUpdate = function()
-  hudfeed.layoutChanged(clock)
+  apps.layoutChanged(clock)
 end
 M.onWorldReadyState = function(st)
-  if st == 2 then hudfeed.start(clock) end
+  if st == 2 then apps.start(clock) end
 end
 M.onUpdate = onUpdate
 M.onVehicleResetted = onVehicleResetted

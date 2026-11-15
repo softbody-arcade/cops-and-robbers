@@ -6,13 +6,10 @@
   ],
   "description": "Cops and Robbers countdowns, status line, catch bar and round results.",
   "css": {
-    "left": "50%",
-    "right": "",
-    "bottom": "4.375em",
-    "width": "32.5em",
-    "height": "14.375em",
-    "min-width": "20em",
-    "min-height": "3.75em"
+    "left": "0",
+    "top": "0",
+    "width": "100%",
+    "height": "100%"
   },
   "author": "ReinderN",
   "version": "1.0",
@@ -20,5 +17,5 @@
   "vue": true,
   "category": "Gameplay",
   "isAuxiliary": true,
-  "interactive": "yes"
+  "interactive": "no"
 }
