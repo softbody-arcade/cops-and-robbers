@@ -8,7 +8,7 @@ test:
 
 package: clean
 	mkdir -p dist/Client dist/Server
-	cd client && zip -qr ../dist/Client/CopsAndRobbers.zip scripts lua
+	cd client && zip -qr ../dist/Client/CopsAndRobbers.zip scripts lua mod_info
 	rsync -a --exclude data server/CopsAndRobbers dist/Server/
 
 install-local: package
