@@ -12,7 +12,7 @@ local geo = require("cnr.geo")
 local build = require("cnr.build")
 local panel = require("cnr.panel")
 
-local VERSION = "2.0.4"
+local VERSION = "2.0.5"
 local PREFIX = "[CnR] "
 local dataDir = pluginDir .. "data/"
 local stationsDir = dataDir .. "stations/"
@@ -462,7 +462,8 @@ local function applyEffects(effects)
       end
     elseif e.kind == "applied" then
       send(e.to or -1, "cnr_applied", {})
-      send(e.to or -1, "cnr_notice", { msg = e.timedOut and "Cars ready (not everyone loaded in time), press GO" or "Cars ready, press GO" })
+      local msg = e.timedOut and "Cars ready (not everyone loaded in time), press GO" or "Cars ready, press GO"
+      if e.to then reply(e.to, msg) else broadcast(msg) end
     elseif e.kind == "spotted" then
       if not round.isAI(current.runnerId) then send(current.runnerId, "cnr_spotted", { spotted = e.spotted }) end
     elseif e.kind == "lastSeen" then

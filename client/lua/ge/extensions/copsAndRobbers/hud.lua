@@ -109,7 +109,7 @@ function M.payload(state, now, info)
       canApply = info.change.canApply == true or nil,
     }
   elseif info.prep then
-    payload.prep = { role = info.prep.role == "runner" and "RUNNER" or "COP", car = info.prep.car }
+    payload.prep = { role = info.prep.role == "runner" and "RUNNER" or "COP", car = info.prep.car, waiting = info.prep.waiting }
   end
   if info.chaseStart then
     payload.status = {

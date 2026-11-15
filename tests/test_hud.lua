@@ -151,3 +151,8 @@ test("the runner's own change block offers Apply", function()
   local q = hud.payload(hud.new(), 0, { active = true, change = { runner = "Bob", changes = {} } })
   assertEq(q.change.canApply, nil)
 end)
+
+test("the prep line can say what everyone is waiting for", function()
+  local p = hud.payload(hud.new(), 0, { active = true, prep = { role = "runner", car = "x", waiting = "make your change, then Apply" } })
+  assertEq(p.prep.waiting, "make your change, then Apply")
+end)

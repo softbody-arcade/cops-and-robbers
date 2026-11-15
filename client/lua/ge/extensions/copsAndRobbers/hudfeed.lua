@@ -64,8 +64,12 @@ function M.event(text, clock)
   while #events > 5 do table.remove(events, 1) end
 end
 
-function M.prep(role, car)
-  prep = role and { role = role, car = car } or nil
+function M.prep(role, car, waiting)
+  prep = role and { role = role, car = car, waiting = waiting or "waiting for GO" } or nil
+end
+
+function M.prepWaiting(text)
+  if prep then prep.waiting = text end
 end
 
 function M.resetFlash(clock)

@@ -12,7 +12,7 @@ local sight = require("copsAndRobbers/sight")
 local buildDiff = require("copsAndRobbers/build")
 local modes = require("copsAndRobbers/modes")
 
-local CLIENT_VERSION = "2.0.4"
+local CLIENT_VERSION = "2.0.5"
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
 local LIGHTS_OFF = "electrics.set_lightbar_signal(0)"
 local SETUP_DELAY = 0.5
@@ -165,7 +165,11 @@ local function onRoundSetup(data)
   frozen = phase == "prep" or phase == "applying" or phase == "ready" or phase == "countdown" or (phase == "headstart" and role == "cop")
   if phase == "applying" then hudfeed.applying(true) end
   if phase == "prep" or phase == "applying" or phase == "ready" then
-    hudfeed.prep(role, game.carName(d.model))
+    local waiting = "waiting for GO"
+    if evolving and phase == "prep" then
+      waiting = role == "runner" and "make your change, then Apply" or "waiting for the runner's change"
+    end
+    hudfeed.prep(role, game.carName(d.model), waiting)
     hudfeed.notify(string.format("You are the %s! Set your color with /cnr color, waiting for GO", role == "runner" and "runner" or "cop"), 8, "cnr_go")
     timerEnd = nil
   elseif phase == "countdown" then
@@ -721,6 +725,7 @@ local function onExtensionLoaded()
   AddEventHandler("cnr_rebuild", onRebuild)
   AddEventHandler("cnr_applied", function()
     hudfeed.applying(false)
+    hudfeed.prepWaiting("waiting for GO")
     hudfeed.queued(nil)
     buildBaselineAt, buildBaseline = nil, nil
     inputs.setPartsMenu(false)
