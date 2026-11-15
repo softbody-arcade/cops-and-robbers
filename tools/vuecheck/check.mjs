@@ -10,7 +10,7 @@ const iconFile = join(uiSrc, 'assets/fonts/bngIcons/bngIcons.js')
 
 let icons = null
 if (existsSync(iconFile)) {
-  icons = new Set([...readFileSync(iconFile, 'utf8').matchAll(/^ {2}(\w+): \{/gm)].map(m => m[1]))
+  icons = new Set([...readFileSync(iconFile, 'utf8').matchAll(/^ {2}"?(\w+)"?: \{/gm)].map(m => m[1]))
 } else {
   console.warn(`warning: ${iconFile} not found, skipping icon check`)
 }
@@ -31,10 +31,15 @@ function walk(dir, out = []) {
 function iconNames(text) {
   const names = new Set()
   for (const m of text.matchAll(/\bicons\.(\w+)/g)) names.add(m[1])
-  for (const m of text.matchAll(/(?<![\w-])type=(?:"([^"]+)"|'([^']+)')/g)) {
-    if (m[1] || m[2]) names.add(m[1] || m[2])
+  for (const tag of text.matchAll(/<(Bng\w+)\b((?:[^>"']|"[^"]*"|'[^']*')*)>/g)) {
+    const attr = tag[1] === 'BngIcon' ? 'type' : 'icon'
+    for (const m of tag[2].matchAll(new RegExp(`(?<![\\w-])${attr}=(?:"([^"]*)"|'([^']*)')`, 'g'))) {
+      const v = m[1] ?? m[2]
+      const q = v.match(/^'([^']+)'$/)
+      if (q) names.add(q[1])
+      else if (/^\w+$/.test(v)) names.add(v)
+    }
   }
-  for (const m of text.matchAll(/:type=(?:"'([^'"]+)'"|'"([^'"]+)"')/g)) names.add(m[1] || m[2])
   return names
 }
 
