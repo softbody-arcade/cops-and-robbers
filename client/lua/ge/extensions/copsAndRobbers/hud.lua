@@ -45,17 +45,21 @@ local function rule(rules, key)
   return tonumber(type(rules) == "table" and rules[key]) or DEFAULT_RULES[key]
 end
 
+local function knownName(name)
+  return type(name) == "string" and name ~= "" and name or nil
+end
+
 function M.ruleLine(role, runnerName, rules)
   local catch = string.format("under %g km/h within %g m for %g s.",
     rule(rules, "catchMaxSpeedKmh"), rule(rules, "catchRadiusMeters"), rule(rules, "catchHoldSeconds"))
   if role == "runner" then return "Survive as long as you can. Cops catch you by holding you " .. catch end
   local line = string.format("You're released %g s after the runner. Catch them by holding them %s", rule(rules, "headStartSeconds"), catch)
-  if type(runnerName) == "string" and runnerName ~= "" then return runnerName .. " is the runner. " .. line end
+  if knownName(runnerName) then return runnerName .. " is the runner. " .. line end
   return line
 end
 
-local function waitingText(prep)
-  if prep.waiting ~= "change" then return WAITING_GO end
+local function waitingText(prep, applying)
+  if applying or prep.waiting ~= "change" then return WAITING_GO end
   if prep.role == "runner" then return "Make your change, then press Apply" end
   return string.format("Waiting for %s's change", prep.runner or "the runner")
 end
@@ -90,6 +94,7 @@ local function center(info, now)
     kind = "role", role = runner and "runner" or "cop", car = prep.car,
     title = runner and "YOU'RE THE RUNNER" or "YOU'RE A COP",
     rule = M.ruleLine(prep.role, prep.runner, info.rules),
+    runner = not runner and knownName(prep.runner) or nil,
   }
 end
 
@@ -119,13 +124,19 @@ local function catchBlock(state, now, info)
   return catch
 end
 
-local function changeBlock(change)
+local function changeBlock(change, role)
   local changes = type(change.changes) == "table" and change.changes or {}
-  local who = string.upper(tostring(change.runner or "RUNNER")) .. "'S CHANGE"
+  local title = "The runner's change"
+  if change.canApply == true or role == "runner" then
+    title = "Your change"
+  elseif knownName(change.runner) then
+    title = change.runner .. "'s change"
+  end
   local lines = {}
   for i = 1, math.min(#changes, CHANGE_LINES) do lines[i] = changes[i] end
   return {
-    title = #changes == 0 and (who .. ": none yet") or string.format("%s (%d)", who, #changes),
+    title = title,
+    count = #changes,
     lines = lines,
     more = #changes > CHANGE_LINES and (#changes - CHANGE_LINES) or nil,
     canApply = change.canApply == true or nil,
@@ -185,6 +196,7 @@ local function helpBlock(open, rules)
     for k, v in pairs(rules) do r[k] = v end
     r.noLimit = not ((tonumber(rules.roundTimeLimitSeconds) or 0) > 0)
     r.sightOff = not ((tonumber(rules.sightMaxMeters) or 0) > 0)
+    r.lastSeenOff = not ((tonumber(rules.lastSeenIntervalSeconds) or 0) > 0)
     help.rules = r
   end
   return help
@@ -209,8 +221,8 @@ function M.payload(state, now, info)
     payload.lobby = lobbyBlock(info)
   else
     payload.center = center(info, now)
-    if info.prep then payload.prep = { waiting = waitingText(info.prep), color = info.color } end
-    if type(info.change) == "table" then payload.change = changeBlock(info.change) end
+    if info.prep then payload.prep = { waiting = waitingText(info.prep, info.applying), color = info.color } end
+    if type(info.change) == "table" then payload.change = changeBlock(info.change, info.role) end
     payload.status = statusBlock(info, now)
   end
   return payload
