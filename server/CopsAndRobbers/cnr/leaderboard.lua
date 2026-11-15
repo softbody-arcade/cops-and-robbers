@@ -124,7 +124,8 @@ function M.maps(board)
   return list
 end
 
-function M.cops(board, map, limit)
+function M.cops(board, map, limit, assistPercent)
+  assistPercent = tonumber(assistPercent) or 20
   local byKey, list = {}, {}
   for _, r in ipairs(board.runs) do
     if validRun(r, map) then
@@ -132,13 +133,26 @@ function M.cops(board, map, limit)
       for _, c in ipairs(catcherList(r)) do
         local s = byKey[c.key]
         if not s then
-          s = { key = c.key, name = c.name, catches = 0, fastest = math.huge, nameAt = at }
+          s = { key = c.key, name = c.name, catches = 0, assists = 0, fastest = math.huge, nameAt = at }
           byKey[c.key] = s
           list[#list + 1] = s
         end
         s.catches = s.catches + 1
         s.fastest = math.min(s.fastest, r.survivedSeconds)
         if at >= s.nameAt then s.name, s.nameAt = c.name, at end
+      end
+    end
+  end
+  for _, r in ipairs(board.runs) do
+    if validRun(r, map) and r.endReason == "caught" then
+      local caught = {}
+      for _, c in ipairs(catcherList(r)) do caught[c.key] = true end
+      local chase = tonumber(r.chaseSeconds) or r.survivedSeconds
+      for _, c in ipairs(copList(r)) do
+        local s = byKey[c.key]
+        if s and not caught[c.key] and chase > 0 and c.sight / chase * 100 >= assistPercent - 1e-9 then
+          s.assists = s.assists + 1
+        end
       end
     end
   end
@@ -149,7 +163,7 @@ function M.cops(board, map, limit)
     if a.fastest ~= b.fastest then return a.fastest < b.fastest end
     return a.name < b.name
   end)
-  for _, s in ipairs(list) do s.nameAt, s.key = nil, nil end
+  for _, s in ipairs(list) do s.nameAt = nil end
   while limit and #list > limit do table.remove(list) end
   return list
 end
@@ -207,6 +221,45 @@ function M.players(board, map, assistPercent)
     if a.name:lower() ~= b.name:lower() then return a.name:lower() < b.name:lower() end
     return a.key < b.key
   end)
+  return list
+end
+
+function M.rankOf(board, filter, key)
+  for i, e in ipairs(M.runners(board, filter, math.huge)) do
+    if e.key == key then return i, e end
+  end
+  return nil
+end
+
+function M.rounds(board, filter, limit)
+  local ids = {}
+  for i, r in ipairs(board.runs) do
+    if validRun(r, filter) then ids[#ids + 1] = i end
+  end
+  table.sort(ids, function(a, b)
+    local ta, tb = tonumber(board.runs[a].endedAt) or 0, tonumber(board.runs[b].endedAt) or 0
+    if ta ~= tb then return ta > tb end
+    return a > b
+  end)
+  local list = {}
+  for _, id in ipairs(ids) do
+    if limit and #list >= limit then break end
+    local r = board.runs[id]
+    local chase = tonumber(r.chaseSeconds) or r.survivedSeconds
+    local catcherKeys = {}
+    for _, c in ipairs(catcherList(r)) do catcherKeys[c.key] = true end
+    local cops = {}
+    for _, c in ipairs(copList(r)) do
+      local sightPct
+      if type(r.hiddenSeconds) == "number" and chase > 0 then sightPct = math.floor(c.sight / chase * 100 + 0.5) end
+      cops[#cops + 1] = { name = c.name, sightPct = sightPct, catcher = catcherKeys[c.key] == true }
+    end
+    list[#list + 1] = {
+      id = id, endedAt = r.endedAt, map = r.map, player = r.player, survivedSeconds = r.survivedSeconds,
+      endReason = r.endReason, catchers = r.catchers, model = r.model, mode = r.mode, buildStep = r.buildStep,
+      timeline = type(r.timeline) == "table" and #r.timeline > 0 and r.timeline or nil, cops = cops,
+    }
+  end
   return list
 end
 

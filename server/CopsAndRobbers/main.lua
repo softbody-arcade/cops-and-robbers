@@ -369,30 +369,44 @@ local function anonymous(key)
   return string.format("p%08x", h)
 end
 
-local function boardState(sub)
+local BOARD_TOP = 20
+local ROUNDS_DEFAULT, ROUNDS_STEP, ROUNDS_MAX = 30, 30, 300
+
+local function boardState(sub, viewerKey)
   sub = type(sub) == "table" and sub or { map = mapName }
   local f = {
     map = sub.map ~= "all" and sub.map or nil,
     mode = (sub.mode == "random" or sub.mode == "evolving") and sub.mode or nil,
   }
+  local runners = leaderboard.runners(board, f, BOARD_TOP)
+  local mine
+  local rank, entry = leaderboard.rankOf(board, f, viewerKey)
+  if rank and rank > BOARD_TOP then
+    mine = { rank = rank, player = entry.player, survivedSeconds = entry.survivedSeconds, model = entry.model, map = entry.map }
+  end
+  for _, e in ipairs(runners) do
+    if e.key == viewerKey then e.me = true end
+    e.key = nil
+  end
+  local cops = leaderboard.cops(board, f, BOARD_TOP, cfg.assistMinSightPercent)
+  for _, c in ipairs(cops) do
+    if c.key == viewerKey then c.me = true end
+    c.key = nil
+  end
+  local players = leaderboard.players(board, f, cfg.assistMinSightPercent)
+  for _, p in ipairs(players) do
+    if p.key == viewerKey then p.me = true end
+    p.key = anonymous(tostring(p.key))
+  end
   return {
     map = mapName, maps = leaderboard.maps(board), filter = sub.map or mapName, mode = f.mode or "all",
-    runners = (function()
-      local list = leaderboard.runners(board, f, 20)
-      for _, e in ipairs(list) do e.key = nil end
-      return list
-    end)(),
-    cops = leaderboard.cops(board, f, 20),
-    players = (function()
-      local list = leaderboard.players(board, f, cfg.assistMinSightPercent)
-      for _, p in ipairs(list) do p.key = anonymous(tostring(p.key)) end
-      return list
-    end)(),
+    runners = runners, cops = cops, players = players, mine = mine,
+    rounds = leaderboard.rounds(board, f, sub.rounds or ROUNDS_DEFAULT),
   }
 end
 
 local function sendBoard(pid)
-  local ok, state = pcall(boardState, boardSubs[pid])
+  local ok, state = pcall(boardState, boardSubs[pid], playerKey(pid))
   if ok then send(pid, "cnr_boardState", state) else log("board update failed: " .. tostring(state)) end
 end
 
@@ -549,7 +563,15 @@ local function applyEffects(effects)
       local ok, err = pcall(saveLeaderboard)
       if not ok then log("failed to save leaderboard: " .. tostring(err)) end
       pushBoard()
-      send(-1, "cnr_top", { lines = leaderboard.formatTop(board, 3, mapName) })
+      local top = leaderboard.runners(board, mapName, 3)
+      for pid in pairs(MP.GetPlayers() or {}) do
+        local viewerKey = playerKey(pid)
+        local rows = {}
+        for i, e in ipairs(top) do
+          rows[i] = { rank = i, player = e.player, time = leaderboard.formatTime(e.survivedSeconds), me = e.key == viewerKey or nil }
+        end
+        send(pid, "cnr_top", { rows = rows })
+      end
     end
   end
 end
@@ -1145,9 +1167,13 @@ function cnrOnBoard(pid, data)
   elseif msg.action == "open" or msg.action == "filter" then
     local sub = boardSubs[pid] or { map = mapName }
     if msg.action == "filter" then
-      sub = { map = type(msg.map) == "string" and msg.map or sub.map, mode = type(msg.mode) == "string" and msg.mode or nil }
+      sub = { map = type(msg.map) == "string" and msg.map or sub.map, mode = type(msg.mode) == "string" and msg.mode or nil, rounds = sub.rounds }
     end
     boardSubs[pid] = sub
+    sendBoard(pid)
+  elseif msg.action == "more" and boardSubs[pid] then
+    local sub = boardSubs[pid]
+    sub.rounds = math.min((sub.rounds or ROUNDS_DEFAULT) + ROUNDS_STEP, ROUNDS_MAX)
     sendBoard(pid)
   end
 end

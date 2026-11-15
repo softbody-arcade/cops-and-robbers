@@ -784,8 +784,8 @@ test("a recorded run sends the top 3 for the map", function()
   env.startRound(); env.go()
   for _ = 1, 90 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
   local top = env.lastSent("cnr_top")
-  assertEq(top.pid, -1)
-  assertEq(top.data:find("1. Reinder", 1, true) ~= nil, true)
+  assertEq(top.pid, 2)
+  assertEq(top.data:find('"player":"Reinder"', 1, true) ~= nil, true)
   env.cleanup()
 end)
 
@@ -1850,5 +1850,63 @@ test("station count", function()
   local env = boot()
   assertEq(panelOf(env).stationCount, 0)
   assertEq(panelOf(env).geo, false)
+  env.cleanup()
+end)
+
+local function runnersSeed(n)
+  local runs = {}
+  for i = 1, n do
+    runs[i] = string.format('{"player":"P%d","key":"beammp:%d","survivedSeconds":%d,"map":"west_coast_usa","endedAt":%d}', i, 100 + i, 1000 - i, i)
+  end
+  return '{"format":2,"runs":[' .. table.concat(runs, ",") .. ']}'
+end
+
+test("the board marks the viewer's own rows and never leaks keys", function()
+  local env = boot({ leaderboard = '{"format":2,"runs":[{"player":"Me","key":"beammp:11","survivedSeconds":50,"map":"west_coast_usa","endedAt":1},{"player":"Bob","key":"beammp:22","survivedSeconds":40,"map":"west_coast_usa","endedAt":2}]}' })
+  env.ids = { [1] = { beammp = "11" }, [2] = { beammp = "22" } }
+  env.call("cnr_board", 1, '{"action":"open"}')
+  local d = sentTo(env, "cnr_boardState", 1)
+  local runners = Util.JsonDecode(d).runners
+  assertEq(runners[1].me, true); assertEq(runners[2].me, nil)
+  assertEq(Util.JsonDecode(d).mine, nil)
+  assertEq(d:find("beammp:", 1, true), nil)
+  env.cleanup()
+end)
+
+test("a viewer outside the top 20 gets mine pinned", function()
+  local env = boot({ leaderboard = runnersSeed(21) })
+  env.ids = { [1] = { beammp = "121" }, [2] = { beammp = "101" } }
+  env.call("cnr_board", 1, '{"action":"open"}')
+  local s = Util.JsonDecode(sentTo(env, "cnr_boardState", 1))
+  assertEq(#s.runners, 20)
+  assertEq(s.mine.rank, 21); assertEq(s.mine.player, "P21"); assertEq(s.mine.survivedSeconds, 979)
+  env.call("cnr_board", 2, '{"action":"open"}')
+  assertEq(Util.JsonDecode(sentTo(env, "cnr_boardState", 2)).mine, nil)
+  env.cleanup()
+end)
+
+test("more raises the rounds count and a filter keeps it", function()
+  local env = boot({ leaderboard = runnersSeed(70) })
+  env.call("cnr_board", 1, '{"action":"open"}')
+  assertEq(#Util.JsonDecode(sentTo(env, "cnr_boardState", 1)).rounds, 30)
+  env.call("cnr_board", 1, '{"action":"more"}')
+  assertEq(#Util.JsonDecode(sentTo(env, "cnr_boardState", 1)).rounds, 60)
+  env.call("cnr_board", 1, '{"action":"filter","map":"all"}')
+  assertEq(#Util.JsonDecode(sentTo(env, "cnr_boardState", 1)).rounds, 60)
+  env.cleanup()
+end)
+
+test("cnr_top goes to each player with me on their own row only", function()
+  local env = boot({ leaderboard = '{"format":2,"runs":[{"player":"Old","key":"beammp:22","survivedSeconds":999,"map":"west_coast_usa","endedAt":1}]}' })
+  env.ids = { [1] = { beammp = "11" }, [2] = { beammp = "22" } }
+  env.startRound(); env.go()
+  for _ = 1, 90 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  local one = Util.JsonDecode(sentTo(env, "cnr_top", 1))
+  local two = Util.JsonDecode(sentTo(env, "cnr_top", 2))
+  assertEq(one.lines, nil)
+  assertEq(one.rows[1].player, "Bob"); assertEq(one.rows[1].time, "16:39")
+  assertEq(one.rows[1].me, nil)
+  assertEq(two.rows[1].me, true)
+  assertEq(one.rows[2].me, true)
   env.cleanup()
 end)
