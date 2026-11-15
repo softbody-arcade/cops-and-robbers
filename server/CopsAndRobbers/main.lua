@@ -43,6 +43,8 @@ local GEO_STALE_SECONDS = 2
 local GEO_STATION_MERGE_METERS = 50
 local GEO_STATION_RADIUS = 20
 local GEO_RESET_VERDICT_DELAY = 1
+local GEO_LIVE_MIN_SECONDS = 3
+local lastLiveSentAt = -math.huge
 local pendingResetVerdicts = {}
 local colorStore = {}
 local serverClock = MP.CreateTimer()
@@ -311,6 +313,7 @@ local function applyEffects(effects)
         color = e.colorHex and colorTable((colors.parseHex(e.colorHex))) or colorFor(e.pid),
         runnerPos = not geoMode and runnerCar and runnerCar.pos or nil,
         copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
+        sightMaxMeters = cfg.sightMaxMeters,
       })
     elseif e.kind == "setupAI" then
       local list = {}
@@ -356,6 +359,26 @@ local function applyEffects(effects)
         autoNextAt = now() + cfg.autoNextDelaySeconds
         broadcast(string.format('Next round in %gs ("/cnr auto off" to stop)', cfg.autoNextDelaySeconds))
       end
+    elseif e.kind == "live" then
+      if not geoMode or now() - lastLiveSentAt >= GEO_LIVE_MIN_SECONDS then
+        lastLiveSentAt = now()
+        local g = geoMode and geoPoint(geoOf(current.runnerId)) or nil
+        for pid in pairs(current.players) do
+          if pid ~= current.runnerId and not round.isAI(pid) then
+            local route = not (e.noRoute and e.noRoute[pid])
+            if not geoMode then
+              send(pid, "cnr_lastSeen", { pos = e.pos, live = true, route = route })
+            elseif g then
+              send(pid, "cnr_lastSeen", { geo = g, live = true, route = route })
+            end
+          end
+        end
+        if not round.isAI(current.runnerId) and e.nearestCop then
+          send(current.runnerId, "cnr_nearestCop", { dist = e.nearestCop })
+        end
+      end
+    elseif e.kind == "spotted" then
+      if not round.isAI(current.runnerId) then send(current.runnerId, "cnr_spotted", { spotted = e.spotted }) end
     elseif e.kind == "lastSeen" then
       for pid in pairs(current.players) do
         if pid ~= current.runnerId and not round.isAI(pid) then
@@ -851,6 +874,12 @@ function cnrOnGeo(pid, data)
   end
 end
 
+function cnrOnSight(pid, data)
+  local ok, d = pcall(Util.JsonDecode, data)
+  if not ok or type(d) ~= "table" then return end
+  current:sightReport(now(), pid, d.seen == true)
+end
+
 function cnrOnRelocated(pid, data)
   if not current:isActive() then return end
   local ok, decoded = pcall(Util.JsonDecode, data)
@@ -947,6 +976,7 @@ MP.RegisterEvent("cnr_geo", "cnrOnGeo")
 MP.RegisterEvent("cnr_relocated", "cnrOnRelocated")
 MP.RegisterEvent("cnr_command", "cnrOnCommand")
 MP.RegisterEvent("cnr_panel", "cnrOnPanel")
+MP.RegisterEvent("cnr_sight", "cnrOnSight")
 MP.RegisterEvent("cnr_tick", "cnrTick")
 MP.CancelEventTimer("cnr_tick")
 MP.CreateEventTimer("cnr_tick", 250)

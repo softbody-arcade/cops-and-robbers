@@ -1035,3 +1035,46 @@ test("parts change log names the differing slots", function()
   assertEq(logged("slots: engine, wing"), true)
   env.cleanup()
 end)
+
+local function runningRound(env)
+  env.startRound()
+  env.go()
+  for _ = 1, 44 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+end
+
+test("a cop's sight report makes cops get live updates and the runner spotted", function()
+  local env = boot()
+  runningRound(env)
+  env.sent = {}
+  env.call("cnr_sight", 2, '{"seen":true}')
+  env.clock = env.clock + 0.25
+  env.call("cnr_tick")
+  local live = env.lastSent("cnr_lastSeen")
+  assertEq(live.pid, 2)
+  assertEq(live.data:find('"live":true', 1, true) ~= nil, true)
+  assertEq(live.data:find('"route":', 1, true) ~= nil, true)
+  local spotted = env.lastSent("cnr_spotted")
+  assertEq(spotted.pid, 1)
+  assertEq(spotted.data:find('"spotted":true', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("a sight report from the runner is ignored", function()
+  local env = boot()
+  runningRound(env)
+  env.sent = {}
+  env.call("cnr_sight", 1, '{"seen":true}')
+  env.call("cnr_sight", 1, "not json")
+  env.clock = env.clock + 0.25
+  env.call("cnr_tick")
+  assertEq(env.lastSent("cnr_lastSeen"), nil)
+  assertEq(env.lastSent("cnr_spotted"), nil)
+  env.cleanup()
+end)
+
+test("round setup tells clients the sight range", function()
+  local env = boot()
+  env.startRound()
+  assertEq(env.lastSent("cnr_roundSetup").data:find('"sightMaxMeters":400', 1, true) ~= nil, true)
+  env.cleanup()
+end)
