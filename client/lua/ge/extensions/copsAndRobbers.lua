@@ -382,7 +382,7 @@ end
 
 local function hasLightbar(parts)
   for _, part in pairs(parts or {}) do
-    if type(part) == "string" and part ~= "" and part:lower():find("lightbar", 1, true) then return true end
+    if lightbar.isMainLight(part) then return true end
   end
   return false
 end
@@ -395,7 +395,7 @@ local function lightbarParts(model)
     if type(data) == "table" and data.format ~= 4 and type(data.parts) == "table" and hasLightbar(data.parts) then
       local parts = {}
       for slot, part in pairs(data.parts) do
-        if type(part) == "string" and part ~= "" and (slot:lower():find("lightbar", 1, true) or part:lower():find("lightbar", 1, true)) then
+        if type(part) == "string" and part ~= "" and (lightbar.isLightPart(slot) or lightbar.isLightPart(part)) then
           parts[slot] = part
         end
       end
@@ -415,7 +415,7 @@ local function jbeamLightbarParts(model)
   if not okParts or type(available) ~= "table" then return nil end
   local candidates = {}
   for name in pairs(available) do
-    if name:lower():find("lightbar", 1, true) then
+    if lightbar.isLightPart(name) then
       local okPart, part = pcall(jbeamIO.getPart, ioCtx, name)
       if okPart and type(part) == "table" then
         candidates[#candidates + 1] = { name = name, slots = part.slotType or part.slotTypes }
