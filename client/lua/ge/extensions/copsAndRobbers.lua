@@ -703,6 +703,23 @@ local function onExtensionLoaded()
   AddEventHandler("cnr_panelReply", function(data) guihooks.trigger("CnRPanelReply", jsonDecode(data) or {}) end)
 end
 
+function M.configs(opts)
+  guihooks.trigger("CnRConfigs", vehicles.configList(opts))
+end
+
+function M.newBuild(choice)
+  choice = type(choice) == "table" and choice or {}
+  local path = choice.config
+  if choice.random then
+    local list = vehicles.configList(choice)
+    local pick = #list > 0 and list[math.random(#list)]
+    path = pick and pick.config
+  end
+  local b = vehicles.buildFrom(path)
+  if not b then return guihooks.trigger("CnRPanelReply", { text = "That car can't start a build" }) end
+  M.panel({ action = "build", op = "new", model = b.model, name = b.name, parts = b.parts, vars = b.vars, from = choice.random and "random" or path })
+end
+
 function M.board(msg)
   if TriggerServerEvent and type(msg) == "table" then TriggerServerEvent("cnr_board", jsonEncode(msg)) end
 end

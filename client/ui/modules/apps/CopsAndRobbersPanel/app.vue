@@ -24,11 +24,30 @@
         <BngDropdown v-model="choice" :items="runnerItems" class="cnr-grow" />
       </div>
 
+      <div class="cnr-row">
+        <BngSwitch :model-value="isEvolving" :disabled="!can.build" label-before :inline="false" class="cnr-grow" @update:modelValue="v => saveSettings({ carMode: v ? 'evolving' : 'random' }, false)">Evolving car</BngSwitch>
+      </div>
+
+      <div v-if="isEvolving" class="cnr-build">
+        <div class="cnr-build-label">{{ state.build ? state.build.label : "No build yet" }}</div>
+        <div class="cnr-row">
+          <BngDropdown v-model="buildChoice" :items="configItems" show-search class="cnr-grow" @open="loadConfigs" />
+          <BngButton :disabled="!can.build || !buildChoice" accent="secondary" @click="newBuild({ config: buildChoice })">Start build</BngButton>
+        </div>
+        <div class="cnr-buttons">
+          <BngButton :disabled="!can.build" accent="secondary" @click="newBuild({ random: true })">New build: random</BngButton>
+          <BngButton :disabled="!can.build || !state.build" accent="attention" @click="resetBuildClick">{{ buildResetArmed ? "Click again to reset" : "Reset build" }}</BngButton>
+        </div>
+      </div>
+
       <div class="cnr-buttons">
         <BngButton :disabled="!can.start" @click="command(`start ${choice}`)">Start round</BngButton>
-        <BngButton :disabled="!can.reroll" accent="secondary" @click="command('reroll')">New car</BngButton>
+        <BngButton v-if="!isEvolving" :disabled="!can.reroll" accent="secondary" @click="command('reroll')">New car</BngButton>
+        <BngButton v-if="isEvolving" :disabled="!can.apply" accent="secondary" @click="applyChange">Apply change</BngButton>
         <BngButton :disabled="!can.go" @click="command('go')">GO</BngButton>
       </div>
+      <div v-if="isEvolving && state.phase === 'prep'" class="cnr-hint">Apply the change first</div>
+      <div v-if="isEvolving && !state.build && state.phase === 'idle'" class="cnr-hint">Start a new build first</div>
       <div class="cnr-buttons">
         <BngButton :disabled="!can.end" accent="secondary" @click="command('end')">End chase</BngButton>
         <BngButton :disabled="!can.stop" accent="destructive" @click="command('stop')">Cancel</BngButton>
@@ -130,7 +149,7 @@ const GROUPS = [
     { key: "excludedModels", label: "Excluded cars", kind: "list" },
   ] },
 ]
-const KNOWN = new Set(GROUPS.flatMap(g => g.items.map(i => i.key)).concat(["autoNextRound"]))
+const KNOWN = new Set(GROUPS.flatMap(g => g.items.map(i => i.key)).concat(["autoNextRound", "carMode"]))
 const DRIVING = new Set(["countdown", "headstart", "running"])
 const PHASES = {
   idle: "No round",
@@ -138,6 +157,8 @@ const PHASES = {
   prep: "Prep: waiting for GO",
   countdown: "Countdown",
   headstart: "Runner head start",
+  applying: "Applying the change",
+  ready: "Ready for GO",
 }
 const SAVE_DELAY_MS = 500
 const OPEN_RETRY_MS = 2000
@@ -153,6 +174,10 @@ const replyText = ref("")
 const pending = ref({})
 const drafts = ref({})
 const resetArmed = ref(false)
+const buildResetArmed = ref(false)
+const buildChoice = ref(null)
+const configItems = ref([])
+let buildResetTimer = null
 const collapsed = ref(false)
 let inFlight = []
 let nextRequestId = 1
@@ -211,6 +236,39 @@ const groups = computed(() => {
 
 function send(msg) {
   api.engineLua(`if copsAndRobbers then copsAndRobbers.panel(${api.serializeToLua(msg)}) end`)
+}
+
+const isEvolving = computed(() => (state.value.settings || {}).carMode === "evolving")
+
+function buildFilter() {
+  const settings = state.value.settings || {}
+  return { includeMods: settings.includeModVehicles === true, excludedModels: Array.isArray(settings.excludedModels) ? settings.excludedModels : [] }
+}
+
+function loadConfigs() {
+  api.engineLua(`if copsAndRobbers then copsAndRobbers.configs(${api.serializeToLua(buildFilter())}) end`)
+}
+
+function newBuild(choice) {
+  replyText.value = ""
+  api.engineLua(`if copsAndRobbers then copsAndRobbers.newBuild(${api.serializeToLua({ ...buildFilter(), ...choice })}) end`)
+}
+
+function resetBuildClick() {
+  if (!buildResetArmed.value) {
+    buildResetArmed.value = true
+    buildResetTimer = setTimeout(() => (buildResetArmed.value = false), RESET_CONFIRM_MS)
+    return
+  }
+  clearTimeout(buildResetTimer)
+  buildResetArmed.value = false
+  replyText.value = ""
+  send({ action: "build", op: "reset" })
+}
+
+function applyChange() {
+  replyText.value = ""
+  send({ action: "apply" })
 }
 
 function command(text) {
@@ -314,6 +372,10 @@ events.on("CnRPanel", data => {
   }
 })
 
+events.on("CnRConfigs", data => {
+  configItems.value = Array.isArray(data) ? data.map(c => ({ value: c.config, label: c.label })) : []
+})
+
 events.on("CnRPanelReply", data => {
   if (!data || typeof data !== "object") return
   if (data.ok === undefined) {
@@ -356,6 +418,7 @@ onUnmounted(() => {
   clearInterval(openTimer)
   clearTimeout(saveTimer)
   clearTimeout(resetTimer)
+  clearTimeout(buildResetTimer)
 })
 </script>
 
@@ -463,6 +526,21 @@ onUnmounted(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 0.375rem;
+}
+.cnr-build {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.5rem;
+  border-radius: 0.25rem;
+  background: rgba(255, 255, 255, 0.05);
+}
+.cnr-build-label {
+  font-weight: 700;
+}
+.cnr-hint {
+  font-size: 0.75rem;
+  color: #ffcc66;
 }
 .cnr-locked {
   padding: 0.375rem 0.5rem;

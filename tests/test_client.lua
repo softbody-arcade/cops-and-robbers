@@ -434,3 +434,36 @@ test("a cop's evolving car gets the build with emergency lights checked", functi
   assertEq(type(env.replaced[#env.replaced].opt.config), "table")
   assertEq(env.replaced[#env.replaced].opt.config.parts.pickup_engine, "v8")
 end)
+
+local CONFIGS = {
+  { model_key = "pickup", key = "base", Configuration = "Base", Source = "BeamNG - Official", Type = "Car", pcFilename = "/vehicles/pickup/base.pc" },
+  { model_key = "meocar", key = "drag", Configuration = "Drag", Source = "Meo's Drag", Type = "Car", pcFilename = "/vehicles/meocar/drag.pc" },
+  { model_key = "localcar", key = "x", Configuration = "X", Source = "My Mod", Type = "Car", pcFilename = "/vehicles/localcar/x.pc" },
+  { model_key = "citybus", key = "city", Configuration = "City", Source = "BeamNG - Official", Type = "Car", pcFilename = "/vehicles/citybus/city.pc" },
+  { model_key = "pickup", key = "mine", Configuration = "Mine", Source = "Custom", Type = "Car", pcFilename = "/vehicles/pickup/mine.pc" },
+}
+local ORIGINS = { ["/vehicles/meocar/drag.pc"] = "/mods/multiplayer/meosdrag.zip", ["/vehicles/localcar/x.pc"] = "/mods/repo/mymod.zip" }
+
+test("the build car list has only server-provided configs", function()
+  local env = bootClient({ configs = CONFIGS, origins = ORIGINS })
+  env.M.configs({ includeMods = true, excludedModels = { "citybus" } })
+  local list = env.lastTrigger("CnRConfigs")
+  local byConfig = {}
+  for _, c in ipairs(list) do byConfig[c.config] = c end
+  assertEq(#list, 2)
+  assertEq(byConfig["vehicles/pickup/base.pc"] ~= nil, true); assertEq(byConfig["vehicles/meocar/drag.pc"] ~= nil, true)
+  assertEq(byConfig["vehicles/pickup/base.pc"].label, "Gavril Pickup – Base")
+  env.M.configs({ includeMods = false, excludedModels = {} })
+  assertEq(#env.lastTrigger("CnRConfigs"), 2)
+end)
+
+test("starting a build reads the chosen config and sends its parts", function()
+  local env = bootClient({ configs = CONFIGS, origins = ORIGINS,
+    files = { ["/vehicles/pickup/base.pc"] = { format = 2, model = "pickup", parts = { pickup_engine = "v8" }, vars = { gear1 = 3.1 } } } })
+  env.M.newBuild({ config = "vehicles/pickup/base.pc" })
+  local msg = env.lastSent("cnr_panel")
+  assertEq(msg.action, "build"); assertEq(msg.op, "new"); assertEq(msg.model, "pickup")
+  assertEq(msg.parts.pickup_engine, "v8"); assertEq(msg.vars.gear1, 3.1); assertEq(msg.name, "Gavril Pickup")
+  env.M.newBuild({ config = "vehicles/pickup/missing.pc" })
+  assertEq(env.lastTrigger("CnRPanelReply").text, "That car can't start a build")
+end)
