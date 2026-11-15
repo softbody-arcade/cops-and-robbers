@@ -1,4 +1,4 @@
-# Cops and Robbers 1.3.0: features
+# Cops and Robbers 1.3.1: features
 
 A BeamMP server plugin with a client mod that BeamMP downloads automatically. The mod enforces the group's cops-and-robbers rules. It is one mod for every map, and it switches to geo mode on BeamNG.Earth by itself.
 
@@ -197,4 +197,4 @@ Options > Controls > Gameplay contains "Cops & Robbers: ..." actions that can be
 - **Mods panel:** the zip carries a title, description, version and icon (`mod_info`) for mod panels.
 - **Stuck controls:** `/cnr stop` always unlocks everyone, and so does a plugin restart.
 - **Bad files:** a broken `config.json` gives a warning and uses the defaults. A broken or malformed leaderboard is moved aside.
-- **Tests:** 195 automated tests cover the rules and the server wiring (run with `make test`).
+- **Tests:** 210 automated tests cover the rules and the server wiring (run with `make test`).
