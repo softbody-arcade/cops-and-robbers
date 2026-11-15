@@ -10,30 +10,41 @@ make package
 
 - Copy `dist/Server/CopsAndRobbers` to the server's `Resources/Server/`.
 - Copy `dist/Client/CopsAndRobbers.zip` to the server's `Resources/Client/`.
-- Set `MaxCars` to at least 3 if you want to use `/cnr test` (the AI cars count as yours).
+- Set `MaxCars` to at least 3 if you want to use practice rounds (the AI cars count as yours).
 
 Players install nothing; BeamMP downloads the client mod on join. Every reset button works during a round and
 follows the round's reset rules: Reset vehicle and Recover repair in place; Load home and Recover to last road
 repair in place for the runner and move cops to the nearest road.
 
-## Commands
+## Controls
+
+Everything runs through two apps (Esc > UI Apps):
+
+- **Cops and Robbers Panel** (for whoever runs the game): start rounds (runner: next, same, random or a player), GO,
+  End chase, Cancel, automatic rounds, practice rounds, the evolving car build and Apply, and every setting
+  (saved automatically; "Reload config.json" picks up hand edits).
+- **Cops and Robbers Leaderboard** (anyone): best times, top cops and player stats.
+
+Only five chat commands remain:
 
 | Command | |
 |---|---|
-| `/cnr start <name\|random\|next\|again>` | Set up a round. `next` = whoever ran least this session, `again` = same runner, `=<name>` = exactly that player |
-| `/cnr reroll` | New random car during prep |
-| `/cnr go` | Runner countdown, then cop head start |
-| `/cnr continue` | Next step: set up a round (next runner), or start it during prep |
-| `/cnr auto on\|off` | Prepare the next round automatically after each round (still needs `/cnr go`) |
-| `/cnr end` | End the chase and record the runner's time |
-| `/cnr stop` | Cancel the round (not recorded) and unlock everyone |
-| `/cnr color <#hex\|off>` | Your car color for every round |
-| `/cnr test <runner\|cop>` | Practice round against BeamNG AI (only you see it) |
-| `/cnr top [cops\|all\|<map>]` | Leaderboards (default: current map) |
-| `/cnr set <setting> <value>` | Change a setting (saved to config.json) |
-| `/cnr config` / `/cnr reload` | Show settings / reload config.json |
-| `/cnr version` | Show the mod version |
+| `/cnr color <#hex\|off>` | Your car color for every round (the only way to paint: the game's paint menu is closed in rounds) |
 | `/cnr addstation` / `/cnr removestation` | Edit this map's gas stations |
+| `/cnr help` / `/cnr version` | Help / mod version |
+
+## Evolving car mode
+
+Switch "Evolving car" on in the panel. Instead of a random car each round, everyone drives one shared **build**:
+
+- Start a build from a random car or one you pick (vanilla configs and base cars from mods the server hands out).
+- In each round's prep, only the runner may change **one thing** (an engine swap, one performance stage, one
+  axle of wheels, plus whatever a swap needs to work). Everyone sees the queued change live in their HUD and keeps
+  each other honest.
+- **Apply change** locks it in: every car is rebuilt with it (the HUD shows APPLYING CHANGES until everyone has
+  loaded, at most 20 s), then GO. Parts someone doesn't have are flagged in the HUD.
+- The build is saved after every change and continues next session until "Reset build" (backups are kept in
+  `data/build-<time>.json`). Practice rounds use the build but never change it.
 
 ## HUD
 
@@ -61,12 +72,6 @@ and per-player stats (runs, best and average, escapes, catches, assists, time hi
 cops), filtered by map. It refreshes after every round. The leaderboard started fresh in 1.7.0; the old file is kept
 as `data/leaderboard-1.6.json`.
 
-## Key bindings
-
-Options > Controls > Gameplay lists the "Cops & Robbers: ..." actions (bind them to wheel buttons): Next step
-(set up / go), Start round (next / same / random runner), Go, New car, End chase, Cancel round, Automatic rounds
-on/off, Leaderboard, Practice as runner / cop. They send the same commands as chat.
-
 ## Settings (`config.json`)
 
 | Setting | Default | |
@@ -88,13 +93,14 @@ on/off, Leaderboard, Practice as runner / cop. They send the same commands as ch
 | `sightLiveIntervalSeconds` | 1 | Live runner position for all cops while one sees him (at least 3 s on BeamNG.Earth) |
 | `sightNoRouteSeconds` | 5 | A cop who sees the runner within his speed × this many seconds gets no route |
 | `sightNoRouteMinMeters` | 50 | ...and always within this distance |
+| `carMode` | random | `random` (a random car each round) or `evolving` (the shared build) |
 | `sightGraceSeconds` | 1.5 | Sight still counts this long after a cop loses it |
 | `assistMinSightPercent` | 20 | Share of the chase a cop needs sight of the runner for an assist |
 | `roundTimeLimitSeconds` | 0 | Runner escapes after this long (0 = no limit) |
 | `excludedModels` | citybus, us_semi, md_series, percheron, rockbouncer | Never picked |
 | `explodeOnCatch` | false | Runner's car explodes when caught |
 | `includeModVehicles` | false | Also pick mod vehicles |
-| `autoNextRound` | false | Prepare the next round automatically (`/cnr auto`) |
+| `autoNextRound` | false | Prepare the next round automatically (panel switch) |
 | `autoNextDelaySeconds` | 15 | Delay before the next round is prepared |
 
 ## Players and cops

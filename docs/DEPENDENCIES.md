@@ -13,13 +13,13 @@ Versions in use on 2026-11-15:
 1. Run `make test`. This shows our own logic is intact, but the game APIs are stubbed, so it says nothing about the update itself.
 2. Run `make deploy`. The deploy log must say `Cops and Robbers <version> loaded`, with no `LUA ERROR`.
 3. Check the client log after joining: `~/.local/share/BeamNG/BeamNG.drive/current/beamng.log`. Run `grep -n "copsAndRobbers\|CnR" beamng.log`. Look for Lua errors, plus the `Adding new Event Handler to "cnr_..."` lines.
-4. Play a practice round with `/cnr test cop`, then `/cnr go`. Check:
+4. Play a practice round from the panel (Practice: as cop), then press GO. Check:
    - **Setup:** the HUD appears at bottom centre, your car is replaced and frozen, and the AI cars spawn.
    - **Countdown:** the countdown banner runs and GO releases you.
    - **Lights:** the light bar or beacon flashes on your car and on the AI cop.
    - **Reset rules:** pressing your reset button gets refused and highlighted, and after waiting the reset is allowed.
    - **Catching:** the catch bar fills when you hold the AI runner.
-   - **End:** `/cnr end` shows the result card. Leaving the server removes the HUD from the layout.
+   - **End:** End chase shows the result card. Leaving the server removes the HUD from the layout.
 5. Open the control panel (Esc > UI Apps > Cops and Robbers Panel) and check:
    - The status line is filled in.
    - A stepper change saves ("Saved: ...").
@@ -56,7 +56,7 @@ Then do the checks for whatever actually updated.
 - The deploy log line (step 2 above) and `/cnr version`.
 - **Vehicle data format:** start a round. A car that's wrongly refused or deleted means the spawn or edit data format changed (`parseVehicleData`, `vehicleAllowed`).
 - **Parts edits:** during a round, change a part and look in the server log for `changed parts during the round ... slots: ...`. If every edit shows up as a change even when nothing changed, the `vcf.parts` shape changed.
-- **Account identity:** play a round and check that `/cnr top` shows the account names. If they're missing, the `GetPlayerIdentifiers` format changed.
+- **Account identity:** play a round and check that the leaderboard app shows the account names. If they're missing, the `GetPlayerIdentifiers` format changed.
 - **Positions and catching:** catching needs `GetPositionRaw`. If the catch bar never fills, check its return shape.
 
 ## BeamMP Client (in-game Lua and launcher)
@@ -69,13 +69,12 @@ Then do the checks for whatever actually updated.
 - `MPConfig.getPlayerServerID()`.
 - **Line of sight:** `MPVehicleGE.getVehicles()`, keyed by `"pid-vid"` with `gameVehicleID`, `isSpawned` and `isDeleted`. Also `MPVehicleGE.getPlayers()[pid].activeVehicleID`, a `"pid-vid"` key for the car that player is driving or viewing. These are used to find the runner's car on a cop's game.
 - The GE hook `onBeamMPServerLeave`.
-- **Mod mounting:** the mod is mounted when you join. Our keybindings then need an `onFileChanged` hook for `core/input/actions/copsAndRobbers.json`, and our UI apps need an `onFilesChanged` refresh.
+- **Mod mounting:** the mod is mounted when you join. Our UI apps then need an `onFilesChanged` refresh.
 - **Launcher on Arch:** the wrapper in `~/.local/bin/beammp-launcher` sets argv[0] and the working directory. The AUR binary name broke `CheckName()` before.
 
 **On update, check:**
 - The client log shows our handlers being added, and the round starts at all.
 - `cnr_myVehicle` reaches the server: your own car counts in catch and reset checks. If the vid parse breaks, the server never learns which car is yours.
-- Options > Controls > Gameplay still lists the "Cops & Robbers: ..." actions after you join.
 - The panel and HUD appear in Esc > UI Apps.
 - Rejoin within the same game session. If notices or replies now show twice, `AddEventHandler` re-registration has changed.
 
@@ -99,6 +98,11 @@ Then do the checks for whatever actually updated.
   - The action names in `LOCKED_ACTIONS` and `RESET_BUTTONS`.
   - We replace the globals `resetGameplay` and `spawn.teleportToLastRoad`, and `freeroam_bigMapMode.teleportToPoi`.
 - **Gas stations:** `freeroam_facilities.getFacilitiesByType("gasStation")` and `freeroam_gasStations.gasStationCenterRadius(f)`.
+- **Evolving car mode:**
+  - `core_vehicle_manager.getPlayerVehicleData().config` (a `partsTree` plus `vars` in 0.40) and `core_vehicle_partmgmt.partsTreeToPartsMap`, the same conversion the game's own "save config" uses.
+  - `FS:getFileOriginInfo(pc).archivePath` (configs from `/mods/multiplayer/` count as server-provided).
+  - The `parts_selector` action is the only way into the parts and paint menu, so closing it closes paint too.
+  - On update, check that a changed part shows up in the HUD's change list, that Apply rebuilds everyone's car to match, and that the game's config format is still `format: 2` with `parts` and `vars`.
 - **Line of sight** (`copsAndRobbers/sight.lua`):
   - `castRayStatic(origin, dirNormalized, length)` returns the distance to the first static hit (terrain, buildings), and `>= length` means clear. Vehicles don't block it.
   - We cast both ways, as the game's own `isVisible` does, because single-sided faces only block from one side.

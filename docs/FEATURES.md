@@ -1,23 +1,32 @@
-# Cops and Robbers 1.7.0: features
+# Cops and Robbers 1.8.0: features
 
 A BeamMP server plugin with a client mod that BeamMP downloads automatically. The mod enforces the group's cops-and-robbers rules. It is one mod for every map, and it switches to geo mode on BeamNG.Earth by itself.
 
 ## Round flow
 
+All round controls are in the Cops and Robbers Panel (Esc > UI Apps).
+
 | Step | What happens |
 |---|---|
-| `/cnr start <runner>` | Picks a random car and config. Everyone gets the same one. Cops are placed on a road 50–150 m from the runner. Everyone is frozen. |
-| Prep | No time limit. Players change paint here; the parts menu is closed once the countdown starts. Parts changes during the round are logged (with the slots that changed) but not undone yet. `/cnr reroll` picks a new car. |
-| `/cnr go` | "Runner starts in 3", then the runner is released. |
+| Start round | Picks a random car and config (or the evolving build). Everyone gets the same one. Cops are placed on a road 50–150 m from the runner. Everyone is frozen. |
+| Prep | No time limit. Colors come from `/cnr color` only: the game's parts and paint menu is closed for everyone (except the runner in evolving mode, for his one change). Parts changes during the round are logged (with the slots that changed) but not undone yet. New car picks another car (random mode). |
+| Apply change (evolving only) | Locks in the runner's change and rebuilds every car; the HUD shows APPLYING CHANGES until everyone has loaded (at most 20 s). |
+| GO | "Runner starts in 3", then the runner is released. |
 | Head start | Cops stay frozen for 7 s and see a countdown. |
 | Chase | Cops are released and the survival clock starts. A status line shows `time \| reset status \| distance info`. |
-| End | The round ends when the runner is caught, on `/cnr end`, when the time limit runs out, or when the runner disconnects. The run is recorded and the top 5 for the map is shown. |
-| Automatic next round | Optional (`/cnr auto on`). The next round is prepared with whoever has run least. It still waits for `/cnr go`. |
+| End | The round ends when the runner is caught, on End chase, when the time limit runs out, or when the runner disconnects. The run is recorded and the top 5 for the map is shown. |
+| Automatic next round | Optional (panel switch). The next round is prepared with whoever has run least. It still waits for GO. |
 
 ### Choosing the runner
-- `/cnr start <name>`: case-insensitive. A unique prefix is enough, and ambiguous names give an error.
-- `random`, `next` (whoever has run least this session), and `again` (the same runner).
-- `=<name>` picks exactly that player, for names like `next` or `random` (the control panel always sends this form).
+- The panel's runner list: Next (whoever has run least this session), Same as last, Random, or any player by name (sent as an exact name, so names like "next" work).
+
+## Evolving car mode
+
+- **The build:** one shared car (model, parts and tuning) instead of a random car each round. Switch "Evolving car" on in the panel. Start a build from a random car or a chosen one: vanilla configs and base cars from mods the server distributes only, never a player's own saved car, so everyone can spawn it.
+- **One change per round:** during prep only the runner has the parts menu. The group's rule: one change that works on its own (an engine swap, one performance stage, wheels one axle at a time, plus whatever a swap needs). The mod doesn't enforce it: everyone sees the queued change live in the HUD ("BOB'S CHANGE (2)", part names from the game, tuning values too) and keeps each other honest.
+- **Apply change:** the runner's exact setup becomes the build (liveries are paint and stay out), every car is rebuilt in place (cops keep their emergency lights), and the HUD shows APPLYING CHANGES until everyone's car has loaded (at most 20 s). GO only works after that. Each game checks it has every part and the HUD warns "⚠ Ann is missing: …" if not.
+- **Record:** chat logs each change ("Change 7 by Bob: Engine 4.5L V8 → 6.0L V8"). The build is saved after every change in `data/build.json` and continues next session until "Reset build"; resetting or starting a new build keeps a backup (`data/build-<time>.json`). Practice rounds use the build but never change it.
+- **Leaderboard:** runs record the mode and build step, and the leaderboard app filters by mode (all, random, evolving).
 
 ## Rules enforced
 
@@ -99,12 +108,9 @@ A BeamMP server plugin with a client mod that BeamMP downloads automatically. Th
 
 ## Leaderboards (saved permanently)
 
-- `/cnr top`: best runners on the current map.
-- `/cnr top all`: best runners across all maps.
-- `/cnr top <map>`: best runners on that map.
-- `/cnr top cops`: catches and fastest catch per cop.
-- **Saved per run:** runner, time, map, car, end reason (caught, called, escaped, disconnect), catchers, every cop in the round with their seconds of sight, and the runner's hidden time and how often he lost the cops.
-- A cancelled round (`/cnr stop`) and a test round are never recorded.
+- Shown in the Cops and Robbers Leaderboard app, and the top 3 in the HUD's result card after each round.
+- **Saved per run:** runner, time, map, car, end reason (caught, called, escaped, disconnect), catchers, every cop in the round with their seconds of sight, the runner's hidden time and how often he lost the cops, and the car mode and build step.
+- A cancelled round and a practice round are never recorded.
 - **Fresh start in 1.7.0:** the leaderboard file has a new format. An older file is moved to `data/leaderboard-1.6.json` (kept, not used).
 
 ## Leaderboard app
@@ -125,11 +131,11 @@ A BeamMP server plugin with a client mod that BeamMP downloads automatically. Th
 
 | Command | You | AI |
 |---|---|---|
-| `/cnr test runner` | Runner (blue) | Two cops (green, red) that chase you |
-| `/cnr test cop` | Cop (green) | A runner (blue) that flees, plus a partner cop (red) |
+| Practice: as runner | Runner (blue) | Two cops (green, red) that chase you |
+| Practice: as cop | Cop (green) | A runner (blue) that flees, plus a partner cop (red) |
 
 - All rules apply, including crash penalties for the AI.
-- Leaving the server, or another player using `/cnr start`, ends the test round.
+- Leaving the server, or another player starting a round, ends the test round.
 - On BeamNG.Earth, the AI cars are placed near you again after you teleport.
 - The AI needs `MaxCars` of 3 or more. On BeamNG.Earth it also needs BeamNG.Earth traffic turned on (for the road graph).
 
@@ -153,11 +159,12 @@ A BeamMP server plugin with a client mod that BeamMP downloads automatically. Th
 - **Catch bar:** shown while the catch timer is running. It is red with "BEING CAUGHT" for the runner and blue with "HOLDING RUNNER" for cops, uses 1% steps, and moves smoothly between server updates.
 - **Countdowns:** "RUNNER STARTS IN 3", "COPS RELEASED IN 7" and "CRASH PENALTY 10", with a large number.
 - **GO flashes:** "GO! RUN!", "GO!" and "PENALTY OVER", each shown for 2 s.
-- **Prep line:** your role, the car's name, and "waiting for "/cnr go"".
+- **Prep line:** your role, the car's name, and "waiting for GO".
 - **Reset feedback:** pressing reset when it is not allowed briefly highlights the reset part of the status line.
 - **Event line:** for example "Bob: crash penalty 10s", shown for 4 s, at most 2 at once.
-- **Result card:** shown for 10 s after a round. It contains the title, the runner and their time, who caught them, the top 3 for the map, and "Next round in N" when `/cnr auto` is on (it disappears when someone turns auto off). Leaving the server clears it.
+- **Result card:** shown for 10 s after a round. It contains the title, the runner and their time, who caught them, the top 3 for the map, and "Next round in N" when Automatic rounds is on (it disappears when someone turns auto off). Leaving the server clears it.
 - **Fallback:** when the app is not in the current layout, the old pop-up messages are used. Chat stays the record, and rare warnings stay pop-ups.
+- **Evolving mode:** during prep everyone sees the runner's queued change in place of the prep line; Apply shows APPLYING CHANGES.
 - **Format:** a Vue 3 app, the newest UI system in BeamNG 0.40.
 
 ## Control panel (UI app)
@@ -179,42 +186,17 @@ A BeamMP server plugin with a client mod that BeamMP downloads automatically. Th
 - **Live:** the panel follows changes made by anyone, including chat commands, within a quarter of a second.
 - **Collapse:** the ▾ button shrinks the panel to one line with the live status (click it or ▸ to open again). It collapses by itself when the countdown starts (GO) and opens again when the round ends.
 
-## Key bindings
+## Chat commands
 
-Options > Controls > Gameplay contains "Cops & Robbers: ..." actions that can be bound to wheel buttons. Nothing is bound by default.
-
-| Action | Same as |
-|---|---|
-| Next step (set up / go) | `/cnr continue`: sets up a round with the next runner, or starts it during prep |
-| Start round: next / same / random runner | `/cnr start next` / `again` / `random` |
-| Go | `/cnr go` |
-| New car | `/cnr reroll` |
-| End chase (record time) | `/cnr end` |
-| Cancel round | `/cnr stop` |
-| Automatic rounds on/off | `/cnr auto` |
-| Leaderboard | `/cnr top` |
-| Practice as runner / cop | `/cnr test runner` / `cop` |
-
-## Commands
+Everything else runs through the panel and the leaderboard app. Any other `/cnr` command points to the panel.
 
 | Command | |
 |---|---|
-| `/cnr start <name\|random\|next\|again>` | Set up a round |
-| `/cnr reroll` | New car during prep |
-| `/cnr go` | Start the countdown |
-| `/cnr continue` | Next step: set up a round, or start it |
-| `/cnr end` | End the chase and record the time |
-| `/cnr stop` | Cancel without recording, and unlock everyone |
-| `/cnr auto on\|off` | Prepare the next round automatically |
-| `/cnr color <#hex\|off>` | Your car color |
-| `/cnr test <runner\|cop>` | Practice round against AI |
-| `/cnr top [cops\|all\|<map>]` | Leaderboards |
-| `/cnr set <setting> <value>` | Change a setting (saved; only when no round is running) |
-| `/cnr config` / `/cnr reload` | Show settings / reload `config.json` |
+| `/cnr color <#hex\|off>` | Your car color for every round (the only way to paint) |
 | `/cnr addstation` / `/cnr removestation` | Edit gas stations |
-| `/cnr version` / `/cnr help` | Version / command list |
+| `/cnr help` / `/cnr version` | Help / version |
 
-## Settings (`config.json`, or `/cnr set`)
+## Settings (`config.json`, or the panel)
 
 | Setting | Default | |
 |---|---|---|
@@ -235,6 +217,7 @@ Options > Controls > Gameplay contains "Cops & Robbers: ..." actions that can be
 | `sightLiveIntervalSeconds` | 1 | Live runner position for all cops while one sees him (at least 3 s on BeamNG.Earth) |
 | `sightNoRouteSeconds` | 5 | A cop who sees the runner within his speed × this many seconds gets no route |
 | `sightNoRouteMinMeters` | 50 | ...and always within this distance |
+| `carMode` | random | `random` (a random car each round) or `evolving` (the shared build) |
 | `sightGraceSeconds` | 1.5 | Sight still counts this long after a cop loses it |
 | `assistMinSightPercent` | 20 | Share of the chase a cop needs sight of the runner for an assist |
 | `roundTimeLimitSeconds` | 0 | Runner escapes after this long (0 = no limit) |
@@ -248,6 +231,6 @@ Options > Controls > Gameplay contains "Cops & Robbers: ..." actions that can be
 
 - **Install:** players install nothing. The server needs the plugin in `Resources/Server` and the zip in `Resources/Client`.
 - **Mods panel:** the zip carries a title, description, version and icon (`mod_info`) for mod panels.
-- **Stuck controls:** `/cnr stop` always unlocks everyone, and so does a plugin restart.
+- **Stuck controls:** Cancel always unlocks everyone, and so does a plugin restart.
 - **Bad files:** a broken `config.json` gives a warning and uses the defaults. A broken or malformed leaderboard is moved aside.
-- **Tests:** 322 automated tests cover the rules, the server wiring and the client, which runs against stubbed game functions in `tests/test_client.lua` (run with `make test`).
+- **Tests:** 365 automated tests cover the rules, the server wiring and the client, which runs against stubbed game functions in `tests/test_client.lua` (run with `make test`).
