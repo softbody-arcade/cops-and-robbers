@@ -675,21 +675,15 @@ local function onExtensionLoaded()
   AddEventHandler("cnr_queued", function(data)
     local d = jsonDecode(data) or {}
     local mine = role == "runner" and evolving and (buildBaseline ~= nil or buildBaselineAt ~= nil)
-    local changes, anyMissing = {}, false
+    local changes = {}
     for i, c in ipairs(type(d.changes) == "table" and d.changes or {}) do
       local missing
       for _, id in ipairs(type(c.parts) == "table" and c.parts or {}) do
         if not vehicles.hasPart(roundModel, id) then missing = true end
       end
-      anyMissing = anyMissing or missing == true
       changes[i] = { label = c.label, from = c.from, to = c.to, extra = c.extra, missing = missing }
     end
     hudfeed.queued(d.runner, changes, mine)
-    local first = changes[1]
-    local summary = first and string.format("%s %s → %s", tostring(first.label), tostring(first.from), tostring(first.to)) or "none yet"
-    local more = #changes > 1 and string.format(" (+%d more)", #changes - 1) or ""
-    local warn = anyMissing and " (⚠ you're missing parts for it)" or ""
-    hudfeed.event(string.format("%s's change: %s%s%s", tostring(d.runner), summary, more, warn), clock, anyMissing and "warn" or "info")
   end)
   AddEventHandler("cnr_penaltyEnd", onPenaltyEnd)
   AddEventHandler("cnr_state", onState)

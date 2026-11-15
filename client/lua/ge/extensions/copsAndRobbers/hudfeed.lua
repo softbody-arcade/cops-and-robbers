@@ -74,6 +74,12 @@ function M.flash(text, clock)
 end
 
 function M.event(text, clock, tone)
+  for _, e in ipairs(events) do
+    if e.text == text and clock < e.untilT then
+      e.untilT = clock + EVENT_SECONDS
+      return
+    end
+  end
   events[#events + 1] = { text = text, tone = tone == "warn" and "warn" or "info", untilT = clock + EVENT_SECONDS }
   while #events > 5 do table.remove(events, 1) end
 end
