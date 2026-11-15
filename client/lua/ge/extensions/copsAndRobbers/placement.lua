@@ -13,8 +13,19 @@ local function appIndex(layout, appName)
   return nil
 end
 
+local function same(a, b)
+  if type(a) ~= "table" or type(b) ~= "table" then return a == b end
+  for k, v in pairs(a) do
+    if not same(v, b[k]) then return false end
+  end
+  for k in pairs(b) do
+    if a[k] == nil then return false end
+  end
+  return true
+end
+
 function M.new(appName, placement)
-  return { appName = appName, placement = placement, active = false, placed = {}, optedOut = {} }
+  return { appName = appName, placement = placement, active = false, placed = {}, optedOut = {}, createdCopy = {} }
 end
 
 function M.activate(state)
@@ -22,8 +33,9 @@ function M.activate(state)
 end
 
 function M.leave(state, env)
+  local createdCopy = state.createdCopy or {}
   state.active = false
-  state.placed, state.optedOut = {}, {}
+  state.placed, state.optedOut, state.createdCopy = {}, {}, {}
   local api = env.api
   for _, layout in ipairs(api.getAvailableLayouts() or {}) do
     local fresh = env.readLayout(layout.filename) or layout
@@ -32,6 +44,10 @@ function M.leave(state, env)
       api.removeApp(layout.filename, idx - 1)
       table.remove(fresh.apps, idx)
       idx = appIndex(fresh, state.appName)
+    end
+    if createdCopy[layout.filename] and api.resetLayout and env.readOriginal then
+      local original = env.readOriginal(layout.filename)
+      if type(original) == "table" and same(original.apps or {}, fresh.apps or {}) then api.resetLayout(layout.filename) end
     end
   end
   local current = api.getCurrentLayout()
@@ -59,8 +75,10 @@ function M.tick(state, env)
     return false
   end
   if state.optedOut[name] then return false end
+  local makesCopy = current.userFileExists == false
   if api.addApp(name, state.appName, copy(state.placement)) then
     state.placed[name] = true
+    if makesCopy then state.createdCopy[name] = true end
     api.setCurrentLayout(name)
     return true
   end

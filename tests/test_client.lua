@@ -163,3 +163,34 @@ test("picking a vehicle sends an official car config", function()
   local s = env.lastSent("cnr_vehiclePicked")
   assertEq(s.model, "pickup"); assertEq(s.config, "vehicles/pickup/base.pc")
 end)
+
+local function fakeLayouts()
+  local L = { disk = { ["/settings/ui_apps/layouts/beammp.uilayout.json"] = { apps = {} } }, added = {} }
+  local name = "/settings/ui_apps/layouts/beammp.uilayout.json"
+  L.api = {
+    getCurrentLayout = function() return { filename = name, apps = L.disk[name].apps, userFileExists = true } end,
+    setCurrentLayout = function() end,
+    getAvailableLayouts = function() return { { filename = name, apps = L.disk[name].apps } } end,
+    addApp = function(_, app, placement)
+      table.insert(L.disk[name].apps, { appName = app, placement = placement })
+      L.added[#L.added + 1] = placement
+      return true
+    end,
+    removeApp = function(_, idx0) table.remove(L.disk[name].apps, idx0 + 1); return true end,
+  }
+  L.name = name
+  return L
+end
+
+test("the HUD is placed centred in em units and checked less often once placed", function()
+  local L = fakeLayouts()
+  local env = bootClient({ layouts = L })
+  env.tick(4, 0.5)
+  assertEq(#L.added, 1)
+  assertEq(L.added[1].left, "50%")
+  assertEq(L.added[1].margin, nil)
+  assertEq(L.added[1].width, "32.5em")
+  local before = env.reads[L.name]
+  env.tick(20, 0.5)
+  assertEq(env.reads[L.name] - before <= 3, true)
+end)

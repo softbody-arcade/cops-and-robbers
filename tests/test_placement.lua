@@ -29,10 +29,14 @@ local function fakeGame(layoutApps, currentName)
     end,
     removeApp = function(name, idx0) table.remove(g.disk[name].apps, idx0 + 1); return true end,
   }
+  g.resets = {}
+  g.api.resetLayout = function(name) g.resets[#g.resets + 1] = name; return name end
+  g.originals = deepcopy(g.disk)
   g.env = {
     api = g.api,
     appExists = true,
     readLayout = function(name) return deepcopy(g.disk[name]) end,
+    readOriginal = function(name) return deepcopy(g.originals[name]) end,
   }
   return g
 end
@@ -125,4 +129,35 @@ test("no current layout means not placed", function()
   local s = placement.new("hud", PLACE)
   placement.activate(s)
   assertEq(placement.tick(s, g.env), false)
+end)
+
+test("leave resets a stock layout copy that only existed because the app was added", function()
+  local g = fakeGame({ beammp = { { appName = "chat" } } }, "beammp")
+  g.cache.userFileExists = false
+  local s = placement.new("hud", PLACE)
+  placement.activate(s)
+  placement.tick(s, g.env)
+  placement.leave(s, g.env)
+  assertEq(#g.resets, 1); assertEq(g.resets[1], "beammp")
+end)
+
+test("leave keeps a layout copy the player changed meanwhile", function()
+  local g = fakeGame({ beammp = { { appName = "chat" } } }, "beammp")
+  g.cache.userFileExists = false
+  local s = placement.new("hud", PLACE)
+  placement.activate(s)
+  placement.tick(s, g.env)
+  table.insert(g.disk.beammp.apps, { appName = "speedo" })
+  placement.leave(s, g.env)
+  assertEq(#g.resets, 0)
+end)
+
+test("leave never resets a layout that already had a user file", function()
+  local g = fakeGame({ beammp = { { appName = "chat" } } }, "beammp")
+  g.cache.userFileExists = true
+  local s = placement.new("hud", PLACE)
+  placement.activate(s)
+  placement.tick(s, g.env)
+  placement.leave(s, g.env)
+  assertEq(#g.resets, 0)
 end)

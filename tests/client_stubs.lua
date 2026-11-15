@@ -42,7 +42,12 @@ function bootClient(opts)
     if d == "{}" then return {} end
     return nil
   end
-  _G.jsonReadFile = function(path) return (opts.files or {})[path] end
+  env.reads = {}
+  _G.jsonReadFile = function(path)
+    env.reads[path] = (env.reads[path] or 0) + 1
+    if opts.layouts and opts.layouts.disk[path] then return deepcopy(opts.layouts.disk[path]) end
+    return (opts.files or {})[path]
+  end
   _G.deepcopy = function(t)
     local function cp(x)
       if type(x) ~= "table" then return x end
@@ -94,7 +99,7 @@ function bootClient(opts)
   _G.TriggerServerEvent = function(ev, data) env.sent[#env.sent + 1] = { ev = ev, data = data } end
   _G.AddEventHandler = function(ev, fn) env.handlers[ev] = fn end
   _G.getCurrentLevelIdentifier = function() return "west_coast_usa" end
-  _G.ui_appLayouts = nil
+  _G.ui_appLayouts = opts.layouts and opts.layouts.api or nil
   _G.beamngEarth_api = nil
   _G.freeroam_facilities, _G.freeroam_gasStations, _G.freeroam_bigMapMode = nil, nil, nil
   _G.core_groundMarkers = nil

@@ -5,10 +5,12 @@ local game = require("copsAndRobbers/game")
 local M = {}
 
 local HUD_APP = "copsAndRobbersHud"
-local HUD_PLACEMENT = { left = "0", right = "0", margin = "auto", bottom = "70px", width = "520px", height = "230px" }
+local HUD_PLACEMENT = { left = "50%", right = "", bottom = "4.375em", width = "32.5em", height = "14.375em" }
 local HUD_FILES = { "/ui/modules/apps/CopsAndRobbersHud/app.json", "/ui/modules/apps/CopsAndRobbersHud/app.vue" }
 local PUSH_INTERVAL = 0.1
 local PLACEMENT_INTERVAL = 2
+local PLACED_INTERVAL = 10
+local USER_LAYOUTS, ORIGINAL_LAYOUTS = "/settings/ui_apps/layouts/", "/settings/ui_apps/originalLayouts/"
 local PLACEMENT_DELAY = 3
 local BANNER_LABELS = { ["Runner starts in"] = "RUNNER STARTS IN", ["Cops released in"] = "COPS RELEASED IN", ["Crash penalty"] = "CRASH PENALTY" }
 local RESULT_TITLES = { caught = "RUNNER CAUGHT", called = "ROUND ENDED", escaped = "ESCAPED", disconnect = "RUNNER LEFT", cancelled = "ROUND CANCELLED" }
@@ -96,6 +98,11 @@ local function layoutsApi()
   return rawget(_G, "ui_appLayouts") or (extensions and extensions.ui_appLayouts)
 end
 
+local function readJson(filename)
+  local ok, data = pcall(jsonReadFile, filename)
+  return ok and type(data) == "table" and data or nil
+end
+
 local function placementEnv()
   local api = layoutsApi()
   if not api or not api.getCurrentLayout or not api.addApp or not api.removeApp
@@ -106,12 +113,13 @@ local function placementEnv()
     api = api,
     appExists = FS:fileExists(HUD_FILES[1]),
     readLayout = function(filename)
-      local ok, data = pcall(jsonReadFile, filename)
-      if ok and type(data) == "table" then
-        data.filename = filename
-        return data
-      end
-      return nil
+      local data = readJson(filename)
+      if data then data.filename = filename end
+      return data
+    end,
+    readOriginal = function(filename)
+      if type(filename) ~= "string" or filename:sub(1, #USER_LAYOUTS) ~= USER_LAYOUTS then return nil end
+      return readJson(ORIGINAL_LAYOUTS .. filename:sub(#USER_LAYOUTS + 1))
     end,
   }
 end
@@ -158,7 +166,8 @@ function M.update(clock, info)
     visibleSent = false
     guihooks.trigger("CnRHud", { visible = false })
   end
-  if loadedAt and clock - loadedAt >= PLACEMENT_DELAY and clock - lastPlacementCheck >= PLACEMENT_INTERVAL then
+  local interval = placed and PLACED_INTERVAL or PLACEMENT_INTERVAL
+  if loadedAt and clock - loadedAt >= PLACEMENT_DELAY and clock - lastPlacementCheck >= interval then
     lastPlacementCheck = clock
     placementTick()
   end
