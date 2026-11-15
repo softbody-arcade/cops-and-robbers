@@ -1162,6 +1162,10 @@ function M.command(text)
   if TriggerServerEvent then TriggerServerEvent("cnr_command", tostring(text)) end
 end
 
+function M.panel(msg)
+  if TriggerServerEvent and type(msg) == "table" then TriggerServerEvent("cnr_panel", jsonEncode(msg)) end
+end
+
 local function onExtensionLoaded()
   refreshActions()
   refreshUiApps()
@@ -1184,6 +1188,8 @@ local function onExtensionLoaded()
     AddEventHandler("cnr_state", onState)
     AddEventHandler("cnr_roundEnd", onRoundEnd)
     AddEventHandler("cnr_requestStations", onRequestStations)
+    AddEventHandler("cnr_panelState", function(data) guihooks.trigger("CnRPanel", jsonDecode(data) or {}) end)
+    AddEventHandler("cnr_panelReply", function(data) guihooks.trigger("CnRPanelReply", jsonDecode(data) or {}) end)
   end
 end
 
@@ -1192,14 +1198,17 @@ M.onExtensionUnloaded = function()
   endRound()
   placementLeave()
   refreshActions()
+  guihooks.trigger("CnRPanel", {})
 end
 M.onClientEndMission = function()
   endRound()
   placementLeave()
+  guihooks.trigger("CnRPanel", {})
 end
 M.onBeamMPServerLeave = function()
   endRound()
   placementLeave()
+  guihooks.trigger("CnRPanel", {})
 end
 M.onWorldReadyState = function(st)
   if st == 2 then placementStart() end
