@@ -98,3 +98,77 @@ test("validRuns detects a wrong shape", function()
   assertEq(leaderboard.validShape({runs=5}), false)
   assertEq(leaderboard.validShape({1, 2}), false)
 end)
+
+local function fullRun(o)
+  return {
+    player = o.player, key = "k:" .. o.player, survivedSeconds = o.s, chaseSeconds = o.s, map = o.map or "west_coast_usa",
+    model = o.model or "pickup", endedAt = o.at or 0, endReason = o.reason or "caught",
+    catchers = o.catchers or {}, catcherKeys = o.catcherKeys or {}, cops = o.cops or {}, copNames = o.copNames or {},
+    copSightSeconds = o.copSight or {}, hiddenSeconds = o.hidden, lostCount = o.lost,
+  }
+end
+
+local function statsBoard()
+  local b = leaderboard.load(nil)
+  leaderboard.add(b, fullRun({ player = "Bob", s = 100, at = 1, catchers = { "Ann" }, catcherKeys = { "k:Ann" },
+    cops = { "k:Ann", "k:Cid" }, copNames = { "Ann", "Cid" }, copSight = { 50, 30 }, hidden = 40, lost = 2 }))
+  leaderboard.add(b, fullRun({ player = "Bob", s = 200, at = 2, map = "italy", reason = "escaped",
+    cops = { "k:Ann" }, copNames = { "Ann" }, copSight = { 10 }, hidden = 100, lost = 1 }))
+  leaderboard.add(b, fullRun({ player = "Ann", s = 50, at = 3, catchers = { "Bob" }, catcherKeys = { "k:Bob" },
+    cops = { "k:Bob", "k:Cid" }, copNames = { "Bob", "Cid" }, copSight = { 40, 5 } }))
+  return b
+end
+
+local function byName(list)
+  local t = {}
+  for _, p in ipairs(list) do t[p.name] = p end
+  return t
+end
+
+test("player stats over all maps", function()
+  local list = leaderboard.players(statsBoard(), nil, 20)
+  assertEq(#list, 3); assertEq(list[1].name, "Ann"); assertEq(list[3].name, "Cid")
+  local p = byName(list)
+  assertEq(p.Bob.runs, 2); assertEq(p.Bob.best, 200); assertEq(p.Bob.average, 150); assertEq(p.Bob.escapes, 1)
+  assertEq(p.Bob.catches, 1); assertEq(p.Bob.assists, 0)
+  assertNear(p.Bob.hiddenPct, 140 / 300 * 100, 1e-9); assertEq(p.Bob.lostThem, 3)
+  assertEq(p.Ann.runs, 1); assertEq(p.Ann.catches, 1); assertEq(p.Ann.hiddenPct, nil); assertEq(p.Ann.lostThem, nil)
+  assertEq(p.Cid.runs, 0); assertEq(p.Cid.best, nil); assertEq(p.Cid.assists, 1)
+end)
+
+test("assists need sight for the given share of the chase", function()
+  assertEq(byName(leaderboard.players(statsBoard(), nil, 40)).Cid.assists, 0)
+  assertEq(byName(leaderboard.players(statsBoard(), nil, 30)).Cid.assists, 1)
+end)
+
+test("the map filter limits every stat", function()
+  local p = byName(leaderboard.players(statsBoard(), "west_coast_usa", 20))
+  assertEq(p.Bob.runs, 1); assertEq(p.Bob.best, 100); assertNear(p.Bob.hiddenPct, 40, 1e-9); assertEq(p.Bob.lostThem, 2)
+  assertEq(#leaderboard.players(statsBoard(), "nowhere", 20), 0)
+  assertEq(#leaderboard.runners(statsBoard(), "nowhere", 10), 0)
+  assertEq(#leaderboard.cops(statsBoard(), "nowhere", 10), 0)
+end)
+
+test("runners, cops and maps lists", function()
+  local b = statsBoard()
+  local r = leaderboard.runners(b, nil, 10)
+  assertEq(r[1].player, "Bob"); assertEq(r[1].survivedSeconds, 200); assertEq(r[1].map, "italy")
+  local c = leaderboard.cops(b, nil, 10)
+  assertEq(#c, 2); assertEq(c[1].name, "Bob"); assertEq(c[1].catches, 1); assertEq(c[1].fastest, 50)
+  local maps = leaderboard.maps(b)
+  assertEq(#maps, 2); assertEq(maps[1], "italy"); assertEq(maps[2], "west_coast_usa")
+end)
+
+test("a renamed player shows the latest name everywhere", function()
+  local b = statsBoard()
+  leaderboard.add(b, fullRun({ player = "Ann", s = 10, at = 9, cops = { "k:Bob" }, copNames = { "Bobby" }, copSight = { 1 } }))
+  local p = byName(leaderboard.players(b, nil, 20))
+  assertEq(p.Bobby ~= nil, true); assertEq(p.Bob, nil)
+end)
+
+test("isCurrent accepts format 2 and a missing file only", function()
+  assertEq(leaderboard.isCurrent(nil), true)
+  assertEq(leaderboard.isCurrent({ format = 2, runs = {} }), true)
+  assertEq(leaderboard.isCurrent({ runs = {} }), false)
+  assertEq(leaderboard.load(nil).format, 2)
+end)
