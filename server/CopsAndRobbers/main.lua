@@ -12,7 +12,7 @@ local geo = require("cnr.geo")
 local build = require("cnr.build")
 local panel = require("cnr.panel")
 
-local VERSION = "2.0.1"
+local VERSION = "2.0.2"
 local PREFIX = "[CnR] "
 local dataDir = pluginDir .. "data/"
 local stationsDir = dataDir .. "stations/"

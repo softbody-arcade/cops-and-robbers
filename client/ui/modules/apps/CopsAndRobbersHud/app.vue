@@ -22,9 +22,11 @@
         <template v-for="(line, i) in (hud.change.lines || [])" :key="'c' + i">
           <div class="cnr-change-line">
             <span class="cnr-change-label">{{ line.label }}</span>
-            <span class="cnr-muted">{{ line.from }}</span>
-            <span>→</span>
-            <span class="cnr-change-to">{{ line.to }}</span>
+            <span v-if="line.from === '(none)'" class="cnr-change-value cnr-change-to">+ {{ line.to === line.label ? "added" : line.to }}</span>
+            <span v-else-if="line.to === '(none)'" class="cnr-change-value cnr-change-removed">− {{ line.from === line.label ? "removed" : line.from }}</span>
+            <span v-else class="cnr-change-value">
+              <span class="cnr-muted">{{ line.from }}</span> → <span class="cnr-change-to">{{ line.to }}</span>
+            </span>
           </div>
           <div v-if="line.extra" class="cnr-change-extra">+ {{ line.extra }} {{ line.extra === 1 ? "part comes" : "parts come" }} with it</div>
         </template>
@@ -40,7 +42,8 @@
         <div class="cnr-status-main">
           <span class="cnr-role" :class="hud.status.role === 'RUNNER' ? 'is-runner' : 'is-cop'">{{ hud.status.role }}</span>
           <span class="cnr-time">{{ hud.status.time }}</span>
-          <span v-if="hud.status.tag" class="cnr-tag" :class="'tag-' + hud.status.tag.toLowerCase().replace(' ', '-')">{{ hud.status.tag }}</span>
+          <span v-if="hud.status.tag || hud.status.info" class="cnr-divider"></span>
+          <span v-if="hud.status.tag" class="cnr-tag" :class="'tag-' + hud.status.tag.toLowerCase().replace(' ', '-')">◉ {{ hud.status.tag }}</span>
           <span v-if="hud.status.info" class="cnr-info">{{ hud.status.info }}</span>
         </div>
         <div v-if="hud.status.reset" class="cnr-status-reset" :class="{ 'cnr-reset-flash': hud.status.resetFlash, 'is-ok': hud.status.reset === 'Reset OK' }">{{ hud.status.reset }}</div>
@@ -109,13 +112,25 @@ events.on("CnRHud", data => {
 }
 .cnr-change-line {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.75rem;
   white-space: nowrap;
   overflow: hidden;
 }
 .cnr-change-label {
-  min-width: 6rem;
+  flex: 0 1 auto;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-weight: 700;
+}
+.cnr-change-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cnr-change-removed {
+  color: #ff7b72;
 }
 .cnr-change-to {
   color: #9fe870;
@@ -181,22 +196,30 @@ events.on("CnRHud", data => {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.cnr-divider {
+  width: 1px;
+  align-self: stretch;
+  margin: 0.125rem 0;
+  background: rgba(255, 255, 255, 0.3);
+}
 .cnr-tag {
-  padding: 0.0625rem 0.5rem;
+  padding: 0 0.4375rem;
+  border: 1px solid currentColor;
   border-radius: 0.25rem;
   font-size: 0.8125rem;
   font-weight: 700;
   letter-spacing: 0.04em;
-  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
+  background: transparent;
 }
 .cnr-tag.tag-spotted, .cnr-tag.tag-in-sight {
-  background: #d93025;
+  color: #ff7b72;
 }
 .cnr-tag.tag-hidden {
-  background: #2e8b57;
+  color: #7ee2a8;
 }
 .cnr-tag.tag-live {
-  background: #1f6fd1;
+  color: #79b8ff;
 }
 .cnr-status-reset {
   font-size: 0.8125rem;
@@ -206,7 +229,7 @@ events.on("CnRHud", data => {
   color: #9fe870;
 }
 .cnr-change-extra {
-  padding-left: 6.5rem;
+  padding-left: 1rem;
   font-size: 0.75rem;
   color: rgba(255, 255, 255, 0.6);
 }
