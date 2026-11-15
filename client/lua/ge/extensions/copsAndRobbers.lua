@@ -429,6 +429,9 @@ local function onRoundSetup(data)
       pos, rot = findCopSpot(center, d.copSpawnMin or 50, d.copSpawnMax or 150, math.max(d.copIndex or 1, 1))
     end
   end
+  if role == "cop" and not d.inPlace and not resume and not pos then
+    toast("No road found near the runner, you start where you are", 6, "cnr_reset")
+  end
   placeVehicle(d.model, d.config, pos, rot, d.color)
 
   local phase = d.phase or "running"
@@ -818,7 +821,11 @@ local function requestReset(kind)
   local pos, rot = veh:getPosition(), uprightRotation(veh)
   if kind == "road" and role == "cop" then
     local roadPos, roadRot = nearestRoad(pos)
-    if roadPos then pos, rot = roadPos, roadRot end
+    if roadPos then
+      pos, rot = roadPos, roadRot
+    else
+      toast("No road found nearby, repaired in place", 4, "cnr_reset")
+    end
   end
   teleport(veh, pos, rot)
 end
