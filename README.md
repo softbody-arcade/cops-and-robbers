@@ -40,7 +40,9 @@ repair in place for the runner and move cops to the nearest road.
 On join the "Cops and Robbers HUD" app is added automatically to the player's current UI layout, at bottom centre
 (movable and resizable like any app), and removed again on leaving the server. During the chase it shows the status
 line (role, time, reset status, distance info) and a catch bar (red "BEING CAUGHT" for the runner, blue "HOLDING
-RUNNER" for cops) in 1% steps. When the app is not in the current layout, the old pop-up messages are shown instead.
+RUNNER" for cops) in 1% steps, plus countdowns, GO flashes, the prep line, short event lines and a result card
+(with the map's top 3) after each round. When the app is not in the current layout, the old pop-up messages are shown
+instead.
 
 ## Key bindings
 

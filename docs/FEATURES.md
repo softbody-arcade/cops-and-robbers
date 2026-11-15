@@ -1,4 +1,4 @@
-# Cops and Robbers 1.3.1: features
+# Cops and Robbers 1.4.0: features
 
 A BeamMP server plugin with a client mod that BeamMP downloads automatically. The mod enforces the group's cops-and-robbers rules. It is one mod for every map, and it switches to geo mode on BeamNG.Earth by itself.
 
@@ -129,7 +129,13 @@ A BeamMP server plugin with a client mod that BeamMP downloads automatically. Th
 - **Placement:** "Cops and Robbers HUD" is added automatically at bottom centre of the current UI layout on join. That includes BeamNG.Earth's MP layout after it switches. The app can be moved and resized, and it is removed from the layout again when leaving the server.
 - **Status line:** during the chase it shows `ROLE  m:ss | reset status | distance info`.
 - **Catch bar:** shown while the catch timer is running. It is red with "BEING CAUGHT" for the runner and blue with "HOLDING RUNNER" for cops, uses 1% steps, and moves smoothly between server updates.
-- **Fallback:** when the app is not in the current layout, the old pop-up messages are used.
+- **Countdowns:** "RUNNER STARTS IN 3", "COPS RELEASED IN 7" and "CRASH PENALTY 10", with a large number.
+- **GO flashes:** "GO! RUN!", "GO!" and "PENALTY OVER", each shown for 2 s.
+- **Prep line:** your role, the car's name, and "waiting for "/cnr go"".
+- **Reset feedback:** pressing reset when it is not allowed briefly highlights the reset part of the status line.
+- **Event line:** for example "Bob: crash penalty 10s", shown for 4 s, at most 2 at once.
+- **Result card:** shown for 10 s after a round. It contains the title, the runner and their time, who caught them, the top 3 for the map, and "Next round in N" when `/cnr auto` is on.
+- **Fallback:** when the app is not in the current layout, the old pop-up messages are used. Chat stays the record, and rare warnings stay pop-ups.
 - **Format:** a Vue 3 app, the newest UI system in BeamNG 0.40.
 
 ## Key bindings
@@ -197,4 +203,4 @@ Options > Controls > Gameplay contains "Cops & Robbers: ..." actions that can be
 - **Mods panel:** the zip carries a title, description, version and icon (`mod_info`) for mod panels.
 - **Stuck controls:** `/cnr stop` always unlocks everyone, and so does a plugin restart.
 - **Bad files:** a broken `config.json` gives a warning and uses the defaults. A broken or malformed leaderboard is moved aside.
-- **Tests:** 210 automated tests cover the rules and the server wiring (run with `make test`).
+- **Tests:** 217 automated tests cover the rules and the server wiring (run with `make test`).

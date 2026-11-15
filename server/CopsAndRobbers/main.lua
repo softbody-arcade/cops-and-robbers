@@ -10,7 +10,7 @@ local colors = require("cnr.colors")
 local tables = require("cnr.tables")
 local geo = require("cnr.geo")
 
-local VERSION = "1.3.1"
+local VERSION = "1.4.0"
 local PREFIX = "[CnR] "
 local dataDir = pluginDir .. "data/"
 local stationsDir = dataDir .. "stations/"

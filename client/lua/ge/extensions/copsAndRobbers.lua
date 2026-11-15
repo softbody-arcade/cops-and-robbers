@@ -4,7 +4,7 @@ local hud = require("copsAndRobbers/hud")
 local lightbar = require("copsAndRobbers/lightbar")
 local placement = require("copsAndRobbers/placement")
 
-local CLIENT_VERSION = "1.3.1"
+local CLIENT_VERSION = "1.4.0"
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
 local LIGHTS_OFF = "electrics.set_lightbar_signal(0)"
 
@@ -39,7 +39,7 @@ local POSE_JUMP = 30
 
 local clock = 0
 local HUD_APP = "copsAndRobbersHud"
-local HUD_PLACEMENT = { left = "0", right = "0", margin = "auto", bottom = "70px", width = "520px", height = "90px" }
+local HUD_PLACEMENT = { left = "0", right = "0", margin = "auto", bottom = "70px", width = "520px", height = "170px" }
 local HUD_FILES = { "/ui/modules/apps/CopsAndRobbersHud/app.json", "/ui/modules/apps/CopsAndRobbersHud/app.vue" }
 local HUD_PUSH_INTERVAL = 0.1
 local PLACEMENT_INTERVAL = 2

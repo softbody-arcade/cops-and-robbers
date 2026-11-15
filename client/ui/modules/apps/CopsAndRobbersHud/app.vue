@@ -1,15 +1,39 @@
 <template>
   <div v-if="hud.visible" class="cnr-hud">
-    <div v-if="hud.status" class="cnr-status">
-      <span class="cnr-role" :class="hud.status.role === 'RUNNER' ? 'is-runner' : 'is-cop'">{{ hud.status.role }}</span>
-      <span class="cnr-time">{{ hud.status.time }}</span>
-      <span v-if="hud.status.reset" class="cnr-item">{{ hud.status.reset }}</span>
-      <span v-if="hud.status.info" class="cnr-item">{{ hud.status.info }}</span>
+    <div v-if="hud.result" class="cnr-panel cnr-result">
+      <div class="cnr-result-title">{{ hud.result.title }}</div>
+      <div class="cnr-result-line">
+        <span class="cnr-strong">{{ hud.result.runner }}</span>
+        <span class="cnr-time">{{ hud.result.time }}</span>
+      </div>
+      <div v-if="hud.result.catchers" class="cnr-result-line">Caught by {{ hud.result.catchers }}</div>
+      <div v-if="hud.result.top && hud.result.top.length" class="cnr-result-top">
+        <div v-for="(line, i) in hud.result.top" :key="i">{{ line }}</div>
+      </div>
+      <div v-if="hud.result.nextIn" class="cnr-result-next">Next round in {{ hud.result.nextIn }}</div>
     </div>
-    <div v-if="hud.catch && hud.catch.visible" class="cnr-catch" :class="hud.catch.tone === 'runner' ? 'is-runner' : 'is-cop'">
-      <div class="cnr-catch-label">{{ hud.catch.label }} {{ hud.catch.percent }}%</div>
-      <div class="cnr-track"><div class="cnr-fill" :style="{ width: hud.catch.percent + '%' }"></div></div>
-    </div>
+    <template v-else>
+      <div v-if="hud.banner" class="cnr-panel cnr-banner">
+        <span class="cnr-banner-label">{{ hud.banner.label }}</span>
+        <span v-if="hud.banner.number" class="cnr-banner-number">{{ hud.banner.number }}</span>
+      </div>
+      <div v-if="hud.prep" class="cnr-panel cnr-prep">
+        <span class="cnr-role" :class="hud.prep.role === 'RUNNER' ? 'is-runner' : 'is-cop'">{{ hud.prep.role }}</span>
+        <span class="cnr-item">{{ hud.prep.car }}</span>
+        <span class="cnr-item cnr-muted">waiting for "/cnr go"</span>
+      </div>
+      <div v-for="(text, i) in (hud.events || [])" :key="'e' + i" class="cnr-panel cnr-event">{{ text }}</div>
+      <div v-if="hud.status" class="cnr-panel cnr-status">
+        <span class="cnr-role" :class="hud.status.role === 'RUNNER' ? 'is-runner' : 'is-cop'">{{ hud.status.role }}</span>
+        <span class="cnr-time">{{ hud.status.time }}</span>
+        <span v-if="hud.status.reset" class="cnr-item" :class="{ 'cnr-reset-flash': hud.status.resetFlash }">{{ hud.status.reset }}</span>
+        <span v-if="hud.status.info" class="cnr-item">{{ hud.status.info }}</span>
+      </div>
+      <div v-if="hud.catch && hud.catch.visible" class="cnr-panel cnr-catch" :class="hud.catch.tone === 'runner' ? 'is-runner' : 'is-cop'">
+        <div class="cnr-catch-label">{{ hud.catch.label }} {{ hud.catch.percent }}%</div>
+        <div class="cnr-track"><div class="cnr-fill" :style="{ width: hud.catch.percent + '%' }"></div></div>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -36,6 +60,63 @@ events.on("CnRHud", data => {
   color: #fff;
   font-family: sans-serif;
   pointer-events: none;
+}
+.cnr-panel {
+  border-radius: 8px;
+  background: rgba(10, 12, 18, 0.72);
+  padding: 6px 14px;
+}
+.cnr-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+.cnr-banner-label { font-size: 18px; }
+.cnr-banner-number {
+  font-size: 34px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.cnr-prep, .cnr-event {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.cnr-muted { opacity: 0.7; }
+.cnr-reset-flash {
+  color: #ffd54f;
+  font-weight: 700;
+}
+.cnr-result { text-align: center; }
+.cnr-result-title {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+.cnr-result-line {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  font-size: 15px;
+}
+.cnr-strong { font-weight: 700; }
+.cnr-result-top {
+  margin-top: 4px;
+  font-size: 13px;
+  opacity: 0.85;
+}
+.cnr-result-next {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #82b1ff;
 }
 .cnr-status {
   display: flex;
