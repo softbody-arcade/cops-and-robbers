@@ -10,7 +10,16 @@ local EXTRA_LOCKED_ACTIONS = {
   "toggleWalkingMode", "photomode", "toggleTrackBuilder", "toggleConsoleNG", "cefdev_console_toggle", "lua_reload",
   "toggleTraffic", "toggleAITraffic", "debugmode_reset",
 }
-local GATED_ACTIONS = { reset_physics = true, parts_selector = true }
+local RESET_BUTTONS = { reset_physics = true, recover_vehicle = true, recover_vehicle_alt = true, recover_to_last_road = true, loadHome = true }
+local GATED_ACTIONS = { reset_physics = true, parts_selector = true, recover_vehicle = true, recover_vehicle_alt = true, recover_to_last_road = true, loadHome = true }
+local VEHICLE_PATCH_INTERVAL = 2
+local VEHICLE_PATCH = table.concat({
+  "if not cnrOrig then cnrOrig = { s = recovery.startRecovering, t = recovery.stopRecovering, h = recovery.loadHome } end",
+  "recovery.startRecovering = function() obj:queueGameEngineLua('if copsAndRobbers then copsAndRobbers.requestReset(\"place\") end') end",
+  "recovery.stopRecovering = function() end",
+  "recovery.loadHome = function() obj:queueGameEngineLua('if copsAndRobbers then copsAndRobbers.requestReset(\"road\") end') end",
+}, " ")
+local VEHICLE_UNPATCH = "if cnrOrig then recovery.startRecovering, recovery.stopRecovering, recovery.loadHome = cnrOrig.s, cnrOrig.t, cnrOrig.h; cnrOrig = nil end"
 local RESET_ACTIONS = { "reset_physics" }
 local PARTS_ACTIONS = { "parts_selector" }
 local ALLOWED_TYPES = { Car = true, Truck = true }
@@ -126,15 +135,44 @@ local function guardBigMapTeleport(on)
   end
 end
 
+local originalResetGameplay, originalLastRoad
+local lastVehiclePatch = -math.huge
+
+local function hookResetButtons(on)
+  if on then
+    if not originalResetGameplay then
+      originalResetGameplay = rawget(_G, "resetGameplay")
+      rawset(_G, "resetGameplay", function() M.requestReset("place") end)
+    end
+    if spawn and not originalLastRoad then
+      originalLastRoad = spawn.teleportToLastRoad
+      spawn.teleportToLastRoad = function() M.requestReset("road") end
+    end
+    lastVehiclePatch = -math.huge
+  else
+    if originalResetGameplay then
+      rawset(_G, "resetGameplay", originalResetGameplay)
+      originalResetGameplay = nil
+    end
+    if originalLastRoad then
+      spawn.teleportToLastRoad = originalLastRoad
+      originalLastRoad = nil
+    end
+    local veh = getPlayerVehicle(0)
+    if veh then veh:queueLuaCommand(VEHICLE_UNPATCH) end
+  end
+end
+
 local function lockInputs(on)
   core_input_actionFilter.setGroup("cnr_locked", lockedActions())
   core_input_actionFilter.addAction(0, "cnr_locked", on)
   guardBigMapTeleport(on)
+  hookResetButtons(on)
 end
 
-local function setResetKey(allowed)
+local function setResetKey()
   core_input_actionFilter.setGroup("cnr_resetKey", RESET_ACTIONS)
-  core_input_actionFilter.addAction(0, "cnr_resetKey", not allowed)
+  core_input_actionFilter.addAction(0, "cnr_resetKey", false)
 end
 
 local function setPartsMenu(allowed)
@@ -161,7 +199,7 @@ end
 local function resetIsBound()
   for _, device in ipairs(core_input_bindings and core_input_bindings.bindings or {}) do
     for _, b in ipairs(device.contents and device.contents.bindings or {}) do
-      if b.action == "reset_physics" and not b.unused then return true end
+      if RESET_BUTTONS[b.action] and not b.unused then return true end
     end
   end
   return false
@@ -375,7 +413,7 @@ local function onRoundSetup(data)
   setResetKey(false)
   setPartsMenu(d.phase == "prep")
   if not resetIsBound() then
-    toast("Bind 'Reset vehicle' to a wheel button to reset during rounds", 10, "cnr_binding")
+    toast("Bind a reset or recover button to reset during rounds", 10, "cnr_binding")
   end
 
   local pos, rot
@@ -719,6 +757,11 @@ local function onUpdate(dtReal)
     end
   end
   if #report > 0 then sendServer("cnr_aiVehicles", { ai = report }) end
+  if active and clock - lastVehiclePatch >= VEHICLE_PATCH_INTERVAL then
+    lastVehiclePatch = clock
+    local veh = ownVehicle()
+    if veh then veh:queueLuaCommand(VEHICLE_PATCH) end
+  end
   if geoMode then
     if clock - lastGeoSent >= GEO_SEND_INTERVAL then
       lastGeoSent = clock
@@ -754,13 +797,27 @@ local function onVehicleResetted(gameVid)
   if not active or clock < suppressResetUntil or not lastPose then return end
   local veh = ownVehicle()
   if not veh or veh:getID() ~= gameVid then return end
-  local pos, rot = lastPose.pos, lastPose.rot
-  if role == "cop" then
+  teleport(veh, lastPose.pos, lastPose.rot)
+end
+
+local function requestReset(kind)
+  if not active then return end
+  local veh = ownVehicle()
+  if not veh then return end
+  if not resetAllowed then
+    toast(penaltyActive and "No reset during a crash penalty" or (lastHint or "Reset not available"), 3, "cnr_reset")
+    return
+  end
+  resetAllowed = false
+  local pos, rot = veh:getPosition(), uprightRotation(veh)
+  if kind == "road" and role == "cop" then
     local roadPos, roadRot = nearestRoad(pos)
     if roadPos then pos, rot = roadPos, roadRot end
   end
   teleport(veh, pos, rot)
 end
+
+M.requestReset = requestReset
 
 local function onExtensionLoaded()
   if AddEventHandler then

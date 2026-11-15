@@ -198,3 +198,14 @@ players are not comparable, and its gas stations are generated at runtime (no fa
 - clients look up real gas stations with `api.places(..., {categories={'gas_station'}})` every 60 s or 1 km and the
   server merges them (50 m dedupe) into `data/stations/beamng_earth.json` as lat/lon.
 One mod for all maps; a client on Earth without API v1 gets a warning.
+
+## Reset buttons (revised 2026-11-15)
+
+All of the game's reset/recovery buttons stay usable during a round and are routed through the round's reset rules
+(the game's own handlers are intercepted: global `resetGameplay`, `spawn.teleportToLastRoad`, and the vehicle-side
+`recovery.startRecovering`/`stopRecovering`/`loadHome`). When a reset is not allowed the button shows the reason.
+- Reset vehicle, Recover/rewind (both): repair in place, upright, for runner and cops.
+- Load home, Recover to last road: runner repairs in place; cops repair and move to the nearest road.
+Everything else that resets, teleports or edits a vehicle is locked (the game's `competitive` action template plus
+consoles, Lua reload, walking/photo mode and the big map's teleport). The server announces any jump not explained by
+an allowed reset as "<name> teleported".

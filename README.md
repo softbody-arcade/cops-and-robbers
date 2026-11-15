@@ -12,8 +12,9 @@ make package
 - Copy `dist/Client/CopsAndRobbers.zip` to the server's `Resources/Client/`.
 - Set `MaxCars` to at least 3 if you want to use `/cnr test` (the AI cars count as yours).
 
-Players install nothing; BeamMP downloads the client mod on join. Each player should bind
-**Reset vehicle** to a wheel button (Options > Controls); rewind/recover is blocked during rounds.
+Players install nothing; BeamMP downloads the client mod on join. Every reset button works during a round and
+follows the round's reset rules: Reset vehicle and Recover repair in place; Load home and Recover to last road
+repair in place for the runner and move cops to the nearest road.
 
 ## Commands
 
