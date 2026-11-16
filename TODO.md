@@ -1,7 +1,9 @@
 # TODO
 
 ## Ideas
-- [ ] Traffic during rounds. Today the traffic toggles are locked during a round, and the server refuses any car other than the round car for players in a round, which would also remove traffic they spawn. Needs: decide who spawns the traffic, let those cars through the vehicle rule, and keep crash penalties and catching limited to players
+- [ ] Traffic during rounds (designed, branch traffic-rounds, `docs/superpowers/specs/2026-11-16-traffic-rounds-design.md`): every player's game runs a few traffic cars around itself (`trafficPerPlayer`, default 5, capped by MaxCars), through the game's own traffic system. Normal maps only; off on BeamNG.Earth for now
+- [ ] Traffic on BeamNG.Earth (after traffic on normal maps has been played and tuned). BeamNG.Earth's navgraph manages any running traffic itself: it moves cars that stand still 45 s (our traffic is held still through prep), hides all traffic after a teleport until the new road graph arrives (round setup moves cops far), the road graph arrives after the round car is placed (a moved cop's traffic finds no roads), and a region change sets traffic up again with the player's own amount and police choice. Traffic positions would also have to travel as latitude/longitude for the crash fault rule
+- [ ] Traffic headlights: traffic keeps the game's behaviour for now (lights on at night and in tunnels, unlit in daytime fog, thinner traffic at night). Tune after playing, for example lights on in thick fog
 - [ ] Hard mode vs normal mode (a round setting): hard mode gives cops a route/position only while someone has sight (no 30 s last-seen pings), hides the name plates above cars, and whatever else fits when planning it (for example no "Nearest cop" for the runner, no minimap markers for other cars)
 - [ ] Spike strips for cops: a few per round on a button (keybind), placed behind or ahead of the cop and visible to everyone (the game has spike strip props)
 - [ ] Dynamic roadblocks: parked cop cars that block part of the road ahead of the runner. Same goal as spike strips (stop the runner ahead), so plan them together
