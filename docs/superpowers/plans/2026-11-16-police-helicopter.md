@@ -1,5 +1,7 @@
 # Police Helicopter Implementation Plan
 
+> **Superseded in places:** in-game testing changed the searchlight (hover, operator movement, fly-in and fly-away), re-acquiring after cover (instant; rain no longer slows it), short cover (the helicopter loses the runner only after 2 s under a roof) and dropped the minimap ring. The spec is current; this plan records what was first built.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the periodic 30 s last-seen ping with a police helicopter that tracks the runner in the open, and hide the runner from the cops' minimap and name tags unless spotted.
