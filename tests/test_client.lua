@@ -1725,3 +1725,39 @@ test("a failed traffic spawn tells the player once", function()
   some.tick(16)
   assertEq(partial.n, 1)
 end)
+
+test("held traffic is lit at night by the mod, and only while held", function()
+  local env = bootClient()
+  local setup = copy(SETUP)
+  setup.sky = { time = "night", windDir = 0, windSeed = 1 }
+  env.fire("cnr_roundSetup", setup)
+  env.tick(1)
+  env.fire("cnr_trafficStart", { count = 3 })
+  env.tick(1.2)
+  local cars = trafficObjects(env)
+  assertEq(#cars, 3)
+  for _, obj in ipairs(cars) do assertEq(hasCommand(obj, "electrics.setLightsState(1)"), true) end
+  env.fire("cnr_runnerGo", { headStartSeconds = 7 })
+  for _, obj in ipairs(cars) do obj.commands = {} end
+  env.tick(2)
+  for _, obj in ipairs(cars) do assertEq(hasCommand(obj, "electrics.setLightsState(1)"), false) end
+end)
+
+test("service vehicles never become traffic", function()
+  bootClient()
+  local traffic = require("copsAndRobbers/traffic")
+  assertEq(traffic.civilian({ Source = "BeamNG - Official", ["Config Type"] = "Service", key = "22_security_late_A", Name = "Security (A)" }), false)
+  assertEq(traffic.civilian({ Source = "BeamNG - Official", ["Config Type"] = "Service", key = "md_70_prisonbus", Name = "Prison Bus" }), false)
+  assertEq(traffic.civilian({ Source = "BeamNG - Official", ["Config Type"] = "Factory", key = "d15_4wd_A", Name = "D15 4WD" }), true)
+end)
+
+test("starting or stopping traffic never deletes the player's own car", function()
+  local env = bootClient()
+  startCop(env)
+  env.gameTraffic[env.veh.id] = { isAi = false }
+  env.fire("cnr_trafficStart", { count = 3 })
+  assertEq(env.objects[env.veh.id] ~= nil, true)
+  env.gameTraffic[env.veh.id] = { isAi = false }
+  env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 30, runnerId = 2 })
+  assertEq(env.objects[env.veh.id] ~= nil, true)
+end)

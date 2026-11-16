@@ -1,4 +1,5 @@
 local game = require("copsAndRobbers/game")
+local sky = require("copsAndRobbers/sky")
 
 local M = {}
 
@@ -39,7 +40,8 @@ end
 function M.civilian(info)
   if type(info) ~= "table" then return false end
   if info.Source ~= OFFICIAL then return false end
-  if string.lower(tostring(info["Config Type"] or "")) == "police" then return false end
+  local configType = string.lower(tostring(info["Config Type"] or ""))
+  if configType == "police" or configType == "service" then return false end
   if contains(info.key, SPECIAL_WORDS) or contains(info.Name, SPECIAL_WORDS) then return false end
   return true
 end
@@ -87,7 +89,13 @@ end
 
 local function deleteTraffic()
   local gt = gameplay_traffic
-  if gt and gt.deleteVehicles then pcall(gt.deleteVehicles) end
+  if not gt or not gt.deleteVehicles then return end
+  local own = getPlayerVehicle and getPlayerVehicle(0)
+  if own then
+    if gt.removeTraffic then pcall(gt.removeTraffic, own:getID()) end
+    if own.setDynDataFieldbyName then pcall(own.setDynDataFieldbyName, own, "isTraffic", 0, "") end
+  end
+  pcall(gt.deleteVehicles)
 end
 
 local function sendAll(cars, cmd)
@@ -202,9 +210,9 @@ function M.tick(clock)
     lastHold = clock
     sendAll(list(), FREEZE_ON)
   end
-  if BAD_WEATHER[weather] and clock - lastLights >= LIGHTS_INTERVAL then
+  if clock - lastLights >= LIGHTS_INTERVAL then
     lastLights = clock
-    sendAll(list(), HEADLIGHTS_ON)
+    if BAD_WEATHER[weather] or (held and sky.isNight()) then sendAll(list(), HEADLIGHTS_ON) end
   end
   if not checked and clock >= startedAt + SPAWN_CHECK_SECONDS then
     checked = true

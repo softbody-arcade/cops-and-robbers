@@ -178,6 +178,7 @@ function bootClient(opts)
       env.gameTraffic = {}
     end,
     getTrafficData = function() return env.gameTraffic end,
+    removeTraffic = function(id) env.gameTraffic[id] = nil end,
     setTrafficVars = function(v) env.trafficVars = v end,
   }
   _G.gameplay_traffic_trafficUtils = {
