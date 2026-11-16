@@ -256,6 +256,7 @@ local function onRunnerGo(data)
   local d = jsonDecode(data) or {}
   ai.releaseRunner()
   runnerOut = true
+  heli.resetCover(heliState)
   traffic.release()
   if role == "runner" then
     timerEnd = nil
@@ -455,7 +456,6 @@ local function onNotice(data)
 end
 
 local function onRelease()
-  heli.resetCover(heliState)
   ai.releaseCops()
   hudfeed.headStart(nil)
   if role == "runner" and sightMax > 0 and spotted == nil then spotted = false end
@@ -758,7 +758,7 @@ local function castUp(pos, range)
 end
 
 local function updateHeli()
-  if statusActive and castRayStatic then
+  if runnerOut and castRayStatic then
     local car = role == "runner" and ownVehicle() or ai.runnerObject()
     if car then
       local c = heli.coverTick(heliState, clock, car, castUp)

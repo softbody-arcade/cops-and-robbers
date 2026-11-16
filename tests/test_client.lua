@@ -2488,16 +2488,189 @@ test("a car that never appears doesn't break the client's update", function()
   assertEq(ok, true, tostring(err))
 end)
 
-test("the runner reports cover after release, a cop does not", function()
+local function sentCount(env, ev)
+  local n = 0
+  for _, m in ipairs(env.sent) do if m.ev == ev then n = n + 1 end end
+  return n
+end
+
+test("the runner reports cover from the head start, once, and a cop does not", function()
   local env = bootClient()
   env.fire("cnr_roundSetup", { role = "runner", runnerId = 1, model = "pickup", config = "vehicles/pickup/base.pc", phase = "prep" })
   env.tick(1)
-  env.fire("cnr_release", {})
+  env.fire("cnr_countdown", { seconds = 3 })
+  env.tick(1)
+  assertEq(env.lastSent("cnr_cover"), nil)
+  env.fire("cnr_runnerGo", { headStartSeconds = 7 })
   env.tick(0.5)
   assertEq(env.lastSent("cnr_cover").covered, false)
+  assertEq(sentCount(env, "cnr_cover"), 1)
+  env.fire("cnr_release", {})
+  env.tick(1)
+  assertEq(sentCount(env, "cnr_cover"), 1)
   local cop = bootClient()
   startCop(cop)
+  cop.fire("cnr_runnerGo", { headStartSeconds = 7 })
+  cop.tick(0.5)
   cop.fire("cnr_release", {})
   cop.tick(1)
   assertEq(cop.lastSent("cnr_cover"), nil)
+end)
+
+local HELI_LIGHT = "cnr_heli_light"
+
+local function nightTracking(role)
+  local env = bootClient()
+  local d = copy(SETUP)
+  d.phase = "running"
+  d.sky = NIGHT
+  d.heli = { phase = "tracking", seconds = 100 }
+  if role == "runner" then
+    d.role, d.runnerId = "runner", 1
+  else
+    env.addObject(300, vec3(1000, 1000, 10))
+    env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
+  end
+  env.fire("cnr_roundSetup", d)
+  env.fire("cnr_roundCars", { keys = { "2-0" } })
+  env.tick(1)
+  return env
+end
+
+local function near(a, b, eps) return math.abs(a - b) <= eps end
+
+test("at night the searchlight shines over the runner's car: the runner's own, a cop's runnerObject", function()
+  local cop = nightTracking("cop")
+  local light = cop.sky.objects[HELI_LIGHT]
+  assertEq(light ~= nil, true)
+  assertEq(near(light.pos.x, 1000, 3) and near(light.pos.y, 1000, 3), true)
+  assertEq(near(light.pos.z, 50, 1e-6), true)
+  local runner = nightTracking("runner")
+  light = runner.sky.objects[HELI_LIGHT]
+  assertEq(light ~= nil, true)
+  local own = runner.veh:getPosition()
+  assertEq(near(light.pos.x, own.x, 3) and near(light.pos.y, own.y, 3), true)
+  assertEq(near(light.pos.z, own.z + 40, 1e-6), true)
+end)
+
+test("no searchlight by day or while the helicopter searches", function()
+  local env = bootClient()
+  local d = copy(SETUP)
+  d.phase, d.role, d.runnerId = "running", "runner", 1
+  d.sky = { time = "noon", windDir = 0, windSeed = 1 }
+  d.heli = { phase = "tracking", seconds = 100 }
+  env.fire("cnr_roundSetup", d)
+  env.tick(1)
+  assertEq(env.sky.objects[HELI_LIGHT], nil)
+  local night = nightTracking("runner")
+  night.fire("cnr_heli", { phase = "searching" })
+  night.tick(0.2)
+  assertEq(night.sky.objects[HELI_LIGHT], nil)
+end)
+
+test("the searchlight is gone after the round, a cancel, leaving, a map change and unloading", function()
+  local exits = {
+    function(env) env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 3, runnerId = 2 }) end,
+    function(env) env.fire("cnr_roundEnd", { reason = "cancelled", runnerId = 2 }) end,
+    function(env) env.M.onBeamMPServerLeave() end,
+    function(env) env.M.onClientEndMission() end,
+    function(env) env.M.onExtensionUnloaded() end,
+  }
+  for i, exit in ipairs(exits) do
+    for _, role in ipairs({ "cop", "runner" }) do
+      local env = nightTracking(role)
+      assertEq(env.sky.objects[HELI_LIGHT] ~= nil, true, i .. " " .. role)
+      exit(env)
+      assertEq(env.sky.objects[HELI_LIGHT], nil, i .. " " .. role)
+      if i < 5 then
+        env.tick(2)
+        assertEq(env.sky.objects[HELI_LIGHT], nil, i .. " " .. role)
+      end
+    end
+  end
+end)
+
+local AI_RUNNER = -10
+
+local function practiceAsCop(env)
+  local d = copy(SETUP)
+  d.runnerId, d.inPlace = AI_RUNNER, true
+  env.fire("cnr_roundSetup", d)
+  env.fire("cnr_setupAI", { model = "pickup", config = "vehicles/pickup/base.pc", runnerId = AI_RUNNER, ai = {
+    { id = AI_RUNNER, role = "runner", index = 1, name = "AI runner" },
+    { id = AI_RUNNER - 1, role = "cop", index = 2, name = "AI cop" },
+  } })
+  env.tick(1)
+  local aiRunner = env.spawned[1].veh
+  aiRunner.pos = vec3(500, 500, 0)
+  return aiRunner
+end
+
+test("practice as a cop: the AI runner's game id is the one skipped on the minimap, no name tag is touched", function()
+  local saved = { iter = _G.activeVehiclesIterator, minimap = _G.ui_apps_minimap_vehicles }
+  local ok, err = pcall(function()
+    local env = bootClient()
+    local aiRunner = practiceAsCop(env)
+    local ids = { 100, aiRunner:getID(), env.spawned[2].veh:getID() }
+    local seen
+    _G.activeVehiclesIterator = function()
+      local i = 0
+      return function()
+        i = i + 1
+        if ids[i] then return ids[i], {} end
+      end
+    end
+    _G.ui_apps_minimap_vehicles = { drawOtherVehicles = function()
+      seen = {}
+      for id in activeVehiclesIterator({}) do seen[#seen + 1] = id end
+    end }
+    env.mpVehicles["1-0"] = { gameVehicleID = 100, isSpawned = true }
+    env.fire("cnr_runnerGo", { headStartSeconds = 7 })
+    env.fire("cnr_runnerShown", { shown = false })
+    env.tick(1.2)
+    ui_apps_minimap_vehicles.drawOtherVehicles()
+    assertEq(table.concat(seen, ","), ids[1] .. "," .. ids[3])
+    assertEq(env.mpVehicles["1-0"].hideNametag, nil)
+    env.fire("cnr_runnerShown", { shown = true })
+    env.tick(0.2)
+    ui_apps_minimap_vehicles.drawOtherVehicles()
+    assertEq(table.concat(seen, ","), table.concat(ids, ","))
+    env.M.onExtensionUnloaded()
+  end)
+  _G.activeVehiclesIterator, _G.ui_apps_minimap_vehicles = saved.iter, saved.minimap
+  if not ok then error(err, 0) end
+end)
+
+test("practice as a cop: the practising cop's game reports cover for the AI runner", function()
+  local env = bootClient()
+  local aiRunner = practiceAsCop(env)
+  env.blockFrom = vec3(aiRunner.pos.x, aiRunner.pos.y, aiRunner.pos.z + 1.5)
+  env.tick(1)
+  assertEq(env.lastSent("cnr_cover"), nil)
+  env.fire("cnr_runnerGo", { headStartSeconds = 7 })
+  env.tick(0.5)
+  assertEq(env.lastSent("cnr_cover").covered, true)
+end)
+
+local function hiddenRunnerTag()
+  local env = bootClient()
+  startCop(env)
+  env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
+  env.fire("cnr_roundCars", { keys = { "2-0" } })
+  env.fire("cnr_runnerShown", { shown = false })
+  env.tick(1.2)
+  assertEq(env.mpVehicles["2-0"].hideNametag, true)
+  return env
+end
+
+test("a map change shows the runner's name tag again", function()
+  local env = hiddenRunnerTag()
+  env.M.onClientEndMission()
+  assertEq(env.mpVehicles["2-0"].hideNametag, nil)
+end)
+
+test("unloading the mod shows the runner's name tag again", function()
+  local env = hiddenRunnerTag()
+  env.M.onExtensionUnloaded()
+  assertEq(env.mpVehicles["2-0"].hideNametag, nil)
 end)

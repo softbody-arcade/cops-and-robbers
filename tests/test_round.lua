@@ -1030,6 +1030,24 @@ test("cover only counts from the runner's game during the chase", function()
   assertEq(p.runnerCovered, true)
 end)
 
+test("a runner under cover in the head start is not revealed when the helicopter is up at release", function()
+  local r = started({helicopterArrivalSeconds=0})
+  r:tick(4, stillCars(), {})
+  assertEq(r.state, "headstart")
+  r:coverReport(5, 1, true)
+  assertEq(r.runnerCovered, true)
+  local fx = r:tick(11, stillCars(), {})
+  assertEq(r.state, "running")
+  assertEq(find(fx, "heli").phase, "searching")
+  assertEq(find(fx, "live"), nil)
+  assertEq(find(fx, "runnerShown"), nil)
+  assertEq(r.shown, false)
+  for t = 12, 15 do
+    fx = r:tick(t, farCars(), {})
+    assertEq(find(fx, "live"), nil); assertEq(find(fx, "lastSeen"), nil); assertEq(find(fx, "runnerShown"), nil)
+  end
+end)
+
 test("the runner gets the nearest cop every 30 s", function()
   local r = chasing({helicopter=false})
   local at = {}

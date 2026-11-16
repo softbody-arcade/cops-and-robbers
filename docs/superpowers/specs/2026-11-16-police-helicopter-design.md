@@ -116,7 +116,7 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
 
 ### Client: cover check on the runner's car
 - **Who runs it:** the game that owns the runner's car, which is the runner's own car, or the AI runner (`ai.runnerObject()`) in practice.
-- **How:** it runs `shelter.roofed` from 1.5 m above the car's position every 0.25 s, with `shelter.step` (two checks to switch, both directions). It sends `cnr_cover { covered }` to the server when the state changes, and once at release.
+- **How:** it runs `shelter.roofed` from 1.5 m above the car's position every 0.25 s, with `shelter.step` (two checks to switch, both directions). It sends `cnr_cover { covered }` to the server when the state changes, and once at the runner's release (the head start), so a runner already under cover when the cops are released isn't revealed.
 - **Separate state:** this is a second shelter state, apart from the camera one the rain uses.
 
 ### Client: HUD
@@ -185,7 +185,7 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
   - the helicopter keys' defaults and validation, with a time up of 0 rejected
   - `lastSeenIntervalSeconds` is retired
 - **Client:**
-  - **Cover:** sent only by the runner's owner, and on change only.
+  - **Cover:** sent only by the runner's owner (also the practising cop's game for the AI runner), from the runner's release on, and on change only.
   - **HUD:** the helicopter text for each phase, with the countdown going down between messages.
   - **Name tag:** the runner's `hideNametag` is set while not shown, cleared when shown and at round end.
   - **Minimap:**
