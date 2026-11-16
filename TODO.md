@@ -5,9 +5,6 @@ The shared ledger for every agent and worktree. Edit this file only on main (in 
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
-- [ ] Player settings card on the HUD: one card for a player's own options: car colour (today's colour card), auto headlights (night and bad weather) and a siren for cops (with a host switch that forbids sirens), plus distances and speeds that follow the game's metric/imperial setting. Merged into main as 2.5.0 (spec `docs/superpowers/specs/2026-11-16-player-settings-design.md`, plan `docs/superpowers/plans/2026-11-16-player-settings.md`) and installed on the local test server; waiting for the user's in-game check (the spec's In-game check list); worktree and branch removed, fixes go on main. Still open from the folded-in issues:
-  - [ ] README says "Everything is clickable with the mouse cursor shown" without saying how a player shows the cursor. Check the game's control and say it
-
 ## Ideas
 - [ ] Hard mode vs normal mode (a round setting): hard mode gives cops a route/position only while someone has sight (no 30 s last-seen pings), hides the name plates above cars, and whatever else fits when planning it (for example no "Nearest cop" for the runner, no minimap markers for other cars). Hard mode also raises the night and bad weather chances of night and weather rounds
 - [ ] Police helicopter instead of the 30 s last-seen ping (`lastSeenIntervalSeconds`): a helicopter tracks the runner and gives the cops the runner's position, in place of the fixed ping every 30 s. Ties in with hard mode, which drops the 30 s pings
@@ -24,7 +21,7 @@ One entry per piece of work that has started: what it is, its branch (or "design
 - [ ] Cop spots next to a narrow median: the runner can be matched to the other carriageway, so cops are placed for that side (`roads.lua` uses `findClosestRoad`, not the runner's heading)
 - [ ] Panel refusals ("Stop the round first", "Only the runner can apply the change", "Not available from the panel") show as plain info, not as warnings: the server's replies carry no tone for them (`main.lua` `reply`, Panel `app.vue`)
 - [ ] Panel tabs forget their state when you switch tabs, because the game only renders the open tab: the Settings "more" fold, the Car tab's choice and the Map tab's stations. Decide which to keep in Panel `app.vue`
-- [ ] How to play in game: the Rules tab scales to about 0.86 at 26em, and it may cover the prep title on short screens. Check in game
+- [ ] README says "Everything is clickable with the mouse cursor shown" without saying how a player shows the cursor. Check the game's control and say it
 - [ ] Leaderboard Cops tab: cops with only assists get no row (`leaderboard.lua` `cops`). Showing them needs a sort and empty-state decision, since the tab ranks catches
 - [ ] Cop spots on a road piece not connected to the rest: the straight-line fallback widens from 0 and ignores gates, so a cop can start right next to the runner or behind a gate (`roads.lua` `lineSpots`)
 - [ ] Leaving the server removes every app the mod placed, also one the player removed and then added back themselves (`apps.lua` leave). Decide what counts as the mod's
