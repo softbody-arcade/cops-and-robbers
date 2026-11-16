@@ -64,7 +64,9 @@ Status: short design for review, 2026-11-16. Builds on night and weather rounds 
   - **Same kind** (rain to storm): move `numDrops` from the current count to the new one.
   - **Different kind** (rain to snow): fade the old one out, then the new one in. Each half takes half the blend.
 - The stepping runs from `sky.update`, about 10 times a second.
-- The roof check (`shelter`) still hides the rain under cover, as today.
+- **The roof check (`shelter`) hides the rain under cover, with two changes** (added 2026-11-16, after the user saw rain stop under street lights):
+  - **A roof must cover both directions.** At least one side ray hits front or back, and at least one hits left or right. A street-light arm or traffic-light gantry covers only one direction, so it no longer counts. Tunnels, bridge decks and gas-station canopies still do.
+  - **It switches after 1 s** (four checks in a row) instead of half a second, so a short pass under anything overhead never interrupts the rain.
 
 ### Drop values
 - **Rain:** speed 0.4–0.5, the stock maps' own range. Drop size 1, about 3000 drops.

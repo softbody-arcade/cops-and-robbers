@@ -375,7 +375,56 @@ git add client/lua/ge/extensions/copsAndRobbers/units.lua client/lua/ge/extensio
 git commit -m "feat: the prep bar shows the day's temperature range"
 ```
 
-### Task 5: Docs
+### Task 5: The roof check ignores beams and short passes
+
+**Files:**
+- Modify: `client/lua/ge/extensions/copsAndRobbers/shelter.lua` (`M.roofed`, `M.CHECKS_TO_SWITCH`)
+- Modify: `tests/test_shelter.lua`
+- Modify: the roof tests in `tests/test_sky_client.lua` and `tests/test_rain.lua` that switch after two 0.25 s checks
+
+**Interfaces:**
+- Unchanged: `shelter.roofed(pos, castUp) -> bool`, `shelter.new()`, `shelter.step(state, now) -> bool`.
+
+Why: a street-light arm or a traffic-light gantry is a long, thin beam. Under it, the middle ray hits, and so do the two side rays along the beam. That is "two of four", so it counted as a roof, and two checks (half a second) hid the rain for a moment without any visible reason (user report, 2026-11-16).
+
+- [ ] **Step 1: Write the failing tests**
+
+`tests/test_shelter.lua`:
+- `"a roof close above with cover around counts as shelter"` uses one side on each axis: `{ ["3,0"] = true, ["0,3"] = true }`.
+- New `test("a beam overhead, like a street-light arm, is not shelter")`:
+  - `roofAt(3, { ["3,0"] = true, ["-3,0"] = true })` gives false
+  - so does `roofAt(3, { ["0,3"] = true, ["0,-3"] = true })`
+- New `test("cover on both axes is shelter")`: `roofAt(3, { ["-3,0"] = true, ["0,-3"] = true })` and all four sides both give true.
+- `"cover switches only after two checks in a row"` becomes `"cover switches only after four checks in a row"`:
+  - three `step(state, true)` calls return false and leave `covered == false`
+  - the fourth returns true
+  - the same holds on the way back out
+
+In `tests/test_sky_client.lua` and `tests/test_rain.lua`, the roof tests that advance two 0.25 s checks advance four.
+
+- [ ] **Step 2: Run the tests to make sure they fail**
+
+Run: `lua tests/run.lua tests/test_shelter.lua`
+Expected: FAIL (the beam counts as shelter; the cover switches after two checks).
+
+- [ ] **Step 3: Implement**
+
+- `shelter.lua` `M.roofed`: the middle ray must hit, then at least one hit among `{ 1, 0 }` / `{ -1, 0 }` and at least one among `{ 0, 1 }` / `{ 0, -1 }`. `M.SIDES_NEEDED` goes.
+- `M.CHECKS_TO_SWITCH = 4`, which is 1 s at the 0.25 s check interval.
+
+- [ ] **Step 4: Run the tests to make sure they pass**
+
+Run: `make test`
+Expected: `0 failed`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add client/lua/ge/extensions/copsAndRobbers/shelter.lua tests/test_shelter.lua tests/test_sky_client.lua tests/test_rain.lua
+git commit -m "fix: street-light arms and short passes no longer stop the rain"
+```
+
+### Task 6: Docs
 
 **Files:**
 - Modify: `docs/FEATURES.md` (the Night and weather section: blends, rain speeds, rain sound, temperature)
@@ -389,6 +438,7 @@ git commit -m "feat: the prep bar shows the day's temperature range"
   - rain and snow fade in and out
   - rain falls like the stock maps' rain; storms have faster, bigger and more drops
   - the game's rain sound plays in rain and storm, louder in a storm and quieter under cover
+  - the rain stops under a roof (tunnels, bridge decks, canopies) after about a second, but not under street-light arms or traffic-light gantries
   - the outside temperature follows the weather and the round's date (a December snow round −4 to 0 °C, a clear July day 20 to 31 °C), and the prep bar and New sky notice show the day's range in the game's temperature unit
   - no thunder
 - **DEPENDENCIES:**
@@ -407,7 +457,7 @@ git add docs/FEATURES.md README.md docs/DEPENDENCIES.md
 git commit -m "docs: sky blends, rain, rain sound and temperature"
 ```
 
-### Task 6: In-game check with the user
+### Task 7: In-game check with the user
 
 **Files:** `client/lua/ge/extensions/copsAndRobbers/sky.lua` / `rain.lua` / `climate.lua` (for any value the user's screenshots or the check change)
 
