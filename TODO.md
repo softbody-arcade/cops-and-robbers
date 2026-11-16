@@ -5,7 +5,7 @@ The shared ledger for every agent and worktree. Edit this file only on main (in 
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
-- [ ] Player settings card on the HUD: one card for a player's own options: car colour (today's colour card), auto headlights (night and bad weather) and a siren for cops, plus distances and speeds that follow the game's metric/imperial setting. Design: `docs/superpowers/specs/2026-11-16-player-settings-design.md` written, in review; no branch yet. Folded-in issues:
+- [ ] Player settings card on the HUD: one card for a player's own options: car colour (today's colour card), auto headlights (night and bad weather) and a siren for cops (with a host switch that forbids sirens), plus distances and speeds that follow the game's metric/imperial setting. Design approved (`docs/superpowers/specs/2026-11-16-player-settings-design.md`); plan being written; no branch yet. Folded-in issues:
   - [ ] Colour picker: the lobby card and the prep line each have their own `HudColor`, so a hex typed in the lobby is lost when prep starts (Hud `app.vue`)
   - [ ] HUD styles: `.hud-btn` and `.swatch` repeated in HudLobby, HudPrep and HudColor; move them into the shared kit
   - [ ] Chase line distances ("Runner 640 m NE") use the display font, not the mono font, because they arrive inside one text (`HudChase.vue` `info-text`; hud.lua would have to send the distance on its own)
