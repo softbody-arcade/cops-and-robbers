@@ -262,6 +262,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | `weather` | random | `clear`, `cloudy`, `rain`, `storm`, `fog`, `snow` or `random` |
 | `badWeatherChancePercent` | 25 | Chance of rain, storm, fog or snow when Weather is random |
 | `weatherDriving` | true | Weather changes grip and adds wind (not on BeamNG.Earth) |
+| `sirensAllowed` | true | Cops may use a siren (each cop turns it on in their settings) |
 | `trafficPerPlayer` | 5 | AI traffic cars around each player during a round (0 = off, at most 20; normal maps only) |
 
 ## Host and robustness

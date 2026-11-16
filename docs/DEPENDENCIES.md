@@ -139,8 +139,9 @@ Then do the checks for whatever actually updated.
 - **Player settings** (the player's own car only):
   - `electrics.values.lights_state` (read, so the mod acts only when the wanted state changes) and `electrics.setLightsState(1)` (low beam), sent as a vehicle command to the player's car.
   - `electrics.set_lightbar_signal(2)` (light bar with siren) for cops from release; `1` stays lights only.
+  - `v.data.soundscape.siren` (vehicle Lua): a car without it has no siren sound, and `set_lightbar_signal(2)` would turn its lights off. The siren command is guarded on it and falls back to `1`.
   - `settings.getValue("uiUnitLength")` (metric or imperial, for the HUD chase line and How to play) and `core_environment.getLightState().isNight` for the night check.
-  - On update, check: these still exist; in game, with Auto headlights on a night round the lights are on at placement, switching them off with the light key keeps them off, and Rain turns them on again; a cop with Siren on has no siren in prep or the head start and a siren from release; with the game set to imperial the chase line and How to play show ft, mi and mph while the Host panel stays metric.
+  - On update, check: these still exist; in game, with Auto headlights on a night round the lights are on at placement, switching them off with the light key keeps them off, and Rain turns them on again; a cop with Siren on has no siren in prep or the head start and a siren from release; Siren on as a cop in an Ibishu Pigeon (or midtruck/ATV): lights stay on, no siren; with the game set to imperial the chase line and How to play show ft, mi and mph while the Host panel stays metric.
 - **Other:**
   - `core_groundMarkers.setPath`, `guihooks.trigger`, `extensions.hook` / `load`. We no longer call `ui_message`.
   - `core_levels.getLevelTitle(id)` gives the map's real name for the panel and leaderboard (`game.lua`, `mapTitle`). If it goes missing we fall back to a prettified id.

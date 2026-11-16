@@ -136,7 +136,7 @@ Lua tests, as for the rest of the client:
 1. Type a hex in the lobby without saving, then let the host start a round: the card is still open in prep, with the hex.
 2. Auto headlights on, night round: lights on when your car is placed. Turn them off with the light key: they stay off. Sunrise at Fast day length: they go off. New sky to Rain: they come on.
 3. Auto headlights off: the mod never touches your lights.
-4. Siren on as a cop: no siren in prep or the head start, siren from release, off at round end. Another player hears it.
+4. Siren on as a cop: no siren in prep or the head start, siren from release, off at round end. Another player hears it. In an Ibishu Pigeon (no siren sound) the lights stay on and there is no siren.
 5. Host turns **Cop sirens** off between rounds: the Siren row is grayed out with "Turned off by the host", and a cop whose switch was on gets no siren after release. Turned back on: that cop's switch is on again and the siren runs.
 6. Game set to imperial: the chase line and How to play show ft, mi and mph; the Host panel stays metric. Back to metric: as before. The chase line's distance shows in the mono font, the words around it in the display font.
 7. On BeamNG.Earth at night: auto headlights come on (or note what `isNight` reports there).
