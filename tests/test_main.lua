@@ -84,7 +84,7 @@ end
 
 local function boot(opts)
   opts = opts or {}
-  local env = { sent = {}, chats = {}, events = {}, timers = {}, removed = {}, logs = {}, clock = 0, positions = {} }
+  local env = { sent = {}, chats = {}, events = {}, timers = {}, removed = {}, logs = {}, clock = 0, positions = {}, vidPositions = {} }
   local tmp = os.tmpname(); os.remove(tmp)
   env.dir = tmp .. "_cnr/"
   os.execute("mkdir -p '" .. env.dir .. "'")
@@ -106,8 +106,11 @@ local function boot(opts)
   env.vehicles = opts.vehicles or { [1] = { [0] = "x" }, [2] = { [0] = "x" } }
 
   _G.MP = {
-    Settings = { Map = 4 },
-    Get = function() return opts.map or "/levels/west_coast_usa/info.json" end,
+    Settings = { Map = 4, MaxCars = 2 },
+    Get = function(key)
+      if key == 2 then return opts.maxCars or 1 end
+      return opts.map or "/levels/west_coast_usa/info.json"
+    end,
     CreateTimer = function()
       return { GetCurrent = function() return env.clock end, Start = function() end }
     end,
@@ -118,6 +121,8 @@ local function boot(opts)
     GetPlayerIdentifiers = function(pid) return (env.ids or {})[pid] or {} end,
     GetPlayerVehicles = function(pid) return env.vehicles[pid] end,
     GetPositionRaw = function(pid, vid)
+      local byVid = env.vidPositions[pid .. "-" .. tostring(vid)]
+      if byVid then return byVid, "" end
       local p = env.positions[pid]
       if not p then return nil, "Vehicle not found" end
       return { pos = { p, 0, 0 }, vel = { 0, 0, 0 } }, ""
@@ -2081,5 +2086,213 @@ test("cnr_top goes to each player with me on their own row only", function()
   assertEq(one.rows[1].me, nil)
   assertEq(two.rows[1].me, true)
   assertEq(one.rows[2].me, true)
+  env.cleanup()
+end)
+
+local function trafficBoot(opts)
+  opts = opts or {}
+  if opts.maxCars == nil then opts.maxCars = 6 end
+  return boot(opts)
+end
+
+local function spawnOf(pid, vid, model, config)
+  local vcf = config and ('{"partConfigFilename":"' .. config .. '"}') or "{}"
+  return string.format('USER:%s:%d-%d:{"jbm":"%s","vcf":%s}', pid == 1 and "Reinder" or "Bob", pid, vid, model, vcf)
+end
+
+local function chase(env)
+  env.go()
+  for _ = 1, 44 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+end
+
+test("after the round car is placed, the game is told how much traffic to spawn", function()
+  local env = trafficBoot()
+  env.startRound()
+  assertEq(env.lastSent("cnr_trafficStart"), nil)
+  env.call("cnr_myVehicle", 2, '{"vid":0}')
+  local m = env.lastSent("cnr_trafficStart")
+  assertEq(m.pid, 2)
+  assertEq(m.data:find('"count":5', 1, true) ~= nil, true)
+  env.cleanup()
+  local small = trafficBoot({ maxCars = 4 })
+  small.startRound()
+  small.call("cnr_myVehicle", 2, '{"vid":0}')
+  assertEq(small.lastSent("cnr_trafficStart").data:find('"count":3', 1, true) ~= nil, true)
+  small.cleanup()
+end)
+
+test("no go-ahead without room", function()
+  local cases = {
+    { maxCars = 1 },
+    { maxCars = 6, config = '{"trafficPerPlayer":0}' },
+    { maxCars = 6, map = "/levels/beamng_earth/info.json" },
+  }
+  for i, opts in ipairs(cases) do
+    local env = boot(opts)
+    env.startRound()
+    env.call("cnr_myVehicle", 1, '{"vid":0}')
+    env.call("cnr_myVehicle", 2, '{"vid":0}')
+    assertEq(env.lastSent("cnr_trafficStart"), nil, "case " .. i)
+    env.cleanup()
+  end
+end)
+
+test("the go-ahead comes after the clean-up", function()
+  local env = trafficBoot({ vehicles = { [1] = { [0] = "x", [1] = "y", [2] = "z" }, [2] = { [0] = "x" } } })
+  env.startRound()
+  env.call("cnr_myVehicle", 1, '{"vid":0}')
+  assertEq(#env.removed, 2)
+  assertEq(env.lastSent("cnr_trafficStart").pid, 1)
+  env.cleanup()
+end)
+
+test("a traffic spawn before the go-ahead is refused", function()
+  local env = trafficBoot()
+  env.startRound()
+  assertEq(env.call("onVehicleSpawn", 2, 4, spawnOf(2, 4, "etk800")), 1)
+  env.cleanup()
+end)
+
+test("traffic spawns pass up to the count, the next is refused", function()
+  local env = trafficBoot()
+  env.startRound()
+  env.call("cnr_myVehicle", 2, '{"vid":0}')
+  for vid = 1, 5 do
+    assertEq(env.call("onVehicleSpawn", 2, vid, spawnOf(2, vid, "etk800")), 0, "spawn " .. vid)
+    env.vehicles[2][vid] = "t"
+  end
+  assertEq(env.call("onVehicleSpawn", 2, 6, spawnOf(2, 6, "etk800")), 1)
+  env.cleanup()
+end)
+
+test("a traffic edit is never deleted, never a parts change, and never becomes the player's car", function()
+  local env = trafficBoot()
+  env.startRound()
+  placed(env, 1)
+  env.vehicles[1][3] = "t"
+  assertEq(env.call("onVehicleEdited", 1, 3, '1-3:{"jbm":"etk800","vcf":{"parts":{"a":"1"}}}'), 0)
+  assertEq(env.call("onVehicleEdited", 1, 3, '1-3:{"jbm":"etk800","vcf":{"parts":{"a":"2"}}}'), 0)
+  assertEq(partsLines(env), 0)
+  env.go()
+  for _ = 1, 34 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.call("onVehicleReset", 1, 3, "")
+  assertEq(env.noticeHas("reset illegally"), false)
+  env.call("onVehicleReset", 1, 0, "")
+  assertEq(env.noticeHas("Reinder reset illegally", "warn"), true)
+  env.cleanup()
+end)
+
+test("a repaint after the go-ahead removes no traffic", function()
+  local env = trafficBoot()
+  env.startRound()
+  env.call("cnr_myVehicle", 2, '{"vid":0}')
+  env.vehicles[2] = { [0] = "x", [3] = "t", [4] = "t" }
+  env.call("cnr_color", 2, '{"hex":"#00ff00"}')
+  assertEq(env.lastSent("cnr_paint").pid, 2)
+  env.call("cnr_myVehicle", 2, '{"vid":0}')
+  assertEq(#env.removed, 0)
+  env.cleanup()
+end)
+
+test("in practice the issuer may spawn traffic of any model, but its own car stays checked", function()
+  local env = trafficBoot({ vehicles = { [1] = { [0] = "x" } } })
+  env.panel(1, "test runner")
+  env.positions[1] = 0
+  env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  env.call("cnr_myVehicle", 1, '{"vid":0}')
+  assertEq(env.lastSent("cnr_trafficStart").data:find('"count":3', 1, true) ~= nil, true)
+  assertEq(env.call("onVehicleSpawn", 1, 5, spawnOf(1, 5, "etk800")), 0)
+  assertEq(env.call("onVehicleEdited", 1, 0, '1-0:{"jbm":"etk800","vcf":{"parts":{}}}'), 1)
+  env.clock = env.clock + 4
+  env.call("onVehicleEdited", 1, 0, BASE_EDIT)
+  env.call("onVehicleEdited", 1, 0, TUNED_EDIT)
+  assertEq(partsLines(env), 1)
+  env.cleanup()
+end)
+
+test("everyone learns the round cars, and they're cleared at round end", function()
+  local env = trafficBoot()
+  env.startRound()
+  env.call("cnr_myVehicle", 1, '{"vid":0}')
+  env.call("cnr_myVehicle", 2, '{"vid":3}')
+  local m = env.lastSent("cnr_roundCars")
+  assertEq(m.pid, -1)
+  assertEq(m.data:find('"1-0"', 1, true) ~= nil, true)
+  assertEq(m.data:find('"2-3"', 1, true) ~= nil, true)
+  env.panel(1, "stop")
+  m = env.lastSent("cnr_roundCars")
+  assertEq(m.pid, -1)
+  assertEq(m.data:find('"keys":{}', 1, true) ~= nil or m.data:find('"keys":[]', 1, true) ~= nil, true)
+  env.cleanup()
+  local p = trafficBoot({ vehicles = { [1] = { [0] = "x" } } })
+  p.panel(1, "test runner")
+  p.positions[1] = 0
+  p.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  p.call("cnr_myVehicle", 1, '{"vid":0}')
+  assertEq(p.lastSent("cnr_roundCars").pid, -1)
+  p.cleanup()
+end)
+
+test("a deleted round car never hands the player's checks to a traffic car", function()
+  local env = trafficBoot()
+  env.startRound()
+  env.call("cnr_myVehicle", 2, '{"vid":0}')
+  env.vehicles[2] = { [0] = "x", [3] = "t" }
+  env.call("onVehicleDeleted", 2, 0)
+  env.vehicles[2] = { [3] = "t" }
+  local asked = {}
+  local raw = MP.GetPositionRaw
+  MP.GetPositionRaw = function(pid, vid)
+    asked[pid .. "-" .. tostring(vid)] = true
+    return raw(pid, vid)
+  end
+  env.clock = env.clock + 0.25
+  env.call("cnr_tick")
+  MP.GetPositionRaw = raw
+  assertEq(asked["2-3"], nil)
+  env.cleanup()
+end)
+
+test("with the round car gone, traffic resets are ignored and a round car can be put back", function()
+  local env = trafficBoot()
+  env.startRound()
+  placed(env, 1)
+  env.call("cnr_myVehicle", 2, '{"vid":0}')
+  env.vehicles[2] = { [0] = "x", [1] = "t", [2] = "t", [3] = "t", [4] = "t", [5] = "t" }
+  chase(env)
+  env.call("onVehicleDeleted", 2, 0)
+  env.vehicles[2][0] = nil
+  env.call("onVehicleReset", 2, 3, "")
+  assertEq(env.noticeHas("reset illegally"), false)
+  assertEq(env.call("onVehicleEdited", 2, 3, '2-3:{"jbm":"etk800","vcf":{}}'), 0)
+  assertEq(env.call("onVehicleSpawn", 2, 9, spawnOf(2, 9, "pickup", "vehicles/pickup/base.pc")), 0)
+  assertEq(env.call("onVehicleSpawn", 2, 10, spawnOf(2, 10, "etk800")), 1)
+  env.vehicles[2][9] = "x"
+  assertEq(env.call("onVehicleSpawn", 2, 11, spawnOf(2, 11, "pickup", "vehicles/pickup/base.pc")), 1)
+  env.cleanup()
+end)
+
+test("a New car re-pick lets no extra car past the cap", function()
+  local env = trafficBoot()
+  env.startRound()
+  env.call("cnr_myVehicle", 2, '{"vid":0}')
+  env.vehicles[2] = { [0] = "x", [1] = "t", [2] = "t", [3] = "t", [4] = "t", [5] = "t" }
+  env.panel(1, "reroll")
+  assertEq(env.lastSent("cnr_pickVehicle") ~= nil, true)
+  assertEq(env.call("onVehicleSpawn", 2, 9, spawnOf(2, 9, "etk800")), 1)
+  env.cleanup()
+end)
+
+test("a mid-round joiner gets the round cars and its own go-ahead", function()
+  local env = trafficBoot()
+  env.names = { "Reinder", "Bob", "Kim" }
+  env.vehicles[3] = { [0] = "x" }
+  env.startRound()
+  placed(env, 1); placed(env, 2)
+  chase(env)
+  env.call("onPlayerJoin", 3)
+  assertEq(sentTo(env, "cnr_roundCars", 3) ~= nil, true)
+  env.call("cnr_myVehicle", 3, '{"vid":0}')
+  assertEq(env.lastSent("cnr_trafficStart").pid, 3)
   env.cleanup()
 end)

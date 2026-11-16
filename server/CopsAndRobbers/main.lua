@@ -13,6 +13,7 @@ local geo = require("cnr.geo")
 local build = require("cnr.build")
 local panel = require("cnr.panel")
 local sky = require("cnr.sky")
+local traffic = require("cnr.traffic")
 
 local VERSION = "2.2.0"
 local PREFIX = "[CnR] "
@@ -29,6 +30,9 @@ local board
 local mapName
 local stations = {}
 local activeVid = {}
+local trafficOpen = {}
+local trafficVids = {}
+local lastRoundCars
 local stationsRequested = {}
 local partsBaseline = {}
 local aiVid = {}
@@ -301,9 +305,62 @@ end
 local function vidFor(pid)
   local vid = activeVid[pid]
   if vid then return vid end
+  if trafficOpen[pid] then return nil end
   vid = firstVid(pid)
   activeVid[pid] = vid
   return vid
+end
+
+local function maxCars()
+  if not MP.Settings or MP.Settings.MaxCars == nil then return nil end
+  local ok, value = pcall(MP.Get, MP.Settings.MaxCars)
+  return ok and tonumber(value) or nil
+end
+
+local function trafficFor(pid)
+  return traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), geoMode, current.test and pid == current.issuerId)
+end
+
+local function openTraffic(pid)
+  if trafficOpen[pid] or not current:isActive() or current.players[pid] == nil then return end
+  local n = trafficFor(pid)
+  if n <= 0 then return end
+  trafficOpen[pid] = n
+  send(pid, "cnr_trafficStart", { count = n })
+end
+
+local function extraCars(pid)
+  local vehicles = MP.GetPlayerVehicles(pid)
+  local n = 0
+  if type(vehicles) ~= "table" then return n end
+  for vid in pairs(vehicles) do
+    if vid ~= activeVid[pid] then n = n + 1 end
+  end
+  return n
+end
+
+local function roundCarKeys()
+  local keys = {}
+  for p in pairs(current.players) do
+    if not round.isAI(p) and activeVid[p] then keys[#keys + 1] = p .. "-" .. activeVid[p] end
+  end
+  table.sort(keys)
+  return keys
+end
+
+local function pushRoundCars(pid)
+  if not current:isActive() then return end
+  local keys = roundCarKeys()
+  if pid then return send(pid, "cnr_roundCars", { keys = keys }) end
+  local sig = table.concat(keys, ",")
+  if sig == lastRoundCars then return end
+  lastRoundCars = sig
+  send(-1, "cnr_roundCars", { keys = keys })
+end
+
+local function clearRoundCars()
+  if lastRoundCars and lastRoundCars ~= "" then send(-1, "cnr_roundCars", { keys = {} }) end
+  lastRoundCars = nil
 end
 
 local function ensureRef(lat, lon)
@@ -489,6 +546,9 @@ local function applyEffects(effects)
         autoNextSeconds = autoNext and cfg.autoNextDelaySeconds or nil,
       })
       activeVid = {}
+      trafficOpen = {}
+      trafficVids = {}
+      clearRoundCars()
       partsBaseline = {}
       missingCount = {}
       if not current.test and not e.to and e.reason ~= "cancelled" then
@@ -604,6 +664,8 @@ function handlers.start(pid, cmd)
   if not runnerId then return reply(pid, err) end
   requestStations(pid)
   activeVid = {}
+  trafficOpen = {}
+  trafficVids = {}
   partsBaseline = {}
   missingCount = {}
   lastResult = nil
@@ -613,6 +675,8 @@ end
 function handlers.test(pid, cmd)
   if current:isActive() then return reply(pid, "A round is already running") end
   activeVid = {}
+  trafficOpen = {}
+  trafficVids = {}
   partsBaseline = {}
   missingCount = {}
   lastResult = nil
@@ -997,13 +1061,20 @@ function cnrOnChatMessage(pid, name, msg)
   return 1
 end
 
-local function vehicleAllowed(pid, data, isSpawn)
+local function vehicleAllowed(pid, vid, data, isSpawn)
+  local own = activeVid[pid]
+  if current:isActive() and trafficOpen[pid] and current.players[pid] ~= nil and vid ~= own then
+    if current.test and pid == current.issuerId then return true end
+    if not isSpawn then return true end
+    if extraCars(pid) >= trafficOpen[pid] + (own and 0 or 1) then return false end
+    if own then return true end
+  end
   if not roundCarActive() or not current.players[pid] then return true end
   local decoded = parseVehicleData(data)
   if not decoded or decoded.jbm ~= current.vehicle.model then return false end
   local pcFile = type(decoded.vcf) == "table" and decoded.vcf.partConfigFilename
   if pcFile and not current.evolving and normalizeConfig(pcFile) ~= normalizeConfig(current.vehicle.config) then return false end
-  if isSpawn and firstVid(pid) and not (current.test and pid == current.issuerId) then return false end
+  if isSpawn and not trafficOpen[pid] and firstVid(pid) and not (current.test and pid == current.issuerId) then return false end
   return true, decoded
 end
 
@@ -1033,22 +1104,23 @@ local function tracksActive(pid)
 end
 
 function cnrOnVehicleSpawn(pid, vid, data)
-  if not vehicleAllowed(pid, data, true) then
+  if not vehicleAllowed(pid, vid, data, true) then
     reply(pid, "Only the round car is allowed")
     return 1
   end
-  if tracksActive(pid) then activeVid[pid] = vid end
+  if tracksActive(pid) and not trafficOpen[pid] then activeVid[pid] = vid end
   return 0
 end
 
 function cnrOnVehicleEdited(pid, vid, data)
-  local allowed, decoded = vehicleAllowed(pid, data, false)
+  local allowed, decoded = vehicleAllowed(pid, vid, data, false)
   if not allowed then
     reply(pid, "Only the round car is allowed")
     return 1
   end
-  if roundCarActive() and current.players[pid] and not (current.test and vid ~= activeVid[pid]) then checkParts(pid, decoded) end
-  if tracksActive(pid) then activeVid[pid] = vid end
+  local notOwn = vid ~= activeVid[pid] and (current.test or trafficOpen[pid])
+  if roundCarActive() and current.players[pid] and not notOwn then checkParts(pid, decoded) end
+  if tracksActive(pid) and not trafficOpen[pid] then activeVid[pid] = vid end
   return 0
 end
 
@@ -1057,7 +1129,7 @@ function cnrOnVehicleDeleted(pid, vid)
 end
 
 function cnrOnVehicleReset(pid, vid)
-  if activeVid[pid] and activeVid[pid] ~= vid then return end
+  if (activeVid[pid] or trafficOpen[pid]) and activeVid[pid] ~= vid then return end
   if geoMode then
     local fx = current:vehicleReset(now(), pid)
     if #fx > 0 then pendingResetVerdicts[#pendingResetVerdicts + 1] = { pid = pid, at = now(), fx = fx } end
@@ -1102,6 +1174,7 @@ function cnrOnPlayerJoin(pid)
   if current.evolving and current.state == "prep" and current.queued and current.players[pid] then
     send(pid, "cnr_queued", current.queued)
   end
+  if current:isActive() then pushRoundCars(pid) end
 end
 
 function cnrOnPlayerDisconnect(pid)
@@ -1113,6 +1186,9 @@ function cnrOnPlayerDisconnect(pid)
   geoReports[pid] = nil
   applyEffects(current:playerLeft(now(), pid))
   activeVid[pid] = nil
+  trafficOpen[pid] = nil
+  trafficVids[pid] = nil
+  pushRoundCars()
 end
 
 function cnrOnVehiclePicked(pid, data)
@@ -1128,12 +1204,36 @@ function cnrOnMyVehicle(pid, data)
   activeVid[pid] = vid
   placed(pid)
   applyEffects(current:vehicleReady(now(), pid, tonumber(decoded.rebuild)))
-  if current.test then return end
-  local vehicles = MP.GetPlayerVehicles(pid)
-  if type(vehicles) ~= "table" then return end
-  for other in pairs(vehicles) do
-    if other ~= vid then MP.RemoveVehicle(pid, other) end
+  if not current.test and not trafficOpen[pid] then
+    local vehicles = MP.GetPlayerVehicles(pid)
+    if type(vehicles) == "table" then
+      for other in pairs(vehicles) do
+        if other ~= vid then MP.RemoveVehicle(pid, other) end
+      end
+    end
   end
+  openTraffic(pid)
+  pushRoundCars()
+end
+
+function cnrOnTrafficCars(pid, data)
+  local limit = trafficOpen[pid]
+  if not limit then return end
+  local ok, d = pcall(Util.JsonDecode, data)
+  if not ok or type(d) ~= "table" or type(d.vids) ~= "table" then return end
+  local ai = {}
+  if current.test and pid == current.issuerId then
+    for _, v in pairs(aiVid) do ai[v] = true end
+  end
+  local set, n = {}, 0
+  for _, raw in ipairs(d.vids) do
+    local vid = tonumber(raw)
+    if vid and n < limit and vid ~= activeVid[pid] and not ai[vid] and not set[vid] then
+      set[vid] = true
+      n = n + 1
+    end
+  end
+  trafficVids[pid] = set
 end
 
 function cnrOnAiVehicles(pid, data)
@@ -1304,6 +1404,7 @@ MP.RegisterEvent("cnr_vehiclePicked", "cnrOnVehiclePicked")
 MP.RegisterEvent("cnr_stations", "cnrOnStations")
 MP.RegisterEvent("cnr_myVehicle", "cnrOnMyVehicle")
 MP.RegisterEvent("cnr_aiVehicles", "cnrOnAiVehicles")
+MP.RegisterEvent("cnr_trafficCars", "cnrOnTrafficCars")
 MP.RegisterEvent("cnr_geo", "cnrOnGeo")
 MP.RegisterEvent("cnr_relocated", "cnrOnRelocated")
 MP.RegisterEvent("cnr_panel", "cnrOnPanel")
