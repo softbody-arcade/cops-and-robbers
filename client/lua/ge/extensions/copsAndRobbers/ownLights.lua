@@ -2,6 +2,8 @@ local M = {}
 
 M.HEADLIGHTS_ON = "if (electrics.values.lights_state or 0) == 0 then electrics.setLightsState(1) end"
 M.HEADLIGHTS_OFF = "electrics.setLightsState(0)"
+M.LIGHTS_ONLY = "electrics.set_lightbar_signal(1)"
+M.SIREN_ON = "electrics.set_lightbar_signal((v.data.soundscape and v.data.soundscape.siren) and 2 or 1)"
 
 function M.new(enabled)
   return { enabled = enabled == true, dark = nil }

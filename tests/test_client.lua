@@ -1922,7 +1922,12 @@ test("the host's siren rule reaches the card", function()
 end)
 
 local ownLights = require("copsAndRobbers/ownLights")
-local SIREN2, SIREN1, SIREN0 = "electrics.set_lightbar_signal(2)", "electrics.set_lightbar_signal(1)", "electrics.set_lightbar_signal(0)"
+local SIREN2, SIREN1, SIREN0 = ownLights.SIREN_ON, ownLights.LIGHTS_ONLY, "electrics.set_lightbar_signal(0)"
+
+test("the siren command falls back to lights only without a siren sound", function()
+  assertEq(ownLights.SIREN_ON, "electrics.set_lightbar_signal((v.data.soundscape and v.data.soundscape.siren) and 2 or 1)")
+  assertEq(ownLights.LIGHTS_ONLY, "electrics.set_lightbar_signal(1)")
+end)
 
 local function count(veh, cmd)
   local n = 0
@@ -2005,6 +2010,16 @@ test("the headlights switch off never touches the lights", function()
   assertEq(count(env.veh, ownLights.HEADLIGHTS_OFF), 0)
 end)
 
+test("switching Auto headlights on in prep at night lights the car once", function()
+  local env = bootClient()
+  skyRound(env, NIGHT, "cop")
+  env.tick(1)
+  assertEq(count(env.veh, ownLights.HEADLIGHTS_ON), 0)
+  env.M.ui({ action = "setting", key = "headlights", value = true })
+  env.tick(2)
+  assertEq(count(env.veh, ownLights.HEADLIGHTS_ON), 1)
+end)
+
 test("switching headlights off in prep and round end send nothing", function()
   local env = bootClient(HEAD_ON)
   skyRound(env, NIGHT)
@@ -2059,4 +2074,46 @@ test("a runner never gets light bar commands", function()
   env.fire("cnr_release", {})
   env.tick(3)
   assertEq(#lightbarCommands(env.veh), 0)
+end)
+
+test("geo.gpsInfo reports the road distance with a compass direction", function()
+  local env = bootClient()
+  local geo = require("copsAndRobbers/geo")
+  _G.beamngEarth_api = {
+    version = function() return 1 end,
+    has = function() return true end,
+    gpsSet = function() return true end,
+    gpsClear = function() end,
+    toGame = function(lat, lon, h) return lon, lat, h end,
+    gps = function() return { remaining = 750 } end,
+  }
+  env.veh.pos = vec3(0, 0, 0)
+  assertEq(geo.setGpsTarget({ lat = 100, lon = 0, h = 0 }), true)
+  local info = geo.gpsInfo()
+  geo.clearRoute()
+  _G.beamngEarth_api = nil
+  assertEq(info.before, "Runner"); assertEq(info.meters, 750); assertEq(info.after, "by road N")
+end)
+
+test("geo.gpsInfo falls back to the straight line while the route is planning", function()
+  local env = bootClient()
+  local geo = require("copsAndRobbers/geo")
+  local planning = true
+  _G.beamngEarth_api = {
+    version = function() return 1 end,
+    has = function() return true end,
+    gpsSet = function() return true end,
+    gpsClear = function() end,
+    toGame = function(lat, lon, h) return lon, lat, h end,
+    gps = function() return planning and { planning = true, remaining = 5 } or {} end,
+  }
+  env.veh.pos = vec3(0, 0, 0)
+  assertEq(geo.setGpsTarget({ lat = 0, lon = 100, h = 0 }), true)
+  local planned = geo.gpsInfo()
+  planning = false
+  local noRemaining = geo.gpsInfo()
+  geo.clearRoute()
+  _G.beamngEarth_api = nil
+  assertEq(planned.meters, 100); assertEq(planned.after, "E")
+  assertEq(noRemaining.meters, 100); assertEq(noRemaining.after, "E")
 end)
