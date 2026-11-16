@@ -18,7 +18,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | Automatic next round | Optional (panel switch). The next round is prepared with whoever has run least. It still waits for GO. |
 
 ### Choosing the runner
-- The Round tab's player list is the runner picker: Next (whoever has run least this session, preselected), the last runner (marked "last"), Random, or any player by name (sent as an exact name, so names like "next" work).
+- The Round tab's player list is the runner picker: Next (whoever has run least this session, preselected; only rounds that really end count as a run, not a cancelled round or a practice), the last runner (marked "last"), Random, or any player by name (sent as an exact name, so names like "next" work).
 
 ## Evolving car mode
 

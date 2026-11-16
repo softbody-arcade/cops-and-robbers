@@ -508,7 +508,6 @@ local function applyEffects(effects)
     elseif e.kind == "setup" then
       if e.role == "runner" and not current.test then
         local key = playerKey(e.pid)
-        runCounts[key] = (runCounts[key] or 0) + 1
         lastRunnerKey = key
         currentRunnerKey = key
       end
@@ -630,6 +629,7 @@ local function applyEffects(effects)
       run.releasedAt = endedAt - math.floor(run.survivedSeconds + 0.5)
       run.endedAt = endedAt
       run.key = currentRunnerKey
+      if currentRunnerKey then runCounts[currentRunnerKey] = (runCounts[currentRunnerKey] or 0) + 1 end
       run.cops, run.copNames, run.copSightSeconds = {}, {}, {}
       for i, pid in ipairs(run.copIds or {}) do
         run.cops[i] = playerKey(pid)
