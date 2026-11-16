@@ -1976,6 +1976,18 @@ test("a cop loses the runner's name tag while the runner is not shown", function
   assertEq(env.mpVehicles["2-0"].hideNametag, nil)
 end)
 
+test("leaving the server shows the runner's name tag again", function()
+  local env = bootClient()
+  startCop(env)
+  env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
+  env.fire("cnr_roundCars", { keys = { "2-0" } })
+  env.fire("cnr_runnerShown", { shown = false })
+  env.tick(1.2)
+  assertEq(env.mpVehicles["2-0"].hideNametag, true)
+  env.M.onBeamMPServerLeave()
+  assertEq(env.mpVehicles["2-0"].hideNametag, nil)
+end)
+
 test("a runner never hides anything", function()
   local env = bootClient()
   env.fire("cnr_roundSetup", { role = "runner", runnerId = 1, model = "pickup", config = "vehicles/pickup/base.pc", phase = "prep", runnerShown = false })

@@ -1014,8 +1014,8 @@ M.requestReset = requestReset
 M.onBeamNGEarthRebased = onBeamNGEarthRebased
 M.onExtensionLoaded = onExtensionLoaded
 M.onExtensionUnloaded = function()
-  leaveServer()
   hiding.unload()
+  leaveServer()
   for name in pairs(package.loaded) do
     if name:find("^copsAndRobbers/") then package.loaded[name] = nil end
   end

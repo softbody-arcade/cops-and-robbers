@@ -151,3 +151,42 @@ test("unload restores the original and leaves a foreign replacement", function()
     assertEq(ui_apps_minimap_vehicles.drawOtherVehicles, foreign)
   end)
 end)
+
+test("an older wrapped table coming back never makes the wrapper call itself", function()
+  run(function()
+    local calls = 0
+    local extA = { drawOtherVehicles = function()
+      calls = calls + 1
+      if calls > 5 then error("recursed") end
+      draw()
+    end }
+    local extB = { drawOtherVehicles = draw }
+    ui_apps_minimap_vehicles = extA
+    hiding.set({ vid = 2, minimap = true })
+    hiding.tick(0)
+    ui_apps_minimap_vehicles = extB
+    hiding.tick(1)
+    ui_apps_minimap_vehicles = extA
+    hiding.tick(2)
+    debug.sethook(function() error("draw did not return") end, "", 1000000)
+    local ok1, e1 = pcall(extA.drawOtherVehicles)
+    hiding.set(nil)
+    local ok2, e2 = pcall(extA.drawOtherVehicles)
+    debug.sethook()
+    assert(ok1, e1)
+    assert(ok2, e2)
+    assert(calls <= 5)
+    assertEq(ids(), "1,2,3")
+  end)
+end)
+
+test("after unload a leftover wrapper is a pure pass-through", function()
+  run(function()
+    hiding.set({ vid = 2, minimap = true })
+    hiding.tick(0)
+    local wrapper = ui_apps_minimap_vehicles.drawOtherVehicles
+    hiding.unload()
+    wrapper()
+    assertEq(ids(), "1,2,3")
+  end)
+end)

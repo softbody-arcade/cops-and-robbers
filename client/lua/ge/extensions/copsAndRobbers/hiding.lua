@@ -6,6 +6,7 @@ local target
 local hiddenKey
 local lastTick = -math.huge
 local wrapped
+local lastOriginal
 
 local function vehicleEntry(key)
   if not key or not MPVehicleGE or not MPVehicleGE.getVehicles then return nil end
@@ -21,7 +22,7 @@ local function clearTag()
 end
 
 local function drawWrapper(...)
-  local original = wrapped and wrapped.original
+  local original = wrapped and wrapped.original or lastOriginal
   if not original then return end
   local vid = target and target.minimap and target.vid
   if not vid then return original(...) end
@@ -44,8 +45,16 @@ end
 local function wrap()
   local ext = ui_apps_minimap_vehicles
   if type(ext) ~= "table" or type(ext.drawOtherVehicles) ~= "function" then return end
-  if wrapped and wrapped.ext == ext and ext.drawOtherVehicles == drawWrapper then return end
+  if ext.drawOtherVehicles == drawWrapper then
+    if wrapped then
+      wrapped.ext = ext
+    elseif lastOriginal then
+      wrapped = { ext = ext, original = lastOriginal }
+    end
+    return
+  end
   wrapped = { ext = ext, original = ext.drawOtherVehicles }
+  lastOriginal = wrapped.original
   ext.drawOtherVehicles = drawWrapper
 end
 
