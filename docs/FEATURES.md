@@ -1,4 +1,4 @@
-# Cops and Robbers 2.2.0: features
+# Cops and Robbers 2.3.0: features
 
 A BeamMP server plugin with a client mod that BeamMP downloads automatically. The mod enforces the group's cops-and-robbers rules. It is one mod for every map, and it switches to geo mode on BeamNG.Earth by itself.
 
@@ -9,7 +9,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | Step | What happens |
 |---|---|
 | Start round | Picks a random car and config (or the evolving build). Everyone gets the same one. Cops are placed on a road 50–150 m from the runner. Everyone is frozen. |
-| Prep | No time limit. Everyone sees only their role (and cops the runner's name) and "Waiting for the host to press GO". Colors come from the Colour button only: the game's parts and paint menu is closed for everyone (except the runner in evolving mode, for their one change). A parts change the mod didn't make is shown to everyone as a notice (with the slots that changed), but not undone. New car picks another car (random mode). |
+| Prep | No time limit. Everyone sees only their role (and cops the runner's name) and "Waiting for the host to press GO". Colors come from the Colour button only: the game's parts and paint menu is closed for everyone (except the runner in evolving mode, for their one change). A parts change the mod didn't make is shown to everyone as a notice (with the slots that changed), but not undone. New car picks another car (random mode). Once a player's car is placed, their game spawns its traffic (see Traffic), which stands still until GO. |
 | Apply change (evolving only, the runner's HUD button) | Locks in the runner's change and rebuilds every car; the screen shows APPLYING CHANGES until everyone has loaded (at most 20 s). |
 | GO | "Runner starts in 3", then the runner is released. |
 | Head start | Cops stay frozen for 7 s and see a countdown. |
@@ -63,8 +63,8 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 ### Crash penalty (cops)
 - A cop who loses 50 km/h within 0.5 s (about 2.8 G on average) gets frozen for 10 s.
 - The 7 s reset wait only starts after the penalty.
-- **Fault:** when another car was within 15 m, only the one who drove into the other is penalised. A runner who rams a cop, or a cop who gets hit, is not penalised. Rear-ending a runner who brake-checks still counts against the cop.
-- Everyone sees a notice "<name>: crash penalty 10s".
+- **Fault:** when another car was within 15 m, only the one who drove into the other is penalised. A runner who rams a cop, or a cop who gets hit, is not penalised. Rear-ending a runner who brake-checks still counts against the cop. Traffic cars count here too: driving into one is the cop's fault, being hit by one is not.
+- Everyone sees a notice "<name>: crash penalty 10s", with "(traffic)" after it when the cop drove into traffic. The round's timeline shows the same.
 - A cop who reconnects keeps whatever is left of the penalty.
 
 ### Locked during a round
@@ -80,6 +80,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 
 ### Vehicle rules
 - Only the round car is allowed: other models or configs are refused, and extra parked cars are removed.
+- **Traffic cars** are the exception: once the server has told a player's game to spawn its traffic, that player may have up to that many extra cars of any model. They never count as the player's car for catching, resets, teleports, sight or the parts check, and the server never removes them mid-round. Players still can't switch the game's traffic on themselves during a round.
 - **Pool:** official Car and Truck types. City bus, semi, medium-duty truck, tractor and crawler are excluded by default (`excludedModels`).
 
 ## Cops
@@ -104,21 +105,21 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Car settings carry over:** your in-car switches (traction/stability control, drive mode, diff locks, 4WD range and anything else the car lets you toggle) are noted every few seconds during a round and put back on every car the mod spawns for you (new round, repaint, Apply). They are saved per car model in `settings/cnr_vehicle_modes.json` on your own PC, so they also survive a game restart. A car that doesn't have a setting just keeps its own default.
 
 - **Per-player color:** the Colour button (lobby card or prep line) opens a colour picker with a hex field, "No colour" and Done. The colour is applied to every round car. Set during prep, it repaints straight away; otherwise it applies from the next round. It is saved on the server per player.
-- **How to play:** a five-tab card (Basics, Runner, Cop, Resets, Rules) that opens by itself the first time a player joins (remembered on their own PC in `settings/`) and from the How to play buttons. Every number in it comes from the server's current settings, so it matches the round; settings that are off read "no time limit" or "sight is off". It hides itself during a round.
+- **How to play:** a five-tab card (Basics, Runner, Cop, Resets, Rules) that opens by itself the first time a player joins (remembered on their own PC in `settings/`) and from the How to play buttons. Every number in it comes from the server's current settings, so it matches the round; settings that are off read "no time limit" or "sight is off". With traffic on, Basics says how many traffic cars each player has and the crash line says driving into traffic counts. It hides itself during a round.
 - **Identity:** players are recognised by their BeamMP account for the leaderboard, colors and who runs next. Guests are recognised by name, which changes every session.
 - **Warnings:** a yellow line on the lobby card for a standing problem: no reset or recover button bound, an outdated copy of the mod, or a BeamNG.Earth that is too old. It stays until fixed: bind a reset button and the line goes within a couple of seconds. Without a reset binding, a round also starts with a warning notice.
 
 ## Leaderboards (saved permanently)
 
 - Shown in the Cops and Robbers Leaderboard app, and the top 3 in the result card after each round.
-- **Saved per run:** runner, time, map, car, the round's conditions (time of day, weather, clock speed, whether weather affected driving), end reason (caught, called, escaped, disconnect), catchers, every cop in the round with their seconds of sight, the runner's hidden time and how often they lost the cops, the car mode and build step, and a timeline of what happened (cops released, lost the cops, crash penalties, illegal resets, teleports, parts changes, the end).
+- **Saved per run:** runner, time, map, car, the round's conditions (time of day, weather, clock speed, whether weather affected driving), the traffic per player, end reason (caught, called, escaped, disconnect), catchers, every cop in the round with their seconds of sight, the runner's hidden time and how often they lost the cops, the car mode and build step, and a timeline of what happened (cops released, lost the cops, crash penalties, illegal resets, teleports, parts changes, the end).
 - A cancelled round and a practice round are never recorded.
 - **Fresh start in 1.7.0:** the leaderboard file has a new format. An older file is moved to `data/leaderboard-1.6.json` (kept, not used).
 
 ## Leaderboard app
 
 - "Cops and Robbers Leaderboard" has the look of the game's multiplayer scoreboard: rows on dark cards, gold, silver and bronze rank badges, and your own row outlined in orange. Open it from the lobby card or Esc > UI Apps. It has a ✕, refreshes after every round and hides itself during a round.
-- **Filters:** map (this map by default, all maps, or any map that has runs, shown with its real name) and car mode (all, random, evolving).
+- **Filters:** map (this map by default, all maps, or any map that has runs, shown with its real name), car mode (all, random, evolving) and traffic (all, with traffic, no traffic; rounds from before traffic count as no traffic).
 - **Runners:** each player's best survival time with the car (and the map when showing all maps). When you are not in the visible top, your own row is pinned at the bottom with your rank.
 - **Cops:** catches per player, assists and the fastest catch.
 - **Players:** runs, best, catches and assists per player; click a player for all stats and their last rounds:
@@ -128,7 +129,18 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
   - **Hidden from cops:** the share of their chases the runner spent out of every cop's sight.
   - **Lost the cops:** how often they broke all cops' sight.
   - Rounds played with sight off (`sightMaxMeters = 0`) show "–" for the last two.
-- **Rounds:** every recorded round, newest first, grouped by day. Each row shows how it ended, who ran and who caught them, the time of day, car (followed by the conditions, for example "Gavril D-Series · Night · Rain") and build step, the survival time, and a yellow line for anything that went wrong ("Kim reset illegally"). Click a round for its timeline and each cop's share of the chase with the runner in sight. Rounds saved before the timeline existed show only the result. Long lists load more with "Show more".
+- **Rounds:** every recorded round, newest first, grouped by day. Each row shows how it ended, who ran and who caught them, the time of day, car (followed by the conditions, for example "Gavril D-Series · Night · Rain · Traffic") and build step, the survival time, and a yellow line for anything that went wrong ("Kim reset illegally"). Click a round for its timeline and each cop's share of the chase with the runner in sight. Rounds saved before the timeline existed show only the result. Long lists load more with "Show more".
+
+## Traffic
+
+- **Around every player:** during a round each player's game runs `trafficPerPlayer` AI traffic cars (5 by default, 0 = off) around itself with the game's own traffic system, so there is traffic wherever anyone drives.
+- **Capped by `MaxCars`:** the server leaves room for the round car (and the two AI cars in practice), so with `MaxCars` 4 a player gets 3 traffic cars. The panel says when the cap applies.
+- **In the round:** traffic spawns once a player's car is placed in prep and stands still until the runner's GO, so it can't drive into the frozen cars. A player who joins mid-round gets traffic that drives at once. Everyone's traffic is removed at the end of the round, on Cancel and on leaving. If a game can't spawn its traffic, that player gets one notice ("Traffic could not spawn") and the round goes on.
+- **Which cars:** official vehicles only, never police, emergency vehicles or taxis, and no random traffic events. Traffic cars have no name tags, so every car with lights is a cop and every name tag is a player, also for players in the lobby watching someone's practice round.
+- **Lights:** in rain, storm, fog and snow rounds traffic drives with its headlights on. At night it follows the game's own rule (lights on from sunset, and in tunnels), which also thins traffic out at night.
+- **Weather:** traffic slows down on wet roads and snow by itself, and gusts push it like any car.
+- **Crashes:** see Crash penalty. Traffic never helps catch the runner.
+- **Not on BeamNG.Earth yet:** BeamNG.Earth manages any traffic that runs, so traffic stays off there and the panel says so.
 
 ## Night and weather
 
@@ -169,6 +181,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - Every player has their own coordinate origin there, so positions travel between the games and the server as latitude/longitude, through BeamNG.Earth's mod API (`toGeo` and `toGame`). The server calculates all distances in one shared frame.
 - **Moves by BeamNG.Earth itself** (rebase, resync, setting the car down) do not count as resets or teleports. Teleporting yourself during a round does.
 - **Needs:** BeamNG.Earth with mod API v1. Road resets for cops, cop placement and the AI also need BeamNG.Earth traffic turned on.
+- **No round traffic yet:** BeamNG.Earth moves, hides and rebuilds any traffic that runs (after a teleport, a region change, or cars standing still), so the mod's traffic stays off there for now.
 
 ## HUD (UI apps)
 
@@ -199,7 +212,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Car tab:** a Random car / Evolving build switch. In evolving mode a summary (car, build step, last change and who made it), New build (choose a car, or random; a second click when a build exists) and Reset build (a second click). For both modes: Include mod cars and the excluded cars. Locked during a round.
 - **Map tab:** "West Coast USA · 10 gas stations", **Add station here**, **Remove nearest** (disabled with "No station within 50 m to remove") and the nearest stations with their distance (flat distance on BeamNG.Earth, updated every 2 s while the tab is open). Works on BeamNG.Earth, where stations are also discovered automatically.
 - **Settings tab:**
-  - Every setting has a one-line explanation. The common ones come first (Head start, Time limit, Hold time, Catch distance, Reset wait, Crash penalty); the rest are under More settings, grouped into Round, Catching, Resets, Crashes, Cops and Cars. A setting the panel doesn't know yet appears under "Other".
+  - Every setting has a one-line explanation. The common ones come first (Head start, Time limit, the Sky choices, Traffic, Hold time, Catch distance, Reset wait, Crash penalty); the rest are under More settings, grouped into Round, Sky, Catching, Resets, Crashes, Cops and Cars. Traffic has a line under it with what it costs ("5 each · 30 cars with 6 players") or how `MaxCars` caps it. On BeamNG.Earth the Sky and Traffic groups say "Not available on BeamNG.Earth yet" instead. A setting the panel doesn't know yet appears under "Other".
   - Numbers have −/+ steppers, on/off settings have switches, and excluded cars is a comma-separated text field.
   - Changes save automatically 0.5 s after the last click. A value that differs from the default is orange with its own small reset. A refused value snaps back with the reason in yellow, and the reply line confirms each save in green ("Saved: Head start 8 s").
   - "Reset to default" needs a second click within 3 s. Settings are locked during a round ("Stop the round first").
@@ -247,6 +260,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | `weather` | map | `map` (the map's own), `clear`, `cloudy`, `rain`, `storm`, `fog`, `snow` or `random` |
 | `badWeatherChancePercent` | 25 | Chance of rain, storm, fog or snow when Weather is random |
 | `weatherDriving` | true | Weather changes grip and adds wind (not on BeamNG.Earth) |
+| `trafficPerPlayer` | 5 | AI traffic cars around each player during a round (0 = off; normal maps only) |
 
 ## Host and robustness
 

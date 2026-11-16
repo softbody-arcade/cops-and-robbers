@@ -20,6 +20,7 @@ Versions in use on 2026-11-15:
    - **Reset rules:** pressing your reset button gets refused and highlighted, and after waiting the reset is allowed.
    - **Catching:** the catch bar fills when you hold the AI runner.
    - **Sky:** with Time of day Night and Weather Rain (panel), rain shows, the AI cars have headlights, and everything is back after End chase. Set Time of day and Weather back to Map default afterwards: the panel writes the live server's `config.json`.
+   - **Traffic** (needs `MaxCars` of 4 or more for practice): traffic cars spawn in prep and stand still until GO; they have no name tags and there are no police, emergency vehicles or taxis among them; driving into one gives "crash penalty 10s (traffic)"; all are gone after End chase. With Night and Fog, traffic is lit while standing and while driving; with Rain it slows on wet roads and gusts push it.
    - **End:** End chase shows the result card. Leaving the server removes our apps from the layout.
 5. Open the control panel (Host panel button on the lobby card) and check:
    - The status line is filled in.
@@ -43,11 +44,12 @@ Then do the checks for whatever actually updated.
   - `MP.GetPlayers` (pid → name), `MP.GetPlayerName`, `MP.GetPlayerIdentifiers` (expects `beammp` = account id), `MP.GetPlayerVehicles`
   - `MP.GetPositionRaw` (expects `{pos={x,y,z}, vel={...}}` plus an error string), `MP.RemoveVehicle`
   - `MP.CreateTimer():GetCurrent()`, `MP.CreateEventTimer` / `MP.CancelEventTimer` (the 250 ms `cnr_tick`)
-  - `MP.Get(MP.Settings.Map)` (the map path; we parse `levels/<name>/`)
+  - `MP.Get(MP.Settings.Map)` (the map path; we parse `levels/<name>/`) and `MP.Get(MP.Settings.MaxCars)` (a number; it caps the traffic per player, and anything else means no cap)
   - `Util.JsonEncode` / `JsonDecode` / `JsonPrettify`, `FS.CreateDirectory` / `Remove` / `Rename`
 - **Events and the data shapes we parse:**
   - `onChatMessage(pid, name, msg)`: returning `1` hides the message. We use it only to hide a typed `/cnr ...` from chat; the sender gets a HUD notice pointing to the Cops and Robbers card instead.
   - `onVehicleSpawn(pid, vid, data)` and `onVehicleEdited(pid, vid, data)`. The data is `...:pid-vid:{json}`, and we parse from the first `{`. The JSON has `jbm` (model) and `vcf.partConfigFilename` / `vcf.parts`. Returning `1` from an edit **deletes the car**.
+  - **Traffic is synced like any car:** BeamMP sends every car a player's game spawns, traffic included, through `onVehicleSpawn`, counts it against `MaxCars` and shows it to everyone. Nothing in the data marks traffic, so the server trusts the game's own report (`cnr_trafficCars`) and caps the extra cars. Moving a traffic car to a new spot reaches us as `onVehicleReset` for that car.
   - `onVehicleDeleted`, `onVehicleReset`, `onPlayerJoin`, `onPlayerDisconnect`.
 - **Loading:**
   - The plugin chunk name has **no `@`**. `pluginDir` handles both forms.
@@ -69,7 +71,8 @@ Then do the checks for whatever actually updated.
 - `AddEventHandler(name, fn)` and `TriggerServerEvent(name, string)`.
 - `MPVehicleGE.isOwn(gameId)` and `MPVehicleGE.getVehicleByGameID(id).serverVehicleString`. That string is `"pid-vid"`, and we take the vid after the last `-`.
 - `MPConfig.getPlayerServerID()`.
-- **Line of sight:** `MPVehicleGE.getVehicles()`, keyed by `"pid-vid"` with `gameVehicleID`, `isSpawned` and `isDeleted`. Also `MPVehicleGE.getPlayers()[pid].activeVehicleID`, a `"pid-vid"` key for the car that player is driving or viewing. These are used to find the runner's car on a cop's game.
+- **Line of sight:** `MPVehicleGE.getVehicles()`, keyed by `"pid-vid"` with `gameVehicleID`, `isSpawned` and `isDeleted`. Also `MPVehicleGE.getPlayers()[pid].activeVehicleID`, a `"pid-vid"` key for the car that player is driving or viewing. The server's round car list (`cnr_roundCars`) comes first; these are used to find the runner's car on a cop's game.
+- **Name tags:** setting `MPVehicleGE.getVehicles()[key].hideNametag = true` hides BeamMP's name tag over that car (the check is in BeamMP's name tag drawing, `MPVehicleGE.lua`). We set it on every traffic car and clear it after the round. On update, check that traffic cars still show no name tag in a round.
 - The GE hook `onBeamMPServerLeave`.
 - **Mod mounting:** the mod is mounted when you join. Our UI apps then need an `onFilesChanged` refresh.
 - **Launcher on Arch:** the wrapper in `~/.local/bin/beammp-launcher` sets argv[0] and the working directory. The AUR binary name broke `CheckName()` before.
@@ -117,6 +120,7 @@ Then do the checks for whatever actually updated.
   - **Game data:** the precipitation datablocks `rain_medium` and `Snow_menu` (`art/datablocks/managedDatablocks.datablocks.json` in `gameengine.zip`); the ground models and their alias lists in `art/groundmodels.json` (targets ASPHALT, ASPHALT_OLD, ASPHALT_PREPPED, COBBLESTONE, RUMBLE_STRIP, GRAVEL, DIRT, DIRT_DUSTY, DIRT_DUSTY_LOOSE, GRASS, GRAVEL_WET, MUD; sources ASPHALT_WET, GRAVEL_WET, MUD, SNOW).
   - **Map materials:** maps say which surface a road or terrain layer is by naming one of those ground models or an alias (`groundmodelName` / `groundType` in their material files). Checked on 0.40.5 for west_coast_usa, Utah, italy, east_coast_usa, johnson_valley and jungle_rock_island. A surface name we don't list, or a map with its own `groundModels/` folder (a mod map), stays dry in rain and snow.
   - `getState().groundWind` and `getInitState().groundWind` are the game's live wind vector, not copies; we copy it when saving.
+  - The gusts (`be:queueAllObjectLua`) and the grip swap act on every car in the game, traffic included. The vehicle AI reads grip from the ground model (`obj:getStaticFrictionCoef()` in `lua/vehicle/ai.lua`), so traffic slows on wet roads and snow by itself.
   - While the sky is locked the game skips its own `onVehicleSpawned = applyGroundWind` (the lock check in `applyGroundWind`), so cars spawned during a round get wind only from our 0.25 s updates.
   - On a map change the game's `onClientEndMission` reloads ground models, clears the temperature override and zeroes the wind, but never undoes `enableChanges(false)`; that's why our `drop()` puts the lock back. Check after an update: leave mid-round or change map, and on the next map the environment menu works and grip is normal.
   - On update, check: the functions above still exist (grep the game's `lua/ge/extensions/core/environment.lua`); `groundmodels.json` still has the listed names and aliases with similar values; the two datablocks still exist; the map scan below shows no new road, dirt or grass surface names (add any to `surfaces.lua` `RULES`); in game, a practice round with Night and Rain shows rain and night lights, wet roads slide, gusts push the car, the environment menu is greyed out, and after End chase the sky, grip, wind and menu are back.
@@ -124,6 +128,12 @@ Then do the checks for whatever actually updated.
     ```bash
     for z in ~/.local/share/Steam/steamapps/common/BeamNG.drive/content/levels/*.zip; do echo "== $(basename "$z" .zip): $(unzip -p "$z" '*.json' 2>/dev/null | grep -oi '"groundmodelName" *: *"[^"]*"\|"groundType" *: *"[^"]*"' | sed 's/.*: *"//;s/"//' | tr a-z A-Z | sort | uniq -c | sort -rn | awk '{printf "%s(%s) ", $2, $1}')"; done
     ```
+- **Traffic** (`copsAndRobbers/traffic.lua`, `gameplay_traffic` in `lua/ge/extensions/gameplay/traffic.lua`):
+  - `gameplay_traffic.deleteVehicles()` (removes only traffic AI cars, never the player's car or our practice AI cars), `setTrafficVars({ aiMode = "traffic", activeAmount, enableRandomEvents = false })`, `spawnTraffic(amount, group)` and `getTrafficData()[id].isAi`.
+  - We call `spawnTraffic`, not `setupTraffic`: `setupTraffic` adds police cars (`gameplay/police.lua`, when asked) and a reserved taxi (`gameplay/taxi.lua`) on top of the amount, which would go over `MaxCars`. `spawnTraffic` spawns exactly the group we pass, but it doesn't reset `aiMode`, which the game's "AI: all vehicles chase/flee" menu changes; that's why we set it.
+  - `gameplay_traffic_trafficUtils.createTrafficGroup(n)` gives `{ model, config }` entries. We keep the ones whose config list entry (`core_vehicles.getConfigList(true).configs`, matched on `model_key` and `key`) has `Source == "BeamNG - Official"`, a `Config Type` other than `Police`, and no police, sheriff, interceptor, ambulance, fire, rescue, emergency or taxi in its `key` or `Name`.
+  - **Headlights:** the game's own rule (`gameplay/traffic/vehicle.lua`, `onTrafficTick`): lights on in the solar night window (`core_solarTimeOfDay.getSolarNightWindow` on `core_environment.getTimeOfDay()`) and in tunnels, off in daylight, and off whenever a car is moved to a new spot. It runs while our held cars are frozen. In bad-weather rounds we send `electrics.setLightsState(1)` every second, which is why the moves don't leave cars dark for long. At night the game also respawns traffic less often (`spawnValue * 0.25`).
+  - **On update, check:** the functions above still exist with the same arguments; `setupTraffic` still adds special vehicles that `spawnTraffic` skips; the config list still has the four fields; and the traffic quick check in step 4 above.
 - **Other:**
   - `core_groundMarkers.setPath`, `guihooks.trigger`, `extensions.hook` / `load`. We no longer call `ui_message`.
   - `core_levels.getLevelTitle(id)` gives the map's real name for the panel and leaderboard (`game.lua`, `mapTitle`). If it goes missing we fall back to a prettified id.
@@ -242,6 +252,7 @@ Then do the checks for whatever actually updated.
 - `gpsSet(lat, lon, label)`, `gps()`, which returns `.remaining` (metres) and `.planning`, and `gpsClear()`.
 - The hook `onBeamNGEarthRebased(info)`, where `info.purpose` is `"teleport"` or something else.
 - We send no sky on `beamng_earth`: a change through `core_environment` flips the player's Earth sky to Manual and saves it in their Earth settings.
+- We run no round traffic on `beamng_earth`: its `navgraph.lua` manages any traffic that runs. `guard()` moves traffic cars that stood still 45 s, `onTeleport()` hides all traffic until the new road graph arrives (round setup moves cops far), and `checkRegion()` sets traffic up again with the player's own amount and police choice. Working around that would need BeamNG.Earth internals beyond its mod API.
 - Each player has their own floating origin. That's why positions travel as lat/lon, and why the server converts with WGS84 → ENU (`cnr/geo.lua`).
 
 **On update, check:**
