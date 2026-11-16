@@ -1,7 +1,6 @@
 # TODO
 
 ## Ideas
-- [ ] Traffic during rounds (designed, branch traffic-rounds, `docs/superpowers/specs/2026-11-16-traffic-rounds-design.md`): every player's game runs a few traffic cars around itself (`trafficPerPlayer`, default 5, capped by MaxCars), through the game's own traffic system. Normal maps only; off on BeamNG.Earth for now
 - [ ] Traffic on BeamNG.Earth (after traffic on normal maps has been played and tuned). BeamNG.Earth's navgraph manages any running traffic itself: it moves cars that stand still 45 s (our traffic is held still through prep), hides all traffic after a teleport until the new road graph arrives (round setup moves cops far), the road graph arrives after the round car is placed (a moved cop's traffic finds no roads), and a region change sets traffic up again with the player's own amount and police choice. Traffic positions would also have to travel as latitude/longitude for the crash fault rule
 - [ ] Traffic headlights: at night traffic keeps the game's behaviour (lights on at night and in tunnels, thinner traffic at night); in rain, storm, fog and snow rounds the mod turns them on. Tune after playing
 - [ ] Hard mode vs normal mode (a round setting): hard mode gives cops a route/position only while someone has sight (no 30 s last-seen pings), hides the name plates above cars, and whatever else fits when planning it (for example no "Nearest cop" for the runner, no minimap markers for other cars). Hard mode also raises the night and bad weather chances of night and weather rounds
