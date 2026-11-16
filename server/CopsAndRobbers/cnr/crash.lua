@@ -8,7 +8,7 @@ local WINDOW_SECONDS = 0.5
 local CONTACT_RADIUS = 15
 
 function M.atFault(selfCar, others)
-  if not selfCar or not selfCar.pos or not selfCar.vel then return true end
+  if not selfCar or not selfCar.pos or not selfCar.vel then return true, nil end
   local nearest, nearestDist
   for _, o in ipairs(others or {}) do
     if o and o.pos and o.vel then
@@ -16,13 +16,14 @@ function M.atFault(selfCar, others)
       if d <= CONTACT_RADIUS and (not nearestDist or d < nearestDist) then nearest, nearestDist = o, d end
     end
   end
-  if not nearest or nearestDist < 1e-6 then return true end
+  if not nearest then return true, nil end
+  if nearestDist < 1e-6 then return true, nearest end
   local dx = (nearest.pos.x - selfCar.pos.x) / nearestDist
   local dy = (nearest.pos.y - selfCar.pos.y) / nearestDist
   local dz = (nearest.pos.z - selfCar.pos.z) / nearestDist
   local selfToward = selfCar.vel.x * dx + selfCar.vel.y * dy + selfCar.vel.z * dz
   local otherToward = -(nearest.vel.x * dx + nearest.vel.y * dy + nearest.vel.z * dz)
-  return selfToward >= otherToward
+  return selfToward >= otherToward, nearest
 end
 
 function M.new(cfg)

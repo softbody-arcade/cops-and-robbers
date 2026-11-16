@@ -1109,3 +1109,51 @@ test("a recorded run keeps the round's conditions", function()
   assertEq(run.sky.weather, "rain"); assertEq(run.sky.time, "night"); assertEq(run.sky.driving, true)
   assertEq(run.sky.windSeed, nil)
 end)
+
+local function parkedAt(x) return { { pos = { x = x, y = 0, z = 0 }, vel = { x = 0, y = 0, z = 0 }, traffic = true } } end
+
+test("a cop driving into traffic gets a penalty labelled traffic", function()
+  local r = running()
+  r:tick(11.25, { [1] = kmh(-500, 0), [2] = kmh(100, 120), [3] = kmh(500, 0) }, {}, parkedAt(108))
+  local fx = r:tick(11.5, { [1] = kmh(-500, 0), [2] = kmh(104, 0), [3] = kmh(500, 0) }, {}, parkedAt(108))
+  assertEq(find(fx, "penalty", 2).cause, "traffic")
+  assertEq(r.timeline[#r.timeline].cause, "traffic")
+end)
+
+test("a cop hit by traffic gets no penalty", function()
+  local r = running()
+  local oncoming = { { pos = { x = 108, y = 0, z = 0 }, vel = { x = -100 / 3.6, y = 0, z = 0 }, traffic = true } }
+  r:tick(11.25, { [1] = kmh(-500, 0), [2] = kmh(100, 60), [3] = kmh(500, 0) }, {}, oncoming)
+  local fx = r:tick(11.5, { [1] = kmh(-500, 0), [2] = kmh(101, 0), [3] = kmh(500, 0) }, {}, oncoming)
+  assertEq(find(fx, "penalty"), nil)
+end)
+
+test("a crash with a player or with nothing carries no cause", function()
+  local r = running()
+  r:tick(11.25, { [1] = kmh(-500, 0), [2] = kmh(100, 120), [3] = kmh(108, 0) }, {})
+  local fx = r:tick(11.5, { [1] = kmh(-500, 0), [2] = kmh(104, 0), [3] = kmh(108, 0) }, {})
+  assertEq(find(fx, "penalty", 2).cause, nil)
+end)
+
+test("traffic never holds the runner and never teleports", function()
+  local r = running()
+  local fx
+  for i = 1, 40 do
+    local jumper = { pos = { x = i % 2 == 0 and 300 or 900, y = 0, z = 0 }, vel = { x = 0, y = 0, z = 0 }, traffic = true }
+    fx = r:tick(11 + i * 0.25, { [1] = kmh(0, 0), [2] = kmh(60, 0), [3] = kmh(500, 0) }, {}, { parkedAt(5)[1], jumper })
+    assertEq(find(fx, "roundEnd"), nil)
+    assertEq(find(fx, "broadcast"), nil)
+  end
+end)
+
+test("a run records the traffic it was played with", function()
+  local r = round.new((config.merge(nil)))
+  r:start(0, 1, 2, players, { traffic = 5 })
+  r:vehiclePicked(1, 2, "pickup", "cfg", players)
+  r:go(1, 3)
+  r:tick(4, stillCars(), {}); r:tick(11, stillCars(), {})
+  assertEq(find(r:endCalled(20, 2), "record").run.traffic, 5)
+  local quiet = started()
+  quiet:tick(4, stillCars(), {}); quiet:tick(11, stillCars(), {})
+  assertEq(find(quiet:endCalled(20, 2), "record").run.traffic, nil)
+end)

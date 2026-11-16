@@ -72,3 +72,13 @@ end)
 test("missing self data counts as at fault", function()
   assertEq(crash.atFault(nil, {at(5, -80)}), true)
 end)
+
+test("driving into a traffic car is your fault, being hit by one is not", function()
+  local cop = { pos = { x = 100, y = 0, z = 0 }, vel = { x = 120 / 3.6, y = 0, z = 0 } }
+  local parked = { pos = { x = 108, y = 0, z = 0 }, vel = { x = 0, y = 0, z = 0 }, traffic = true }
+  local fault, nearest = crash.atFault(cop, { parked })
+  assertEq(fault, true); assertEq(nearest.traffic, true)
+  local slow = { pos = { x = 100, y = 0, z = 0 }, vel = { x = 60 / 3.6, y = 0, z = 0 } }
+  local oncoming = { pos = { x = 108, y = 0, z = 0 }, vel = { x = -100 / 3.6, y = 0, z = 0 }, traffic = true }
+  assertEq((crash.atFault(slow, { oncoming })), false)
+end)

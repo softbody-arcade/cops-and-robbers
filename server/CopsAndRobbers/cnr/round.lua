@@ -57,6 +57,8 @@ function Round:clear()
   self.evolving = false
   self.buildStep, self.buildName = nil, nil
   self.sky = nil
+  self.traffic = nil
+  self.prevTraffic = nil
   self.applyStartedAt, self.setupDone, self.readyPids, self.rebuildId = nil, false, {}, nil
   self.startedAt = nil
   self.countdownStartedAt = nil
@@ -116,11 +118,11 @@ function Round:setupFor(now, pid)
   return e
 end
 
-function Round:note(now, kind, name, seconds)
+function Round:note(now, kind, name, seconds, cause)
   if (self.state ~= "headstart" and self.state ~= "running") or #self.timeline >= MAX_TIMELINE then return end
   local t = 0
   if self.releasedAt then t = math.max(0, math.floor((now - self.releasedAt) * 10 + 0.5) / 10) end
-  self.timeline[#self.timeline + 1] = { t = t, kind = kind, name = name, seconds = seconds }
+  self.timeline[#self.timeline + 1] = { t = t, kind = kind, name = name, seconds = seconds, cause = cause }
 end
 
 function Round:finish(now, reason)
@@ -143,6 +145,7 @@ function Round:finish(now, reason)
       timeline = self.timeline,
       mode = self.evolving and "evolving" or "random", buildStep = self.buildStep, buildName = self.buildName,
       sky = sky.record(self.sky, self.cfg),
+      traffic = (self.traffic or 0) > 0 and self.traffic or nil,
     } }
     local run = fx[#fx].run
     for _, pid in ipairs(self:copPids()) do
@@ -195,6 +198,7 @@ function Round:start(now, runnerId, issuerId, players, opts)
   self.issuerId = issuerId
   self.pickStartedAt = now
   self.sky = opts and opts.sky or nil
+  self.traffic = opts and opts.traffic or nil
   local b = opts and opts.build
   if b then
     self.evolving = true
@@ -300,7 +304,7 @@ function Round:go(now, pid)
   return { { kind = "countdown", seconds = self.cfg.runnerCountdownSeconds } }
 end
 
-function Round:tick(now, cars, stations)
+function Round:tick(now, cars, stations, traffic)
   local fx = {}
   if self.state == "picking" then
     if now - self.pickStartedAt >= PICK_TIMEOUT_SECONDS then
@@ -339,13 +343,16 @@ function Round:tick(now, cars, stations)
         if untilTime and now >= untilTime then
           self.penalties[pid] = nil
           fx[#fx + 1] = { kind = "penaltyEnd", pid = pid }
-        elseif not untilTime and self.crashDetectors[pid] and self.crashDetectors[pid]:update(now, cars[pid])
-          and crash.atFault(self.prevCars[pid], self:otherCars(pid)) then
-          local seconds = self.cfg.crashPenaltySeconds
-          self.penalties[pid] = now + seconds
-          if self.resetTrackers[pid] then self.resetTrackers[pid]:block(now + seconds) end
-          fx[#fx + 1] = { kind = "penalty", pid = pid, seconds = seconds, name = self.players[pid] }
-          self:note(now, "penalty", self.players[pid], seconds)
+        elseif not untilTime and self.crashDetectors[pid] and self.crashDetectors[pid]:update(now, cars[pid]) then
+          local fault, nearest = crash.atFault(self.prevCars[pid], self:otherCars(pid))
+          if fault then
+            local seconds = self.cfg.crashPenaltySeconds
+            local cause = nearest and nearest.traffic and "traffic" or nil
+            self.penalties[pid] = now + seconds
+            if self.resetTrackers[pid] then self.resetTrackers[pid]:block(now + seconds) end
+            fx[#fx + 1] = { kind = "penalty", pid = pid, seconds = seconds, name = self.players[pid], cause = cause }
+            self:note(now, "penalty", self.players[pid], seconds, cause)
+          end
         end
       end
     end
@@ -401,6 +408,7 @@ function Round:tick(now, cars, stations)
   end
   self.lastTickAt = now
   self.prevCars = cars
+  self.prevTraffic = traffic
   local limit = self.cfg.roundTimeLimitSeconds
   if caught then
     for _, e in ipairs(self:finish(now, "caught")) do fx[#fx + 1] = e end
@@ -429,6 +437,7 @@ function Round:otherCars(pid)
   for other, car in pairs(self.prevCars) do
     if other ~= pid then list[#list + 1] = car end
   end
+  for _, car in ipairs(self.prevTraffic or {}) do list[#list + 1] = car end
   return list
 end
 
