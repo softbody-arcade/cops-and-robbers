@@ -31,7 +31,6 @@ One entry per piece of work that has started: what it is, its branch (or "design
 - [ ] Panel tabs forget their state when you switch tabs, because the game only renders the open tab: the Settings "more" fold, the Car tab's choice and the Map tab's stations. Decide which to keep in Panel `app.vue`
 - [ ] Leaderboard: the gold badge gradient may be paler than the mockup (Leaderboard `app.vue`). Check in game
 - [ ] App preview images (`tools/previews/*.svg`) are drawn approximations; replace them with in-game screenshots
-- [ ] Car settings carry over saves every vehicle controller's state (`modes.lua`, `controller.getState()`), not only switches. Doors, bonnet and boot are now left out; check the rest for physical state that shouldn't come back on the next car: nitrous and JATO levels, the light bar controller's mode, gear positions, hydraulic and air suspension states
 - [ ] `useFit` (`fit.js`) only shrinks text and never grows it in a large app. Decide whether it should
 - [ ] HUD styles repeated across components: `.title`, `.tone-*` and `.mono` (HudCenter, HudResult, HudChase) and the root container (Hud, Announcements and How to play `app.vue`). Move them into the shared kit; needs a visual check in game. (`.hud-btn` and `.swatch` are already shared: `.cnr-btn`, `.cnr-swatch` in `CnrRoot.vue`)
 - [ ] Leaderboard `PLAYERS_TAB` / `ROUNDS_TAB` depend on the tab order (Leaderboard `app.vue`)

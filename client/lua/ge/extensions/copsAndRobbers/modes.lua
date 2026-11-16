@@ -33,20 +33,37 @@ function M.new(saved)
   return { byModel = type(saved.byModel) == "table" and saved.byModel or {}, last = type(saved.last) == "table" and saved.last or nil }
 end
 
-local function withoutCouplers(data)
-  if type(data) ~= "table" or type(data.controller) ~= "table" then return data end
-  local controller = {}
-  for k, v in pairs(data.controller) do
-    if not (type(k) == "string" and k:find("_groupState$")) then controller[k] = v end
+local SETTING_SUFFIXES = {
+  "ConfigKey", "Mode", "_mode", "_modeIndex", "LevelIndex", "_settingIndex", "_hillAssistCoef", "_frontLockOutEnabled",
+  "_enabled", "_rpm", "_manualIdleRaise", "_maximumSupplyPressure", "_pressureChangeRate", "_targetLength", "_adjustmentRate",
+}
+local SETTING_KEYS = { grb_bhv = true, grb_mde = true }
+
+local function isSetting(key)
+  if type(key) ~= "string" then return false end
+  if SETTING_KEYS[key] or key:find("ompressionBrakeCoef$") then return true end
+  for _, suffix in ipairs(SETTING_SUFFIXES) do
+    if key:sub(-#suffix) == suffix then return true end
   end
+  return false
+end
+
+local function settingsOf(part)
+  if type(part) ~= "table" then return nil end
   local out = {}
-  for k, v in pairs(data) do out[k] = v end
-  out.controller = next(controller) and controller or nil
-  return out
+  for k, v in pairs(part) do
+    if isSetting(k) then out[k] = v end
+  end
+  return next(out) and out or nil
+end
+
+local function settingsOnly(data)
+  if type(data) ~= "table" then return data end
+  return { controller = settingsOf(data.controller), powertrain = settingsOf(data.powertrain) }
 end
 
 function M.remember(state, model, data)
-  data = withoutCouplers(data)
+  data = settingsOnly(data)
   if type(data) ~= "table" or (data.controller == nil and data.powertrain == nil) then return false end
   local key = tostring(model)
   if state.byModel[key] and literal(state.byModel[key]) == literal(data) then return false end
@@ -60,7 +77,7 @@ function M.forModel(state, model)
 end
 
 function M.restoreCommand(data)
-  data = withoutCouplers(data)
+  data = settingsOnly(data)
   if type(data) ~= "table" or (data.controller == nil and data.powertrain == nil) then return nil end
   return "local m = " .. literal(data) ..
     " if m.controller and controller.setState then controller.setState(m.controller) end" ..

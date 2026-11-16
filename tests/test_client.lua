@@ -1063,8 +1063,8 @@ end)
 test("noted modes are saved and put back on the next car", function()
   local env = bootClient()
   startCop(env)
-  env.M.vehicleModes({ controller = { escMode = "off", driveMode = "sport" }, powertrain = { diffRear = "locked" } })
-  assertEq(env.written[MODES_FILE].byModel.pickup.controller.escMode, "off")
+  env.M.vehicleModes({ controller = { escConfigKey = "off", driveModesActiveMode = "sport" }, powertrain = { rearDiffMode = "locked" } })
+  assertEq(env.written[MODES_FILE].byModel.pickup.controller.escConfigKey, "off")
   env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 30, runnerId = 2 })
   local mark = #env.veh.commands + 1
   env.fire("cnr_roundSetup", copy(SETUP))
@@ -1087,6 +1087,44 @@ test("doors, bonnet and boot are never carried over to the next car", function()
   env.tick(1)
   assertEq(hasCommand(env, '"off"', mark), true)
   assertEq(hasCommand(env, "groupState", mark), false)
+end)
+
+test("only driver settings are carried over, never physical state", function()
+  local env = bootClient()
+  startCop(env)
+  env.M.vehicleModes({
+    controller = {
+      escConfigKey = "off", driveModesActiveMode = "sport", controlModes_modeIndex = 2, grb_bhv = "arcade", grb_mde = "S",
+      axleLiftMode = "up", liftAxleControl_mode = "auto", compressionBrakeCoef = 0.5, compressionBrakeLevelIndex = 2,
+      retarder_settingIndex = 1, pumpBrake_hillAssistCoef = 0.3, twoStep_enabled = true, twoStep_rpm = 4000,
+      antilag_mode = "on", autoLevel_front_targetLength = 0.2, lightbar_modeIndex = 1,
+      frzn = true, grb_idx = 4, postCrashBrake_state = "braking", postCrashBrake_crashCounter = 3, transbrakeActive = true,
+      jato_fuel = 10, jato_fuelCoef = 1, nitrousPurgeTimeRemaining = 2, hydraulicSuspension_FL_currentPosition = 0.4,
+      tirePressureControlActivePressureChange = -1, tirePressureControlFLPressure = 20, doorFL_coupler_groupState = "detached",
+    },
+    powertrain = { rearDiffMode = "locked", rangeboxMode = "low", pump_accumulatorOilVolume = 3 },
+  })
+  local saved = env.written[MODES_FILE].byModel.pickup
+  for _, k in ipairs({ "escConfigKey", "driveModesActiveMode", "controlModes_modeIndex", "grb_bhv", "grb_mde", "axleLiftMode",
+    "liftAxleControl_mode", "compressionBrakeCoef", "compressionBrakeLevelIndex", "retarder_settingIndex", "pumpBrake_hillAssistCoef",
+    "twoStep_enabled", "twoStep_rpm", "antilag_mode", "autoLevel_front_targetLength", "lightbar_modeIndex" }) do
+    assertEq(saved.controller[k] ~= nil, true, k)
+  end
+  for _, k in ipairs({ "frzn", "grb_idx", "postCrashBrake_state", "postCrashBrake_crashCounter", "transbrakeActive", "jato_fuel",
+    "jato_fuelCoef", "nitrousPurgeTimeRemaining", "hydraulicSuspension_FL_currentPosition", "tirePressureControlActivePressureChange",
+    "tirePressureControlFLPressure", "doorFL_coupler_groupState" }) do
+    assertEq(saved.controller[k], nil, k)
+  end
+  assertEq(saved.powertrain.rearDiffMode, "locked"); assertEq(saved.powertrain.rangeboxMode, "low")
+  assertEq(saved.powertrain.pump_accumulatorOilVolume, nil)
+end)
+
+test("a frozen state in the saved file never freezes the next car", function()
+  local env = bootClient({ files = { [MODES_FILE] = { byModel = { pickup = { controller = { escConfigKey = "off", frzn = true } } } } } })
+  local mark = #env.veh.commands + 1
+  startCop(env)
+  assertEq(hasCommand(env, '"off"', mark), true)
+  assertEq(hasCommand(env, "frzn", mark), false)
 end)
 
 test("door states already in the saved file are not put back", function()
