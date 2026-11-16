@@ -10,7 +10,70 @@ test("labels join the time and the weather", function()
   local sky = load()
   assertEq(sky.label(RAIN_NIGHT), "Night · Rain")
   assertEq(sky.label({ weather = "snow" }), "Snow")
-  assertEq(sky.label({ clockSpeed = 30 }), nil)
+  assertEq(sky.label({ daySeconds = 1800 }), nil)
+end)
+
+local WINTER = { time = "sunrise", weather = "snow", year = 2026, month = 12, day = 14, windDir = 0, windSeed = 1 }
+
+test("labels end with the date only when asked", function()
+  local sky = load()
+  assertEq(sky.label(WINTER, true), "Sunrise · Snow · 14 Dec")
+  assertEq(sky.label(WINTER), "Sunrise · Snow")
+  assertEq(sky.label({ time = "noon", weather = "clear", month = 1, day = 3 }, true), "Noon · Clear · 3 Jan")
+  assertEq(sky.label({ time = "noon", weather = "clear", month = 13, day = 3 }, true), "Noon · Clear")
+end)
+
+test("old runs without a date still get a label", function()
+  local sky = load()
+  assertEq(sky.label({ time = "night", weather = "rain", clockSpeed = 60 }), "Night · Rain")
+end)
+
+test("the round's date is set with the time", function()
+  local sky, fake = load()
+  sky.apply(WINTER)
+  local s = fake.setStates[1]
+  assertEq(s.year, 2026); assertEq(s.month, 12); assertEq(s.day, 14); assertEq(s.time, 0.775)
+end)
+
+test("the named time is worked out against the round's date", function()
+  local sky, fake = load()
+  sky.apply(WINTER)
+  assertEq(fake.solarState.month, 12); assertEq(fake.solarState.day, 14); assertEq(fake.solarState.year, 2026)
+  assertEq(fake.solarState.latitude, 37.77)
+end)
+
+test("a sky without a year keeps the player's year for the sunrise lookup", function()
+  local sky, fake = load()
+  sky.apply({ time = "sunrise", weather = "snow", month = 12, day = 14, windDir = 0, windSeed = 1 })
+  assertEq(fake.solarState.year, 2025); assertEq(fake.solarState.month, 12); assertEq(fake.solarState.day, 14)
+  assertEq(fake.state.year, 2025); assertEq(fake.state.month, 12)
+end)
+
+test("a map south of the equator gets the same season six months on", function()
+  local sky, fake = load()
+  fake.state.latitude = -44.57
+  sky.apply(WINTER)
+  local s = fake.setStates[1]
+  assertEq(s.year, 2026); assertEq(s.month, 6); assertEq(s.day, 14)
+  assertEq(fake.solarState.month, 6); assertEq(fake.solarState.day, 14)
+  assertEq(sky.label(WINTER, true), "Sunrise · Snow · 14 Jun")
+end)
+
+test("the shifted date stays a real day", function()
+  local sky, fake = load()
+  fake.state.latitude = -44.57
+  sky.apply({ time = "noon", weather = "clear", year = 2026, month = 12, day = 31, windDir = 0, windSeed = 1 })
+  assertEq(fake.setStates[1].month, 6); assertEq(fake.setStates[1].day, 30)
+  assertEq(sky.label({ time = "noon", weather = "clear", month = 8, day = 31 }, true), "Noon · Clear · 28 Feb")
+  assertEq(sky.label({ time = "noon", weather = "clear", month = 1, day = 31 }, true), "Noon · Clear · 31 Jul")
+end)
+
+test("restore gives the player's own date back", function()
+  local sky, fake = load()
+  sky.apply(WINTER)
+  assertEq(fake.state.month, 12)
+  sky.restore()
+  assertEq(fake.state.year, 2025); assertEq(fake.state.month, 6); assertEq(fake.state.day, 20)
 end)
 
 test("a sky that sets nothing touches nothing", function()
@@ -117,13 +180,13 @@ test("driving off leaves surfaces and wind alone", function()
   assertEq(#fake.queued, 0)
 end)
 
-test("the clock starts at GO at the configured speed", function()
+test("the clock starts at GO with the round's day length", function()
   local sky, fake = load()
-  sky.apply({ time = "sunset", clockSpeed = 60, windDir = 0, windSeed = 1 })
+  sky.apply({ time = "sunset", daySeconds = 1440, windDir = 0, windSeed = 1 })
   sky.startClock(600)
   local s = fake.setStates[#fake.setStates]
   assertEq(s.play, true); assertEq(s.dayLength, 1440)
-  assertNear(s.time, (0.245 + 600 * 60 / 86400) % 1, 1e-9)
+  assertNear(s.time, (0.245 + 600 / 1440) % 1, 1e-9)
 end)
 
 test("drop forgets without applying", function()

@@ -101,23 +101,27 @@ end)
 
 test("sky settings have defaults", function()
   local c = config.merge(nil)
-  assertEq(c.timeOfDay, "map"); assertEq(c.nightChancePercent, 25); assertEq(c.clockSpeed, 0)
-  assertEq(c.weather, "map"); assertEq(c.badWeatherChancePercent, 25); assertEq(c.weatherDriving, true)
+  assertEq(c.timeOfDay, "random"); assertEq(c.nightChancePercent, 25); assertEq(c.dayLength, "moderate")
+  assertEq(c.weather, "random"); assertEq(c.badWeatherChancePercent, 25); assertEq(c.weatherDriving, true)
+  assertEq(c.clockSpeed, nil)
 end)
 
-test("every time and weather choice is accepted", function()
-  for _, t in ipairs({ "map", "sunrise", "morning", "noon", "afternoon", "sunset", "night", "random" }) do
+test("every time, weather and day length choice is accepted", function()
+  for _, t in ipairs({ "sunrise", "morning", "noon", "afternoon", "sunset", "night", "random" }) do
     assertEq(config.merge({ timeOfDay = t }).timeOfDay, t)
   end
-  for _, w in ipairs({ "map", "clear", "cloudy", "rain", "storm", "fog", "snow", "random" }) do
+  for _, w in ipairs({ "clear", "cloudy", "rain", "storm", "fog", "snow", "random" }) do
     assertEq(config.merge({ weather = w }).weather, w)
+  end
+  for _, d in ipairs({ "off", "fast", "moderate", "slow", "realtime" }) do
+    assertEq(config.merge({ dayLength = d }).dayLength, d)
   end
 end)
 
 test("sky settings reject unknown choices and out-of-range numbers", function()
-  local c, w = config.merge({ timeOfDay = "dusk", weather = "hail", nightChancePercent = 101, badWeatherChancePercent = -1, clockSpeed = 121 })
-  assertEq(c.timeOfDay, "map"); assertEq(c.weather, "map")
-  assertEq(c.nightChancePercent, 25); assertEq(c.badWeatherChancePercent, 25); assertEq(c.clockSpeed, 0)
+  local c, w = config.merge({ timeOfDay = "dusk", weather = "hail", dayLength = "1800", nightChancePercent = 101, badWeatherChancePercent = -1 })
+  assertEq(c.timeOfDay, "random"); assertEq(c.weather, "random"); assertEq(c.dayLength, "moderate")
+  assertEq(c.nightChancePercent, 25); assertEq(c.badWeatherChancePercent, 25)
   assertEq(#w, 5)
 end)
 
@@ -127,10 +131,20 @@ test("trafficPerPlayer can't go above 20", function()
   assertEq(config.merge({ trafficPerPlayer = 20 }).trafficPerPlayer, 20)
 end)
 
-test("clock speed must be a whole number", function()
-  local c, w = config.merge({ clockSpeed = 2.5 })
-  assertEq(c.clockSpeed, 0); assertEq(#w, 1)
-  assertEq(config.merge({ clockSpeed = 120 }).clockSpeed, 120)
+test("an old config with map and clockSpeed falls back with warnings", function()
+  local c, w = config.merge({ timeOfDay = "map", weather = "map", clockSpeed = 30 })
+  assertEq(c.timeOfDay, "random"); assertEq(c.weather, "random"); assertEq(c.dayLength, "moderate")
+  assertEq(#w, 3)
+  assertEq(w[3], "unknown setting clockSpeed ignored")
+end)
+
+test("saving a setting drops retired keys and values", function()
+  local updated = config.setValue({ clockSpeed = 30, timeOfDay = "map", weather = "map", headStartSeconds = 9 }, "catchHoldSeconds", "5")
+  assertEq(updated.clockSpeed, nil); assertEq(updated.timeOfDay, nil); assertEq(updated.weather, nil)
+  assertEq(updated.headStartSeconds, 9); assertEq(updated.catchHoldSeconds, 5)
+  local _, w = config.merge(updated)
+  assertEq(#w, 0)
+  assertEq(config.setValue({ timeOfDay = "night" }, "weather", "rain").timeOfDay, "night")
 end)
 
 test("a broken weatherDriving doesn't block saving weather", function()

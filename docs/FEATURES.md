@@ -1,4 +1,4 @@
-# Cops and Robbers 2.3.1: features
+# Cops and Robbers 2.4.0: features
 
 A BeamMP server plugin with a client mod that BeamMP downloads automatically. The mod enforces the group's cops-and-robbers rules. It is one mod for every map, and it switches to geo mode on BeamNG.Earth by itself.
 
@@ -112,7 +112,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 ## Leaderboards (saved permanently)
 
 - Shown in the Cops and Robbers Leaderboard app, and the top 3 in the result card after each round.
-- **Saved per run:** runner, time, map, car, the round's conditions (time of day, weather, clock speed, whether weather affected driving), the traffic per player, end reason (caught, called, escaped, disconnect), catchers, every cop in the round with their seconds of sight, the runner's hidden time and how often they lost the cops, the car mode and build step, and a timeline of what happened (cops released, lost the cops, crash penalties, illegal resets, teleports, parts changes, the end).
+- **Saved per run:** runner, time, map, car, the round's conditions (time of day, weather, day length, date, whether weather affected driving), the traffic per player, end reason (caught, called, escaped, disconnect), catchers, every cop in the round with their seconds of sight, the runner's hidden time and how often they lost the cops, the car mode and build step, and a timeline of what happened (cops released, lost the cops, crash penalties, illegal resets, teleports, parts changes, the end).
 - A cancelled round and a practice round are never recorded.
 - **Fresh start in 1.7.0:** the leaderboard file has a new format. An older file is moved to `data/leaderboard-1.6.json` (kept, not used).
 
@@ -144,17 +144,18 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 
 ## Night and weather
 
-- **Settings:** a Sky group in the panel: Time of day, Night chance, Clock speed, Weather, Bad weather chance and Weather affects driving. Time of day and Weather can be the map's own (the default, nothing changes), a fixed choice or random.
+- **Settings:** a Sky group in the panel: Time of day, Night chance, Day length, Weather, Bad weather chance and Weather affects driving. Time of day and Weather are a fixed choice or random (random by default); every round sets the sky.
 - **Random:** with Time of day on random, a roll under the night chance gives night, otherwise sunrise, morning, noon, afternoon or sunset. With Weather on random, a roll under the bad weather chance gives rain, storm, fog or snow, otherwise clear or cloudy. Both chances are 25% by default, so hard rounds stay occasional.
 - **Same for everyone:** everyone in a round gets the same time, weather, rain or snow, and wind, also a player who rejoins mid-round. The game's environment menu is locked during the round. Practice rounds get a sky too, and the AI cars switch their headlights on at night.
 - **New sky:** a button next to New car in prep, only while time or weather is random. It picks new values without re-placing the cars. New car keeps the sky; each new round picks again.
-- **Clock:** at clock speed 0 the clock is stopped. At a speed above 0 it stays stopped in prep and starts at GO, so the round starts in the time you saw. Speed 60 runs dusk into night in a few minutes.
+- **Clock:** with Day length Off the clock is stopped. Otherwise it stays stopped in prep and starts at GO, so the round starts in the time you saw, and a full day lasts the chosen length: Fast 15 min, Moderate 30 min (the default), Slow 2 h or Realtime 24 h, the game's own presets.
+- **Date:** each round gets a date that fits its weather: snow in December or January, fog in October or November, rain and storms in March, April, October or November, clear and cloudy any day. On a map south of the equator (Automation Test Track) the date moves six months, so snow still comes with short winter days. It sets sunrise, sunset and how long the night lasts, it is the same for everyone, and it shows on the prep card and in the New sky message ("Sunset · Snow · 14 Dec").
 - **Grip:** with Weather affects driving, rain turns asphalt and gravel wet and dirt to wet gravel; grass and rumble strips lose a little grip. A storm also turns dirt into mud. Snow covers everything you drive on. These are the game's own surfaces, so tires matter: drag tires slide more on wet roads than road tires. Clear, cloudy and fog change no grip. Surfaces the mod doesn't know (a mod map's own) stay dry.
 - **Shelter:** rain and snow stop in tunnels and under low roofs: 4 times a second the game looks up from the camera, and when there's a roof within 12 m straight above and around it, the rain is hidden until you're back in the open. Under a high bridge it keeps raining.
 - **Wind:** realistic strengths: rain 5 m/s gusting to 8, snow 4 gusting to 6, a storm a 17 m/s gale gusting to 26. Gusts last a few seconds, turn up to 15° (30° in a storm), and come at the same moment for every player.
 - **Temperature:** follows the weather (cold in snow, so exhausts steam) and the map's day curve.
-- **After the round:** sky, grip, wind, temperature and the environment menu go back to what each player had, at the end, on cancel and on leaving. A map change drops it without applying anything.
-- **Prep line:** shows the conditions after the car, for example "Gavril D-Series · Night · Rain".
+- **After the round:** sky, date, grip, wind, temperature and the environment menu go back to what each player had, at the end, on cancel and on leaving. A map change drops it without applying anything.
+- **Prep line:** shows the conditions after the car, for example "Gavril D-Series · Night · Rain · 14 Dec".
 - **Not on BeamNG.Earth:** the server sends no sky there, and the panel says so.
 
 ## Test rounds against AI (only you see them)
@@ -254,10 +255,10 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | `excludedModels` | citybus, us_semi, md_series, percheron, rockbouncer | Models that are never picked |
 | `explodeOnCatch` | false | The runner's car explodes when caught |
 | `includeModVehicles` | false | Also pick mod vehicles |
-| `timeOfDay` | map | `map` (the map's own), `sunrise`, `morning`, `noon`, `afternoon`, `sunset`, `night` or `random` |
+| `timeOfDay` | random | `sunrise`, `morning`, `noon`, `afternoon`, `sunset`, `night` or `random` |
 | `nightChancePercent` | 25 | Chance of night when Time of day is random |
-| `clockSpeed` | 0 | Speed of the sky clock during a round: 0 stopped, 1 real time, a whole number up to 120 |
-| `weather` | map | `map` (the map's own), `clear`, `cloudy`, `rain`, `storm`, `fog`, `snow` or `random` |
+| `dayLength` | moderate | How long a full day lasts during the chase: `off` (stopped), `fast` (15 min), `moderate` (30 min), `slow` (2 h) or `realtime` (24 h) |
+| `weather` | random | `clear`, `cloudy`, `rain`, `storm`, `fog`, `snow` or `random` |
 | `badWeatherChancePercent` | 25 | Chance of rain, storm, fog or snow when Weather is random |
 | `weatherDriving` | true | Weather changes grip and adds wind (not on BeamNG.Earth) |
 | `trafficPerPlayer` | 5 | AI traffic cars around each player during a round (0 = off, at most 20; normal maps only) |

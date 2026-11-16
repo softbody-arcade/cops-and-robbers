@@ -25,7 +25,8 @@ M.WEATHER = {
 local PRECIPITATION_NAME = "cnr_precipitation"
 local WIND_INTERVAL = 0.25
 local COVER_INTERVAL = 0.25
-local SECONDS_PER_DAY = 86400
+local MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
+local DAYS_IN_MONTH = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
 
 local saved, wasLocked, round, clockStart
 local roundTime, started, sinceWind = 0, false, 0
@@ -42,8 +43,20 @@ local function capitalise(key)
   return key:sub(1, 1):upper() .. key:sub(2)
 end
 
+local function localDate(month, day, latitude)
+  if not (latitude and latitude < 0) then return month, day end
+  local shifted = (month + 5) % 12 + 1
+  return shifted, math.min(day, DAYS_IN_MONTH[shifted])
+end
+
+local function mapLatitude()
+  local env = core_environment
+  local state = env and env.getState and env.getState()
+  return state and state.latitude
+end
+
 local function setsSomething(p)
-  return p ~= nil and (p.time ~= nil or p.weather ~= nil or (p.clockSpeed or 0) > 0)
+  return p ~= nil and (p.time ~= nil or p.weather ~= nil or (p.daySeconds or 0) > 0)
 end
 
 local function windy(p)
@@ -100,8 +113,15 @@ end
 local function roundState(env, p)
   local init = env.getInitState() or {}
   local state = { play = false, temperatureCurveOverrideC = false }
+  local solar = env.getState() or {}
+  if p.month and p.day then
+    local year = p.year or solar.year
+    local month, day = localDate(p.month, p.day, solar.latitude)
+    state.year, state.month, state.day = year, month, day
+    solar.year, solar.month, solar.day = year, month, day
+  end
   if p.time then
-    state.time = env.getSolarTimeOfDayValue(p.time) or env.timeOfDayKeyToTime[p.time]
+    state.time = env.getSolarTimeOfDayValue(p.time, solar) or env.timeOfDayKeyToTime[p.time]
   else
     state.time, state.dayLength = init.time, init.dayLength
   end
@@ -116,11 +136,15 @@ local function roundState(env, p)
   return state
 end
 
-function M.label(p)
+function M.label(p, withDate)
   if not p then return nil end
   local parts = {}
   if p.time then parts[#parts + 1] = capitalise(p.time) end
   if p.weather then parts[#parts + 1] = capitalise(p.weather) end
+  if withDate and p.day and MONTHS[p.month] then
+    local month, day = localDate(p.month, p.day, mapLatitude())
+    parts[#parts + 1] = string.format("%d %s", day, MONTHS[month])
+  end
   if #parts == 0 then return nil end
   return table.concat(parts, " · ")
 end
@@ -156,13 +180,13 @@ function M.startClock(clockSeconds)
   local env = core_environment
   if not env or not round then return end
   roundTime, started = clockSeconds or 0, true
-  local speed = round.clockSpeed or 0
-  if speed <= 0 or not clockStart then return end
+  local daySeconds = round.daySeconds or 0
+  if daySeconds <= 0 or not clockStart then return end
   env.enableChanges(true)
   env.setState({
-    time = (clockStart + roundTime * speed / SECONDS_PER_DAY) % 1,
+    time = (clockStart + roundTime / daySeconds) % 1,
     play = true,
-    dayLength = SECONDS_PER_DAY / speed,
+    dayLength = daySeconds,
   })
   env.enableChanges(false)
 end

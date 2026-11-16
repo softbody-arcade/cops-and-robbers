@@ -29,6 +29,7 @@ function fakeEnvironment(opts)
   fake.state = {
     time = 0.1, play = true, dayLength = 1800, cloudCover = 0.3, fogDensity = 1,
     windSpeed = 1, groundWind = v3(0, 0, 0), temperatureCurveOverrideC = false,
+    latitude = 37.77, year = 2025, month = 6, day = 20,
   }
   fake.init = {}
   for k, v in pairs(fake.state) do fake.init[k] = v end
@@ -69,7 +70,10 @@ function fakeEnvironment(opts)
   end
   function env.enableChanges(b) fake.locked = not b end
   function env.canChange() return not fake.locked end
-  function env.getSolarTimeOfDayValue(key) return TIMES[key] end
+  function env.getSolarTimeOfDayValue(key, state)
+    fake.solarState = state
+    return TIMES[key]
+  end
   function env.setTemperatureProfile(p)
     if fake.locked then return end
     fake.profiles[#fake.profiles + 1] = p

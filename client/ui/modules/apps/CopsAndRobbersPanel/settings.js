@@ -14,14 +14,15 @@ export const GROUPS = [
   ] },
   { title: "Sky", noEarth: true, items: [
     { key: "timeOfDay", label: "Time of day", kind: "choice", common: true,
-      options: [["map", "Map default"], ["sunrise", "Sunrise"], ["morning", "Morning"], ["noon", "Noon"], ["afternoon", "Afternoon"], ["sunset", "Sunset"], ["night", "Night"], ["random", "Random"]],
+      options: [["sunrise", "Sunrise"], ["morning", "Morning"], ["noon", "Noon"], ["afternoon", "Afternoon"], ["sunset", "Sunset"], ["night", "Night"], ["random", "Random"]],
       help: "The time the chase starts at; random follows the night chance" },
     { key: "nightChancePercent", label: "Night chance", unit: "%", step: 5, min: 0, max: 100, common: true, when: v => v("timeOfDay") === "random",
       help: "How often a random time of day is night" },
-    { key: "clockSpeed", label: "Clock speed", step: 1, min: 0, max: 120, speed: true,
-      help: "How fast time passes once the chase starts; 1 is real time" },
+    { key: "dayLength", label: "Day length", kind: "choice",
+      options: [["off", "Off"], ["fast", "Fast (15 min)"], ["moderate", "Moderate (30 min)"], ["slow", "Slow (2 h)"], ["realtime", "Realtime (24 h)"]],
+      help: "How long a full day lasts once the chase starts" },
     { key: "weather", label: "Weather", kind: "choice", common: true,
-      options: [["map", "Map default"], ["clear", "Clear"], ["cloudy", "Cloudy"], ["rain", "Rain"], ["storm", "Storm"], ["fog", "Fog"], ["snow", "Snow"], ["random", "Random"]],
+      options: [["clear", "Clear"], ["cloudy", "Cloudy"], ["rain", "Rain"], ["storm", "Storm"], ["fog", "Fog"], ["snow", "Snow"], ["random", "Random"]],
       help: "Random follows the bad weather chance" },
     { key: "badWeatherChancePercent", label: "Bad weather chance", unit: "%", step: 5, min: 0, max: 100, common: true, when: v => v("weather") === "random",
       help: "How often random weather is rain, storm, fog or snow" },
@@ -114,7 +115,6 @@ export function shown(item, v) {
   const n = Number(v)
   if (v === undefined || v === null || !Number.isFinite(n)) return "–"
   if (item.offAtZero && n === 0) return "off"
-  if (item.speed) return n === 0 ? "stopped" : `${n}×`
   if (item.duration) return n % 60 === 0 ? `${n / 60} min` : formatTime(n)
   return `${n} ${item.unit || ""}`.trim()
 }

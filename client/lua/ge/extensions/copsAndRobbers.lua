@@ -15,7 +15,7 @@ local nearby = require("copsAndRobbers/nearby")
 local sky = require("copsAndRobbers/sky")
 local traffic = require("copsAndRobbers/traffic")
 
-local CLIENT_VERSION = "2.3.1"
+local CLIENT_VERSION = "2.4.0"
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
 local LIGHTS_OFF = "electrics.set_lightbar_signal(0)"
 local SETUP_DELAY = 0.5
@@ -179,7 +179,7 @@ local function onRoundSetup(data)
   placeVehicle(d.model, roundConfig, pos, rot, d.color)
 
   sky.apply(d.sky)
-  local skyLabel = sky.label(d.sky)
+  local skyLabel = sky.label(d.sky, true)
   local phase = d.phase or "running"
   runnerOut = phase == "headstart" or phase == "running"
   traffic.setWeather(d.sky and d.sky.weather)
@@ -212,7 +212,7 @@ local function onSky(data)
   local d = jsonDecode(data) or {}
   sky.apply(d)
   traffic.setWeather(d.weather)
-  local label = sky.label(d)
+  local label = sky.label(d, true)
   hudfeed.prepSky(label)
   if label then hudfeed.event("New sky: " .. label, clock, "info") end
 end

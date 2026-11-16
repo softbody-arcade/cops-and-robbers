@@ -518,7 +518,7 @@ end)
 
 test("the host sees why a vehicle pick timed out", function()
   local env = bootClient()
-  env.fire("cnr_mode", { geo = false, version = "2.3.1" })
+  env.fire("cnr_mode", { geo = false, version = "2.4.0" })
   env.fire("cnr_notice", { msg = "Vehicle pick timed out" })
   env.fire("cnr_roundEnd", { reason = "cancelled", message = "Vehicle pick timed out" })
   env.tick(0.2)
@@ -566,7 +566,7 @@ end)
 test("binding a reset key clears the lobby line within a few seconds", function()
   local env = bootClient()
   local hudfeed = package.loaded["copsAndRobbers/hudfeed"]
-  env.fire("cnr_mode", { geo = false, version = "2.3.1" })
+  env.fire("cnr_mode", { geo = false, version = "2.4.0" })
   core_input_bindings.bindings = {}
   env.fire("cnr_roundSetup", copy(SETUP))
   env.fire("cnr_roundEnd", { reason = "cancelled" })
@@ -583,12 +583,12 @@ test("version mismatch and a missing BeamNG.Earth are standing warnings", functi
   local env = bootClient()
   local hudfeed = package.loaded["copsAndRobbers/hudfeed"]
   env.fire("cnr_mode", { geo = false, version = "9.9.9" })
-  assertEq(hudfeed.warnings()[1], "Your copy is 2.3.1, the server runs 9.9.9: rejoin to update")
-  env.fire("cnr_mode", { geo = true, version = "2.3.1" })
+  assertEq(hudfeed.warnings()[1], "Your copy is 2.4.0, the server runs 9.9.9: rejoin to update")
+  env.fire("cnr_mode", { geo = true, version = "2.4.0" })
   local w = hudfeed.warnings()
   assertEq(#w, 1)
   assertEq(w[1], "Cops and Robbers needs a newer BeamNG.Earth (API v1) on this map")
-  env.fire("cnr_mode", { geo = false, version = "2.3.1" })
+  env.fire("cnr_mode", { geo = false, version = "2.4.0" })
   assertEq(#hudfeed.warnings(), 0)
   assertEq(#env.toasts, 0)
 end)
@@ -1028,7 +1028,7 @@ local RULES = {
 }
 
 local function join(env)
-  env.fire("cnr_mode", { geo = false, version = "2.3.1" })
+  env.fire("cnr_mode", { geo = false, version = "2.4.0" })
   env.fire("cnr_myColor", { hex = "#ff8800" })
   env.fire("cnr_rules", copy(RULES))
   env.fire("cnr_lobby", { online = 3, active = false })
@@ -1081,17 +1081,17 @@ end)
 
 test("first join opens How to play and Got it remembers", function()
   local env = bootClient()
-  env.fire("cnr_mode", { geo = false, version = "2.3.1" })
+  env.fire("cnr_mode", { geo = false, version = "2.4.0" })
   env.tick(0.2)
   assertEq(env.hud().help.open, true)
   env.M.ui({ action = "help", open = false })
   assertEq(env.written[HELP_FILE].seen, true)
   assertEq(env.hud().help.open, false)
-  env.fire("cnr_mode", { geo = false, version = "2.3.1" })
+  env.fire("cnr_mode", { geo = false, version = "2.4.0" })
   env.tick(0.2)
   assertEq(env.hud().help.open, false)
   local again = bootClient({ files = { [HELP_FILE] = { seen = true } } })
-  again.fire("cnr_mode", { geo = false, version = "2.3.1" })
+  again.fire("cnr_mode", { geo = false, version = "2.4.0" })
   again.tick(0.2)
   assertEq(again.hud().help.open, false)
   again.M.ui({ action = "help", open = true })
@@ -1212,7 +1212,7 @@ end)
 
 test("a mid-round joiner sees the round, not the lobby", function()
   local env = bootClient({ files = { [HELP_FILE] = { seen = true } } })
-  env.fire("cnr_mode", { geo = false, version = "2.3.1" })
+  env.fire("cnr_mode", { geo = false, version = "2.4.0" })
   env.fire("cnr_myColor", { hex = "#ff8800" })
   env.fire("cnr_rules", copy(RULES))
   env.fire("cnr_lobby", { online = 4, active = true })
@@ -1458,16 +1458,23 @@ test("a round sky is applied at setup and shown on the role card", function()
   assertEq(env.hud().center.car, "Gavril Pickup · Night · Rain")
 end)
 
+test("the role card shows the round's date", function()
+  local env = bootClient()
+  local d = copy(SETUP); d.sky = { time = "night", weather = "rain", year = 2026, month = 12, day = 14, windDir = 0, windSeed = 7 }
+  env.fire("cnr_roundSetup", d); env.tick(1)
+  assertEq(env.hud().center.car, "Gavril Pickup · Night · Rain · 14 Dec")
+end)
+
 test("New sky updates the card and says so", function()
   local env = bootClient()
   local d = copy(SETUP); d.sky = { weather = "rain", windDir = 0, windSeed = 7 }
   env.fire("cnr_roundSetup", d); env.tick(1)
-  env.fire("cnr_sky", { time = "noon", weather = "snow", windDir = 0, windSeed = 9 })
+  env.fire("cnr_sky", { time = "noon", weather = "snow", year = 2026, month = 1, day = 3, windDir = 0, windSeed = 9 })
   env.tick(0.2)
-  assertEq(env.hud().center.car, "Gavril Pickup · Noon · Snow")
+  assertEq(env.hud().center.car, "Gavril Pickup · Noon · Snow · 3 Jan")
   assertEq(env.sky.objects.cnr_precipitation:getField("dataBlock"), "Snow_menu")
   local found = false
-  for _, n in ipairs(env.hud().notices) do if n.text == "New sky: Noon · Snow" then found = true end end
+  for _, n in ipairs(env.hud().notices) do if n.text == "New sky: Noon · Snow · 3 Jan" then found = true end end
   assertEq(found, true)
 end)
 
@@ -1480,7 +1487,7 @@ end)
 
 test("the countdown starts the round clock", function()
   local env = bootClient()
-  local d = copy(SETUP); d.sky = { time = "sunset", clockSpeed = 60, windDir = 0, windSeed = 1 }
+  local d = copy(SETUP); d.sky = { time = "sunset", daySeconds = 1440, windDir = 0, windSeed = 1 }
   env.fire("cnr_roundSetup", d); env.tick(1)
   env.fire("cnr_countdown", { seconds = 3 })
   local s = env.sky.setStates[#env.sky.setStates]
@@ -1490,9 +1497,9 @@ end)
 test("a mid-chase setup starts the clock at clockSeconds", function()
   local env = bootClient()
   local d = copy(SETUP); d.phase = "running"; d.chaseElapsed = 100
-  d.sky = { time = "sunset", clockSpeed = 60, clockSeconds = 110, windDir = 0, windSeed = 1 }
+  d.sky = { time = "sunset", daySeconds = 1440, clockSeconds = 110, windDir = 0, windSeed = 1 }
   env.fire("cnr_roundSetup", d); env.tick(0.1)
-  assertNear(env.sky.state.time, (0.245 + 110 * 60 / 86400) % 1, 1e-6)
+  assertNear(env.sky.state.time, (0.245 + 110 / 1440) % 1, 1e-6)
 end)
 
 test("the round end gives the player's sky back, a map change only forgets it", function()
@@ -1549,7 +1556,7 @@ end)
 
 test("leaderboard round rows get a sky label", function()
   local env = bootClient()
-  env.fire("cnr_boardState", { rounds = { { id = 1, model = "pickup", sky = { time = "night", weather = "rain" } }, { id = 2, model = "pickup" } } })
+  env.fire("cnr_boardState", { rounds = { { id = 1, model = "pickup", sky = { time = "night", weather = "rain", month = 12, day = 14 } }, { id = 2, model = "pickup" } } })
   local d = env.lastTrigger("CnRBoard")
   assertEq(d.rounds[1].skyLabel, "Night · Rain"); assertEq(d.rounds[2].skyLabel, nil)
 end)

@@ -735,6 +735,16 @@ test("auto next round prepares a new round but waits for go", function()
   env.cleanup()
 end)
 
+test("a save drops retired sky settings from config.json", function()
+  local env = boot({ config = '{"clockSpeed":30,"timeOfDay":"map","weather":"map"}' })
+  env.panel(1, "auto on")
+  local saved = assert(io.open(env.dir .. "config.json")):read("*a")
+  assertEq(saved:find("clockSpeed", 1, true), nil)
+  assertEq(saved:find('"map"', 1, true), nil)
+  assertEq(saved:find('"autoNextRound":true', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
 test("/cnr auto toggles and saves the setting", function()
   local env = boot()
   env.panel(1, "auto on")
@@ -761,8 +771,8 @@ end)
 
 test("version is shown in the log and the mode event", function()
   local env = boot()
-  assertEq(env.logHas("Cops and Robbers 2.3.1 loaded"), true)
-  assertEq(env.lastSent("cnr_mode").data:find('"version":"2.3.1"', 1, true) ~= nil, true)
+  assertEq(env.logHas("Cops and Robbers 2.4.0 loaded"), true)
+  assertEq(env.lastSent("cnr_mode").data:find('"version":"2.4.0"', 1, true) ~= nil, true)
   env.cleanup()
 end)
 
@@ -830,10 +840,12 @@ local function countSent(env, ev, pid)
   return n
 end
 
-test("round setup has no sky by default", function()
+test("round setup has a random sky with a date by default", function()
   local env = boot()
   env.startRound()
-  assertEq(env.lastSent("cnr_roundSetup").data:find('"sky"', 1, true), nil)
+  local s = decodeJson(env.lastSent("cnr_roundSetup").data).sky
+  assertEq(type(s.time), "string"); assertEq(type(s.weather), "string")
+  assertEq(type(s.month), "number"); assertEq(type(s.day), "number"); assertEq(s.daySeconds, 1800)
   env.cleanup()
 end)
 
@@ -848,10 +860,12 @@ end)
 test("New car keeps the sky", function()
   local env = boot({ config = '{"weather":"random"}' })
   env.startRound()
-  local seed = decodeJson(env.lastSent("cnr_roundSetup").data).sky.windSeed
+  local first = decodeJson(env.lastSent("cnr_roundSetup").data).sky
   env.panel(2, "reroll")
   env.call("cnr_vehiclePicked", 2, '{"model":"etk800","config":"vehicles/etk800/base.pc"}')
-  assertEq(decodeJson(env.lastSent("cnr_roundSetup").data).sky.windSeed, seed)
+  local after = decodeJson(env.lastSent("cnr_roundSetup").data).sky
+  assertEq(after.windSeed, first.windSeed)
+  assertEq(after.month, first.month); assertEq(after.day, first.day)
   env.cleanup()
 end)
 
@@ -868,7 +882,7 @@ test("New sky goes to the round's players before GO only", function()
 end)
 
 test("New sky gives different conditions when it can", function()
-  local env = boot({ config = '{"weather":"random"}' })
+  local env = boot({ config = '{"weather":"random","timeOfDay":"noon"}' })
   env.startRound()
   local previous = decodeJson(env.lastSent("cnr_roundSetup").data).sky.weather
   math.randomseed(1)
@@ -882,8 +896,24 @@ test("New sky gives different conditions when it can", function()
   env.cleanup()
 end)
 
+test("New sky picks a date that fits the new weather", function()
+  local env = boot({ config = '{"weather":"random","timeOfDay":"noon","badWeatherChancePercent":100}' })
+  env.startRound()
+  local fits = { snow = { [12] = true, [1] = true }, fog = { [10] = true, [11] = true },
+    rain = { [3] = true, [4] = true, [10] = true, [11] = true }, storm = { [3] = true, [4] = true, [10] = true, [11] = true } }
+  math.randomseed(3)
+  for _ = 1, 8 do
+    env.sent = {}
+    env.panel(1, "sky")
+    local s = decodeJson(env.lastSent("cnr_sky").data)
+    assertEq(fits[s.weather][s.month], true)
+    assertEq(type(s.day), "number"); assertEq(type(s.year), "number")
+  end
+  env.cleanup()
+end)
+
 test("New sky needs a random setting", function()
-  local env = boot()
+  local env = boot({ config = '{"timeOfDay":"noon","weather":"clear"}' })
   env.startRound()
   env.panel(1, "sky")
   assertEq(env.replyHas("to random first"), true)
@@ -891,7 +921,7 @@ test("New sky needs a random setting", function()
 end)
 
 test("Earth rounds get no sky", function()
-  local env = boot({ map = EARTH, config = '{"clockSpeed":30,"weather":"rain"}' })
+  local env = boot({ map = EARTH, config = '{"dayLength":"fast","weather":"rain"}' })
   env.startRound()
   local setup = env.lastSent("cnr_roundSetup")
   if setup then assertEq(setup.data:find('"sky"', 1, true), nil) end
@@ -910,13 +940,16 @@ test("a practice round gets a sky too", function()
 end)
 
 test("a mid-chase join gets clockSeconds", function()
-  local env = boot({ config = '{"clockSpeed":30}' })
+  local env = boot()
   env.startRound(); env.go()
   env.positions[1], env.positions[2] = 0, 900
   for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  local before = decodeJson(env.lastSent("cnr_roundSetup").data).sky
   env.names = { "Reinder", "Bob", "Cid" }
   env.call("onPlayerJoin", 3)
-  assertNear(decodeJson(env.lastSent("cnr_roundSetup").data).sky.clockSeconds, 15, 0.01)
+  local joined = decodeJson(env.lastSent("cnr_roundSetup").data).sky
+  assertNear(joined.clockSeconds, 15, 0.01)
+  assertEq(joined.month, before.month); assertEq(joined.day, before.day); assertEq(joined.daySeconds, 1800)
   env.cleanup()
 end)
 
