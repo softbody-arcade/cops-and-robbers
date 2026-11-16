@@ -1,7 +1,7 @@
 LUA := $(shell command -v lua5.3 2>/dev/null || command -v lua)
 TESTSERVER := .testserver
 
-.PHONY: test vuecheck package install-local clean deploy
+.PHONY: test vuecheck package install-local clean deploy version
 
 test:
 	$(LUA) tests/run.lua tests/test_*.lua
@@ -24,3 +24,7 @@ clean:
 
 deploy: package
 	./scripts/deploy.sh
+
+version:
+	./scripts/version.sh $(V)
+	$(LUA) tests/run.lua tests/test_version.lua

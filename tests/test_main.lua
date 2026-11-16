@@ -770,8 +770,8 @@ end)
 
 test("version is shown in the log and the mode event", function()
   local env = boot()
-  assertEq(env.logHas("Cops and Robbers 2.4.0 loaded"), true)
-  assertEq(env.lastSent("cnr_mode").data:find('"version":"2.4.0"', 1, true) ~= nil, true)
+  assertEq(env.logHas("Cops and Robbers " .. CNR_VERSION .. " loaded"), true)
+  assertEq(env.lastSent("cnr_mode").data:find('"version":"' .. CNR_VERSION .. '"', 1, true) ~= nil, true)
   env.cleanup()
 end)
 
