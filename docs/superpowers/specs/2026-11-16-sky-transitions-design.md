@@ -36,7 +36,7 @@ Status: short design for review, 2026-11-16. Builds on night and weather rounds 
   - What the game does: `core_environment.setState(state, lerpSeconds)` blends clouds, fog, fog height and time with an eased curve. Time goes the short way round, so noon to sunset plays like a quick time-lapse. Bigger changes take the full time, smaller ones less (at least 0.12 s). If a new state arrives mid-blend, the game finishes the rest within 0.3 s and heads for the new one.
   - The catch: the blend only advances while environment changes are enabled, so the mod unlocks for the blend and locks again afterwards.
 - **Our own per-frame blend.** Full control, wind and temperature included, but it duplicates what the game already does well. Rejected.
-- **Rain fade:** step our rain object's `numDrops` from 0 to its target (and back) over the blend. The game itself changes `numDrops` at runtime (`core_environment.setPrecipitation`), so this is supported. The alternative, popping the rain at the end of the blend, was rejected as the very thing this fixes.
+- **Rain fade:** step our rain object's `numDrops` from 0 to its target (and back) over the blend. Verified in game (probe, 2026-11-16): setting `obj.numDrops` on live rain thins it at once, as does `setPercentage`; the fade uses `obj.numDrops`, as the game's own `core_environment.setPrecipitation` does. The alternative, popping the rain at the end of the blend, was rejected as the very thing this fixes.
 
 ## Design
 
@@ -112,10 +112,10 @@ Status: short design for review, 2026-11-16. Builds on night and weather rounds 
 
 ### Rain sound
 - **What plays:** the game's `amb_rain_medium` profile (`art/sound/environment/amb_rain_medium.ogg`, a 2D loop). It plays while a rain or storm round has its rain object, through one unsaved sound emitter, created the way the game's own `core/audioForest.lua` creates its emitters.
-- **Volume:** a storm is louder than rain (start at 0.6 for rain and 1.0 for a storm). The volume fades with the rain's `numDrops` during a blend.
-- **Under cover** (tunnels, where the roof check hides the rain): the sound drops to about a third rather than stopping, because rain on the roof is still heard.
+- **Volume:** rain 1.0 and a storm 2.0, from the in-game probe (0.6 was quiet next to a sports car's engine and 0.15 nearly silent; 2.0 sounded like a storm). The volume fades with the rain's `numDrops` during a blend.
+- **Under cover** (tunnels, where the roof check hides the rain): the sound drops to half rather than stopping, because rain on the roof is still heard.
 - **Lifetime:** the sound fades out and is deleted with the rain object at round end; leaving the server and `drop` delete it at once. It is also added to the mission group like the rain object, so a map unload removes it.
-- **Verify in game:** the exact call that plays a profile-based loop from Lua, with the console test extension.
+- **Verified in game (probe, 2026-11-16):** an `SFXEmitter` with `track = "amb_rain_medium"`, `setVolumePitchCT(volume, 1, 0, 0)` and `play()` plays the loop, and the volume changes live.
 
 ## Tests
 Lua, in `tests/test_sky_client.lua` with the environment stub (it records `setState` calls; it needs to record the blend seconds too):
@@ -151,11 +151,10 @@ Lua, in `tests/test_sky_client.lua` with the environment stub (it records `setSt
 ## Calls made (not discussed, easy to change)
 - **3 s blend for all three changes.** The game shortens it for small changes.
 - **Rain to snow fades out, then in,** rather than crossfading two objects.
-- **Starting values:** storm drops at 0.6–0.8 speed, size 1.3, 7000 drops; the volumes (0.6 rain, 1.0 storm, a third under cover).
+- **Starting values:** storm drops at 0.6–0.8 speed, size 1.3, 7000 drops. Volumes from the probe: rain 1.0, storm 2.0, half under cover.
 - **One temperate climate for every map**, roughly the stock maps' latitudes. Desert and tropical maps (Utah, Johnson Valley, Jungle Rock Island) get the same climate, just as they get every weather today. The table's numbers and the weather offsets are my calls.
 - **`splashSize`** copied from the stock maps' rain; no `hitVehicles` unless the interior camera shows rain through the roof.
 
 ## Left to the builder
 - How the relock timer and the rain fade are stored in `sky.lua` (it is about 230 lines; a small `fade.lua` next to `shelter.lua` is fine if it keeps `sky.lua` readable).
-- The exact Lua call that plays the rain loop, verified in game.
 - How the environment stub records blend seconds.

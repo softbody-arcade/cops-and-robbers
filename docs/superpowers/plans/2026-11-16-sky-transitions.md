@@ -46,14 +46,14 @@
   - `low, high = climate.range(p.weather, p.month)`: the month the server sent, never the hemisphere-shifted one
   - when that returns nil (no weather or no month), `temperatureCurveOverrideC = false` as today (the map's own curve)
 - **Precipitation specs** (every one also has `boxWidth = 40`, `boxHeight = 20`, `useWind = 1`, `splashSize = 0.25`; no `hitVehicles`):
-  - **rain:** `dataBlock = "rain_medium"`, `numDrops = 3000`, `dropSize = 1`, `minSpeed = 0.4`, `maxSpeed = 0.5`, `volume = 0.6`
-  - **storm:** `dataBlock = "rain_medium"`, `numDrops = 7000`, `dropSize = 1.3`, `minSpeed = 0.6`, `maxSpeed = 0.8`, `volume = 1.0`
+  - **rain:** `dataBlock = "rain_medium"`, `numDrops = 3000`, `dropSize = 1`, `minSpeed = 0.4`, `maxSpeed = 0.5`, `volume = 1.0`
+  - **storm:** `dataBlock = "rain_medium"`, `numDrops = 7000`, `dropSize = 1.3`, `minSpeed = 0.6`, `maxSpeed = 0.8`, `volume = 2.0`
   - **snow:** `dataBlock = "Snow_menu"`, `numDrops = 5000`, `dropSize = 0.2`, `minSpeed = 0.1`, `maxSpeed = 0.3`, no `volume`
 - **Rain sound:**
   - an `SFXEmitter` registered as `cnr_rain_sound`, with field `track = "amb_rain_medium"` and `canSave = false`
   - started with `play()`; volume set with `setVolumePitchCT(volume, 1, 0, 0)`, the way `core/audioForest.lua` does it
   - added to `scenetree.MissionGroup` like the rain object, so a map unload removes it
-  - volume = `spec.volume × drops / spec.numDrops`, times 1/3 while the rain is hidden by the roof check
+  - volume = `spec.volume × drops / spec.numDrops`, times 1/2 while the rain is hidden by the roof check (both verified by the in-game probe, 2026-11-16)
 - **Object names:** the precipitation object stays `cnr_precipitation`.
 - **Project style:** no code comments, no emojis.
 
@@ -269,18 +269,18 @@ test("rain fades in over the blend with its sound", function()
   for _ = 1, 20 do rain.update(0.1) end
   assertEq(obj:getField("numDrops"), "3000")
   local snd = fake.objects.cnr_rain_sound
-  assertEq(snd:getField("track"), "amb_rain_medium"); assertNear(snd.volume, 0.6, 1e-6)
+  assertEq(snd:getField("track"), "amb_rain_medium"); assertNear(snd.volume, 1.0, 1e-6)
 end)
 ```
 
 Also in `tests/test_rain.lua`:
 - `test("rain to clear fades out, then removes rain and sound")`: rain at full; `target(nil, 3)`; after 1.5 s about 1500; after 3.1 s both objects gone.
-- `test("rain to storm moves the count and raises the volume")`: rain at full; `target(STORM, 3)`; after 3.1 s `numDrops == "7000"`, `minSpeed == "0.6"`, sound volume 1.0, and only one precipitation object ever existed.
+- `test("rain to storm moves the count and raises the volume")`: rain at full; `target(STORM, 3)`; after 3.1 s `numDrops == "7000"`, `minSpeed == "0.6"`, sound volume 2.0, and only one precipitation object ever existed.
 - `test("rain to snow fades out, then snow fades in without a sound")`:
   - after 1.6 s the rain object is gone or at 0, and no sound is playing
   - after 3.1 s the object's `dataBlock == "Snow_menu"` with `numDrops == "5000"`, and `fake.objects.cnr_rain_sound == nil`
 - `test("a second target mid-fade heads for the newest one and never makes two objects")`: `target(RAIN, 3)`, 1 s, `target(STORM, 3)`, 1 s, `target(nil, 3)`, 3.1 s. Everything is gone, and `fake.deleted` names `cnr_precipitation` once.
-- `test("the roof lowers the sound to a third and hides the rain")`: reuse the `withRoof` helper from `test_sky_client.lua` (copy it). Under a roof at 3 m, after two 0.25 s checks: hidden, and the sound volume is `0.6 / 3`.
+- `test("the roof lowers the sound to half and hides the rain")`: reuse the `withRoof` helper from `test_sky_client.lua` (copy it). Under a roof at 3 m, after two 0.25 s checks: hidden, and the sound volume is `0.5`.
 - `test("drop removes rain and sound at once and cancels the lock timer")`: this test lives in `tests/test_sky_client.lua`, since it needs `sky`. Apply RAIN_NIGHT, `update(1)`, `drop()`. Rain and sound are gone at once, and `update(5)` changes nothing (no new `setState`, lock as before the round).
 - `test("round end fades the rain out")`, also in `test_sky_client.lua`: apply RAIN_NIGHT, `update(4)`, restore. The rain is still there right after restore, and gone after `update(3.2)`.
 
@@ -303,7 +303,7 @@ The fade (the part the tests leave open):
   1. If `cur` exists and `goal` is nil or a different kind, lower `cur.drops` by `rateOut * dt`. At 0, delete the object and the sound, and clear `cur`.
   2. Otherwise, if `goal` exists and `cur` doesn't, create the object at 0 drops from `goal`, with the sound if `goal.volume`.
   3. If `cur` and `goal` are the same kind, move `cur.drops` toward `goal.numDrops` by `rateIn * dt`.
-  4. Write the drop count (`math.floor`) and the sound volume when `FADE_INTERVAL` has passed or the target was just reached. **How the count is written to a live object is settled by the in-game probe before execution** (`obj.numDrops = n`, `setField`, or `setPercentage(n / numDrops)`); this line is updated with the answer.
+  4. Write the drop count as `obj.numDrops = math.floor(drops)` (the in-game probe confirmed it thins live rain at once, 2026-11-16) and the sound volume, when `FADE_INTERVAL` has passed or the target was just reached. The stub object needs `numDrops` readable after this assignment: `getField("numDrops")` returns the assigned value as a string, so tests can keep reading the field.
   5. Run the roof check as today, hiding the object and applying the 1/3 volume.
 
 In `sky.lua`:
@@ -343,7 +343,7 @@ git commit -m "feat: rain and snow fade with the sky, faster rain, heavier storm
 - **DEPENDENCIES:**
   - `core_environment.setState(state, lerpSeconds)`: blends clouds, fog, fog height and time; only advances while changes are enabled; a new state mid-blend shortens it to 0.3 s
   - `setTemperatureProfile({ averageC, minC, maxC })`
-  - how the rain's drop count is changed at runtime (from the probe), `splashSize`
+  - `Precipitation.numDrops` set on live rain (probe-verified), `splashSize`
   - the `SFXEmitter` with the `amb_rain_medium` profile, `setVolumePitchCT` and `play()`
   - an update check matching the spec's In-game check
 
@@ -366,7 +366,7 @@ Run `make install-local` and start `.testserver/BeamMP-Server`.
 
 - [ ] **Step 2: Hand the user the spec's In-game check list (items 1–8)**
 
-For item 6, they send screenshots of rain, storm and snow at the starting values. For the rain sound, if `track = "amb_rain_medium"` gives no sound, find the working call with the console test extension (in-game testing workflow) and change `rain.lua` and its test.
+For item 6, they send screenshots of rain, storm and snow at the starting values. Listen to the rain and storm volume next to a car's engine and in a tunnel.
 
 - [ ] **Step 3: Apply the agreed values and commit**
 
