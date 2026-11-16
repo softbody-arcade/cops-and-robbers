@@ -516,7 +516,7 @@ local function applyEffects(effects)
       send(e.pid, "cnr_roundSetup", {
         geo = geoMode, runnerGeo = geoMode and geoPoint(geoOf(current.runnerId)) or nil,
         resumeGeo = resumeGeo,
-        runnerId = current.runnerId, role = e.role, copIndex = e.copIndex,
+        runnerId = current.runnerId, runnerName = current:runnerName(), role = e.role, copIndex = e.copIndex,
         model = current.vehicle.model, config = current.vehicle.config,
         phase = e.phase, countdownRemaining = e.countdownRemaining, chaseElapsed = e.chaseElapsed,
         headStartRemaining = e.headStartRemaining, inPlace = e.inPlace,

@@ -64,6 +64,7 @@ function M.event(text, clock, tone)
   for _, e in ipairs(events) do
     if e.text == text and clock < e.untilT then
       e.untilT = clock + EVENT_SECONDS
+      if tone == "warn" then e.tone = "warn" end
       return
     end
   end

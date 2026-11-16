@@ -189,7 +189,7 @@ local function onRoundSetup(data)
   frozen = phase == "prep" or phase == "applying" or phase == "ready" or phase == "countdown" or (phase == "headstart" and role == "cop")
   if phase == "applying" then hudfeed.applying(true) end
   if phase == "prep" or phase == "applying" or phase == "ready" then
-    hudfeed.prep(role, game.carName(d.model), (evolving and phase == "prep") and "change" or "go", playerName(d.runnerId), skyLabel)
+    hudfeed.prep(role, game.carName(d.model), (evolving and phase == "prep") and "change" or "go", d.runnerName or playerName(d.runnerId), skyLabel)
     timerEnd = nil
   elseif phase == "countdown" then
     startTimer(tonumber(d.countdownRemaining), "Runner starts in")

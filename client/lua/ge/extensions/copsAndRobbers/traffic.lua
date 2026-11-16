@@ -8,6 +8,7 @@ local REPORT_INTERVAL = 1
 local LIGHTS_INTERVAL = 1
 local SPAWN_CHECK_SECONDS = 15
 local LATE_CLEANUP_SECONDS = 15
+local TAGS_INTERVAL = 0.25
 local FREEZE_ON = "controller.setFreeze(1)"
 local FREEZE_OFF = "controller.setFreeze(0)"
 local HEADLIGHTS_ON = "electrics.setLightsState(1)"
@@ -21,6 +22,7 @@ local count, startedAt, checked = 0, 0, false
 local lastHold, lastReport, lastLights = -math.huge, -math.huge, -math.huge
 local reportKey
 local cleanupUntil = -math.huge
+local lastTags = -math.huge
 local weather
 local roundCars, ownerCar = {}, {}
 local hidden = {}
@@ -130,6 +132,7 @@ end
 
 function M.setRoundCars(keys)
   roundCars, ownerCar = {}, {}
+  lastTags = -math.huge
   for _, key in ipairs(type(keys) == "table" and keys or {}) do
     local owner = type(key) == "string" and key:match("^(%d+)%-")
     if owner then
@@ -196,7 +199,10 @@ function M.stop(clock)
 end
 
 function M.tick(clock)
-  hideTags()
+  if clock - lastTags >= TAGS_INTERVAL then
+    lastTags = clock
+    hideTags()
+  end
   if not running then
     if clock < cleanupUntil and #trafficCars() > 0 then deleteTraffic() end
     return nil

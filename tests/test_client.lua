@@ -993,6 +993,18 @@ test("a repeated identical HUD event is refreshed, not stacked", function()
   assertEq(#env.hud().notices, 1)
 end)
 
+test("a repeated notice keeps one line and turns yellow when the repeat is a warning", function()
+  local env = bootClient()
+  env.fire("cnr_roundSetup", copy(SETUP))
+  env.tick(1)
+  local hudfeed = require("copsAndRobbers/hudfeed")
+  hudfeed.event("Bob is close", 1, "info")
+  hudfeed.event("Bob is close", 1.1, "warn")
+  env.tick(0.2)
+  assertEq(#env.hud().notices, 1)
+  assertEq(env.hud().notices[1].tone, "warn")
+end)
+
 test("a random new build skips cars that can't start a build", function()
   local env = bootClient({ configs = {
     { model_key = "pickup", key = "old", Configuration = "Old", Source = "BeamNG - Official", Type = "Car", pcFilename = "/vehicles/pickup/old.pc" },
@@ -1223,6 +1235,17 @@ test("a cop's prep names the runner and leaves the rules to How to play", functi
   startCop(env)
   assertEq(env.hud().center.title, "YOU'RE A COP")
   assertEq(env.hud().center.runner, "Bob"); assertEq(env.hud().center.rule, nil)
+end)
+
+test("a cop's prep uses the runner name the server sends", function()
+  local env = bootClient({ files = { [HELP_FILE] = { seen = true } } })
+  env.mpPlayers[2] = { name = "Bobby" }
+  join(env)
+  local setup = copy(SETUP)
+  setup.runnerName = "Bob"
+  env.fire("cnr_roundSetup", setup)
+  env.tick(1)
+  assertEq(env.hud().center.runner, "Bob")
 end)
 
 test("the chase line shows the time limit when one is set", function()
@@ -1675,6 +1698,22 @@ test("a lobby player hides the tags on someone's practice traffic until it ends"
   env.fire("cnr_roundCars", { keys = {} })
   env.tick(0.2)
   assertEq(env.mpVehicles["2-5"].hideNametag, nil)
+end)
+
+test("traffic name tags are checked a few times a second, not every frame", function()
+  local env = bootClient()
+  env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
+  env.fire("cnr_roundCars", { keys = { "2-0" } })
+  env.tick(0.02, 0.02)
+  local calls = 0
+  local original = MPVehicleGE.getVehicles
+  MPVehicleGE.getVehicles = function() calls = calls + 1 return original() end
+  env.tick(0.4, 0.02)
+  MPVehicleGE.getVehicles = original
+  assertEq(calls <= 2, true, "calls " .. calls)
+  env.mpVehicles["2-6"] = { gameVehicleID = 306, isSpawned = true }
+  env.tick(0.3, 0.02)
+  assertEq(env.mpVehicles["2-6"].hideNametag, true)
 end)
 
 test("in bad weather traffic gets headlights and keeps them, in a clear round none from us", function()
