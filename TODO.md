@@ -5,7 +5,7 @@ The shared ledger for every agent and worktree. Edit this file only on main (in 
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
-- [ ] Route to the runner as a cop setting: Always (the route also stays while you see the runner yourself), Out of sight (today's behaviour, the default) or Never (no route line or GPS destination). Design approved (`docs/superpowers/specs/2026-11-16-route-setting-design.md`), plan approved (`docs/superpowers/plans/2026-11-16-route-setting.md`); building on branch `worktree-route-setting` from main, alongside the sky branch (subagent-driven)
+- [ ] Route to the runner as a cop setting: Always, Out of sight (today's behaviour, the default) or Never. Merged into main as 2.7.0 and installed on the local test server; waiting for the user's in-game check (the card still fits with the stacked row, and the three choices behave), then deploy. Worktree and branch removed, fixes go on main
 
 ## Ideas
 - [ ] Hard mode vs normal mode (a round setting): hard mode gives cops a route/position only while someone has sight (no 30 s last-seen pings), hides the name plates above cars, and whatever else fits when planning it (for example no "Nearest cop" for the runner, no minimap markers for other cars). Hard mode also raises the night and bad weather chances of night and weather rounds
