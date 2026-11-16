@@ -1958,6 +1958,36 @@ test("traffic cars have no name tags, players keep theirs", function()
   assertEq(env.mpVehicles["2-5"].hideNametag, nil)
 end)
 
+test("a cop loses the runner's name tag while the runner is not shown", function()
+  local env = bootClient()
+  startCop(env)
+  env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
+  env.fire("cnr_roundCars", { keys = { "2-0" } })
+  env.fire("cnr_runnerShown", { shown = false })
+  env.tick(1.2)
+  assertEq(env.mpVehicles["2-0"].hideNametag, true)
+  env.fire("cnr_runnerShown", { shown = true })
+  env.tick(1.2)
+  assertEq(env.mpVehicles["2-0"].hideNametag, nil)
+  env.fire("cnr_runnerShown", { shown = false })
+  env.tick(1.2)
+  assertEq(env.mpVehicles["2-0"].hideNametag, true)
+  env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 30, runnerId = 2 })
+  assertEq(env.mpVehicles["2-0"].hideNametag, nil)
+end)
+
+test("a runner never hides anything", function()
+  local env = bootClient()
+  env.fire("cnr_roundSetup", { role = "runner", runnerId = 1, model = "pickup", config = "vehicles/pickup/base.pc", phase = "prep", runnerShown = false })
+  env.mpVehicles["1-0"] = { gameVehicleID = 100, isSpawned = true }
+  env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
+  env.fire("cnr_roundCars", { keys = { "1-0", "2-0" } })
+  env.fire("cnr_runnerShown", { shown = false })
+  env.tick(1.2)
+  assertEq(env.mpVehicles["1-0"].hideNametag, nil)
+  assertEq(env.mpVehicles["2-0"].hideNametag, nil)
+end)
+
 test("a lobby player hides the tags on someone's practice traffic until it ends", function()
   local env = bootClient()
   env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }

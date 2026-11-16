@@ -15,6 +15,7 @@ local nearby = require("copsAndRobbers/nearby")
 local sky = require("copsAndRobbers/sky")
 local heli = require("copsAndRobbers/heli")
 local traffic = require("copsAndRobbers/traffic")
+local hiding = require("copsAndRobbers/hiding")
 local playerSettings = require("copsAndRobbers/playerSettings")
 local ownLights = require("copsAndRobbers/ownLights")
 
@@ -57,6 +58,7 @@ local lastPose
 local lastFreezeAssert = 0
 local runnerId
 local runnerOut = false
+local runnerShown = true
 local evolving = false
 local sightMax = 0
 local sightState = sight.new()
@@ -178,6 +180,7 @@ local function onRoundSetup(data)
   active = true
   role = d.role
   runnerId = d.runnerId
+  runnerShown = d.runnerShown ~= false
   evolving = d.evolving == true
   rebuildId = tonumber(d.rebuild)
   buildBaseline, lastChangeKey, lastChanges = nil, nil, {}
@@ -482,6 +485,8 @@ local function endRound(leaving)
   lightsState = nil
   sky.restore(leaving)
   traffic.stop(clock)
+  hiding.clear()
+  runnerShown = true
   runnerOut = false
   local own = ownVehicle()
   if active and role == "cop" and own then own:queueLuaCommand(LIGHTS_OFF) end
@@ -721,6 +726,17 @@ local function runnerObject()
   return usable(key)
 end
 
+local function updateHiding()
+  if not active or role ~= "cop" then return end
+  if runnerShown then
+    hiding.set(nil)
+  else
+    local obj = runnerObject()
+    hiding.set({ vid = obj and obj:getID(), key = traffic.roundCar(runnerId), minimap = not geoMode })
+  end
+  hiding.tick(clock)
+end
+
 local function updateSight()
   if role ~= "cop" or not statusActive or sightMax <= 0 or clock - lastSightCheck < SIGHT_CHECK_INTERVAL then return end
   lastSightCheck = clock
@@ -771,6 +787,7 @@ local function onUpdate(dtReal)
   updateLightSync()
   updateGeo()
   updateSight()
+  updateHiding()
   updateHeli()
   updateBuild()
   updateModes()
@@ -871,6 +888,9 @@ local function onExtensionLoaded()
   end)
   AddEventHandler("cnr_roundCars", function(data)
     traffic.setRoundCars((jsonDecode(data) or {}).keys)
+  end)
+  AddEventHandler("cnr_runnerShown", function(data)
+    runnerShown = (jsonDecode(data) or {}).shown ~= false
   end)
   AddEventHandler("cnr_notice", onNotice)
   AddEventHandler("cnr_top", onTop)
@@ -995,6 +1015,7 @@ M.onBeamNGEarthRebased = onBeamNGEarthRebased
 M.onExtensionLoaded = onExtensionLoaded
 M.onExtensionUnloaded = function()
   leaveServer()
+  hiding.unload()
   for name in pairs(package.loaded) do
     if name:find("^copsAndRobbers/") then package.loaded[name] = nil end
   end
