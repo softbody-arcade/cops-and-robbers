@@ -236,6 +236,68 @@ test("a zero-length link gives no NaN", function()
   end
 end)
 
+local function towardRunner(pos, rot, center)
+  local to = center - pos
+  return rot.dir.x * to.x + rot.dir.y * to.y > 0
+end
+
+test("a cop on a node faces the runner whatever the node ids", function()
+  for _, prefix in ipairs({ { "a", "z" }, { "z", "a" } }) do
+    local nodes, links = {}, {}
+    local left, right = {}, {}
+    for i = 1, 12 do
+      left[i] = { -325 + i * 25, 0 }
+      right[i] = { 325 - i * 25, 0 }
+    end
+    local l = road(nodes, links, prefix[1], left)
+    local r = road(nodes, links, prefix[2], right)
+    nodes.c = { 0, 0 }
+    links[#links + 1] = { l[#l], "c" }
+    links[#links + 1] = { "c", r[#r] }
+    useMap(nodes, links)
+    for i = 1, 8 do
+      local pos, rot = roads.findCopSpot(vec3(0, 0, 0), 50, 150, i)
+      assertEq(towardRunner(pos, rot, vec3(0, 0, 0)), true, prefix[1] .. " spot " .. i .. " at x " .. pos.x)
+    end
+  end
+end)
+
+test("a cop on a junction node faces the runner, not along the side road", function()
+  local nodes, links = {}, {}
+  local main = {}
+  for x = -300, 300, 25 do main[#main + 1] = { x, 0 } end
+  local m = road(nodes, links, "m", main)
+  local side = road(nodes, links, "s", { { 75, 25 }, { 75, 50 }, { 75, 75 }, { 75, 100 } })
+  links[#links + 1] = { m[16], side[1] }
+  useMap(nodes, links)
+  for i = 1, 10 do
+    local pos, rot = roads.findCopSpot(vec3(0, 0, 0), 50, 150, i)
+    if pos.y == 0 then
+      assertEq(towardRunner(pos, rot, vec3(0, 0, 0)), true, "main spot " .. i .. " at x " .. pos.x)
+    else
+      assertEq(rot.dir.y < 0, true, "side spot " .. i)
+    end
+  end
+end)
+
+test("at a one-way merge node cops come from every road leading in", function()
+  local nodes, links = {}, {}
+  local west = road(nodes, links, "w", { { -300, 0 }, { -200, 0 }, { -100, 0 } }, true)
+  local south = road(nodes, links, "s", { { 0, -300 }, { 0, -200 }, { 0, -100 } }, true)
+  local east = road(nodes, links, "e", { { 100, 0 }, { 200, 0 } }, true)
+  nodes.x = { 0, 0 }
+  links[#links + 1] = { west[#west], "x", oneWay = true }
+  links[#links + 1] = { south[#south], "x", oneWay = true }
+  links[#links + 1] = { "x", east[1], oneWay = true }
+  useMap(nodes, links, { closest = { west[#west], "x" } })
+  local fromSouth = false
+  for i = 1, 2 do
+    local pos = roads.findCopSpot(vec3(0, 0, 0), 50, 150, i)
+    if pos.x == 0 and pos.y < 0 then fromSouth = true end
+  end
+  assertEq(fromSouth, true)
+end)
+
 test("a max above 2 km is still searched by road", function()
   local points = line(0, 1500)
   for y = 100, 1500, 100 do points[#points + 1] = { 1500, y } end

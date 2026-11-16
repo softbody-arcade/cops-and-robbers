@@ -65,9 +65,9 @@ local function lineSpots(center, minD, maxD)
   return sortSpots(candidates)
 end
 
-local function heapPush(heap, d, id)
+local function heapPush(heap, d, id, from)
   local i = #heap + 1
-  heap[i] = { d, id }
+  heap[i] = { d, id, from }
   while i > 1 do
     local parent = math.floor(i / 2)
     if heap[parent][1] <= heap[i][1] then break end
@@ -91,29 +91,36 @@ local function heapPop(heap)
       i = small
     end
   end
-  return top[1], top[2]
+  return top[1], top[2], top[3]
 end
 
 local function gated(link)
   return (link.gated or 0) > 0
 end
 
-local function walk(links, nodes, seeds, limit)
-  local dist, heap = {}, {}
-  for _, s in ipairs(seeds) do heapPush(heap, s[1], s[2]) end
+local function walk(links, nodes, seeds, limit, runnerPoint)
+  local dist, facing, heap = {}, {}, {}
+  for _, s in ipairs(seeds) do heapPush(heap, s[1], s[2], false) end
   while #heap > 0 do
-    local d, u = heapPop(heap)
+    local d, u, from = heapPop(heap)
     if d > limit then break end
     if not dist[u] then
       dist[u] = d
+      local toward = (from and nodes[from].pos or runnerPoint) - nodes[u].pos
+      local len = toward:length()
+      if len > 1e-3 then
+        facing[u] = toward / len
+      elseif from then
+        facing[u] = facing[from]
+      end
       for v, link in pairs(links[u] or {}) do
         if not dist[v] and nodes[v] and not gated(link) and canDrive(link, v) then
-          heapPush(heap, d + nodes[u].pos:distance(nodes[v].pos), v)
+          heapPush(heap, d + nodes[u].pos:distance(nodes[v].pos), v, u)
         end
       end
     end
   end
-  return dist
+  return dist, facing
 end
 
 local function roadSpots(center, limit)
@@ -128,10 +135,13 @@ local function roadSpots(center, limit)
   local t = len2 > 0 and math.max(0, math.min(1, dot(center - a, ab) / len2)) or 0
   local runnerPoint = a + ab * t
   local seeds = {}
-  if canDrive(own, n1) then seeds[#seeds + 1] = { runnerPoint:distance(a), n1 } end
-  if canDrive(own, n2) then seeds[#seeds + 1] = { runnerPoint:distance(b), n2 } end
-  local dist = walk(links, nodes, seeds, limit)
+  if canDrive(own, n1) or t == 0 then seeds[#seeds + 1] = { runnerPoint:distance(a), n1 } end
+  if canDrive(own, n2) or t == 1 then seeds[#seeds + 1] = { runnerPoint:distance(b), n2 } end
+  local dist, facing = walk(links, nodes, seeds, limit, runnerPoint)
   local spots = {}
+  for u, d in pairs(dist) do
+    if facing[u] then spots[#spots + 1] = { pos = nodes[u].pos, d = d, dir = facing[u] } end
+  end
   for u, neighbours in pairs(links) do
     for v, link in pairs(neighbours) do
       local isOwn = link == own
@@ -143,22 +153,22 @@ local function roadSpots(center, limit)
           local dir = delta / len
           local runnerAt = isOwn and runnerPoint:distance(pu)
           local steps = math.max(1, math.floor(len / LINK_STEP))
-          for i = 0, steps do
+          for i = 1, steps - 1 do
             local along = len * i / steps
-            local best, facing
-            if dist[u] and canDrive(link, v) then best, facing = dist[u] + along, dir * -1 end
+            local best, toward
+            if dist[u] and canDrive(link, v) then best, toward = dist[u] + along, dir * -1 end
             if dist[v] and canDrive(link, u) and (not best or dist[v] + len - along < best) then
-              best, facing = dist[v] + len - along, dir
+              best, toward = dist[v] + len - along, dir
             end
             if runnerAt then
-              if along <= runnerAt and canDrive(link, u) and (not best or runnerAt - along < best) then
-                best, facing = runnerAt - along, dir
-              elseif along > runnerAt and canDrive(link, v) and (not best or along - runnerAt < best) then
-                best, facing = along - runnerAt, dir * -1
+              if along <= runnerAt and canDrive(link, u) and (not best or runnerAt - along <= best) then
+                best, toward = runnerAt - along, dir
+              elseif along > runnerAt and canDrive(link, v) and (not best or along - runnerAt <= best) then
+                best, toward = along - runnerAt, dir * -1
               end
             end
             if best and best <= limit then
-              spots[#spots + 1] = { pos = pu + dir * along, d = best, dir = facing }
+              spots[#spots + 1] = { pos = pu + dir * along, d = best, dir = toward }
             end
           end
         end
