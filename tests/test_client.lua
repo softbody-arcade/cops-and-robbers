@@ -394,6 +394,141 @@ test("a live update without route shows IN SIGHT, with route the live distance",
   assertEq(i2.before, "Runner seen"); assertEq(i2.dist, "640 m"); assertEq(i2.after, "N")
 end)
 
+local function trackPaths(env)
+  env.paths = {}
+  _G.core_groundMarkers = { setPath = function(t) env.paths[#env.paths + 1] = t or false end }
+end
+
+local function targetPaths(env)
+  local n = 0
+  for _, t in ipairs(env.paths) do if t then n = n + 1 end end
+  return n
+end
+
+local function earthStub(env)
+  env.gpsSet = 0
+  _G.beamngEarth_api = {
+    version = function() return 1 end,
+    has = function() return true end,
+    gpsSet = function() env.gpsSet = env.gpsSet + 1 return true end,
+    gpsClear = function() end,
+    toGame = function(lat, lon, h) return lon, lat, h end,
+    toGeo = function(x, y, z) return y, x, z end,
+    places = function() return {} end,
+    gps = function() return {} end,
+  }
+end
+
+test("out of sight clears the route when you see the runner, as today", function()
+  local env = bootClient()
+  trackPaths(env)
+  copInChase(env)
+  env.veh.pos = vec3(0, 0, 0)
+  env.fire("cnr_lastSeen", { live = true, route = true, pos = { x = 0, y = 640, z = 0 } })
+  assertEq(targetPaths(env), 1)
+  env.fire("cnr_lastSeen", { live = true, route = false, pos = { x = 0, y = 100, z = 0 } })
+  env.tick(0.2)
+  assertEq(env.hud().status.tag, "IN SIGHT"); assertEq(env.hud().status.info, nil)
+  assertEq(env.paths[#env.paths], false)
+end)
+
+test("always keeps the route while you see the runner", function()
+  local env = bootClient({ files = { ["settings/cnr_settings.json"] = { route = "always" } } })
+  trackPaths(env)
+  copInChase(env)
+  env.veh.pos = vec3(0, 0, 0)
+  env.fire("cnr_lastSeen", { live = true, route = false, pos = { x = 0, y = 100, z = 0 } })
+  env.tick(0.2)
+  local last = env.paths[#env.paths]
+  assertEq(last ~= false and last.y, 100)
+  assertEq(env.hud().status.tag, "IN SIGHT")
+  assertEq(env.hud().status.info.before, "Runner"); assertEq(env.hud().status.info.dist, "100 m")
+  assertEq(env.hud().status.info.after, "N")
+end)
+
+test("never draws no route and still shows distance and direction", function()
+  local env = bootClient({ files = { ["settings/cnr_settings.json"] = { route = "never" } } })
+  trackPaths(env)
+  copInChase(env)
+  env.veh.pos = vec3(0, 0, 0)
+  env.fire("cnr_lastSeen", { pos = { x = 0, y = 640, z = 0 } })
+  env.tick(0.2)
+  assertEq(targetPaths(env), 0)
+  local i = env.hud().status.info
+  assertEq(i.before, "Runner seen"); assertEq(i.dist, "640 m"); assertEq(i.after, "N")
+  env.fire("cnr_lastSeen", { live = true, route = true, pos = { x = 0, y = 640, z = 0 } })
+  env.tick(0.2)
+  assertEq(targetPaths(env), 0)
+  assertEq(env.hud().status.info.before, "Runner")
+end)
+
+test("Never clears a route left from before", function()
+  local env = bootClient()
+  trackPaths(env)
+  copInChase(env)
+  env.veh.pos = vec3(0, 0, 0)
+  env.fire("cnr_lastSeen", { pos = { x = 0, y = 640, z = 0 } })
+  assertEq(targetPaths(env), 1)
+  env.M.ui({ action = "setting", key = "route", value = "never" })
+  env.fire("cnr_lastSeen", { pos = { x = 0, y = 640, z = 0 } })
+  assertEq(env.paths[#env.paths], false)
+  assertEq(targetPaths(env), 1)
+end)
+
+test("Never leaves a waypoint the mod did not draw alone", function()
+  local env = bootClient({ files = { ["settings/cnr_settings.json"] = { route = "never" } } })
+  trackPaths(env)
+  copInChase(env)
+  local before = #env.paths
+  env.veh.pos = vec3(0, 0, 0)
+  env.fire("cnr_lastSeen", { pos = { x = 0, y = 640, z = 0 } })
+  env.fire("cnr_lastSeen", { live = true, route = false, pos = { x = 0, y = 100, z = 0 } })
+  assertEq(#env.paths, before)
+end)
+
+test("Never shows IN SIGHT on a live update in sight and draws nothing", function()
+  local env = bootClient({ files = { ["settings/cnr_settings.json"] = { route = "never" } } })
+  trackPaths(env)
+  copInChase(env)
+  env.veh.pos = vec3(0, 0, 0)
+  env.fire("cnr_lastSeen", { live = true, route = false, pos = { x = 0, y = 100, z = 0 } })
+  env.tick(0.2)
+  assertEq(env.hud().status.tag, "IN SIGHT"); assertEq(env.hud().status.info, nil)
+  assertEq(targetPaths(env), 0)
+end)
+
+test("Never on BeamNG.Earth sets no GPS destination and shows the straight distance", function()
+  local env = bootClient({ files = { ["settings/cnr_settings.json"] = { route = "never" } } })
+  earthStub(env)
+  env.fire("cnr_mode", { geo = true })
+  copInChase(env)
+  env.veh.pos = vec3(0, 0, 0)
+  env.fire("cnr_lastSeen", { geo = { lat = 640, lon = 0, h = 0 } })
+  env.tick(0.2)
+  local gpsSet = env.gpsSet
+  local i = env.hud().status.info
+  _G.beamngEarth_api = nil
+  assertEq(gpsSet, 0)
+  assertEq(i.dist, "640 m")
+end)
+
+test("Always keeps the Earth GPS destination while in sight", function()
+  local env = bootClient({ files = { ["settings/cnr_settings.json"] = { route = "always" } } })
+  earthStub(env)
+  env.fire("cnr_mode", { geo = true })
+  copInChase(env)
+  env.veh.pos = vec3(0, 0, 0)
+  env.fire("cnr_lastSeen", { live = true, route = true, geo = { lat = 640, lon = 0, h = 0 } })
+  local before = env.gpsSet
+  env.fire("cnr_lastSeen", { live = true, route = false, geo = { lat = 100, lon = 0, h = 0 } })
+  local after = env.gpsSet
+  env.tick(0.2)
+  local tag = env.hud().status.tag
+  _G.beamngEarth_api = nil
+  assertEq(after, before + 1)
+  assertEq(tag, "IN SIGHT")
+end)
+
 test("a last-seen ping past 1 km shows in km", function()
   local env = bootClient()
   copInChase(env)

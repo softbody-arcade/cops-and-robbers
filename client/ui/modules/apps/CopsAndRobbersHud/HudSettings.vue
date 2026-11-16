@@ -38,6 +38,21 @@
         @update:modelValue="v => emit('setting', 'siren', v)"
       />
     </div>
+    <div class="row stack">
+      <div class="label">
+        <div class="name">Route to the runner</div>
+        <div class="desc">As a cop</div>
+      </div>
+      <div class="choices">
+        <BngButton
+          v-for="c in ROUTES"
+          :key="c.value"
+          class="cnr-btn"
+          :accent="(settings.route || 'sight') === c.value ? ACCENTS.main : ACCENTS.secondary"
+          @click="emit('setting', 'route', c.value)"
+        >{{ c.label }}</BngButton>
+      </div>
+    </div>
     <template #actions>
       <BngButton class="cnr-btn" :accent="ACCENTS.main" :disabled="!!draft && !valid" @click="done">Done</BngButton>
     </template>
@@ -50,6 +65,12 @@ import { BngButton, BngColorPicker, BngSwitch, ACCENTS } from "@/common/componen
 import { vBngTextInput } from "@/common/directives"
 import CnrCard from "../../copsAndRobbers/CnrCard.vue"
 import { hexToHsl, hslToHex } from "../../copsAndRobbers/format.js"
+
+const ROUTES = [
+  { value: "always", label: "Always" },
+  { value: "sight", label: "Out of sight" },
+  { value: "never", label: "Never" },
+]
 
 const HEX = /^#?[0-9a-fA-F]{6}$/
 
@@ -156,6 +177,24 @@ function done() {
   align-items: center;
   gap: 1rem;
   margin-top: 0.5rem;
+}
+.choices {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.25rem;
+}
+.row.stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
+}
+.row.stack .choices {
+  display: flex;
+  gap: 0.5rem;
+}
+.row.stack .choices :deep(.cnr-btn) {
+  flex: 1 1 0;
+  min-width: 0;
 }
 .row.off .label {
   opacity: 0.5;

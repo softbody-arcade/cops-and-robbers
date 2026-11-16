@@ -49,7 +49,7 @@ Switch "Evolving car" on in the panel. Instead of a random car each round, every
 ## HUD
 
 - **Lobby card** (between rounds): who is online, a line saying whether a round is waiting, buttons for Settings, How to play, Leaderboard and Host panel, and a yellow line for a standing problem (no reset button bound, an outdated copy, BeamNG.Earth too old).
-- **Player settings:** the Settings button opens a card with your car colour and two switches: **Auto headlights** (on by default; low beam at night and in rain, storm, fog and snow, and off again at sunrise in clear weather; the mod only acts when something changes, so your own light key still works) and **Siren** (off by default; as a cop, the light bar runs with siren once cops are released; the host can turn Cop sirens off for everyone). They are saved in your own game and apply on every server. Distances and speeds on the chase line and in How to play follow the game's unit setting (metric or imperial); the Host panel stays metric.
+- **Player settings:** the Settings button opens a card with your car colour, two switches and a choice: **Auto headlights** (on by default; low beam at night and in rain, storm, fog and snow, and off again at sunrise in clear weather; the mod only acts when something changes, so your own light key still works) and **Siren** (off by default; as a cop, the light bar runs with siren once cops are released; the host can turn Cop sirens off for everyone). The choice is **Route to the runner** (as a cop: Always, Out of sight or Never; Out of sight by default). They are saved in your own game and apply on every server. Distances and speeds on the chase line and in How to play follow the game's unit setting (metric or imperial); the Host panel stays metric.
 - **Colour:** a colour picker with a hex field, "No colour" and Done. The colour is used for every round car, repaints at once in prep and otherwise applies from the next round.
 - **Prep:** the centre shows your role ("YOU'RE THE RUNNER" or "YOU'RE A COP", and for cops the runner's name). The bottom shows "Waiting for the host to press GO" with the Settings, How to play and Host panel buttons. In evolving mode it shows the runner's queued change instead, with Apply change for the runner.
 - **Countdowns:** "RUNNER STARTS IN", "COPS RELEASED IN" and "CRASH PENALTY", then "GO!" or "PENALTY OVER".
@@ -93,7 +93,7 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `lastSeenIntervalSeconds` | 30 | Runner location ping for cops (0 = off) |
 | `sightMaxMeters` | 400 | How far cops can see the runner (0 = sight off) |
 | `sightLiveIntervalSeconds` | 1 | Live runner position for all cops while one sees the runner (at least 3 s on BeamNG.Earth) |
-| `sightNoRouteSeconds` | 5 | A cop who sees the runner within their speed × this many seconds gets no route |
+| `sightNoRouteSeconds` | 5 | A cop who sees the runner within their speed × this many seconds gets no route (with the default Out of sight route setting) |
 | `sightNoRouteMinMeters` | 50 | ...and always within this distance |
 | `carMode` | random | `random` (a random car each round) or `evolving` (the shared build) |
 | `sightGraceSeconds` | 1.5 | Sight still counts this long after a cop loses it |

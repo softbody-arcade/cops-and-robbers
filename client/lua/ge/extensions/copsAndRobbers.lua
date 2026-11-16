@@ -70,6 +70,7 @@ local requestReset
 local helpSeen = false
 local prefs = playerSettings.load(nil)
 local sirensAllowed = true
+local routeDrawn = false
 local lightsState, lightsPlaced, lastLightsCheck = nil, nil, false, 0
 
 local function setFreeze(on)
@@ -158,6 +159,7 @@ local function onRoundSetup(data)
   local d = jsonDecode(data) or {}
   hudfeed.clearRound()
   hudfeed.clearResult()
+  routeDrawn = false
   active = true
   role = d.role
   runnerId = d.runnerId
@@ -349,20 +351,38 @@ end
 
 local function onLastSeen(data)
   local d = jsonDecode(data) or {}
+  local never, always = prefs.route == "never", prefs.route == "always"
   infoTag = d.live and "LIVE" or nil
-  if d.live and d.route == false then
-    geo.clearRoute()
+  if never then
+    if routeDrawn then
+      geo.clearRoute()
+      routeDrawn = false
+    end
+  end
+  local inSight = d.live and d.route == false
+  if inSight and not always then
+    if not never then
+      geo.clearRoute()
+      routeDrawn = false
+    end
     infoTag, infoParts = "IN SIGHT", nil
     return
   end
+  if inSight then infoTag = "IN SIGHT" end
   local target = d.geo and geo.toGame(d.geo) or (d.pos and vec3(d.pos.x, d.pos.y, d.pos.z))
   if not target then return end
-  if geoMode and d.geo and geo.setGpsTarget(d.geo) then
-    local info = geo.gpsInfo()
-    infoParts = info or infoParts
-    return
+  if not never then
+    if geoMode and d.geo and geo.setGpsTarget(d.geo) then
+      routeDrawn = true
+      local info = geo.gpsInfo()
+      infoParts = info or infoParts
+      return
+    end
+    if core_groundMarkers then
+      pcall(core_groundMarkers.setPath, target)
+      routeDrawn = true
+    end
   end
-  if core_groundMarkers then pcall(core_groundMarkers.setPath, target) end
   local veh = ownVehicle()
   if veh then
     local here = veh:getPosition()
@@ -458,6 +478,7 @@ local function endRound(leaving)
   evolving = false
   buildBaselineAt, buildBaseline, lastChangeKey, lastChanges = nil, nil, "", {}
   geo.clearRoute()
+  routeDrawn = false
   ai.remove()
   penaltyActive = false
   timerEnd = nil

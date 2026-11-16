@@ -337,6 +337,12 @@ test("lobby payload carries the player settings and the host's siren rule", func
   assertEq(round.settings.headlights, true)
 end)
 
+test("payload settings carry the route choice, out of sight by default", function()
+  assertEq(hud.payload(hud.new(), 0, { active = false, settings = {} }).settings.route, "sight")
+  assertEq(hud.payload(hud.new(), 0, { active = false, settings = { route = "never" } }).settings.route, "never")
+  assertEq(hud.payload(hud.new(), 0, { active = true, settings = { route = "never" } }).settings.route, "never")
+end)
+
 test("a result payload has no settings", function()
   local p = hud.payload(hud.new(), 0, { settings = { headlights = true, siren = true },
     result = { title = "X", untilT = 10, shownAt = 0 } })
