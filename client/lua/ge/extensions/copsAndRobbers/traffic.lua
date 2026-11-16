@@ -156,6 +156,10 @@ function M.setWeather(key)
   weather = type(key) == "string" and key or nil
 end
 
+function M.weather()
+  return weather
+end
+
 function M.start(n, hold, clock)
   n = math.floor(tonumber(n) or 0)
   if n <= 0 then return end

@@ -25,9 +25,6 @@ One entry per piece of work that has started: what it is, its branch (or "design
 ## Issues
 - [ ] Traffic late clean-up: traffic that finishes spawning more than 15 s after the round ends stays on the map, and AI traffic a player starts within those 15 s is deleted (`traffic.lua` `LATE_CLEANUP_SECONDS`). Check in game whether spawns ever finish that late
 - [ ] Cop spots next to a narrow median: the runner can be matched to the other carriageway, so cops are placed for that side (`roads.lua` uses `findClosestRoad`, not the runner's heading)
-- [ ] How to play in imperial rounds sight range down a lot: the default 400 m shows "0.2 mi" (really 0.25 mi). The rule "whole feet under 1000 ft, otherwise miles to one decimal" is too rough for thresholds. Consider whole feet up to 5280 ft, or two decimals under 1 mi (`HowToPlay.vue` `dist`)
-- [ ] Auto headlights: a sunset, sunrise or weather change that happens while the player has no car is used up and never applied once the car is back (`copsAndRobbers.lua` `updateOwnLights`). Skip the step while there is no car
-- [ ] Settings card: after No colour the picker keeps the previous colour while the hex field is empty. Done right after No colour compares with the not yet refreshed saved colour, so re-picking the same colour within one server round trip isn't sent (`HudSettings.vue`)
 - [ ] Panel refusals ("Stop the round first", "Only the runner can apply the change", "Not available from the panel") show as plain info, not as warnings: the server's replies carry no tone for them (`main.lua` `reply`, Panel `app.vue`)
 - [ ] Panel tabs forget their state when you switch tabs, because the game only renders the open tab: the Settings "more" fold, the Car tab's choice and the Map tab's stations. Decide which to keep in Panel `app.vue`
 - [ ] How to play in game: the Rules tab scales to about 0.86 at 26em, and it may cover the prep title on short screens. Check in game
@@ -40,10 +37,6 @@ One entry per piece of work that has started: what it is, its branch (or "design
 - [ ] HUD styles repeated across components: `.title`, `.tone-*` and `.mono` (HudCenter, HudResult, HudChase) and the root container (Hud, Announcements and How to play `app.vue`). Move them into the shared kit; needs a visual check in game. The `.hud-btn` and `.swatch` part is folded into the player settings card (In progress)
 - [ ] Leaderboard `PLAYERS_TAB` / `ROUNDS_TAB` depend on the tab order (Leaderboard `app.vue`)
 - [ ] App preview images (`tools/previews/*.svg`) are drawn approximations; replace them with in-game screenshots
-- [ ] `geo.formatDistance` is now only used by tests; point those tests at `units.distance` and drop the wrapper (`geo.lua`)
-- [ ] `hud.lua` `payload` assigns `payload.settings` in two branches; set it once for every mode but result
-- [ ] `roundWeather` in `copsAndRobbers.lua` duplicates the weather `traffic.lua` keeps; let one module own the round's weather
-- [ ] Own lights test gaps: an evolving rebuild (`cnr_rebuild`) relighting the car, bad weather turning clear by day sending off, `ownLights.step` with `wasDark == nil` and not placed, and a non-boolean value sent through `M.ui` (`tests/test_client.lua`, `tests/test_own_lights.lua`)
 - [ ] The HUD's settings card clears the colour draft in its not-allowed watch (`app.vue`). That is safe only while no HUD push lands between the lobby and prep payloads; the spec asks for the draft to survive such a gap
 
 ## BeamNG.Earth

@@ -70,7 +70,7 @@ local requestReset
 local helpSeen = false
 local prefs = playerSettings.load(nil)
 local sirensAllowed = true
-local roundWeather, lightsState, lightsPlaced, lastLightsCheck = nil, nil, false, 0
+local lightsState, lightsPlaced, lastLightsCheck = nil, nil, false, 0
 
 local function setFreeze(on)
   frozen = on
@@ -187,7 +187,6 @@ local function onRoundSetup(data)
   local phase = d.phase or "running"
   runnerOut = phase == "headstart" or phase == "running"
   traffic.setWeather(d.sky and d.sky.weather)
-  roundWeather = d.sky and d.sky.weather
   lightsState = ownLights.new(prefs.headlights)
   lightsPlaced = false
   if phase == "countdown" or phase == "headstart" or phase == "running" then
@@ -219,7 +218,6 @@ local function onSky(data)
   local d = jsonDecode(data) or {}
   sky.apply(d)
   traffic.setWeather(d.weather)
-  roundWeather = d.weather
   local label = sky.label(d, true)
   hudfeed.prepSky(label)
   if label then hudfeed.event("New sky: " .. label, clock, "info") end
@@ -444,7 +442,7 @@ end
 
 local function endRound()
   hudfeed.clearRound()
-  lightsState, roundWeather = nil, nil
+  lightsState = nil
   sky.restore()
   traffic.stop(clock)
   runnerOut = false
@@ -628,11 +626,12 @@ local function updateOwnLights()
   if not (active and lightsState) or pendingPlacement then return end
   if not lightsPlaced and clock - lastLightsCheck < 1 then return end
   lastLightsCheck = clock
-  local dark = sky.isNight() or sky.isBadWeather(roundWeather)
+  local veh = ownVehicle()
+  if not veh then return end
+  local dark = sky.isNight() or sky.isBadWeather(traffic.weather())
   local cmd = ownLights.step(lightsState, prefs.headlights, dark, lightsPlaced)
   lightsPlaced = false
-  local veh = ownVehicle()
-  if cmd and veh then veh:queueLuaCommand(cmd == "on" and ownLights.HEADLIGHTS_ON or ownLights.HEADLIGHTS_OFF) end
+  if cmd then veh:queueLuaCommand(cmd == "on" and ownLights.HEADLIGHTS_ON or ownLights.HEADLIGHTS_OFF) end
 end
 
 local function updateGeo()

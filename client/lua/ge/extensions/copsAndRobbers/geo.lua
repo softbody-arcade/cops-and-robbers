@@ -1,5 +1,4 @@
 local game = require("copsAndRobbers/game")
-local units = require("copsAndRobbers/units")
 
 local M = {}
 
@@ -36,10 +35,6 @@ end
 function M.compass(from, to)
   local angle = math.deg(math.atan2(to.x - from.x, to.y - from.y)) % 360
   return COMPASS[math.floor((angle + 22.5) / 45) % 8 + 1]
-end
-
-function M.formatDistance(m, unit)
-  return units.distance(m, unit)
 end
 
 function M.clearRoute()
