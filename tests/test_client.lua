@@ -340,6 +340,7 @@ local function copInChase(env)
   env.tick(1)
   env.addObject(300, vec3(0, 100, 0))
   env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
+  env.fire("cnr_roundCars", { keys = { "2-0" } })
   env.fire("cnr_release", {})
 end
 
@@ -416,17 +417,17 @@ test("the leaderboard bridge forwards requests and state with car names", functi
   assertEq(env.lastTrigger("CnRBoard").filter, nil)
 end)
 
-test("sight follows the car the runner is driving, not a parked one", function()
+test("sight follows the runner's round car, never one of his traffic cars", function()
   local env = bootClient()
   copInChase(env)
   env.addObject(301, vec3(0, 900, 0))
   env.mpVehicles["2-1"] = { gameVehicleID = 301, isSpawned = true }
   env.mpPlayers[2] = { activeVehicleID = "2-1" }
   env.tick(0.3)
-  assertEq(env.lastSent("cnr_sight").seen, false)
-  env.mpPlayers[2] = { activeVehicleID = "2-0" }
-  env.tick(0.3)
   assertEq(env.lastSent("cnr_sight").seen, true)
+  env.fire("cnr_roundCars", { keys = {} })
+  env.tick(0.3)
+  assertEq(env.lastSent("cnr_sight").seen, false)
 end)
 
 test("sight needs a clear ray in both directions", function()
@@ -1528,4 +1529,199 @@ test("leaderboard round rows get a sky label", function()
   env.fire("cnr_boardState", { rounds = { { id = 1, model = "pickup", sky = { time = "night", weather = "rain" } }, { id = 2, model = "pickup" } } })
   local d = env.lastTrigger("CnRBoard")
   assertEq(d.rounds[1].skyLabel, "Night · Rain"); assertEq(d.rounds[2].skyLabel, nil)
+end)
+
+local function trafficObjects(env)
+  local list = {}
+  for id in pairs(env.gameTraffic) do
+    if env.objects[id] then list[#list + 1] = env.objects[id] end
+  end
+  table.sort(list, function(a, b) return a.id < b.id end)
+  return list
+end
+
+local function hasCommand(obj, cmd)
+  for _, c in ipairs(obj.commands) do if c == cmd then return true end end
+  return false
+end
+
+local function countEvents(env, text)
+  local hf = package.loaded["copsAndRobbers/hudfeed"]
+  local seen = { n = 0 }
+  local real = hf.event
+  hf.event = function(msg, ...)
+    if msg == text then seen.n = seen.n + 1 end
+    return real(msg, ...)
+  end
+  return seen
+end
+
+test("traffic spawns only on the server's go-ahead, without police", function()
+  local env = bootClient()
+  startCop(env)
+  assertEq(#env.trafficSpawns, 0)
+  env.fire("cnr_trafficStart", { count = 3 })
+  assertEq(env.trafficSpawns[1].amount, 3)
+  for _, entry in ipairs(env.trafficSpawns[1].group) do assertEq(entry.model, "pickup") end
+  assertEq(env.trafficVars.enableRandomEvents, false)
+  assertEq(env.trafficVars.aiMode, "traffic")
+end)
+
+test("traffic stands still until the runner's GO", function()
+  local env = bootClient()
+  startCop(env)
+  env.fire("cnr_trafficStart", { count = 3 })
+  env.tick(1)
+  local cars = trafficObjects(env)
+  assertEq(#cars, 3)
+  for _, obj in ipairs(cars) do assertEq(hasCommand(obj, "controller.setFreeze(1)"), true) end
+  env.fire("cnr_runnerGo", { headStartSeconds = 7 })
+  for _, obj in ipairs(cars) do
+    assertEq(hasCommand(obj, "controller.setFreeze(0)"), true)
+    obj.commands = {}
+  end
+  env.tick(2)
+  for _, obj in ipairs(cars) do assertEq(hasCommand(obj, "controller.setFreeze(1)"), false) end
+end)
+
+test("traffic for a player who joins during the chase drives at once", function()
+  local env = bootClient()
+  local setup = copy(SETUP)
+  setup.phase = "running"
+  env.fire("cnr_roundSetup", setup)
+  env.tick(1)
+  env.fire("cnr_trafficStart", { count = 3 })
+  env.tick(1)
+  assertEq(env.trafficSpawns[1].amount, 3)
+  local cars = trafficObjects(env)
+  assertEq(#cars, 3)
+  for _, obj in ipairs(cars) do assertEq(hasCommand(obj, "controller.setFreeze(1)"), false) end
+end)
+
+test("traffic is deleted at round end and on leaving, never when none was started", function()
+  local env = bootClient()
+  startCop(env)
+  env.fire("cnr_trafficStart", { count = 3 })
+  local before = env.trafficDeletes
+  env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 30, runnerId = 2 })
+  assertEq(env.trafficDeletes > before, true)
+  assertEq(#trafficObjects(env), 0)
+  local quiet = bootClient()
+  startCop(quiet)
+  quiet.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 30, runnerId = 2 })
+  quiet.tick(1)
+  assertEq(quiet.trafficDeletes, 0)
+  local leaving = bootClient()
+  startCop(leaving)
+  leaving.fire("cnr_trafficStart", { count = 3 })
+  leaving.M.onBeamMPServerLeave()
+  assertEq(#trafficObjects(leaving), 0)
+end)
+
+test("traffic that finishes spawning after the round is deleted too", function()
+  local env = bootClient()
+  startCop(env)
+  env.deferTraffic = true
+  env.fire("cnr_trafficStart", { count = 3 })
+  env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 30, runnerId = 2 })
+  env.finishTraffic()
+  assertEq(#trafficObjects(env), 3)
+  env.tick(1)
+  assertEq(#trafficObjects(env), 0)
+end)
+
+test("the game reports its traffic cars once per change", function()
+  local env = bootClient()
+  startCop(env)
+  env.fire("cnr_trafficStart", { count = 3 })
+  env.tick(1.2)
+  local cars = trafficObjects(env)
+  local vids = env.lastSent("cnr_trafficCars").vids
+  assertEq(#vids, 3)
+  for i, obj in ipairs(cars) do assertEq(vids[i], obj.id) end
+  local reports = 0
+  for _, m in ipairs(env.sent) do if m.ev == "cnr_trafficCars" then reports = reports + 1 end end
+  env.tick(2)
+  local after = 0
+  for _, m in ipairs(env.sent) do if m.ev == "cnr_trafficCars" then after = after + 1 end end
+  assertEq(after, reports)
+  cars[1]:delete()
+  env.tick(1.2)
+  assertEq(#env.lastSent("cnr_trafficCars").vids, 2)
+end)
+
+test("traffic cars have no name tags, players keep theirs", function()
+  local env = bootClient()
+  startCop(env)
+  env.mpVehicles["1-100"] = { gameVehicleID = 100, isSpawned = true }
+  env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
+  env.mpVehicles["2-5"] = { gameVehicleID = 305, isSpawned = true }
+  env.fire("cnr_roundCars", { keys = { "1-100", "2-0" } })
+  env.tick(0.2)
+  assertEq(env.mpVehicles["2-5"].hideNametag, true)
+  assertEq(env.mpVehicles["2-0"].hideNametag, nil)
+  assertEq(env.mpVehicles["1-100"].hideNametag, nil)
+  env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 30, runnerId = 2 })
+  assertEq(env.mpVehicles["2-5"].hideNametag, nil)
+end)
+
+test("a lobby player hides the tags on someone's practice traffic until it ends", function()
+  local env = bootClient()
+  env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
+  env.mpVehicles["2-5"] = { gameVehicleID = 305, isSpawned = true }
+  env.fire("cnr_roundCars", { keys = { "2-0" } })
+  env.tick(0.2)
+  assertEq(env.mpVehicles["2-5"].hideNametag, true)
+  env.fire("cnr_roundCars", { keys = {} })
+  env.tick(0.2)
+  assertEq(env.mpVehicles["2-5"].hideNametag, nil)
+end)
+
+test("in bad weather traffic gets headlights and keeps them, in a clear round none from us", function()
+  local env = bootClient()
+  local setup = copy(SETUP)
+  setup.sky = { weather = "fog" }
+  env.fire("cnr_roundSetup", setup)
+  env.tick(1)
+  env.fire("cnr_trafficStart", { count = 3 })
+  env.tick(1.2)
+  local cars = trafficObjects(env)
+  assertEq(#cars, 3)
+  for _, obj in ipairs(cars) do
+    assertEq(hasCommand(obj, "electrics.setLightsState(1)"), true)
+    obj.commands = {}
+  end
+  env.tick(1.1)
+  for _, obj in ipairs(cars) do assertEq(hasCommand(obj, "electrics.setLightsState(1)"), true) end
+  local clear = bootClient()
+  local calm = copy(SETUP)
+  calm.sky = { weather = "clear" }
+  clear.fire("cnr_roundSetup", calm)
+  clear.tick(1)
+  clear.fire("cnr_trafficStart", { count = 3 })
+  clear.tick(2)
+  local calmCars = trafficObjects(clear)
+  assertEq(#calmCars, 3)
+  for _, obj in ipairs(calmCars) do assertEq(hasCommand(obj, "electrics.setLightsState(1)"), false) end
+  clear.fire("cnr_sky", { weather = "rain" })
+  clear.tick(1.2)
+  for _, obj in ipairs(calmCars) do assertEq(hasCommand(obj, "electrics.setLightsState(1)"), true) end
+end)
+
+test("a failed traffic spawn tells the player once", function()
+  local env = bootClient()
+  startCop(env)
+  local failed = countEvents(env, "Traffic could not spawn")
+  env.deferTraffic = true
+  env.fire("cnr_trafficStart", { count = 3 })
+  env.tick(16)
+  assertEq(failed.n, 1)
+  local some = bootClient()
+  startCop(some)
+  local partial = countEvents(some, "Only 2 of 3 traffic cars spawned")
+  local spawn = gameplay_traffic.spawnTraffic
+  gameplay_traffic.spawnTraffic = function(amount, group) return spawn(2, group) end
+  some.fire("cnr_trafficStart", { count = 3 })
+  some.tick(16)
+  assertEq(partial.n, 1)
 end)

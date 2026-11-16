@@ -13,6 +13,7 @@ local buildDiff = require("copsAndRobbers/build")
 local modes = require("copsAndRobbers/modes")
 local nearby = require("copsAndRobbers/nearby")
 local sky = require("copsAndRobbers/sky")
+local traffic = require("copsAndRobbers/traffic")
 
 local CLIENT_VERSION = "2.2.0"
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
@@ -53,6 +54,7 @@ local suppressResetUntil = 0
 local lastPose
 local lastFreezeAssert = 0
 local runnerId
+local runnerOut = false
 local evolving = false
 local sightMax = 0
 local sightState = sight.new()
@@ -179,6 +181,8 @@ local function onRoundSetup(data)
   sky.apply(d.sky)
   local skyLabel = sky.label(d.sky)
   local phase = d.phase or "running"
+  runnerOut = phase == "headstart" or phase == "running"
+  traffic.setWeather(d.sky and d.sky.weather)
   if phase == "countdown" or phase == "headstart" or phase == "running" then
     sky.startClock(d.sky and d.sky.clockSeconds or 0)
   end
@@ -207,6 +211,7 @@ local function onSky(data)
   if not active then return end
   local d = jsonDecode(data) or {}
   sky.apply(d)
+  traffic.setWeather(d.weather)
   local label = sky.label(d)
   hudfeed.prepSky(label)
   if label then hudfeed.event("New sky: " .. label, clock, "info") end
@@ -224,6 +229,8 @@ end
 local function onRunnerGo(data)
   local d = jsonDecode(data) or {}
   ai.releaseRunner()
+  runnerOut = true
+  traffic.release()
   if role == "runner" then
     timerEnd = nil
     setFreeze(false)
@@ -434,6 +441,8 @@ end
 local function endRound()
   hudfeed.clearRound()
   sky.restore()
+  traffic.stop(clock)
+  runnerOut = false
   local own = ownVehicle()
   if active and role == "cop" and own then own:queueLuaCommand(LIGHTS_OFF) end
   active = false
@@ -637,15 +646,13 @@ local function runnerObject()
     if type(v) ~= "table" or v.isSpawned == false or v.isDeleted or not v.gameVehicleID then return nil end
     return getObjectByID(v.gameVehicleID)
   end
+  local round = traffic.roundCar(runnerId)
+  if round then return usable(round) end
   local players = MPVehicleGE.getPlayers and MPVehicleGE.getPlayers() or {}
   local runner = players[runnerId] or players[tostring(runnerId)]
-  local active = type(runner) == "table" and usable(runner.activeVehicleID)
-  if active then return active end
-  for key in pairs(vehicles) do
-    local obj = usable(key)
-    if obj then return obj end
-  end
-  return nil
+  local key = type(runner) == "table" and runner.activeVehicleID
+  if not key or traffic.isTraffic(key) then return nil end
+  return usable(key)
 end
 
 local function updateSight()
@@ -671,6 +678,8 @@ local function onUpdate(dtReal)
   updateOwnCar()
   local report = ai.tick(clock)
   if #report > 0 then sendServer("cnr_aiVehicles", { ai = report }) end
+  local trafficVids = traffic.tick(clock)
+  if trafficVids then sendServer("cnr_trafficCars", { vids = trafficVids }) end
   updateLightsAndPatch()
   updateGeo()
   updateSight()
@@ -750,6 +759,7 @@ local function onExtensionLoaded()
   apps.start(clock)
   inputs.setNotify(function(msg, tone) hudfeed.event(msg, clock, tone) end)
   ai.setNotify(function(msg, tone) hudfeed.event(msg, clock, tone) end)
+  traffic.setNotify(function(msg, tone) hudfeed.event(msg, clock, tone) end)
   hudfeed.onLobbyRefresh(checkBinding)
   if not AddEventHandler then return end
   AddEventHandler("cnr_pickVehicle", onPickVehicle)
@@ -761,6 +771,13 @@ local function onExtensionLoaded()
   AddEventHandler("cnr_penalty", onPenalty)
   AddEventHandler("cnr_setupAI", onSetupAI)
   AddEventHandler("cnr_sky", onSky)
+  AddEventHandler("cnr_trafficStart", function(data)
+    local d = jsonDecode(data) or {}
+    traffic.start(d.count, not runnerOut, clock)
+  end)
+  AddEventHandler("cnr_roundCars", function(data)
+    traffic.setRoundCars((jsonDecode(data) or {}).keys)
+  end)
   AddEventHandler("cnr_notice", onNotice)
   AddEventHandler("cnr_top", onTop)
   AddEventHandler("cnr_autoNext", onAutoNext)

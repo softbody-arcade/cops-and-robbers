@@ -75,7 +75,7 @@ function bootClient(opts)
   _G.MPVehicleGE = {
     getVehicles = function() return env.mpVehicles end,
     getPlayers = function() return env.mpPlayers end,
-    isOwn = function(id) return env.veh and id == env.veh.id end,
+    isOwn = function(id) return (env.veh and id == env.veh.id) or env.gameTraffic[id] ~= nil end,
     getVehicleByGameID = function(id) return { serverVehicleString = "1-" .. tostring(id) } end,
   }
   _G.MPConfig = { getPlayerServerID = function() return 1 end }
@@ -88,7 +88,10 @@ function bootClient(opts)
       env.spawned[#env.spawned + 1] = { model = model, opt = opt, veh = veh }
       return veh
     end,
-    getConfigList = function() return { configs = opts.configs or {} } end,
+    getConfigList = function() return { configs = opts.configs or {
+      { model_key = "pickup", key = "d15_4wd_A", Source = "BeamNG - Official", ["Config Type"] = "Factory", Name = "D15 4WD" },
+      { model_key = "fullsize", key = "police", Source = "BeamNG - Official", ["Config Type"] = "Police", Name = "Police" },
+    } } end,
   }
   _G.core_input_actionFilter = {
     getActionTemplates = function() return { competitive = {} } end,
@@ -151,6 +154,41 @@ function bootClient(opts)
   _G.resetGameplay = function() end
 
   function env.addObject(id, pos) return fakeVehicle(env, id, pos) end
+  env.gameTraffic, env.trafficSpawns, env.trafficDeletes, env.pendingTraffic = {}, {}, 0, 0
+  local function addTraffic(amount)
+    for _ = 1, amount do
+      env.nextId = env.nextId + 1
+      fakeVehicle(env, env.nextId, v3(0, 50, 0))
+      env.gameTraffic[env.nextId] = { isAi = true }
+    end
+  end
+  function env.finishTraffic()
+    addTraffic(env.pendingTraffic)
+    env.pendingTraffic = 0
+  end
+  _G.gameplay_traffic = {
+    spawnTraffic = function(amount, group)
+      env.trafficSpawns[#env.trafficSpawns + 1] = { amount = amount, group = group }
+      if env.deferTraffic then env.pendingTraffic = env.pendingTraffic + amount else addTraffic(amount) end
+      return true
+    end,
+    deleteVehicles = function()
+      env.trafficDeletes = env.trafficDeletes + 1
+      for id in pairs(env.gameTraffic) do env.objects[id] = nil end
+      env.gameTraffic = {}
+    end,
+    getTrafficData = function() return env.gameTraffic end,
+    setTrafficVars = function(v) env.trafficVars = v end,
+  }
+  _G.gameplay_traffic_trafficUtils = {
+    createTrafficGroup = function(n)
+      local group = {}
+      for i = 1, n do
+        group[i] = i % 2 == 1 and { model = "pickup", config = "d15_4wd_A" } or { model = "fullsize", config = "police" }
+      end
+      return group
+    end,
+  }
   env.sky = fakeEnvironment()
   env.M = assert(loadfile("client/lua/ge/extensions/copsAndRobbers.lua"))()
   function env.fire(ev, data) return env.handlers[ev](data) end
