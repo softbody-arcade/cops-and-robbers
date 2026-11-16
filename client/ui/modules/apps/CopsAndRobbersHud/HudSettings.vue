@@ -16,7 +16,7 @@
         @input="fromText"
         @keydown.enter="done"
       />
-      <BngButton class="cnr-btn" :accent="ACCENTS.secondary" @click="emit('clear')">No colour</BngButton>
+      <BngButton class="cnr-btn" :accent="ACCENTS.secondary" @click="clear">No colour</BngButton>
     </div>
     <div v-if="draft && !valid" class="hint">Use six hex digits, like #2FB36B</div>
     <div class="divider"></div>
@@ -45,7 +45,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from "vue"
+import { ref, computed, watch } from "vue"
 import { BngButton, BngColorPicker, BngSwitch, ACCENTS } from "@/common/components/base"
 import { vBngTextInput } from "@/common/directives"
 import CnrCard from "../../copsAndRobbers/CnrCard.vue"
@@ -59,7 +59,13 @@ const props = defineProps({
 })
 const emit = defineEmits(["pick", "clear", "setting", "close", "update:draft"])
 
-const hsl = ref(HEX.test(props.draft) ? hexToHsl(props.draft.replace("#", "")) : { hue: 0.5, saturation: 1, luminosity: 0.5 })
+const NEUTRAL = { hue: 0.5, saturation: 1, luminosity: 0.5 }
+const hsl = ref(HEX.test(props.draft) ? hexToHsl(props.draft.replace("#", "")) : { ...NEUTRAL })
+const cleared = ref(false)
+
+watch(() => props.settings.color, () => {
+  cleared.value = false
+})
 
 const valid = computed(() => HEX.test(props.draft.trim()))
 const normalized = computed(() => (valid.value ? `#${props.draft.trim().replace("#", "").toLowerCase()}` : ""))
@@ -74,9 +80,16 @@ function fromText(e) {
   if (HEX.test(text.trim())) hsl.value = hexToHsl(text.trim().replace("#", ""))
 }
 
+function clear() {
+  hsl.value = { ...NEUTRAL }
+  cleared.value = true
+  emit("clear")
+}
+
 function done() {
   if (props.draft && !valid.value) return
-  if (valid.value && normalized.value !== (props.settings.color || "").toLowerCase()) emit("pick", normalized.value)
+  const saved = cleared.value ? "" : (props.settings.color || "").toLowerCase()
+  if (valid.value && normalized.value !== saved) emit("pick", normalized.value)
   emit("close")
 }
 </script>

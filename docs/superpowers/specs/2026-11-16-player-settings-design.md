@@ -101,7 +101,7 @@ Status: approved 2026-11-16, with the host's Cop sirens switch added at approval
 - The client reads the game's length unit (`settings.getValue("uiUnitLength")`: `"metric"` or `"imperial"`, metric if missing or unknown) each time it builds a feed. A change in the game's options shows up within a second, with no rejoin.
 - **Metric** stays exactly as today: `640 m`, `2.4 km`, `km/h`.
 - **Imperial, chase line:** under 1000 ft shows as feet rounded to 10 ft (`520 ft`), from 1000 ft as miles with one decimal (`0.4 mi`, `2.4 mi`). A rough figure is fine for a moving distance.
-- **Imperial, rule values** (How to play): these are thresholds, so they keep about the precision metric shows today (`round1`): whole feet under 1000 ft (catch radius 10 m is `33 ft`), miles and mph to one decimal (catch speed 3 km/h is `1.9 mph`). Rounding them as roughly as the chase line would turn 3 km/h into "2 mph" and mislead a runner about when they count as held.
+- **Imperial, rule values** (How to play): these are thresholds, so they keep about the precision metric shows today (`round1`): whole feet under 1000 ft (catch radius 10 m is `33 ft`), miles to two decimals from 1000 ft up to 1 mile (sight range 400 m is `0.25 mi`), miles to one decimal from 1 mile, mph to one decimal (catch speed 3 km/h is `1.9 mph`). Rounding them as roughly as the chase line would turn 3 km/h into "2 mph" and mislead a runner about when they count as held.
 - **Where it applies:** every distance and speed the mod shows players:
   - the chase line ("Runner 640 m NE", "Runner seen …", "Nearest cop …", "Runner 2.4 km by road NE" on Earth; built in `copsAndRobbers.lua` and `geo.lua` with `geo.formatDistance`)
   - How to play's rule values (catch radius, reset distance, speeds; `HowToPlay.vue` `unit`/`kmh` helpers)
@@ -151,7 +151,7 @@ Lua tests, as for the rest of the client:
 - Button label **Settings**, card title **Your settings**. The colour swatch stays on the button.
 - **No colour** no longer closes the card. With more on the card, clearing the colour shouldn't throw you out of it.
 - Imperial switches from feet to miles at **1000 ft**.
-- Chase line distances are rough (10 ft steps), How to play's rule values are precise (whole feet, one decimal for mi and mph).
+- Chase line distances are rough (10 ft steps), How to play's rule values are precise (whole feet under 1000 ft, two decimals for miles under 1 mi, one decimal for miles from 1 mi and for mph).
 - The chase line's distance is formatted in Lua, so it is tested; no JavaScript test tooling is added.
 
 ## Left to the builder

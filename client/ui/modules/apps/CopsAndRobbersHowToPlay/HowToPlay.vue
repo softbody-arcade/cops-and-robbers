@@ -218,7 +218,9 @@ function dist(key) {
   if (n === null) return "–"
   if (imperial.value) {
     const ft = Math.round(n * 3.28084)
-    return ft < 1000 ? `${ft} ft` : `${round1(n / 1609.344)} mi`
+    if (ft < 1000) return `${ft} ft`
+    const mi = n / 1609.344
+    return mi < 1 ? `${String(Math.round(mi * 100) / 100)} mi` : `${round1(mi)} mi`
   }
   return n >= 1000 ? `${round1(n / 1000)} km` : `${round1(n)} m`
 }
