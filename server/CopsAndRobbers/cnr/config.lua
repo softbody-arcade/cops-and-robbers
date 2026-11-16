@@ -66,6 +66,8 @@ local function validList(v)
   return true
 end
 
+local RETIRED_KEYS = { clockSpeed = true }
+local RETIRED_VALUES = { timeOfDay = "map", weather = "map" }
 local MAXIMA = { assistMinSightPercent = 100, nightChancePercent = 100, badWeatherChancePercent = 100 }
 local WHOLE = { trafficPerPlayer = true }
 
@@ -150,7 +152,9 @@ function M.setValue(raw, key, text)
   local invalid = "Invalid value for " .. key .. ": " .. tostring(text)
   if value == nil then return nil, invalid end
   local updated = {}
-  for k, v in pairs(raw or {}) do updated[k] = v end
+  for k, v in pairs(raw or {}) do
+    if not RETIRED_KEYS[k] and RETIRED_VALUES[k] ~= v then updated[k] = v end
+  end
   updated[key] = value
   local _, warnings = M.merge(updated)
   for _, w in ipairs(warnings) do

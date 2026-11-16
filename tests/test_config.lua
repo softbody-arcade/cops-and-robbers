@@ -132,6 +132,15 @@ test("an old config with map and clockSpeed falls back with warnings", function(
   assertEq(w[3], "unknown setting clockSpeed ignored")
 end)
 
+test("saving a setting drops retired keys and values", function()
+  local updated = config.setValue({ clockSpeed = 30, timeOfDay = "map", weather = "map", headStartSeconds = 9 }, "catchHoldSeconds", "5")
+  assertEq(updated.clockSpeed, nil); assertEq(updated.timeOfDay, nil); assertEq(updated.weather, nil)
+  assertEq(updated.headStartSeconds, 9); assertEq(updated.catchHoldSeconds, 5)
+  local _, w = config.merge(updated)
+  assertEq(#w, 0)
+  assertEq(config.setValue({ timeOfDay = "night" }, "weather", "rain").timeOfDay, "night")
+end)
+
 test("a broken weatherDriving doesn't block saving weather", function()
   local updated = config.setValue({ weatherDriving = "yes" }, "weather", "rain")
   assertEq(updated ~= nil, true)
