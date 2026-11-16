@@ -18,7 +18,7 @@ Status: short design for review, 2026-11-16. Builds on night and weather rounds 
 - **Sound:** the game's rain loop plays during rain and storm rounds (louder in a storm), fades with the blend and stops with the rain.
 
 ## Non-goals
-- **Thunder and lightning.** The game has no lightning object in this version (its own editor marks it "not exists?") and no thunder sound. Decided against, 2026-11-16.
+- **Thunder and lightning.** The game has no lightning object in this version (its own editor marks it "not exists?") and no thunder sound. Left out of this work and kept as an idea in TODO.md (2026-11-16).
 - BeamNG.Earth: the mod sets no sky there.
 - **Blending wind, temperature or the date.** They change while cars are frozen (prep) or at round end, where nobody drives into it.
 - A snow sound.
