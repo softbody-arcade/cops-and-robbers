@@ -287,7 +287,7 @@ export function useSettings(state, send, beforeSend) {
   }
 
   return {
-    pending, drafts, valueOf, hasDefault, defaultOf, changed, save, change, step,
+    pending, drafts, valueOf, defaultOf, changed, save, change, step,
     draftOf, setDraft, commitList, commitDrafts, resetOne, resetAll, onReply, clear, dispose,
   }
 }

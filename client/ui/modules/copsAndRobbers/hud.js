@@ -7,6 +7,7 @@ export function useCnrHud(app) {
   const events = useEvents()
   const hud = ref({ visible: false })
   let lastReport = ""
+  let lastReportAt = 0
 
   function ui(msg) {
     api.engineLua(`if copsAndRobbers then copsAndRobbers.ui(${api.serializeToLua(msg)}) end`)
@@ -18,8 +19,9 @@ export function useCnrHud(app) {
       const lines = err && typeof err.stack === "string" ? err.stack.split("\n").map(l => l.trim()) : []
       const at = lines.find(l => l.startsWith("at ")) || lines[0] || ""
       const text = `[cnr_ui] ${app} ${where}: ${message} | ${at}`
-      if (text === lastReport) return
+      if (text === lastReport && Date.now() - lastReportAt < 10000) return
       lastReport = text
+      lastReportAt = Date.now()
       api.engineLua(`log("E","cnr_ui",${api.serializeToLua(text)})`)
     } catch (e) {}
   }
@@ -31,11 +33,7 @@ export function useCnrHud(app) {
   })
 
   events.on("CnRHud", data => {
-    try {
-      hud.value = data && typeof data === "object" ? data : { visible: false }
-    } catch (err) {
-      report("CnRHud handler", err)
-    }
+    hud.value = data && typeof data === "object" ? data : { visible: false }
   })
 
   onMounted(() => ui({ action: "hello" }))

@@ -119,7 +119,6 @@ function refreshStations() {
 function station(op) {
   clearReply()
   send({ action: "station", op })
-  refreshStations()
 }
 
 function unfold() {
@@ -147,6 +146,7 @@ watch(
 watch(tab, () => store.commitDrafts())
 
 let lastReport = ""
+let lastReportAt = 0
 
 function report(where, err) {
   try {
@@ -154,8 +154,9 @@ function report(where, err) {
     const lines = err && typeof err.stack === "string" ? err.stack.split("\n").map(l => l.trim()) : []
     const at = lines.find(l => l.startsWith("at ")) || lines[0] || ""
     const text = `[cnr_ui] panel ${where}: ${message} | ${at}`
-    if (text === lastReport) return
+    if (text === lastReport && Date.now() - lastReportAt < 10000) return
     lastReport = text
+    lastReportAt = Date.now()
     api.engineLua(`log("E","cnr_ui",${api.serializeToLua(text)})`)
   } catch (e) {}
 }

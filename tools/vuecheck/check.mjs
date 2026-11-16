@@ -3,6 +3,7 @@ import { join, dirname, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { pathToFileURL } from 'node:url'
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { parse, compileScript, compileTemplate, compileStyle } from '@vue/compiler-sfc'
 import * as sass from 'sass'
 
@@ -64,7 +65,7 @@ function checkIcons(file, descriptor) {
 
 function check(file) {
   const source = readFileSync(file, 'utf8')
-  const id = Buffer.from(file).toString('hex').slice(-8)
+  const id = createHash('sha1').update(file).digest('hex').slice(0, 8)
   const { descriptor, errors: perr } = parse(source, { filename: file })
   for (const e of perr) fail(file, e.message)
   if (perr.length) {

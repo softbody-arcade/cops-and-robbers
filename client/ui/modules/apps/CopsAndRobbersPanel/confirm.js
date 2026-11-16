@@ -24,5 +24,5 @@ export function useConfirm() {
   }
 
   onUnmounted(disarm)
-  return { armed, confirm, disarm }
+  return { armed, confirm }
 }

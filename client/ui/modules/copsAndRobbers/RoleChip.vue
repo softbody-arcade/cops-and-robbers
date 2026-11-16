@@ -21,9 +21,9 @@ defineProps({
   color: var(--bng-off-white);
 }
 .cnr-chip.runner {
-  background: var(--bng-add-red-500);
+  background: var(--cnr-runner, var(--bng-add-red-500));
 }
 .cnr-chip.cop {
-  background: var(--bng-add-blue-500);
+  background: var(--cnr-cop, var(--bng-add-blue-500));
 }
 </style>

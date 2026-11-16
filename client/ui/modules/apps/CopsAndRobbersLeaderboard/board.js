@@ -42,7 +42,7 @@ export function clock(round) {
   return `${two(d.getHours())}:${two(d.getMinutes())}`
 }
 
-export function catchers(round) {
+function catchers(round) {
   return (Array.isArray(round.catchers) ? round.catchers : []).filter(n => typeof n === "string" && n)
 }
 
