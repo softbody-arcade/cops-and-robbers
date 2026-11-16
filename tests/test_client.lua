@@ -1988,18 +1988,6 @@ test("leaving the server shows the runner's name tag again", function()
   assertEq(env.mpVehicles["2-0"].hideNametag, nil)
 end)
 
-test("a runner never hides anything", function()
-  local env = bootClient()
-  env.fire("cnr_roundSetup", { role = "runner", runnerId = 1, model = "pickup", config = "vehicles/pickup/base.pc", phase = "prep", runnerShown = false })
-  env.mpVehicles["1-0"] = { gameVehicleID = 100, isSpawned = true }
-  env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
-  env.fire("cnr_roundCars", { keys = { "1-0", "2-0" } })
-  env.fire("cnr_runnerShown", { shown = false })
-  env.tick(1.2)
-  assertEq(env.mpVehicles["1-0"].hideNametag, nil)
-  assertEq(env.mpVehicles["2-0"].hideNametag, nil)
-end)
-
 test("a lobby player hides the tags on someone's practice traffic until it ends", function()
   local env = bootClient()
   env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
@@ -2690,4 +2678,90 @@ test("unloading the mod shows the runner's name tag again", function()
   local env = hiddenRunnerTag()
   env.M.onExtensionUnloaded()
   assertEq(env.mpVehicles["2-0"].hideNametag, nil)
+end)
+
+local function runnerWithCops(env)
+  env.fire("cnr_roundSetup", { role = "runner", runnerId = 1, model = "pickup", config = "vehicles/pickup/base.pc", phase = "prep" })
+  env.mpVehicles["1-0"] = { gameVehicleID = 100, isSpawned = true }
+  env.mpVehicles["3-0"] = { gameVehicleID = 300, isSpawned = true }
+  env.mpVehicles["4-0"] = { gameVehicleID = 400, isSpawned = true }
+  env.mpVehicles["1-9"] = { gameVehicleID = 109, isSpawned = true }
+  env.fire("cnr_roundCars", { keys = { "1-0", "3-0", "4-0" } })
+  env.tick(1.2)
+end
+
+local function withMinimap(ids, fn)
+  local saved = { iter = _G.activeVehiclesIterator, minimap = _G.ui_apps_minimap_vehicles }
+  local seen
+  _G.activeVehiclesIterator = function()
+    local i = 0
+    return function()
+      i = i + 1
+      if ids[i] then return ids[i], {} end
+    end
+  end
+  _G.ui_apps_minimap_vehicles = { drawOtherVehicles = function()
+    seen = {}
+    for id in activeVehiclesIterator({}) do seen[#seen + 1] = id end
+  end }
+  local ok, err = pcall(fn, function()
+    ui_apps_minimap_vehicles.drawOtherVehicles()
+    return table.concat(seen, ",")
+  end)
+  _G.activeVehiclesIterator, _G.ui_apps_minimap_vehicles = saved.iter, saved.minimap
+  if not ok then error(err, 0) end
+end
+
+test("a runner never sees the cops' name tags or minimap markers, from setup to the end", function()
+  withMinimap({ 100, 109, 300, 400 }, function(draw)
+    local env = bootClient()
+    runnerWithCops(env)
+    assertEq(env.mpVehicles["3-0"].hideNametag, true)
+    assertEq(env.mpVehicles["4-0"].hideNametag, true)
+    assertEq(env.mpVehicles["1-0"].hideNametag, nil)
+    assertEq(draw(), "100,109")
+    env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 30, runnerId = 1 })
+    assertEq(env.mpVehicles["3-0"].hideNametag, nil)
+    assertEq(env.mpVehicles["4-0"].hideNametag, nil)
+    assertEq(draw(), "100,109,300,400")
+    env.M.onExtensionUnloaded()
+  end)
+end)
+
+test("leaving the server shows the cops to a runner again", function()
+  local env = bootClient()
+  runnerWithCops(env)
+  assertEq(env.mpVehicles["3-0"].hideNametag, true)
+  env.M.onBeamMPServerLeave()
+  assertEq(env.mpVehicles["3-0"].hideNametag, nil)
+  assertEq(env.mpVehicles["4-0"].hideNametag, nil)
+end)
+
+test("on BeamNG.Earth a runner's cops lose the name tag but stay on the minimap", function()
+  withMinimap({ 100, 300, 400 }, function(draw)
+    local env = bootClient()
+    env.fire("cnr_mode", { geo = true })
+    runnerWithCops(env)
+    assertEq(env.mpVehicles["3-0"].hideNametag, true)
+    assertEq(draw(), "100,300,400")
+    env.M.onExtensionUnloaded()
+  end)
+end)
+
+test("practice as a runner: the AI cops are skipped on the minimap", function()
+  local env = bootClient()
+  local d = copy(SETUP)
+  d.role, d.runnerId, d.inPlace = "runner", 1, true
+  env.fire("cnr_roundSetup", d)
+  env.fire("cnr_setupAI", { model = "pickup", config = "vehicles/pickup/base.pc", runnerId = 1, ai = {
+    { id = -10, role = "cop", index = 1, name = "AI cop 1" },
+    { id = -11, role = "cop", index = 2, name = "AI cop 2" },
+  } })
+  env.tick(1)
+  local c1, c2 = env.spawned[1].veh:getID(), env.spawned[2].veh:getID()
+  withMinimap({ 100, c1, c2 }, function(draw)
+    env.tick(1.2)
+    assertEq(draw(), "100")
+    env.M.onExtensionUnloaded()
+  end)
 end)

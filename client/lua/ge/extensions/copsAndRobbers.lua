@@ -728,15 +728,44 @@ local function runnerObject()
   return usable(key)
 end
 
+local function sameSet(a, b)
+  for k in pairs(a) do if not b[k] then return false end end
+  for k in pairs(b) do if not a[k] then return false end end
+  return true
+end
+
+local function copHidingSets()
+  local keys, vids = {}, {}
+  local runnerOwner = tostring(runnerId)
+  for owner, key in pairs(traffic.roundCarOwners()) do
+    if owner ~= runnerOwner then
+      keys[key] = true
+      local v = MPVehicleGE and MPVehicleGE.getVehicles and (MPVehicleGE.getVehicles() or {})[key]
+      if type(v) == "table" and v.gameVehicleID then vids[v.gameVehicleID] = true end
+    end
+  end
+  for _, car in ipairs(ai.objects()) do vids[car.obj:getID()] = true end
+  return keys, vids
+end
+
 local function updateHiding(obj)
-  if not active or role ~= "cop" then return end
-  if runnerShown then
+  if not active then return end
+  local keys, vids
+  if role == "runner" then
+    keys, vids = copHidingSets()
+  elseif role == "cop" and not runnerShown then
+    keys, vids = {}, {}
+    local key = traffic.roundCar(runnerId)
+    if key then keys[key] = true end
+    if obj then vids[obj:getID()] = true end
+  end
+  if not keys then
     hiding.set(nil)
   else
-    local vid, key, minimap = obj and obj:getID(), traffic.roundCar(runnerId), not geoMode
+    local minimap = not geoMode
     local t = hidingTarget
-    if not t or t.vid ~= vid or t.key ~= key or t.minimap ~= minimap then
-      hidingTarget = { vid = vid, key = key, minimap = minimap }
+    if not t or t.minimap ~= minimap or not sameSet(t.keys, keys) or not sameSet(t.vids, vids) then
+      hidingTarget = { vids = vids, keys = keys, minimap = minimap }
     end
     hiding.set(hidingTarget)
   end

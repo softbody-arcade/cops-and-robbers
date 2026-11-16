@@ -16,6 +16,7 @@ Status: design for review, 2026-11-16. Replaces the periodic last-seen ping (`la
   - **Weather:** it stays grounded in storm, fog and snow.
 - **Everyone sees the helicopter's state on the HUD.**
   - At night, a searchlight shines on the runner while it tracks.
+- **The runner never sees the cops on the minimap or by name tag, for the whole round** (prep and countdown too).
 - **The runner is hidden from cops unless spotted.**
   - **From the runner's release (the head start) on,** the runner's name tag and minimap marker show on the cops' games only while the runner is spotted, meaning a cop has sight or the helicopter is tracking.
   - **In prep and the countdown,** the runner shows as today.
@@ -146,7 +147,8 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
     - On unload, put the original back only if our wrapper is still in place.
   - While the runner is hidden, the wrapper swaps the global `activeVehiclesIterator` for a filtered one that skips the runner's game vehicle id. It calls the original inside `pcall`, then puts the global back.
   - When not hiding, it calls the original unchanged.
-- **The runner's own game** never hides anything. Cops' cars and traffic are unaffected.
+- **The runner's own game** hides every cop (round cars not owned by the runner, `traffic.roundCarOwners()`) for the whole round: `hideNametag` on each cop key, and each cop's game vehicle id skipped on the minimap (not on BeamNG.Earth). Cops still see each other; the runner's own car, traffic and the Nearest cop readout are unaffected.
+- **Practice as a runner:** the AI cops are local cars with no name tag; they are skipped on the minimap by their game ids (`ai.objects()`).
 - **Practice as a cop:** the AI runner has no name tag (BeamMP draws none for local cars). It is hidden from the minimap by its game id (`ai.runnerObject():getID()`) under the same rule.
 
 ### Client: searchlight
@@ -202,7 +204,8 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
 4. **Weather:** a fog round shows "HELICOPTER GROUNDED (FOG)" all round, and no pings arrive.
 5. **Hiding:** as a cop, the runner shows in prep and disappears from your minimap at the head start. After that they have no name tag and aren't on your minimap until you see them or the helicopter tracks them. With the sight range Off, they show all round.
 6. **Searchlight at night:** it follows the runner's car while tracking and is gone afterwards. Every player sees it.
-7. **Wrapper safety:** the minimap still works normally outside rounds.
+7. **Runner never sees cops:** as a runner from setup on, cop name tags are hidden and cop cars are off the minimap (not on Earth, where tags are still hidden); in practice the AI cops are off the minimap. Everything returns at round end, cancel, leaving and a map change.
+8. **Wrapper safety:** the minimap still works normally outside rounds.
 
 ## Calls made (not discussed, easy to change)
 - **Defaults:** arrival 60 s, time up 2 min, refuel 90 s.

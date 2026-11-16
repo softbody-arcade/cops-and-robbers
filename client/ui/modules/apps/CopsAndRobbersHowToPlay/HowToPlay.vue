@@ -75,6 +75,10 @@
           <span><b>Hiding:</b> cops only see you on the minimap and by name tag while you're spotted<template v-if="heliOn"> or the helicopter tracks you</template>.</span>
         </div>
         <div class="li">
+          <BngIcon :type="icons.eyeSolidClosed" />
+          <span><b>No cop radar:</b> you never see the cops on the minimap or by name tag. The Nearest cop distance is all you get.</span>
+        </div>
+        <div class="li">
           <BngIcon :type="icons.mapPoint" />
           <span><b>Nearest cop:</b> the HUD shows how far away the closest cop is.</span>
         </div>
@@ -103,6 +107,10 @@
           <span v-else>
             <b>Sight is off:</b> you see the runner on the minimap all round.
           </span>
+        </div>
+        <div class="li">
+          <BngIcon :type="icons.eyeSolidClosed" />
+          <span><b>Cops stay hidden:</b> the runner never sees you on the minimap or by name tag.</span>
         </div>
         <div v-if="heliOn" class="li">
           <BngIcon :type="icons.radar" />

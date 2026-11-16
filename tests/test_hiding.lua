@@ -49,7 +49,7 @@ end
 
 test("a hidden runner has no name tag and no minimap marker", function()
   run(function()
-    hiding.set({ vid = 2, key = "2-0", minimap = true })
+    hiding.set({ vids = { [2] = true }, keys = { ["2-0"] = true }, minimap = true })
     hiding.tick(0)
     assertEq(vehicles["2-0"].hideNametag, true)
     ui_apps_minimap_vehicles.drawOtherVehicles()
@@ -61,7 +61,7 @@ end)
 test("an error in the draw still restores the iterator and does not escape", function()
   run(function()
     ui_apps_minimap_vehicles.drawOtherVehicles = function() error("boom") end
-    hiding.set({ vid = 2, minimap = true })
+    hiding.set({ vids = { [2] = true }, minimap = true })
     hiding.tick(0)
     ui_apps_minimap_vehicles.drawOtherVehicles()
     assertEq(activeVehiclesIterator, iterator)
@@ -79,7 +79,7 @@ end)
 
 test("without minimap hiding the name tag is hidden and the draw is untouched", function()
   run(function()
-    hiding.set({ vid = 2, key = "2-0", minimap = false })
+    hiding.set({ vids = { [2] = true }, keys = { ["2-0"] = true }, minimap = false })
     hiding.tick(0)
     assertEq(vehicles["2-0"].hideNametag, true)
     ui_apps_minimap_vehicles.drawOtherVehicles()
@@ -89,7 +89,7 @@ end)
 
 test("clear shows the name tag again", function()
   run(function()
-    hiding.set({ key = "2-0", minimap = false })
+    hiding.set({ keys = { ["2-0"] = true }, minimap = false })
     hiding.tick(0)
     hiding.clear()
     assertEq(vehicles["2-0"].hideNametag, nil)
@@ -101,8 +101,8 @@ end)
 test("a changed key clears the old name tag", function()
   run(function()
     vehicles["2-1"] = {}
-    hiding.set({ key = "2-0" })
-    hiding.set({ key = "2-1" })
+    hiding.set({ keys = { ["2-0"] = true } })
+    hiding.set({ keys = { ["2-1"] = true } })
     assertEq(vehicles["2-0"].hideNametag, nil)
     assertEq(vehicles["2-1"].hideNametag, true)
   end)
@@ -110,10 +110,10 @@ end)
 
 test("a rebuilt vehicle table gets the flag back within a second", function()
   run(function()
-    hiding.set({ key = "2-0" })
+    hiding.set({ keys = { ["2-0"] = true } })
     hiding.tick(0)
     vehicles = { ["2-0"] = {} }
-    hiding.set({ key = "2-0" })
+    hiding.set({ keys = { ["2-0"] = true } })
     hiding.tick(0.5)
     hiding.tick(1.0)
     assertEq(vehicles["2-0"].hideNametag, true)
@@ -124,7 +124,7 @@ test("the minimap is wrapped lazily and again after a reload", function()
   run(function()
     local original = ui_apps_minimap_vehicles
     ui_apps_minimap_vehicles = nil
-    hiding.set({ vid = 2, minimap = true })
+    hiding.set({ vids = { [2] = true }, minimap = true })
     hiding.tick(0)
     ui_apps_minimap_vehicles = original
     assertEq(original.drawOtherVehicles, draw)
@@ -162,7 +162,7 @@ test("an older wrapped table coming back never makes the wrapper call itself", f
     end }
     local extB = { drawOtherVehicles = draw }
     ui_apps_minimap_vehicles = extA
-    hiding.set({ vid = 2, minimap = true })
+    hiding.set({ vids = { [2] = true }, minimap = true })
     hiding.tick(0)
     ui_apps_minimap_vehicles = extB
     hiding.tick(1)
@@ -182,11 +182,59 @@ end)
 
 test("after unload a leftover wrapper is a pure pass-through", function()
   run(function()
-    hiding.set({ vid = 2, minimap = true })
+    hiding.set({ vids = { [2] = true }, minimap = true })
     hiding.tick(0)
     local wrapper = ui_apps_minimap_vehicles.drawOtherVehicles
     hiding.unload()
     wrapper()
     assertEq(ids(), "1,2,3")
+  end)
+end)
+
+test("several keys are hidden together and cleared together", function()
+  run(function()
+    vehicles["3-0"] = {}
+    vehicles["4-0"] = {}
+    hiding.set({ keys = { ["3-0"] = true, ["4-0"] = true } })
+    assertEq(vehicles["3-0"].hideNametag, true)
+    assertEq(vehicles["4-0"].hideNametag, true)
+    assertEq(vehicles["2-0"].hideNametag, nil)
+    hiding.clear()
+    assertEq(vehicles["3-0"].hideNametag, nil)
+    assertEq(vehicles["4-0"].hideNametag, nil)
+  end)
+end)
+
+test("a key leaving the target gets its name tag back", function()
+  run(function()
+    vehicles["3-0"] = {}
+    hiding.set({ keys = { ["2-0"] = true, ["3-0"] = true } })
+    hiding.set({ keys = { ["3-0"] = true } })
+    assertEq(vehicles["2-0"].hideNametag, nil)
+    assertEq(vehicles["3-0"].hideNametag, true)
+    hiding.set(nil)
+    assertEq(vehicles["3-0"].hideNametag, nil)
+  end)
+end)
+
+test("the wrapper skips several vids", function()
+  run(function()
+    hiding.set({ vids = { [1] = true, [3] = true }, minimap = true })
+    hiding.tick(0)
+    ui_apps_minimap_vehicles.drawOtherVehicles()
+    assertEq(ids(), "2")
+    assertEq(activeVehiclesIterator, iterator)
+  end)
+end)
+
+test("the re-assert restores every hidden key after a rebuilt vehicle table", function()
+  run(function()
+    vehicles["3-0"] = {}
+    hiding.set({ keys = { ["2-0"] = true, ["3-0"] = true } })
+    hiding.tick(0)
+    vehicles = { ["2-0"] = {}, ["3-0"] = {} }
+    hiding.tick(1)
+    assertEq(vehicles["2-0"].hideNametag, true)
+    assertEq(vehicles["3-0"].hideNametag, true)
   end)
 end)
