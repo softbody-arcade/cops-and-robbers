@@ -1425,3 +1425,61 @@ test("station list without a car of your own has nothing nearby", function()
   local s = env.lastTrigger("CnRStations")
   assertEq(s.count, 1); assertEq(#s.nearest, 0); assertEq(s.canRemove, false)
 end)
+
+test("a round sky is applied at setup and shown on the role card", function()
+  local env = bootClient()
+  local d = copy(SETUP); d.sky = { time = "night", weather = "rain", driving = true, windDir = 0, windSeed = 7 }
+  env.fire("cnr_roundSetup", d); env.tick(1)
+  assertEq(env.sky.locked, true)
+  assertEq(env.hud().center.car, "Gavril Pickup · Night · Rain")
+end)
+
+test("New sky updates the card and says so", function()
+  local env = bootClient()
+  local d = copy(SETUP); d.sky = { weather = "rain", windDir = 0, windSeed = 7 }
+  env.fire("cnr_roundSetup", d); env.tick(1)
+  env.fire("cnr_sky", { time = "noon", weather = "snow", windDir = 0, windSeed = 9 })
+  env.tick(0.2)
+  assertEq(env.hud().center.car, "Gavril Pickup · Noon · Snow")
+  assertEq(env.sky.objects.cnr_precipitation:getField("dataBlock"), "Snow_menu")
+end)
+
+test("the countdown starts the round clock", function()
+  local env = bootClient()
+  local d = copy(SETUP); d.sky = { time = "sunset", clockSpeed = 60, windDir = 0, windSeed = 1 }
+  env.fire("cnr_roundSetup", d); env.tick(1)
+  env.fire("cnr_countdown", { seconds = 3 })
+  local s = env.sky.setStates[#env.sky.setStates]
+  assertEq(s.play, true); assertEq(s.dayLength, 1440)
+end)
+
+test("a mid-chase setup starts the clock at clockSeconds", function()
+  local env = bootClient()
+  local d = copy(SETUP); d.phase = "running"; d.chaseElapsed = 100
+  d.sky = { time = "sunset", clockSpeed = 60, clockSeconds = 110, windDir = 0, windSeed = 1 }
+  env.fire("cnr_roundSetup", d); env.tick(0.1)
+  assertNear(env.sky.state.time, (0.245 + 110 * 60 / 86400) % 1, 1e-6)
+end)
+
+test("the round end gives the player's sky back, a map change only forgets it", function()
+  local env = bootClient()
+  local d = copy(SETUP); d.sky = { weather = "storm", driving = true, windDir = 0, windSeed = 7 }
+  env.fire("cnr_roundSetup", d); env.tick(1)
+  env.fire("cnr_roundEnd", { reason = "cancelled" })
+  assertEq(env.sky.locked, false); assertEq(env.sky.state.cloudCover, 0.3)
+  env.fire("cnr_roundSetup", d); env.tick(1)
+  local n = #env.sky.setStates
+  env.M.onClientEndMission()
+  assertEq(#env.sky.setStates, n)
+end)
+
+test("practice AI cars turn their headlights on at night", function()
+  local env = bootClient()
+  local d = copy(SETUP); d.role = "runner"; d.runnerId = 1; d.inPlace = true
+  d.sky = { time = "night", windDir = 0, windSeed = 1 }
+  env.fire("cnr_roundSetup", d)
+  env.fire("cnr_setupAI", { model = "pickup", config = "vehicles/pickup/base.pc", runnerId = 1, ai = { { id = -1, role = "cop", index = 1, name = "AI cop 1" } } })
+  env.tick(3)
+  local cmds = table.concat(env.spawned[1].veh.commands, "\n")
+  assertEq(cmds:find("electrics.setLightsState(1)", 1, true) ~= nil, true)
+end)

@@ -71,8 +71,12 @@ function M.event(text, clock, tone)
   while #events > 5 do table.remove(events, 1) end
 end
 
-function M.prep(role, car, waiting, runner)
-  prep = role and { role = role, car = car, waiting = waiting or "go", runner = runner } or nil
+function M.prep(role, car, waiting, runner, skyLabel)
+  prep = role and { role = role, car = car, waiting = waiting or "go", runner = runner, sky = skyLabel } or nil
+end
+
+function M.prepSky(skyLabel)
+  if prep then prep.sky = skyLabel end
 end
 
 function M.prepWaiting(waiting)

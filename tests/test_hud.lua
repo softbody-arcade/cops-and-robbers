@@ -307,3 +307,9 @@ test("driving is true from the countdown to the end of the round", function()
   assertEq(hud.payload(s, 20, { active = true, role = "runner", chaseStart = 10 }).driving, true)
   assertEq(hud.payload(s, 21, { active = false, result = { title = "ESCAPED", untilT = 30 } }).driving, false)
 end)
+
+test("the role card adds the round's sky to the car line", function()
+  local s = hud.new()
+  local info = { active = true, role = "cop", prep = { role = "cop", car = "Gavril D-Series", sky = "Night · Rain", waiting = "go" } }
+  assertEq(hud.payload(s, 0, info).center.car, "Gavril D-Series · Night · Rain")
+end)

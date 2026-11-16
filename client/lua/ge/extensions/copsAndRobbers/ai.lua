@@ -6,6 +6,7 @@ local M = {}
 
 local FREEZE_REASSERT = 0.5
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
+local HEADLIGHTS_ON = "electrics.setLightsState(1)"
 local REPLACE_MIN, REPLACE_MAX = 80, 200
 
 local cars = {}
@@ -147,10 +148,13 @@ function M.tick(clock)
   return report
 end
 
-function M.lightsOn()
+function M.lightsOn(headlights)
   for _, car in pairs(cars) do
-    local obj = car.role == "cop" and car.gameId and getObjectByID(car.gameId)
-    if obj then obj:queueLuaCommand(LIGHTS_ON) end
+    local obj = car.gameId and getObjectByID(car.gameId)
+    if obj then
+      if car.role == "cop" then obj:queueLuaCommand(LIGHTS_ON) end
+      if headlights then obj:queueLuaCommand(HEADLIGHTS_ON) end
+    end
   end
 end
 
