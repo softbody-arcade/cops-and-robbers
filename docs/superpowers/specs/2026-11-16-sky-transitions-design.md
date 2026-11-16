@@ -5,6 +5,7 @@ Status: short design for review, 2026-11-16. Builds on night and weather rounds 
 ## Why
 - Every sky change snaps. Time, clouds, fog and wind jump, and rain or snow pops in and out. That happens at round start (your own sky changing to the round's), on New sky, and at round end (back to your own sky). Pressing New sky a few times in a row makes the sky flicker.
 - Our rain falls at 0.1–0.3, slower than the stock maps' own rain (0.35–0.5), so it likely looks floaty, close to snow. A storm differs from rain only in drop count.
+- The outside temperature ignores the round's date. Bad weather shifts the map's own day curve to one fixed average (rain and storm 8 °C, fog 5 °C, snow −5 °C), and clear and cloudy rounds keep the map's own curve. A clear December round can be as warm as a clear July one, and a snow round at noon can land above freezing.
 - Rain and storms are silent. Neither our rain object nor the game's rain effect has a sound, though the game ships a rain loop (`amb_rain_medium`).
 
 ## Goals
@@ -15,6 +16,7 @@ Status: short design for review, 2026-11-16. Builds on night and weather rounds 
   - a storm has faster, slightly bigger drops on top of its higher count
   - snow stays as it is
   - final numbers come from the user's screenshots in game
+- **Temperature fits the weather and the date:** each round gets a sensible low and high for its month and weather, and snow never goes above freezing.
 - **Sound:** the game's rain loop plays during rain and storm rounds (louder in a storm), fades with the blend and stops with the rain.
 
 ## Non-goals
@@ -69,6 +71,37 @@ Status: short design for review, 2026-11-16. Builds on night and weather rounds 
   - `splashSize` about 0.25
 - These are starting points. The user sends screenshots of rain and storm at a couple of settings and the final numbers come from those, as for clouds and fog.
 
+### Temperature
+- **New pure module `climate.lua`** (next to `wind.lua`): `climate.range(weather, month) -> lowC, highC`.
+- **Monthly normals** for a temperate mid-latitude climate, roughly the stock maps' latitudes (38–44°):
+
+| Month | Jan | Feb | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct | Nov | Dec |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Low °C | 0 | 1 | 4 | 8 | 12 | 17 | 20 | 19 | 15 | 10 | 5 | 1 |
+| High °C | 8 | 10 | 14 | 18 | 23 | 28 | 31 | 30 | 26 | 20 | 13 | 9 |
+
+- **Weather changes the normals:**
+
+| Weather | Low | High |
+|---|---|---|
+| Clear | as is | as is |
+| Cloudy | +2 | −3 |
+| Rain | +2 | −5 |
+| Storm | +1 | −7 |
+| Fog | as is | −6 |
+| Snow | at most high − 4 | at most 0 °C (normal high − 9, capped at 0) |
+
+  With the date windows that gives, for example:
+  - snow in December or January: −4 to 0 °C
+  - fog in October or November: 5 to 14 °C
+  - rain in April: 10 to 13 °C
+  - clear in July: 20 to 31 °C
+- **The month is the server's pick, before the six-month shift for maps south of the equator.** The server picks months in northern-season terms, so the unshifted month is the season the round is in. Looking up the shifted month would give a snow round on Automation Test Track summer temperatures.
+- **Applying it:** `sky.apply` calls `core_environment.setTemperatureProfile({ averageC = (low + high) / 2, minC = low, maxC = high })` for every round with a date and a weather. This replaces today's average-only call and the `temperatureC` values in the weather table. The map's own curve keeps its shape (coldest before dawn, warmest in the afternoon), stretched to the low and high, and the round's time of day picks the point on it.
+- **No date or no weather** (the map's own sky, BeamNG.Earth): the temperature is left alone, as today for clear and cloudy rounds.
+- **The temperature does not blend.** It changes at once, like wind; nobody drives during prep or after the round.
+- **Round end** restores the player's own temperature with the rest of the saved sky, as today.
+
 ### Rain sound
 - **What plays:** the game's `amb_rain_medium` profile (`art/sound/environment/amb_rain_medium.ogg`, a 2D loop). It plays while a rain or storm round has its rain object, through one unsaved sound emitter, created the way the game's own `core/audioForest.lua` creates its emitters.
 - **Volume:** a storm is louder than rain (start at 0.6 for rain and 1.0 for a storm). The volume fades with the rain's `numDrops` during a blend.
@@ -90,6 +123,11 @@ Lua, in `tests/test_sky_client.lua` with the environment stub (it records `setSt
   - the emitter exists while the rain object does, and is louder in a storm
   - it is lowered under cover
   - it is deleted by `restore` and by `drop`
+- **Temperature:**
+  - `climate.range` gives the table's values for each weather in a sample of months
+  - snow is never above 0 °C, and the low is always below the high
+  - `apply` passes `averageC`, `minC` and `maxC` from the server's month even on a map south of the equator
+  - no date means no temperature call
 - **Drop values:** the weather table carries the new speeds, sizes and `hitVehicles`.
 
 ## In-game check
@@ -99,12 +137,14 @@ Lua, in `tests/test_sky_client.lua` with the environment stub (it records `setSt
 4. Press GO right after New sky: the sky lands on the new one, and the clock runs.
 5. Round end: your own sky comes back over about 3 s, and the environment menu works again afterwards.
 6. Screenshots of rain and storm (and snow for comparison) at the starting values, to settle the final numbers.
-7. In a tunnel during rain: the rain is hidden and the sound is quieter. Interior camera: no rain falling through the roof.
+7. The environment menu's temperature after a round starts: a December snow round reads below 0 °C, a July clear noon reads around 30 °C.
+8. In a tunnel during rain: the rain is hidden and the sound is quieter. Interior camera: no rain falling through the roof.
 
 ## Calls made (not discussed, easy to change)
 - **3 s blend for all three changes.** The game shortens it for small changes.
 - **Rain to snow fades out, then in,** rather than crossfading two objects.
 - **Starting values:** storm drops at 0.6–0.8 speed, size 1.3, 7000 drops; the volumes (0.6 rain, 1.0 storm, a third under cover).
+- **One temperate climate for every map**, roughly the stock maps' latitudes. Desert and tropical maps (Utah, Johnson Valley, Jungle Rock Island) get the same climate, just as they get every weather today. The table's numbers and the weather offsets are my calls.
 - **`hitVehicles` and `splashSize`** copied from the stock maps' rain.
 
 ## Left to the builder
