@@ -1435,6 +1435,13 @@ test("a round sky is applied at setup and shown on the role card", function()
   assertEq(env.hud().center.car, "Gavril Pickup · Night · Rain")
 end)
 
+test("the role card shows the round's date", function()
+  local env = bootClient()
+  local d = copy(SETUP); d.sky = { time = "night", weather = "rain", year = 2026, month = 12, day = 14, windDir = 0, windSeed = 7 }
+  env.fire("cnr_roundSetup", d); env.tick(1)
+  assertEq(env.hud().center.car, "Gavril Pickup · Night · Rain · 14 Dec")
+end)
+
 test("New sky updates the card and says so", function()
   local env = bootClient()
   local d = copy(SETUP); d.sky = { weather = "rain", windDir = 0, windSeed = 7 }
@@ -1457,7 +1464,7 @@ end)
 
 test("the countdown starts the round clock", function()
   local env = bootClient()
-  local d = copy(SETUP); d.sky = { time = "sunset", clockSpeed = 60, windDir = 0, windSeed = 1 }
+  local d = copy(SETUP); d.sky = { time = "sunset", daySeconds = 1440, windDir = 0, windSeed = 1 }
   env.fire("cnr_roundSetup", d); env.tick(1)
   env.fire("cnr_countdown", { seconds = 3 })
   local s = env.sky.setStates[#env.sky.setStates]
@@ -1467,9 +1474,9 @@ end)
 test("a mid-chase setup starts the clock at clockSeconds", function()
   local env = bootClient()
   local d = copy(SETUP); d.phase = "running"; d.chaseElapsed = 100
-  d.sky = { time = "sunset", clockSpeed = 60, clockSeconds = 110, windDir = 0, windSeed = 1 }
+  d.sky = { time = "sunset", daySeconds = 1440, clockSeconds = 110, windDir = 0, windSeed = 1 }
   env.fire("cnr_roundSetup", d); env.tick(0.1)
-  assertNear(env.sky.state.time, (0.245 + 110 * 60 / 86400) % 1, 1e-6)
+  assertNear(env.sky.state.time, (0.245 + 110 / 1440) % 1, 1e-6)
 end)
 
 test("the round end gives the player's sky back, a map change only forgets it", function()
@@ -1526,7 +1533,7 @@ end)
 
 test("leaderboard round rows get a sky label", function()
   local env = bootClient()
-  env.fire("cnr_boardState", { rounds = { { id = 1, model = "pickup", sky = { time = "night", weather = "rain" } }, { id = 2, model = "pickup" } } })
+  env.fire("cnr_boardState", { rounds = { { id = 1, model = "pickup", sky = { time = "night", weather = "rain", month = 12, day = 14 } }, { id = 2, model = "pickup" } } })
   local d = env.lastTrigger("CnRBoard")
   assertEq(d.rounds[1].skyLabel, "Night · Rain"); assertEq(d.rounds[2].skyLabel, nil)
 end)
