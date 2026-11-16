@@ -1,5 +1,14 @@
 package.path = "server/CopsAndRobbers/?.lua;client/lua/ge/extensions/?.lua;" .. package.path
 
+function versionIn(path, pattern)
+  local f = assert(io.open(path, "r"))
+  local text = f:read("*a")
+  f:close()
+  return text:match(pattern)
+end
+
+CNR_VERSION = assert(versionIn("server/CopsAndRobbers/main.lua", '\nlocal VERSION = "([^"]+)"'), "no VERSION in main.lua")
+
 local passed, failed = 0, 0
 local current
 

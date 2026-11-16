@@ -144,6 +144,11 @@ App preview images are drawn from `tools/previews/*.svg`: `rsvg-convert -w 1000 
 `make test` runs the rule, wiring and client tests with stock Lua (`tests/test_client.lua` loads the real GE
 extension against stubbed game functions). `make install-local` deploys to `.testserver/`, `make deploy` to the server.
 
+The version lives in four places (server `main.lua`, client `copsAndRobbers.lua`, `mod_info/.../info.json`, the
+`docs/FEATURES.md` heading); `tests/test_version.lua` checks they agree and the other tests read it from the server.
+Feature branches never change it, so branches built side by side don't conflict: after a branch merges, run
+`make version V=x.y.z` on main and commit the bump on its own. The target refuses on any other branch.
+
 Client layout (`client/lua/ge/extensions/`): `copsAndRobbers.lua` holds round state, the server event handlers and the
 `onUpdate` steps; `copsAndRobbers/` has `game` (GE helpers), `inputs` (locks, reset hooks), `roads` (spawn spots),
 `vehicles` (car pick, cop lights), `lightbar` (emergency light planner), `ai` (practice cars), `geo` (BeamNG.Earth),
