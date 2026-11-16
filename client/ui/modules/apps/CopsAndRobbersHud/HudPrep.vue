@@ -5,12 +5,12 @@
       <span>{{ prep.waiting }}</span>
     </span>
     <span class="buttons">
-      <BngButton class="hud-btn" :accent="ACCENTS.secondary" @click="emit('color')">
-        <span class="swatch" :class="{ empty: !prep.color }" :style="prep.color ? { background: prep.color } : null"></span>
-        <span>Colour</span>
+      <BngButton class="cnr-btn" :accent="ACCENTS.secondary" @click="emit('settings')">
+        <span class="cnr-swatch" :class="{ empty: !prep.color }" :style="prep.color ? { background: prep.color } : null"></span>
+        <span>Settings</span>
       </BngButton>
-      <BngButton class="hud-btn" :accent="ACCENTS.secondary" :icon="icons.info" @click="emit('help')">How to play</BngButton>
-      <BngButton class="hud-btn" :accent="ACCENTS.secondary" :icon="icons.cogSolid" @click="emit('toggle', 'panel')">Host panel</BngButton>
+      <BngButton class="cnr-btn" :accent="ACCENTS.secondary" :icon="icons.info" @click="emit('help')">How to play</BngButton>
+      <BngButton class="cnr-btn" :accent="ACCENTS.secondary" :icon="icons.cogSolid" @click="emit('toggle', 'panel')">Host panel</BngButton>
     </span>
   </div>
 </template>
@@ -21,7 +21,7 @@ import { BngButton, BngIcon, ACCENTS, icons } from "@/common/components/base"
 defineProps({
   prep: { type: Object, required: true },
 })
-const emit = defineEmits(["color", "help", "toggle"])
+const emit = defineEmits(["settings", "help", "toggle"])
 </script>
 
 <style scoped>
@@ -47,25 +47,10 @@ const emit = defineEmits(["color", "help", "toggle"])
   gap: 0.5rem;
   text-shadow: none;
 }
-.hud-prep .hud-btn {
+.hud-prep .cnr-btn {
   pointer-events: auto;
-  font-family: var(--cnr-display);
   font-size: 0.875rem;
-  font-weight: 700;
   line-height: 1.25rem;
-  --bng-button-margin: 0;
-  --bng-content-align: center;
   --bng-icon-size: 1rem;
-}
-.swatch {
-  display: inline-block;
-  width: 1rem;
-  height: 1rem;
-  margin-right: 0.5rem;
-  border-radius: var(--bng-corners-1);
-  box-shadow: 0 0 0 0.125rem var(--cnr-muted);
-}
-.swatch.empty {
-  background: transparent;
 }
 </style>

@@ -22,4 +22,24 @@
   color: var(--cnr-text);
   font-family: var(--fnt-defs);
 }
+.cnr-root .cnr-btn {
+  font-family: var(--cnr-display);
+  font-weight: 700;
+  --bng-button-margin: 0;
+  --bng-content-align: center;
+}
+.cnr-root .cnr-swatch {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  border-radius: var(--bng-corners-1);
+  box-shadow: 0 0 0 0.125rem var(--cnr-muted);
+}
+.cnr-root .cnr-btn .cnr-swatch {
+  margin-right: 0.5rem;
+}
+.cnr-root .cnr-swatch.empty {
+  background: transparent;
+}
 </style>

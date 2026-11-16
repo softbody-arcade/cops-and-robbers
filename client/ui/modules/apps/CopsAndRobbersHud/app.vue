@@ -4,17 +4,24 @@
       <template v-if="hud.visible">
         <HudNotices :notices="hud.notices" />
         <template v-if="mode === 'lobby' && hud.lobby">
-          <HudColor v-if="colorOpen" :color="hud.lobby.color" @pick="pickColor" @close="colorOpen = false" />
-          <HudLobby v-else :lobby="hud.lobby" @color="colorOpen = true" @help="openHelp" @toggle="toggleApp" />
+          <HudLobby v-show="!settingsOpen" :lobby="hud.lobby" @settings="openSettings" @help="openHelp" @toggle="toggleApp" />
         </template>
         <template v-if="mode === 'round'">
           <HudChange v-if="hud.change" :change="hud.change" @apply="ui({ action: 'apply' })" />
           <template v-if="hud.prep">
-            <HudColor v-if="colorOpen" :color="hud.prep.color" @pick="pickColor" @close="colorOpen = false" />
-            <HudPrep v-else :prep="hud.prep" @color="colorOpen = true" @help="openHelp" @toggle="toggleApp" />
+            <HudPrep v-show="!settingsOpen" :prep="hud.prep" @settings="openSettings" @help="openHelp" @toggle="toggleApp" />
           </template>
           <HudChase v-if="chaseShown" :status="hud.status" :bar="hud.catch" />
         </template>
+        <HudSettings
+          v-if="settingsOpen && settingsAllowed"
+          v-model:draft="colorDraft"
+          :settings="settings"
+          @pick="hex => ui({ action: 'color', hex })"
+          @clear="clearColor"
+          @setting="(key, value) => ui({ action: 'setting', key, value })"
+          @close="closeSettings"
+        />
       </template>
     </div>
   </CnrRoot>
@@ -30,20 +37,23 @@ import HudNotices from "./HudNotices.vue"
 import HudChange from "./HudChange.vue"
 import HudLobby from "./HudLobby.vue"
 import HudPrep from "./HudPrep.vue"
-import HudColor from "./HudColor.vue"
+import HudSettings from "./HudSettings.vue"
 
 const { hud, ui } = useCnrHud("hud")
 const box = ref(null)
 const stack = ref(null)
 const fit = useFit(box, stack)
 
-const colorOpen = ref(false)
+const settingsOpen = ref(false)
+const colorDraft = ref("")
 const mode = computed(() => hud.value.mode)
 const chaseShown = computed(() => !!(hud.value.status || (hud.value.catch && hud.value.catch.visible)))
-const colorAllowed = computed(() => !!(hud.value.visible && ((mode.value === "lobby" && hud.value.lobby) || (mode.value === "round" && hud.value.prep))))
+const settingsAllowed = computed(() => !!(hud.value.visible && ((mode.value === "lobby" && hud.value.lobby) || (mode.value === "round" && hud.value.prep))))
 
-watch(colorAllowed, allowed => {
-  if (!allowed) colorOpen.value = false
+const settings = computed(() => hud.value.settings || { headlights: false, siren: false, sirensAllowed: false })
+
+watch(settingsAllowed, allowed => {
+  if (!allowed) closeSettings()
 })
 
 function openHelp() {
@@ -54,9 +64,20 @@ function toggleApp(name) {
   ui({ action: "toggleApp", name })
 }
 
-function pickColor(hex) {
-  colorOpen.value = false
-  ui(hex ? { action: "color", hex } : { action: "color" })
+function openSettings() {
+  const color = settings.value.color
+  colorDraft.value = color ? color.toUpperCase() : ""
+  settingsOpen.value = true
+}
+
+function closeSettings() {
+  settingsOpen.value = false
+  colorDraft.value = ""
+}
+
+function clearColor() {
+  colorDraft.value = ""
+  ui({ action: "color" })
 }
 </script>
 
