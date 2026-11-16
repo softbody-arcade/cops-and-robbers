@@ -13,6 +13,7 @@ local buildDiff = require("copsAndRobbers/build")
 local modes = require("copsAndRobbers/modes")
 local nearby = require("copsAndRobbers/nearby")
 local sky = require("copsAndRobbers/sky")
+local heli = require("copsAndRobbers/heli")
 local traffic = require("copsAndRobbers/traffic")
 local playerSettings = require("copsAndRobbers/playerSettings")
 local ownLights = require("copsAndRobbers/ownLights")
@@ -156,7 +157,10 @@ local function playerName(id)
   return type(p) == "table" and type(p.name) == "string" and p.name or nil
 end
 
+local heliState = heli.new()
+
 local function setHeli(h)
+  heli.set(heliState, h, clock)
   if type(h) ~= "table" or type(h.phase) ~= "string" then
     hudfeed.heli(nil)
     return
@@ -448,6 +452,7 @@ local function onNotice(data)
 end
 
 local function onRelease()
+  heli.resetCover(heliState)
   ai.releaseCops()
   hudfeed.headStart(nil)
   if role == "runner" and sightMax > 0 and spotted == nil then spotted = false end
@@ -473,6 +478,7 @@ end
 
 local function endRound(leaving)
   hudfeed.clearRound()
+  heli.clear(heliState)
   lightsState = nil
   sky.restore(leaving)
   traffic.stop(clock)
@@ -731,6 +737,26 @@ local function updateSight()
   sendServer("cnr_sight", { seen = seen })
 end
 
+local function castUp(pos, range)
+  return castRayStatic(pos, vec3(0, 0, 1), range)
+end
+
+local function updateHeli()
+  if statusActive and castRayStatic then
+    local car = role == "runner" and ownVehicle() or ai.runnerObject()
+    if car then
+      local c = heli.coverTick(heliState, clock, car, castUp)
+      if c ~= nil then sendServer("cnr_cover", { covered = c }) end
+    end
+  end
+  if active then
+    local target = role == "runner" and ownVehicle() or runnerObject()
+    heli.lightTick(heliState, target, sky.isNight())
+  else
+    heli.lightTick(heliState, nil, false)
+  end
+end
+
 local function onUpdate(dtReal)
   clock = clock + (dtReal or 0)
   sky.update(dtReal or 0)
@@ -745,6 +771,7 @@ local function onUpdate(dtReal)
   updateLightSync()
   updateGeo()
   updateSight()
+  updateHeli()
   updateBuild()
   updateModes()
   if active then inputs.enforceEditLock() end
