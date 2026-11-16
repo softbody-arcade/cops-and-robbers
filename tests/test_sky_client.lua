@@ -233,6 +233,7 @@ test("a failing apply still relocks and restore still works", function()
   sky.apply(RAIN_NIGHT)
   _G.createObject = make
   assertEq(fake.locked, true)
+  assertEq(fake.lerps[#fake.setStates], nil); assertEq(fake.state.cloudCover, 2.2)
   sky.restore(); sky.update(4)
   assertEq(fake.locked, false); assertEq(fake.state.cloudCover, 0.05)
 end)
@@ -404,4 +405,18 @@ test("drop cancels a pending lock timer", function()
   assertEq(fake.locked, false)
   sky.update(5)
   assertEq(fake.locked, false)
+end)
+
+test("an immediate restore during the round-end blend lands the sky and lock", function()
+  local sky, fake = load({ locked = true })
+  fake.state.cloudCover = 0.05
+  sky.apply(RAIN_NIGHT); sky.update(4); sky.restore()
+  fake.state.cloudCover = 1.1
+  sky.restore(true)
+  assertEq(fake.lerps[#fake.setStates], nil)
+  assertEq(fake.state.cloudCover, 0.05)
+  assertEq(fake.locked, true)
+  local n = #fake.setStates
+  sky.update(5)
+  assertEq(#fake.setStates, n); assertEq(fake.locked, true)
 end)

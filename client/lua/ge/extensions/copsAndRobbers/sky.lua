@@ -195,6 +195,7 @@ function M.apply(p)
   if ok then
     lockTimer, lockAfter = LOCK_DELAY, true
   else
+    pcall(env.setState, target)
     env.enableChanges(false)
     lockTimer, restoring = nil, nil
     log("E", "cnr_sky", tostring(err))
@@ -248,6 +249,13 @@ end
 
 function M.restore(immediate)
   local env = core_environment
+  if env and immediate and not saved and restoring then
+    env.enableChanges(true)
+    env.setState(restoring.state)
+    env.enableChanges(not restoring.wasLocked)
+    lockTimer, restoring = nil, nil
+    return
+  end
   if not env or not saved then return end
   env.enableChanges(true)
   surfaces.restore()
