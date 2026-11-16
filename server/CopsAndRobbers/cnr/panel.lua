@@ -159,7 +159,7 @@ function M.applyValues(raw, values)
   local _, warnings = config.merge(updated)
   for _, w in ipairs(warnings) do
     for _, key in ipairs(keys) do
-      if w:find(key, 1, true) == 1 then return nil, "Invalid value for " .. key .. ": " .. toText(values[key]) end
+      if w:find(key .. " ", 1, true) == 1 then return nil, "Invalid value for " .. key .. ": " .. toText(values[key]) end
     end
   end
   return updated, keys
