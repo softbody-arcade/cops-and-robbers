@@ -1,6 +1,7 @@
 local wind = require("copsAndRobbers/wind")
 local surfaces = require("copsAndRobbers/surfaces")
 local shelter = require("copsAndRobbers/shelter")
+local climate = require("copsAndRobbers/climate")
 
 local M = {}
 
@@ -8,16 +9,16 @@ M.WEATHER = {
   clear = { cloudCover = 0.4, fogDensity = 0.4, windSpeed = 0.1 },
   cloudy = { cloudCover = 1.8, fogDensity = 1, windSpeed = 0.3 },
   rain = {
-    cloudCover = 2.2, fogDensity = 4, windSpeed = 0.5, temperatureC = 8,
+    cloudCover = 2.2, fogDensity = 4, windSpeed = 0.5,
     precipitation = { dataBlock = "rain_medium", numDrops = 3000, dropSize = 1, minSpeed = 0.1, maxSpeed = 0.3 },
   },
   storm = {
-    cloudCover = 3.0, fogDensity = 8, windSpeed = 1.5, temperatureC = 8,
+    cloudCover = 3.0, fogDensity = 8, windSpeed = 1.5,
     precipitation = { dataBlock = "rain_medium", numDrops = 6000, dropSize = 1, minSpeed = 0.1, maxSpeed = 0.3 },
   },
-  fog = { cloudCover = 1.5, fogDensity = 15, windSpeed = 0.1, temperatureC = 5 },
+  fog = { cloudCover = 1.5, fogDensity = 15, windSpeed = 0.1 },
   snow = {
-    cloudCover = 2.2, fogDensity = 5, windSpeed = 0.4, temperatureC = -5,
+    cloudCover = 2.2, fogDensity = 5, windSpeed = 0.4,
     precipitation = { dataBlock = "Snow_menu", numDrops = 5000, dropSize = 0.2, minSpeed = 0.1, maxSpeed = 0.3 },
   },
 }
@@ -125,6 +126,16 @@ local function roundState(env, p)
   else
     state.time, state.dayLength = init.time, init.dayLength
   end
+  local low, high = climate.range(p.weather, p.month)
+  if low then
+    local sunriseT = env.getSolarTimeOfDayValue("sunrise", solar)
+    local noonT = env.getSolarTimeOfDayValue("noon", solar)
+    if sunriseT and noonT then
+      local points = { { sunriseT, low }, { (noonT + 2 / 24) % 1, high } }
+      table.sort(points, function(a, b) return a[1] < b[1] end)
+      state.temperatureCurveOverrideC = points
+    end
+  end
   state.numOfDrops = init.numOfDrops
   local weather = M.WEATHER[p.weather] or init
   state.cloudCover, state.fogDensity, state.windSpeed = weather.cloudCover, weather.fogDensity, weather.windSpeed
@@ -164,9 +175,6 @@ function M.apply(p)
   local ok, err = pcall(function()
     env.setState(state)
     local weather = M.WEATHER[p.weather]
-    if weather and weather.temperatureC then
-      env.setTemperatureProfile({ averageC = weather.temperatureC })
-    end
     removePrecipitation()
     cover, sinceCover = shelter.new(), 0
     if weather and weather.precipitation then createPrecipitation(weather.precipitation) end
