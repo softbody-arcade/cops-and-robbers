@@ -93,7 +93,7 @@ test("the searchlight follows the target", function()
   pos = vec3(30, 40, 7)
   heli.lightTick(state, target, true, 0)
   local p = fake.objects["cnr_heli_light"].pos
-  assertEq(p.x, 42); assertEq(p.y, 40); assertEq(p.z, 47)
+  assertEq(p.x, 30); assertEq(p.y, 42); assertEq(p.z, 47)
 end)
 
 test("set stores the phase, reason and end time", function()
@@ -104,20 +104,99 @@ test("set stores the phase, reason and end time", function()
   assertEq(state.phase, nil)
 end)
 
-local function near(a, b) return math.abs(a - b) < 1e-6 end
+local function seeded(seed)
+  local x = seed
+  return function()
+    x = (x * 1103515245 + 12345) % 2147483648
+    return x / 2147483648
+  end
+end
 
-test("the light pose circles the car and aims with a wobble", function()
+local function horiz(a, c) return math.sqrt((a.x - c.x) ^ 2 + (a.y - c.y) ^ 2) end
+
+test("the light hovers 40 m up within the drift of the car", function()
   load()
   local car = vec3(10, 20, 5)
-  local l, a = heli.lightPose(car, 0)
-  assertEq(near(l.x, 22) and near(l.y, 20) and near(l.z, 45), true)
-  assertEq(near(a.x, 10) and near(a.y, 21.5) and near(a.z, 5), true)
-  local l2 = heli.lightPose(car, 2 * math.pi / heli.ORBIT_SPEED)
-  assertEq(near(l2.x, 22) and near(l2.y, 20) and near(l2.z, 45), true)
-  for _, t in ipairs({ 1, 3.7, 9, 20 }) do
-    local p = heli.lightPose(car, t)
-    assertEq(near(math.sqrt((p.x - 10) ^ 2 + (p.y - 20) ^ 2), 12), true)
+  for _, t in ipairs({ 0, 1, 3.7, 9, 20, 100 }) do
+    local l = heli.lightPose(car, t)
+    assertEq(l.z, 45)
+    assertEq(horiz(l, car) <= heli.HOVER_DRIFT * math.sqrt(2) + 1e-9, true)
   end
+end)
+
+test("the aim stays near a car that drives and turns randomly", function()
+  load()
+  local rnd = seeded(7)
+  local aim = heli.newAim()
+  local car, heading, speed, clock, worst = { x = 0, y = 0, z = 0 }, 0, 20, 0, 0
+  for _ = 1, 600 do
+    clock = clock + 0.1
+    if rnd() < 0.1 then speed = rnd() * 40 end
+    heading = heading + (rnd() - 0.5) * 1.5
+    car.x, car.y = car.x + math.cos(heading) * speed * 0.1, car.y + math.sin(heading) * speed * 0.1
+    worst = math.max(worst, horiz(heli.aimStep(aim, car, 0.1, clock, rnd), car))
+  end
+  assertEq(worst <= heli.AIM_MAX_OFFSET + 0.53, true, tostring(worst))
+end)
+
+test("a sudden stop pushes the aim ahead and it recovers within 1.5 s", function()
+  load()
+  local rnd = seeded(3)
+  local aim = heli.newAim()
+  local car, clock = { x = 0, y = 0, z = 0 }, 0
+  for _ = 1, 50 do
+    clock = clock + 0.05
+    car.x = car.x + 30 * 0.05
+    heli.aimStep(aim, car, 0.05, clock, rnd)
+  end
+  clock = clock + 0.05
+  local a = heli.aimStep(aim, car, 0.05, clock, rnd)
+  assertEq(a.x - car.x > 1, true)
+  local last
+  for _ = 1, 30 do
+    clock = clock + 0.05
+    last = heli.aimStep(aim, car, 0.05, clock, rnd)
+  end
+  assertEq(horiz(last, car) <= heli.NUDGE_RADIUS + 0.53, true)
+end)
+
+test("nudge goals change every 0.4 to 1.2 s inside the radius", function()
+  load()
+  local rnd = seeded(11)
+  local aim = heli.newAim()
+  local car, clock = { x = 0, y = 0, z = 0 }, 0
+  local lastGoal, changedAt, intervals = nil, 0, {}
+  for _ = 1, 400 do
+    clock = clock + 0.02
+    heli.aimStep(aim, car, 0.02, clock, rnd)
+    local key = aim.goal.x .. "," .. aim.goal.y
+    assertEq(math.sqrt(aim.goal.x ^ 2 + aim.goal.y ^ 2) <= heli.NUDGE_RADIUS + 1e-9, true)
+    if key ~= lastGoal then
+      if lastGoal then intervals[#intervals + 1] = clock - changedAt end
+      lastGoal, changedAt = key, clock
+    end
+  end
+  assertEq(#intervals >= 5, true)
+  for _, d in ipairs(intervals) do
+    assertEq(d >= heli.NUDGE_MIN - 0.021 and d <= heli.NUDGE_MAX + 0.021, true, tostring(d))
+  end
+end)
+
+test("a 50 m jump resets the aim offset", function()
+  load()
+  local rnd = seeded(5)
+  local aim = heli.newAim()
+  local car, clock = { x = 0, y = 0, z = 0 }, 0
+  for _ = 1, 20 do
+    clock = clock + 0.05
+    car.x = car.x + 1.5
+    heli.aimStep(aim, car, 0.05, clock, rnd)
+  end
+  assertEq(math.abs(aim.offset.x) > 0.01, true)
+  car.x = car.x + 50
+  clock = clock + 0.05
+  heli.aimStep(aim, car, 0.05, clock, rnd)
+  assertEq(math.abs(aim.offset.x) < 0.1, true)
 end)
 
 test("the light is aimed on every tick", function()

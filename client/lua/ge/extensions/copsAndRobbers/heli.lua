@@ -6,12 +6,19 @@ M.COVER_INTERVAL = 0.25
 M.COVER_HEIGHT = 1.5
 M.LIGHT_HEIGHT = 40
 M.LIGHT_NAME = "cnr_heli_light"
-M.ORBIT_RADIUS = 12
-M.ORBIT_SPEED = 0.25
-M.AIM_WOBBLE = 1.5
+M.HOVER_DRIFT = 2
+M.AIM_LAG = 0.12
+M.AIM_SPRING = 14
+M.AIM_DAMPING = 5
+M.AIM_MAX_OFFSET = 6
+M.NUDGE_RADIUS = 1.2
+M.NUDGE_MIN = 0.4
+M.NUDGE_MAX = 1.2
+M.JUMP_METERS = 30
+M.MAX_STEP = 0.1
 
 local FIELDS = {
-  { "brightness", 80 }, { "range", 120 }, { "innerAngle", 24 }, { "outerAngle", 40 },
+  { "brightness", 80 }, { "range", 120 }, { "innerAngle", 8 }, { "outerAngle", 16 },
   { "color", "0.85 0.92 1 1" }, { "castShadows", "false" },
 }
 
@@ -55,14 +62,50 @@ end
 local function removeLight(state)
   local obj = scenetree.findObject(M.LIGHT_NAME)
   if obj then obj:delete() end
-  state.light = nil
+  state.light, state.aim = nil, nil
+end
+
+function M.newAim()
+  return { offset = { x = 0, y = 0 }, vel = { x = 0, y = 0 }, goal = { x = 0, y = 0 }, nextNudge = nil, lastCar = nil, lastCarVel = { x = 0, y = 0 } }
 end
 
 function M.lightPose(carPos, t)
-  local a = M.ORBIT_SPEED * t
-  local light = vec3(carPos.x + M.ORBIT_RADIUS * math.cos(a), carPos.y + M.ORBIT_RADIUS * math.sin(a), carPos.z + M.LIGHT_HEIGHT)
-  local aim = vec3(carPos.x + M.AIM_WOBBLE * math.sin(1.3 * t), carPos.y + M.AIM_WOBBLE * math.cos(1.1 * t), carPos.z)
-  return light, aim
+  return vec3(carPos.x + M.HOVER_DRIFT * math.sin(0.7 * t), carPos.y + M.HOVER_DRIFT * math.cos(0.48 * t), carPos.z + M.LIGHT_HEIGHT)
+end
+
+local function pickGoal(aim, clock, random)
+  local angle = random() * 2 * math.pi
+  local radius = M.NUDGE_RADIUS * math.sqrt(random())
+  aim.goal.x, aim.goal.y = radius * math.cos(angle), radius * math.sin(angle)
+  aim.nextNudge = clock + M.NUDGE_MIN + random() * (M.NUDGE_MAX - M.NUDGE_MIN)
+end
+
+function M.aimStep(aim, carPos, dt, clock, random)
+  random = random or math.random
+  dt = math.min(dt, M.MAX_STEP)
+  local last = aim.lastCar
+  if last and (carPos.x - last.x) ^ 2 + (carPos.y - last.y) ^ 2 > M.JUMP_METERS ^ 2 then
+    aim.offset.x, aim.offset.y, aim.vel.x, aim.vel.y = 0, 0, 0, 0
+    aim.lastCarVel.x, aim.lastCarVel.y = 0, 0
+    last = nil
+  end
+  if last and dt > 0 then
+    local vx, vy = (carPos.x - last.x) / dt, (carPos.y - last.y) / dt
+    aim.offset.x = aim.offset.x - (vx - aim.lastCarVel.x) * M.AIM_LAG
+    aim.offset.y = aim.offset.y - (vy - aim.lastCarVel.y) * M.AIM_LAG
+    aim.lastCarVel.x, aim.lastCarVel.y = vx, vy
+  end
+  aim.lastCar = { x = carPos.x, y = carPos.y }
+  if not aim.nextNudge or clock >= aim.nextNudge then pickGoal(aim, clock, random) end
+  local o, v, g = aim.offset, aim.vel, aim.goal
+  v.x = v.x + (M.AIM_SPRING * (g.x - o.x) - M.AIM_DAMPING * v.x) * dt
+  v.y = v.y + (M.AIM_SPRING * (g.y - o.y) - M.AIM_DAMPING * v.y) * dt
+  o.x, o.y = o.x + v.x * dt, o.y + v.y * dt
+  local len = math.sqrt(o.x * o.x + o.y * o.y)
+  if len > M.AIM_MAX_OFFSET then o.x, o.y = o.x * M.AIM_MAX_OFFSET / len, o.y * M.AIM_MAX_OFFSET / len end
+  local tx = 0.25 * math.sin(19.5 * clock) + 0.12 * math.sin(33 * clock)
+  local ty = 0.25 * math.cos(17 * clock) + 0.12 * math.cos(29 * clock)
+  return vec3(carPos.x + o.x + tx, carPos.y + o.y + ty, carPos.z)
 end
 
 local function aimLight(obj, lightPos, aimPos)
@@ -85,11 +128,17 @@ local function createLight(state)
   end
   scenetree.MissionGroup:addObject(obj)
   state.light = obj
+  state.aim = M.newAim()
   return true
 end
 
 local function placeLight(state, target, clock)
-  local lightPos, aimPos = M.lightPose(target:getPosition(), clock or 0)
+  clock = clock or 0
+  local car = target:getPosition()
+  local aim = state.aim
+  local aimPos = M.aimStep(aim, car, aim.lastClock and clock - aim.lastClock or 0, clock, state.random)
+  aim.lastClock = clock
+  local lightPos = M.lightPose(car, clock)
   state.light:setPosition(lightPos)
   pcall(aimLight, state.light, lightPos, aimPos)
 end
