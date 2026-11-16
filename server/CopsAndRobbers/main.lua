@@ -689,7 +689,13 @@ function handlers.sky(pid)
   if geoMode then return reply(pid, "Not available on BeamNG.Earth yet") end
   if current.state ~= "prep" and current.state ~= "ready" then return reply(pid, "You can only change the sky before GO") end
   if not sky.hasRandom(cfg) then return reply(pid, "Set time of day or weather to random first") end
-  current.sky = sky.pick(cfg, math.random, geoMode)
+  local before = current.sky or {}
+  local picked = sky.pick(cfg, math.random, geoMode)
+  for _ = 1, 10 do
+    if picked.time ~= before.time or picked.weather ~= before.weather then break end
+    picked = sky.pick(cfg, math.random, geoMode)
+  end
+  current.sky = picked
   local data = sky.payload(current.sky, cfg, nil)
   for p in pairs(current.players) do
     if not round.isAI(p) then send(p, "cnr_sky", data) end

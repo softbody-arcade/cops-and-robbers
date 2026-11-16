@@ -80,7 +80,9 @@ end)
 
 test("restore puts the earlier lock back", function()
   local sky, fake = load({ locked = true })
-  sky.apply(RAIN_NIGHT); sky.restore()
+  sky.apply(RAIN_NIGHT)
+  assertEq(#fake.setStates > 0, true)
+  sky.restore()
   assertEq(fake.locked, true)
   local sky2, fake2 = load()
   sky2.apply(RAIN_NIGHT); sky2.restore()
@@ -137,4 +139,31 @@ test("isNight follows the game's light state", function()
   assertEq(sky.isNight(), false)
   sky.apply(RAIN_NIGHT)
   assertEq(sky.isNight(), true)
+end)
+
+test("a failing apply still relocks and restore still works", function()
+  local sky, fake = load()
+  fake.state.cloudCover = 0.05
+  local make = _G.createObject
+  _G.createObject = function() error("boom") end
+  sky.apply(RAIN_NIGHT)
+  _G.createObject = make
+  assertEq(fake.locked, true)
+  sky.restore()
+  assertEq(fake.locked, false); assertEq(fake.state.cloudCover, 0.05)
+end)
+
+test("precipitation is not saved with the level", function()
+  local sky, fake = load()
+  sky.apply(RAIN_NIGHT)
+  assertEq(fake.objects.cnr_precipitation.canSave, false)
+end)
+
+test("the map's own rain is put back to its start value during a round", function()
+  local sky, fake = load()
+  fake.init.numOfDrops = 0; fake.state.numOfDrops = 500
+  sky.apply({ time = "noon", weather = "clear", windDir = 0, windSeed = 1 })
+  assertEq(fake.setStates[#fake.setStates].numOfDrops, 0)
+  sky.restore()
+  assertEq(fake.state.numOfDrops, 500)
 end)

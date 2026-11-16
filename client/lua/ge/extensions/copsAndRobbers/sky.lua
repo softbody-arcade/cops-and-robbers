@@ -29,6 +29,7 @@ local saved, wasLocked, round, clockStart
 local roundTime, started, sinceWind = 0, false, 0
 
 local function forget()
+  wind.reset()
   saved, wasLocked, round, clockStart = nil, false, nil, nil
   roundTime, started, sinceWind = 0, false, 0
 end
@@ -58,8 +59,14 @@ local function createPrecipitation(spec)
     { "boxWidth", 40 }, { "boxHeight", 20 }, { "useWind", 1 },
   }
   for _, field in ipairs(fields) do obj:setField(field[1], 0, tostring(field[2])) end
+  obj.canSave = false
   obj:registerObject(PRECIPITATION_NAME)
-  scenetree.MissionGroup:addObject(obj)
+  if scenetree.findObject(PRECIPITATION_NAME) then
+    scenetree.MissionGroup:addObject(obj)
+  else
+    obj:delete()
+    log("E", "cnr_sky", "precipitation object did not register")
+  end
 end
 
 local function roundState(env, p)
@@ -70,6 +77,7 @@ local function roundState(env, p)
   else
     state.time, state.dayLength = init.time, init.dayLength
   end
+  state.numOfDrops = init.numOfDrops
   local weather = M.WEATHER[p.weather] or init
   state.cloudCover, state.fogDensity, state.windSpeed = weather.cloudCover, weather.fogDensity, weather.windSpeed
   if windy(p) then
@@ -101,15 +109,18 @@ function M.apply(p)
   local state = roundState(env, p)
   round, clockStart = p, state.time
   env.enableChanges(true)
-  env.setState(state)
-  local weather = M.WEATHER[p.weather]
-  if weather and weather.temperatureC then
-    env.setTemperatureProfile({ averageC = weather.temperatureC })
-  end
-  removePrecipitation()
-  if weather and weather.precipitation then createPrecipitation(weather.precipitation) end
-  surfaces.apply(p.driving and p.weather or nil)
+  local ok, err = pcall(function()
+    env.setState(state)
+    local weather = M.WEATHER[p.weather]
+    if weather and weather.temperatureC then
+      env.setTemperatureProfile({ averageC = weather.temperatureC })
+    end
+    removePrecipitation()
+    if weather and weather.precipitation then createPrecipitation(weather.precipitation) end
+    surfaces.apply(p.driving and p.weather or nil)
+  end)
   env.enableChanges(false)
+  if not ok then log("E", "cnr_sky", tostring(err)) end
 end
 
 function M.startClock(clockSeconds)

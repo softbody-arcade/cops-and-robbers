@@ -204,6 +204,7 @@ local function onRoundSetup(data)
 end
 
 local function onSky(data)
+  if not active then return end
   local d = jsonDecode(data) or {}
   sky.apply(d)
   local label = sky.label(d)

@@ -861,6 +861,21 @@ test("New sky goes to the round's players before GO only", function()
   env.cleanup()
 end)
 
+test("New sky gives different conditions when it can", function()
+  local env = boot({ config = '{"weather":"random"}' })
+  env.startRound()
+  local previous = decodeJson(env.lastSent("cnr_roundSetup").data).sky.weather
+  math.randomseed(1)
+  for _ = 1, 5 do
+    env.sent = {}
+    env.panel(1, "sky")
+    local now = decodeJson(env.lastSent("cnr_sky").data).weather
+    assertEq(now ~= previous, true)
+    previous = now
+  end
+  env.cleanup()
+end)
+
 test("New sky needs a random setting", function()
   local env = boot()
   env.startRound()

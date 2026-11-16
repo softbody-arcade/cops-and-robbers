@@ -1442,6 +1442,16 @@ test("New sky updates the card and says so", function()
   env.tick(0.2)
   assertEq(env.hud().center.car, "Gavril Pickup · Noon · Snow")
   assertEq(env.sky.objects.cnr_precipitation:getField("dataBlock"), "Snow_menu")
+  local found = false
+  for _, n in ipairs(env.hud().notices) do if n.text == "New sky: Noon · Snow" then found = true end end
+  assertEq(found, true)
+end)
+
+test("a sky event with no round does nothing", function()
+  local env = bootClient()
+  env.fire("cnr_sky", { time = "noon", weather = "snow", windDir = 0, windSeed = 9 })
+  env.tick(0.2)
+  assertEq(env.sky.locked, false); assertEq(#env.sky.setStates, 0)
 end)
 
 test("the countdown starts the round clock", function()
@@ -1465,12 +1475,15 @@ test("the round end gives the player's sky back, a map change only forgets it", 
   local env = bootClient()
   local d = copy(SETUP); d.sky = { weather = "storm", driving = true, windDir = 0, windSeed = 7 }
   env.fire("cnr_roundSetup", d); env.tick(1)
+  assertEq(env.sky.locked, true)
   env.fire("cnr_roundEnd", { reason = "cancelled" })
   assertEq(env.sky.locked, false); assertEq(env.sky.state.cloudCover, 0.3)
   env.fire("cnr_roundSetup", d); env.tick(1)
   local n = #env.sky.setStates
+  assertEq(env.sky.locked, true)
   env.M.onClientEndMission()
   assertEq(#env.sky.setStates, n)
+  assertEq(env.sky.locked, false)
 end)
 
 test("practice AI cars turn their headlights on at night", function()
@@ -1482,6 +1495,32 @@ test("practice AI cars turn their headlights on at night", function()
   env.tick(3)
   local cmds = table.concat(env.spawned[1].veh.commands, "\n")
   assertEq(cmds:find("electrics.setLightsState(1)", 1, true) ~= nil, true)
+end)
+
+test("practice AI headlights go off after sunrise and a day practice never turns them on", function()
+  local env = bootClient()
+  local d = copy(SETUP); d.role = "runner"; d.runnerId = 1; d.inPlace = true
+  d.sky = { time = "night", windDir = 0, windSeed = 1 }
+  env.fire("cnr_roundSetup", d)
+  env.fire("cnr_setupAI", { model = "pickup", config = "vehicles/pickup/base.pc", runnerId = 1, ai = { { id = -1, role = "cop", index = 1, name = "AI cop 1" } } })
+  env.tick(3)
+  local cmds = table.concat(env.spawned[1].veh.commands, "\n")
+  assertEq(cmds:find("electrics.setLightsState(0)", 1, true), nil)
+  env.sky.state.time = 0
+  env.tick(3)
+  cmds = table.concat(env.spawned[1].veh.commands, "\n")
+  assertEq(cmds:find("electrics.setLightsState(0)", 1, true) ~= nil, true)
+end)
+
+test("a day practice never sends headlights", function()
+  local env = bootClient()
+  local d = copy(SETUP); d.role = "runner"; d.runnerId = 1; d.inPlace = true
+  d.sky = { time = "noon", windDir = 0, windSeed = 1 }
+  env.fire("cnr_roundSetup", d)
+  env.fire("cnr_setupAI", { model = "pickup", config = "vehicles/pickup/base.pc", runnerId = 1, ai = { { id = -1, role = "cop", index = 1, name = "AI cop 1" } } })
+  env.tick(3)
+  local cmds = table.concat(env.spawned[1].veh.commands, "\n")
+  assertEq(cmds:find("electrics.setLightsState(1)", 1, true), nil)
 end)
 
 test("leaderboard round rows get a sky label", function()

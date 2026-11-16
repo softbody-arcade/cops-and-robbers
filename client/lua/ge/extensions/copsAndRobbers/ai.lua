@@ -7,6 +7,7 @@ local M = {}
 local FREEZE_REASSERT = 0.5
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
 local HEADLIGHTS_ON = "electrics.setLightsState(1)"
+local HEADLIGHTS_OFF = "electrics.setLightsState(0)"
 local REPLACE_MIN, REPLACE_MAX = 80, 200
 
 local cars = {}
@@ -153,7 +154,13 @@ function M.lightsOn(headlights)
     local obj = car.gameId and getObjectByID(car.gameId)
     if obj then
       if car.role == "cop" then obj:queueLuaCommand(LIGHTS_ON) end
-      if headlights then obj:queueLuaCommand(HEADLIGHTS_ON) end
+      if headlights then
+        obj:queueLuaCommand(HEADLIGHTS_ON)
+        car.headlights = true
+      elseif car.headlights then
+        obj:queueLuaCommand(HEADLIGHTS_OFF)
+        car.headlights = nil
+      end
     end
   end
 end

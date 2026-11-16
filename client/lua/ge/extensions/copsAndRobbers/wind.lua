@@ -51,6 +51,10 @@ local function scheduleFor(weather, seed, cfg)
   return schedule
 end
 
+function M.reset()
+  cache = {}
+end
+
 function M.at(weather, seed, dirDeg, t)
   local cfg = M.WEATHER[weather]
   if not cfg then return 0, 0, 0 end

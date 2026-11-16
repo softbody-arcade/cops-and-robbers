@@ -137,7 +137,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Same for everyone:** everyone in a round gets the same time, weather, rain or snow, and wind, also a player who rejoins mid-round. The game's environment menu is locked during the round. Practice rounds get a sky too, and the AI cars switch their headlights on at night.
 - **New sky:** a button next to New car in prep, only while time or weather is random. It picks new values without re-placing the cars. New car keeps the sky; each new round picks again.
 - **Clock:** at clock speed 0 the clock is stopped. At a speed above 0 it stays stopped in prep and starts at GO, so the round starts in the time you saw. Speed 60 runs dusk into night in a few minutes.
-- **Grip:** with Weather affects driving, rain turns asphalt and gravel wet and dirt to wet gravel; grass loses a little grip. A storm also turns dirt into mud. Snow covers everything you drive on. These are the game's own surfaces, so tires matter: drag tires slide more on wet roads than road tires. Clear, cloudy and fog change no grip. Surfaces the mod doesn't know (a mod map's own) stay dry.
+- **Grip:** with Weather affects driving, rain turns asphalt and gravel wet and dirt to wet gravel; grass and rumble strips lose a little grip. A storm also turns dirt into mud. Snow covers everything you drive on. These are the game's own surfaces, so tires matter: drag tires slide more on wet roads than road tires. Clear, cloudy and fog change no grip. Surfaces the mod doesn't know (a mod map's own) stay dry.
 - **Wind:** rain and snow bring a light wind, a storm a strong one, all with gusts that come at the same moment for every player.
 - **Temperature:** follows the weather (cold in snow, so exhausts steam) and the map's day curve.
 - **After the round:** sky, grip, wind, temperature and the environment menu go back to what each player had, at the end, on cancel and on leaving. A map change drops it without applying anything.
@@ -242,7 +242,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | `includeModVehicles` | false | Also pick mod vehicles |
 | `timeOfDay` | map | `map` (the map's own), `sunrise`, `morning`, `noon`, `afternoon`, `sunset`, `night` or `random` |
 | `nightChancePercent` | 25 | Chance of night when Time of day is random |
-| `clockSpeed` | 0 | Speed of the sky clock during a round: 0 stopped, 1 real time, up to 120 |
+| `clockSpeed` | 0 | Speed of the sky clock during a round: 0 stopped, 1 real time, a whole number up to 120 |
 | `weather` | map | `map` (the map's own), `clear`, `cloudy`, `rain`, `storm`, `fog`, `snow` or `random` |
 | `badWeatherChancePercent` | 25 | Chance of rain, storm, fog or snow when Weather is random |
 | `weatherDriving` | true | Weather changes grip and adds wind (not on BeamNG.Earth) |
@@ -253,4 +253,4 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Mods panel:** the zip carries a title, description, version and icon (`mod_info`) for mod panels.
 - **Stuck controls:** Cancel always unlocks everyone, and so does a plugin restart.
 - **Bad files:** a broken `config.json` gives a warning and uses the defaults. A broken or malformed leaderboard is moved aside.
-- **Tests:** 525 automated tests cover the rules, the server wiring and the client, which runs against stubbed game functions in `tests/test_client.lua` (run with `make test`).
+- **Tests:** The automated tests cover the rules, the server wiring and the client, which runs against stubbed game functions in `tests/test_client.lua` (run with `make test`).

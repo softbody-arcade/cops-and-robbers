@@ -20,6 +20,7 @@ local TIMES = { sunrise = 0.775, morning = 0.825, noon = 0, afternoon = 0.175, s
 function fakeEnvironment(opts)
   opts = opts or {}
   _G.vec3 = _G.vec3 or v3
+  _G.log = _G.log or function() end
   local fake = {
     locked = opts.locked or false,
     setStates = {}, profiles = {}, modelSets = {}, queued = {}, groundWinds = {},
