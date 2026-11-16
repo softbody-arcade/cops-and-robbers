@@ -82,7 +82,8 @@ Who runs the traffic was decided separately: **every player runs a few** (picked
 - Traffic is what the game reports as traffic, within the cap. The server keeps that set per player for the round and forgets it at round end.
 - **Vehicle rule (`vehicleAllowed`) in a round with traffic on:** the round car rule is unchanged for the player's own car. Extra cars are allowed, any model, up to the cap. One beyond the cap is refused as today. With traffic off, today's rule applies unchanged.
 - **Edits of traffic cars** are always allowed (never return 1, which would delete them) and **skip `checkParts`**.
-- **Clean-up on `cnr_myVehicle`:** still removes every other car of the player, **except the player's traffic**. At round setup the traffic doesn't exist yet (see Lifecycle), so lobby leftovers still go; after a repaint or an Apply rebuild the traffic survives.
+- **Clean-up on `cnr_myVehicle`:** still removes every other car of the player, **except the player's traffic**. At round setup the traffic doesn't exist yet (see Lifecycle), so lobby leftovers still go; after a repaint or an Apply rebuild the traffic survives. (Settled in the plan: once the go-ahead is out, the clean-up no longer runs for that player, because lobby leftovers were removed before it and the vehicle rule caps extra cars at the traffic count, so every extra car is traffic, reported or not.)
+- **A missing round car never hands over to traffic:** if the player's own car is gone mid-round, the server tracks no car for them rather than falling back to another car of theirs.
 - Resets of traffic cars are ignored as today (`cnrOnVehicleReset` only looks at the player's own car).
 
 ### Crash penalties
@@ -101,7 +102,7 @@ Unchanged, and must stay player-only: catching needs a cop within the catch radi
 ### Name tags and the runner's car on every game
 - Every game hides BeamMP's name tag on **all traffic cars, its own and everyone else's**, so a name tag always means a player.
 - Every game must also know exactly which car is the runner's round car, so `runnerObject()` never picks a traffic car for sight. The fallback to "any car of the runner" goes.
-- For both, the server shares with all games which cars are round cars (or which are traffic) during a round. How is left to the builder.
+- For both, the server shares with all games which cars are round cars (or which are traffic) during a round. How is left to the builder. This includes a practice round: players in the lobby also see the practising player's traffic without name tags.
 
 ### Practice rounds
 Practice uses the same setting: the issuer's game spawns traffic (capped at `MaxCars − 3`), held still until GO, deleted when the practice ends. Starting a real round ends the practice as today, and its traffic goes with it.

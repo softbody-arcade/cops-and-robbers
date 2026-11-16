@@ -28,7 +28,7 @@
 - **Events:**
   - Server → one game: `cnr_trafficStart {count}`.
   - Game → server: `cnr_trafficCars {vids = [..]}`.
-  - Server → games: `cnr_roundCars {keys = ["1-0", "2-3"]}`. Sent to the issuer only in practice.
+  - Server → games: `cnr_roundCars {keys = ["1-0", "2-3"]}`. Sent to everyone, also in practice. An empty list goes to everyone at every round end.
 - **Exact copy:**
   - Notices: "Bob: crash penalty 10s (traffic)", "Traffic could not spawn", "Only 2 of 3 traffic cars spawned".
   - Panel notes: "5 each · 30 cars with 6 players", "5 each · 5 cars with 1 player", "MaxCars is 4 on this server: 3 per player", "MaxCars is 1 on this server: no room for traffic", "Traffic isn't available on BeamNG.Earth yet".
@@ -60,6 +60,7 @@
 - Create: `server/CopsAndRobbers/cnr/traffic.lua`
 - Modify: `server/CopsAndRobbers/cnr/rules.lua`
 - Modify: `tests/test_config.lua`
+- Modify: `tests/test_rules.lua` (it counts the keys: 13 becomes 14)
 - Create: `tests/test_traffic.lua`
 
 **Interfaces:**
@@ -193,14 +194,18 @@ test("traffic never holds the runner and never teleports", function()
   local r = running()
   local fx
   for i = 1, 40 do
-    fx = r:tick(11 + i * 0.25, { [1] = kmh(0, 0), [2] = kmh(900, 0), [3] = kmh(-900, 0) }, {}, parkedAt(i % 2 == 0 and 5 or 600))
+    local jumper = { pos = { x = i % 2 == 0 and 300 or 900, y = 0, z = 0 }, vel = { x = 0, y = 0, z = 0 }, traffic = true }
+    fx = r:tick(11 + i * 0.25, { [1] = kmh(0, 0), [2] = kmh(60, 0), [3] = kmh(500, 0) }, {}, { parkedAt(5)[1], jumper })
     assertEq(find(fx, "roundEnd"), nil)
     assertEq(find(fx, "broadcast"), nil)
   end
 end)
 ```
+The players stay within the teleport allowance of where `running()` left them (cop 2 moves from 5 to 60 m) and outside the catch radius. The parked traffic car would hold the runner after 7 s if it counted as a cop, and the jumping one would be announced as a teleport if it counted as a player.
 
-- [ ] **Step 2: Run `make test`.** Expected: the four new round tests and the crash test FAIL (`cause` is nil, or the fourth `tick` argument is ignored).
+The "no cause" test is a guard: it already passes before this task, and must still pass after it.
+
+- [ ] **Step 2: Run `make test`.** Expected: the crash test and the "labelled traffic" and "hit by traffic" round tests FAIL (`cause` is nil, or the fourth `tick` argument is ignored). The "no cause" and "never holds" tests may already pass; they are guards.
 - [ ] **Step 3: Implement** `atFault`'s second return value, `tick`'s fourth parameter, `prevTraffic`, `otherCars`, `cause` on the effect and on `note`.
 - [ ] **Step 4: Run `make test`.** Expected: all pass, including the existing crash and round tests.
 - [ ] **Step 5: Commit** `feat: traffic counts in the crash fault rule, traffic crashes are labelled`
@@ -223,13 +228,13 @@ end)
     - `local function trafficFor(pid)` returns `traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), geoMode, current.test and pid == current.issuerId)`.
   - **`openTraffic(pid)`:** when `trafficFor(pid) > 0` and `trafficOpen[pid] == nil`, it sets `trafficOpen[pid]` and sends `cnr_trafficStart {count}` to that pid.
   - **`cnrOnMyVehicle`:**
-    - The clean-up (`MP.RemoveVehicle` of the other cars) still runs, but only when `not current.test and not trafficOpen[pid]`.
-    - Then `openTraffic(pid)` runs. This also happens in practice, which returns early today: move that `return` below.
-    - Then `pushRoundCars()`.
-  - **`vehicleAllowed(pid, vid, data, isSpawn)`:** gains `vid`. After the "not in a round" check:
-    - The practice issuer with `trafficOpen[pid]` → allowed. BeamMP's own `MaxCars` still limits it.
-    - With `trafficOpen[pid]` and `vid ~= activeVid[pid]`: an edit → allowed. A spawn → allowed while the number of the player's cars other than `activeVid[pid]` is below `trafficOpen[pid]`.
-    - Otherwise the rule is unchanged.
+    - The clean-up (`MP.RemoveVehicle` of the other cars) still runs, but only when `not current.test and not trafficOpen[pid]`. Once the go-ahead is out it doesn't run for that player again. Lobby leftovers were already removed before the go-ahead, and the vehicle rule caps extra cars at the traffic count, so every extra car is traffic, reported or not (spec updated to say so).
+    - Then `openTraffic(pid)` and `pushRoundCars()` run. Both run in practice too, and also when `MP.GetPlayerVehicles(pid)` isn't a table: today's early `return`s for practice and for a non-table must move below them, or apply only to the clean-up.
+  - **`vehicleAllowed(pid, vid, data, isSpawn)`:** gains `vid`. After the "not in a round" check, only for a car that isn't the player's own (`trafficOpen[pid]` set and `vid ~= activeVid[pid]`):
+    - The practice issuer → allowed, whatever the spawn or edit. BeamMP's own `MaxCars` still limits it. Its AI cars, which are respawned in place on an evolving Apply, need this.
+    - Anyone else: an edit → allowed. A spawn → allowed while the number of the player's cars other than `activeVid[pid]` is below `trafficOpen[pid]`.
+    - The player's own car (`vid == activeVid[pid]`) always goes through today's rule, with `decoded` returned, so its model and parts checks stay on, in practice too.
+  - **`vidFor(pid)`:** with `trafficOpen[pid]` set, no fallback to `firstVid`. A missing `activeVid` gives nil, never a traffic car.
   - **`cnrOnVehicleSpawn` / `cnrOnVehicleEdited`:**
     - They only set `activeVid[pid] = vid` when `not trafficOpen[pid]`.
     - `checkParts` is skipped when `vid ~= activeVid[pid] and (current.test or trafficOpen[pid])`.
@@ -238,8 +243,8 @@ end)
     - It stores up to `trafficOpen[pid]` numeric vids, never `activeVid[pid]` and never an `aiVid` value.
   - **`pushRoundCars(pid)`:**
     - The keys are `"pid-vid"` from `activeVid` for every non-AI pid in `current.players`, sorted.
-    - With a `pid` argument it sends to that pid. Without one, it sends to `current.test and current.issuerId or -1`, and only when the list changed since the last send.
-    - The last-sent list resets with the round.
+    - With a `pid` argument it sends to that pid. Without one, it sends to everyone (−1), in practice too, so lobby players also hide the name tags on the practice traffic. It only sends when the list changed since the last send.
+    - The `roundEnd` effect sends `cnr_roundCars {keys = {}}` to everyone (also after a practice, whose `roundEnd` only reaches the issuer) and resets the last-sent list.
     - `cnrOnPlayerJoin` calls `pushRoundCars(pid)` during an active round. `cnrOnPlayerDisconnect` calls `pushRoundCars()`.
 - **Test harness** (`boot` in `tests/test_main.lua`):
   - `MP.Settings = { Map = 4, MaxCars = 2 }`.
@@ -268,13 +273,20 @@ end)
   - `"a repaint after the go-ahead removes no traffic"`:
     - After the go-ahead for pid 2, set `env.vehicles[2] = {[0]="x",[3]="t",[4]="t"}`.
     - Then `cnr_color` from pid 2 in prep, followed by `cnr_myVehicle {vid=0}` from pid 2, leaves `#env.removed == 0`.
-  - `"in practice the issuer may spawn traffic of any model"`:
+  - `"in practice the issuer may spawn traffic of any model, but its own car stays checked"`:
     - After `test runner`, the pick and `cnr_myVehicle {vid=0}`: `cnr_trafficStart` has `"count":3` (6 − 3).
     - A spawn of `etk800` with vid 5 returns 0.
-  - `"everyone learns the round cars"`:
+    - An edit of vid 0 to `etk800` returns 1, as today.
+    - Two edits of vid 0 with different `pickup` part lists, 4 s apart (past the placing quiet window), give one "changed parts" notice.
+  - `"everyone learns the round cars, and they're cleared at round end"`:
     - After `cnr_myVehicle {vid=0}` from pid 1 and `{vid=3}` from pid 2, the last `cnr_roundCars` has pid −1 and its data contains `"1-0"` and `"2-3"`.
+    - After `env.panel(1, "stop")`, the last `cnr_roundCars` has pid −1 and `"keys":[]`, or an empty object, since the test encoder writes an empty table as `{}`.
+    - In practice (`test runner`), the round cars also go to pid −1.
+  - `"a deleted round car never hands the player's checks to a traffic car"`:
+    - After the go-ahead for pid 2, with `env.vehicles[2] = {[0]="x",[3]="t"}`: `onVehicleDeleted(2, 0)`, then set `env.vehicles[2] = {[3]="t"}`.
+    - During one `cnr_tick`, a `MP.GetPositionRaw` wrapper records no call for pid 2 with vid 3.
   - `"a mid-round joiner gets the round cars and its own go-ahead"`:
-    - Set `env.names = {"Reinder","Bob","Kim"}` and extend `GetPlayers` for pid 3.
+    - Set `env.names = {"Reinder","Bob","Kim"}`, extend `GetPlayers` for pid 3, and set `env.vehicles[3] = {[0]="x"}`.
     - In the chase, `onPlayerJoin(3)` sends `cnr_roundCars` to pid 3.
     - After `cnr_myVehicle` from pid 3, `cnr_trafficStart` goes to pid 3.
 - [ ] **Step 2: Run `make test`.** Expected: the new tests FAIL (no `cnr_trafficStart`, spawns refused, `cnr_roundCars` missing).
@@ -352,7 +364,7 @@ end)
     - `{traffic = "without"}` gives b and c.
     - `{}` gives all three.
     - `#leaderboard.rounds(board, {traffic = "without"})` is 2, and `leaderboard.rounds(board, {traffic = "with"})[1].traffic` is 5.
-  - `tests/test_leaderboard.lua`, `"a timeline cause reaches the rounds list"`:
+  - `tests/test_leaderboard.lua`, `"a timeline cause reaches the rounds list"`. This is a guard: it passes today, because `rounds()` passes the timeline through, and it must keep passing.
     - A run with timeline `{{t=3, kind="penalty", name="Bob", seconds=10, cause="traffic"}}` gives `rounds(board)[1].timeline[1].cause == "traffic"`.
   - `tests/test_main.lua`, `"the board app can filter by traffic"`:
     - A filter message with `"traffic":"with"` gives `cnr_boardState` data containing `"traffic":"with"`.
@@ -391,14 +403,14 @@ end)
   - **`M.stop(clock)`:**
     - Only acts if `running`: calls `deleteVehicles()`, sets `running = false` and `cleanupUntil = clock + 15`.
     - Clears the `hideNametag` it set, and the round cars list.
-  - **`M.tick(clock, active) -> vids|nil`. Traffic cars** are the `getTrafficData()` entries with `isAi == true` whose object exists and `MPVehicleGE.isOwn(id)`.
+  - **`M.tick(clock) -> vids|nil`. Traffic cars** are the `getTrafficData()` entries with `isAi == true` whose object exists and `MPVehicleGE.isOwn(id)`.
     - While running and held: send `controller.setFreeze(1)` to each traffic car every 0.5 s.
     - While running, every 1 s: the sorted server vids (`game.serverVid`) of the traffic cars. Return them only when they differ from the last returned list.
     - At `startedAt + 15`, once: notify "Traffic could not spawn" (0 cars) or `string.format("Only %d of %d traffic cars spawned", n, count)` (fewer than `count`), with tone `"warn"`.
     - Not running and `clock < cleanupUntil`: if any traffic cars exist, `deleteVehicles()`.
-    - While `active`: hide BeamMP name tags. For every key in `MPVehicleGE.getVehicles()` whose owner pid (`^(%d+)%-`) has a round car and which is not a round car, set `v.hideNametag = true` and remember it.
+    - Whenever the round car list is not empty (not only while `active`, so lobby players hide the tags on someone's practice traffic too): hide BeamMP name tags. For every key in `MPVehicleGE.getVehicles()` whose owner pid (`^(%d+)%-`) has a round car and which is not a round car, set `v.hideNametag = true` and remember it.
   - **Round cars:**
-    - `M.setRoundCars(keys)` stores the set, and each owner's round car.
+    - `M.setRoundCars(keys)` stores the set, and each owner's round car. An empty list clears it, and also clears every `hideNametag` the module set.
     - `M.roundCar(pid) -> key|nil`.
     - `M.isTraffic(key) -> boolean`: the owner has a round car and the key isn't it.
 - Produces, `copsAndRobbers.lua`:
@@ -407,7 +419,7 @@ end)
   - `cnr_roundCars` → `traffic.setRoundCars(d.keys)`.
   - `onRunnerGo` → `traffic.release()`.
   - `endRound` → `traffic.stop(clock)`.
-  - `onUpdate`: `local vids = traffic.tick(clock, active)`. If any, `sendServer("cnr_trafficCars", { vids = vids })`.
+  - `onUpdate`: `local vids = traffic.tick(clock)`. If any, `sendServer("cnr_trafficCars", { vids = vids })`.
   - `onExtensionLoaded`: `traffic.setNotify` to a warn HUD event.
   - **`runnerObject()`:**
     1. The AI runner.
@@ -452,6 +464,10 @@ end)
     - `env.mpVehicles` has `"1-100"`, `"2-0"` and `"2-5"`, and `cnr_roundCars {keys={"1-100","2-0"}}` arrives.
     - After `env.tick(0.2)`: `env.mpVehicles["2-5"].hideNametag == true`, and `"2-0"`'s is nil.
     - After `cnr_roundEnd`, `"2-5"`'s is nil again.
+  - `"a lobby player hides the tags on someone's practice traffic until it ends"`:
+    - With no round setup, `env.mpVehicles` has `"2-0"` and `"2-5"`, and `cnr_roundCars {keys={"2-0"}}` arrives.
+    - After `env.tick(0.2)`: `"2-5"`'s `hideNametag == true`.
+    - After `cnr_roundCars {keys={}}` and `env.tick(0.2)`: it is nil.
   - **Replace** `"sight follows the car the runner is driving, not a parked one"` with `"sight follows the runner's round car, never one of his traffic cars"`:
     - With round cars `{"2-0"}`, the runner's `activeVehicleID = "2-1"` (a far traffic object 301 at y=900) still gives `seen == true`.
     - Then, with `traffic.setRoundCars({})` via `cnr_roundCars {keys={}}` and `activeVehicleID = "2-1"`, `seen == false`.
@@ -513,9 +529,9 @@ end)
 - Modify: `server/CopsAndRobbers/main.lua` (`VERSION`)
 - Modify: `client/lua/ge/extensions/copsAndRobbers.lua` (`CLIENT_VERSION`)
 - Modify: `client/mod_info/CopsAndRobbers/info.json`
-- Modify: the `"2.1.0"` strings in `tests/test_client.lua`
+- Modify: the `"2.1.0"` strings in `tests/test_client.lua`, and `tests/test_main.lua` (the "version is shown in the log and the mode event" test asserts "Cops and Robbers 2.1.0 loaded" and `"version":"2.1.0"`)
 
-- [ ] **Step 1: Version 2.2.0** in the three code places and the tests.
+- [ ] **Step 1: Version 2.2.0** in the three code places, both test files and the heading of `docs/FEATURES.md`. Check with `grep -rn '2\.1\.0' client server tests docs/FEATURES.md README.md`: no output.
 - [ ] **Step 2: README:**
   - The settings row: `trafficPerPlayer` | 5 | "AI traffic cars around each player (0 = off; normal maps only, not on BeamNG.Earth yet)".
   - The install line: `MaxCars` must be at least 1 + traffic per player (3 + traffic for practice).
