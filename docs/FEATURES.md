@@ -88,7 +88,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 
 - **Emergency lights:** cops drive with their emergency lights on, with no siren unless the cop turns it on in Settings (and the host allows Cop sirens). When the round car has none, the mod walks the car's actual part tree and fills every empty slot that accepts an emergency light: a light bar first, otherwise a beacon (Burnside, I-Series roof beacon, midtruck beacons). Lights are recognised by their wiring (light bar or beacon signals), so white off-road light bars on fog or high beam are never used, and parts for slots the car doesn't have are never picked. Checked against every stock vehicle config.
 - **Line of sight:** each cop's game checks 4 times a second whether it can see the runner: rays from eye height to the runner's car, blocked by terrain and buildings (not by other cars), up to `sightMaxMeters` (400 m), mirrors included.
-  - While any cop sees the runner, every cop gets the runner's position live (every second, every 3 s on BeamNG.Earth) "Runner 640 m NE · live".
+  - While any cop sees the runner, every cop gets the runner's position live (every second, every 3 s on BeamNG.Earth): "Runner 640 m NE · live".
   - A cop who sees the runner and is within their own speed × 5 s (at least 50 m) gets no route and reads "IN SIGHT". This is the Out of sight default: a cop's Route to the runner setting can keep the route while in sight (Always) or turn it off (Never).
   - When the runner stops being spotted (no cop has sight and the helicopter isn't tracking, after a 1.5 s grace), one "last seen" ping goes out at that spot: a route line on the road and minimap with "Runner seen 640 m NE", or on BeamNG.Earth a destination in its own GPS ("Runner last seen"). There are no other pings.
   - The client log notes each change ("runner in sight (120 m)"), handy to check what blocks sight on BeamNG.Earth.
@@ -107,7 +107,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Weather:** grounded for the whole round in storm, fog and snow, read from the round's sky when the cops are released. It never arrives then. Rain doesn't affect it.
 - **HUD:** everyone sees its state: "HELICOPTER IN 0:45", "HELICOPTER 1:20" (no time when refuel is 0), "HELICOPTER SEARCHING", "HELICOPTER REFUELLING 0:30" or "HELICOPTER GROUNDED (FOG)".
 - **Searchlight (night only):** while it tracks, at night, a searchlight hovers about 40 m above the runner's car and keeps its beam on the car with small corrections, as an operator would. The light casts shadows, so a bridge deck or tunnel roof blocks the beam. It goes out at once when the helicopter loses the runner and is back at once, at full brightness, when it finds them again. There is no minimap ring or icon.
-- **Hiding:** from the cops' release on, the runner's name tag and minimap marker show on the cops' games only while the runner is spotted (a cop has sight, or the helicopter is tracking). Prep and the countdown show the runner as before. With the sight range Off the runner is never hidden. On BeamNG.Earth the minimap is not hidden (the name tag still is).
+- **Hiding:** from the runner's release (the head start) on, the runner's name tag and minimap marker show on the cops' games only while the runner is spotted (a cop has sight, or the helicopter is tracking). Prep and the countdown show the runner as before. With the sight range Off the runner is never hidden. On BeamNG.Earth the minimap is not hidden (the name tag still is).
 - **Runs** record whether the helicopter flew (`helicopter`); the leaderboard has no filter for it.
 
 ## Players
@@ -258,7 +258,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | `crashPenaltySeconds` | 10 | Freeze for the cop at fault |
 | `helicopter` | true | Police helicopter that tracks the runner in the open |
 | `helicopterArrivalSeconds` | 60 | It arrives this long after the cops are released (0 = at release) |
-| `helicopterUpSeconds` | 120 | How long it flies before it refuels (at least 1) |
+| `helicopterUpSeconds` | 120 | How long it flies before it refuels (more than 0) |
 | `helicopterRefuelSeconds` | 90 | How long it is away refuelling (0 = stays up) |
 | `sightMaxMeters` | 400 | How far cops can see the runner (0 = sight off) |
 | `sightLiveIntervalSeconds` | 1 | Live runner position for all cops while one sees the runner (at least 3 s on BeamNG.Earth) |

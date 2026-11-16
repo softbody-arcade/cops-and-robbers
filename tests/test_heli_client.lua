@@ -358,3 +358,124 @@ test("a negative step changes nothing", function()
   heli.aimStep(aim, car, -0.5, 1.01, seeded(1))
   assertEq(aim.offset.x, ox); assertEq(aim.offset.y, oy); assertEq(aim.vel.x, vx)
 end)
+
+local function copyPos(p) return { x = p.x, y = p.y, z = p.z } end
+
+test("with no target a leftover light is looked for about once a second and deleted", function()
+  load()
+  local finds = 0
+  local find = scenetree.findObject
+  scenetree.findObject = function(name)
+    finds = finds + 1
+    return find(name)
+  end
+  for i = 1, 40 do heli.lightTick(state, nil, false, i * 0.05) end
+  assertEq(finds <= 2, true, tostring(finds))
+  createObject("SpotLight"):registerObject(LIGHT)
+  for i = 41, 70 do heli.lightTick(state, nil, false, i * 0.05) end
+  assertEq(fake.objects[LIGHT], nil)
+end)
+
+test("a refuel during the fly-in flies away from where the light is, without a jump", function()
+  load()
+  state.random = seeded(2)
+  night(0, "arriving")
+  night(1, "tracking")
+  local c = run(1, 3, 0.05)
+  local obj = fake.objects[LIGHT]
+  local prev = copyPos(obj.pos)
+  assertEq(dist3(prev, pos) > 100, true)
+  c = c + 0.05
+  night(c, "refuelling")
+  local worst = dist3(obj.pos, prev)
+  while fake.objects[LIGHT] do
+    prev = copyPos(obj.pos)
+    c = c + 0.05
+    heli.lightTick(state, target, true, c)
+    worst = math.max(worst, dist3(obj.pos, prev))
+  end
+  assertEq(worst < 10, true, tostring(worst))
+  assertEq(c <= 3.05 + heli.DEPART_SECONDS + 0.1, true)
+end)
+
+test("back from refuelling during the fly-away flies in from where the light is, brightening", function()
+  load()
+  state.random = seeded(4)
+  night(0, "tracking")
+  run(0, 2, 0.05)
+  night(2, "refuelling")
+  local c = run(2, 9, 0.05)
+  local obj = fake.objects[LIGHT]
+  local before, b0 = copyPos(obj.pos), tonumber(obj.fields.brightness)
+  assertEq(b0 < heli.BRIGHTNESS * 0.5, true)
+  c = c + 0.05
+  night(c, "tracking")
+  assertEq(fake.objects[LIGHT], obj)
+  assertEq(dist3(obj.pos, before) < 10, true, tostring(dist3(obj.pos, before)))
+  assertEq(tonumber(obj.fields.brightness) <= b0 + heli.BRIGHTNESS * 0.05, true, obj.fields.brightness)
+  run(c, c + heli.APPROACH_SECONDS + 0.5, 0.05)
+  assertEq(tonumber(obj.fields.brightness), heli.BRIGHTNESS)
+  assertEq(horiz(obj.pos, pos) <= heli.HOVER_DRIFT * math.sqrt(2) + 1e-6, true)
+end)
+
+test("going under cover during the fly-in cuts the light at once", function()
+  load()
+  night(0, "arriving")
+  night(1, "tracking")
+  run(1, 3, 0.05)
+  assertEq(fake.objects[LIGHT] ~= nil, true)
+  night(3.05, "searching")
+  assertEq(fake.objects[LIGHT], nil)
+end)
+
+test("a phase change while the target is missing for a moment is not lost", function()
+  load()
+  state.random = seeded(2)
+  night(0, "arriving")
+  heli.set(state, { phase = "tracking" }, 1)
+  heli.lightTick(state, nil, true, 1)
+  heli.lightTick(state, target, true, 1.05)
+  local obj = fake.objects[LIGHT]
+  assertEq(obj ~= nil, true)
+  assertEq(math.abs(horiz(obj.pos, pos) - heli.APPROACH_DISTANCE) < 15, true, tostring(horiz(obj.pos, pos)))
+end)
+
+test("a brightness error does not take the light down", function()
+  load()
+  state.random = seeded(4)
+  night(0, "tracking")
+  run(0, 1, 0.05)
+  local obj = fake.objects[LIGHT]
+  local set = obj.setField
+  obj.setField = function(self, name, i, v)
+    if name == "brightness" then error("bad field") end
+    return set(self, name, i, v)
+  end
+  night(1, "refuelling")
+  run(1, 4, 0.05)
+  assertEq(fake.objects[LIGHT], obj)
+  assertEq(state.failed, nil)
+  assertEq(dist3(obj.pos, pos) > 60, true)
+end)
+
+test("night coming back during the night-end fade fades in from where the light is", function()
+  load()
+  night(0, "tracking")
+  local c = run(0, 1, 0.05)
+  local obj = fake.objects[LIGHT]
+  for _ = 1, 15 do
+    c = c + 0.05
+    pos = vec3(pos.x + 1, pos.y, pos.z)
+    heli.lightTick(state, target, false, c)
+  end
+  local before, b0 = copyPos(obj.pos), tonumber(obj.fields.brightness)
+  assertEq(b0 > heli.BRIGHTNESS * 0.4 and b0 < heli.BRIGHTNESS * 0.6, true, tostring(b0))
+  c = c + 0.05
+  heli.lightTick(state, target, true, c)
+  assertEq(fake.objects[LIGHT], obj)
+  assertEq(tonumber(obj.fields.brightness) >= b0, true, obj.fields.brightness)
+  assertEq(dist3(obj.pos, before) < 3, true, tostring(dist3(obj.pos, before)))
+  run(c, c + heli.FADEIN_SECONDS + 0.1, 0.05)
+  assertEq(tonumber(obj.fields.brightness), heli.BRIGHTNESS)
+  assertEq(horiz(obj.pos, pos) <= heli.HOVER_DRIFT * math.sqrt(2) + 1e-6, true)
+end)

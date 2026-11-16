@@ -59,6 +59,7 @@ local lastFreezeAssert = 0
 local runnerId
 local runnerOut = false
 local runnerShown = true
+local hidingTarget
 local evolving = false
 local sightMax = 0
 local sightState = sight.new()
@@ -486,6 +487,7 @@ local function endRound(leaving)
   sky.restore(leaving)
   traffic.stop(clock)
   hiding.clear()
+  hidingTarget = nil
   runnerShown = true
   runnerOut = false
   local own = ownVehicle()
@@ -726,21 +728,25 @@ local function runnerObject()
   return usable(key)
 end
 
-local function updateHiding()
+local function updateHiding(obj)
   if not active or role ~= "cop" then return end
   if runnerShown then
     hiding.set(nil)
   else
-    local obj = runnerObject()
-    hiding.set({ vid = obj and obj:getID(), key = traffic.roundCar(runnerId), minimap = not geoMode })
+    local vid, key, minimap = obj and obj:getID(), traffic.roundCar(runnerId), not geoMode
+    local t = hidingTarget
+    if not t or t.vid ~= vid or t.key ~= key or t.minimap ~= minimap then
+      hidingTarget = { vid = vid, key = key, minimap = minimap }
+    end
+    hiding.set(hidingTarget)
   end
   hiding.tick(clock)
 end
 
-local function updateSight()
+local function updateSight(target)
   if role ~= "cop" or not statusActive or sightMax <= 0 or clock - lastSightCheck < SIGHT_CHECK_INTERVAL then return end
   lastSightCheck = clock
-  local veh, target = ownVehicle(), runnerObject()
+  local veh = ownVehicle()
   local seen, dist = false, nil
   if veh and target and castRayStatic then
     seen, dist = sight.visible(veh:getPosition(), target:getPosition(), target:getDirectionVector(), sightMax, castRayStatic)
@@ -757,7 +763,7 @@ local function castUp(pos, range)
   return castRayStatic(pos, vec3(0, 0, 1), range)
 end
 
-local function updateHeli()
+local function updateHeli(runnerObj)
   if runnerOut and castRayStatic then
     local car = role == "runner" and ownVehicle() or ai.runnerObject()
     if car then
@@ -766,10 +772,10 @@ local function updateHeli()
     end
   end
   if active then
-    local target = role == "runner" and ownVehicle() or runnerObject()
-    heli.lightTick(heliState, target, sky.isNight(), clock)
+    local target = role == "runner" and ownVehicle() or runnerObj
+    heli.lightTick(heliState, target, heli.wantsNight(heliState) and sky.isNight(), clock)
   else
-    heli.lightTick(heliState, nil, false)
+    heli.lightTick(heliState, nil, false, clock)
   end
 end
 
@@ -786,9 +792,10 @@ local function onUpdate(dtReal)
   updateOwnLights()
   updateLightSync()
   updateGeo()
-  updateSight()
-  updateHiding()
-  updateHeli()
+  local runnerObj = active and role == "cop" and runnerObject() or nil
+  updateSight(runnerObj)
+  updateHiding(runnerObj)
+  updateHeli(runnerObj)
   updateBuild()
   updateModes()
   if active then inputs.enforceEditLock() end

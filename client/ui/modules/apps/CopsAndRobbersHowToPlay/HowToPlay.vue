@@ -48,15 +48,19 @@
           <span v-if="!sightOff">
             <b>SPOTTED / HIDDEN:</b> whether any cop can see you, up to <span class="v">{{ dist("sightMaxMeters") }}</span> away.
             While you're spotted, every cop sees where you are.
+            <template v-if="heliOn">SPOTTED / HIDDEN is about cop sight only: while the helicopter tracks you, cops see you anyway
+              (your live position, the minimap and your name tag).</template>
           </span>
           <span v-else>
             <b>Sight is off:</b> cops can't see you from their cars. They see you on the minimap and by name tag all round.
           </span>
         </div>
         <div v-if="heliOn" class="li">
-          <BngIcon :type="icons.mapPoint" />
+          <BngIcon :type="icons.radar" />
           <span>
-            <b>Police helicopter:</b> it arrives <span class="v">{{ duration("helicopterArrivalSeconds") }}</span> after the cops are released
+            <b>Police helicopter:</b>
+            <template v-if="arrivalNow">it arrives as the cops are released</template>
+            <template v-else>it arrives <span class="v">{{ duration("helicopterArrivalSeconds") }}</span> after the cops are released</template>
             and flies for <span class="v">{{ duration("helicopterUpSeconds") }}</span>.
             <template v-if="refuelNever">Then it stays up.</template>
             <template v-else>Then it refuels for <span class="v">{{ duration("helicopterRefuelSeconds") }}</span>.</template>
@@ -68,7 +72,7 @@
         </div>
         <div v-if="!sightOff" class="li">
           <BngIcon :type="icons.eyeSolidClosed" />
-          <span><b>Hiding:</b> cops only see you on the minimap and by name tag while you're spotted.</span>
+          <span><b>Hiding:</b> cops only see you on the minimap and by name tag while you're spotted<template v-if="heliOn"> or the helicopter tracks you</template>.</span>
         </div>
         <div class="li">
           <BngIcon :type="icons.mapPoint" />
@@ -101,9 +105,11 @@
           </span>
         </div>
         <div v-if="heliOn" class="li">
-          <BngIcon :type="icons.mapPoint" />
+          <BngIcon :type="icons.radar" />
           <span>
-            <b>Police helicopter:</b> it arrives <span class="v">{{ duration("helicopterArrivalSeconds") }}</span> after you're released
+            <b>Police helicopter:</b>
+            <template v-if="arrivalNow">it arrives as you're released</template>
+            <template v-else>it arrives <span class="v">{{ duration("helicopterArrivalSeconds") }}</span> after you're released</template>
             and flies for <span class="v">{{ duration("helicopterUpSeconds") }}</span>.
             <template v-if="refuelNever">Then it stays up.</template>
             <template v-else>Then it refuels for <span class="v">{{ duration("helicopterRefuelSeconds") }}</span>.</template>
@@ -223,6 +229,7 @@ const noLimit = computed(() => r.value.noLimit !== false)
 const sightOff = computed(() => r.value.sightOff === true)
 const heliOn = computed(() => r.value.heliOn === true)
 const refuelNever = computed(() => r.value.refuelNever === true)
+const arrivalNow = computed(() => value("helicopterArrivalSeconds") === 0)
 const evolving = computed(() => r.value.carMode === "evolving")
 const trafficOn = computed(() => r.value.trafficOn === true)
 const imperial = computed(() => props.units === "imperial")

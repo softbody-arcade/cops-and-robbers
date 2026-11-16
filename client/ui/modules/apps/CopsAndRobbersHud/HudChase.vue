@@ -16,7 +16,7 @@
         <span>{{ status.tag }}</span>
       </span>
       <span v-if="status.heli" class="item">
-        <BngIcon :type="icons.mapPoint" />
+        <BngIcon :type="icons.radar" />
         <span>{{ status.heli.text }}</span>
         <span v-if="status.heli.time" class="mono">{{ status.heli.time }}</span>
       </span>

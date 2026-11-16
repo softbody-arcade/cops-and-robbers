@@ -8,6 +8,8 @@ Versions in use on 2026-11-15:
 - BeamMP Launcher 2.8.1
 - BeamNG.Earth mod API v1
 
+Checked against: the game-engine facts in this file were last checked on 2026-11-16 against BeamNG.drive 0.40.5.0, the BeamMP client mod 4.23.1 and BeamMP Server 3.9.3.
+
 ## After any update: the quick check (about 15 minutes)
 
 1. Run `make test` and `make vuecheck`. The tests show our own logic is intact, but the game APIs are stubbed, so they say nothing about the update itself. `vuecheck` compiles every Vue file (SCSS imports resolve against the installed game's UI sources), syntax-checks our `.js` files and checks that each icon name exists (see the UI section).
@@ -98,7 +100,7 @@ Then do the checks for whatever actually updated.
   - `createVehiclePaint`, `jsonReadFile`, `deepcopy`.
   - Configs in `format: 4` are skipped for cop lights.
 - **Hiding the runner on the minimap** (`hiding.lua`): we wrap the game's `ui_apps_minimap_vehicles.drawOtherVehicles` and, while it runs, swap the global `activeVehiclesIterator` for one that skips the runner's car, then restore it. The wrapper falls back to the original if anything is off and is unloaded before the extension. On update, check that those two names still exist and the minimap still lists other cars; if not, the runner shows on the minimap again.
-- **Helicopter searchlight** (`heli.lua`): a `SpotLight` scene object named `cnr_heli_light` (`createObject`, `registerObject`, position, direction, range, brightness), 40 m above the runner's car, only while the helicopter tracks and `core_environment`/`sky.isNight()` says night. It is deleted after the round, a cancel, leaving and a map change. On update, check the light still appears at night and no `cnr_heli_light` is left in the scene afterwards.
+- **Helicopter searchlight** (`heli.lua`): a `SpotLight` scene object named `cnr_heli_light` (`createObject`, `registerObject`, `canSave = false`, `scenetree.MissionGroup:addObject`, `scenetree.findObject`, `setPosition`, `delete`), with `brightness`, `range`, `innerAngle`, `outerAngle`, `color` and `castShadows` set when it is made. Each frame it sets `rotation` from `quatFromDir(dir, up)` turned with `toTorqueQuat()` and written as "x y z w", the way the game's flowgraph `spawnLight` node does, and it sets `brightness` while it flies in, flies away or fades. It hovers 40 m above the runner's car, only while the helicopter tracks and it is night. Night comes from the mod's own `sky.isNight()`, which reads `core_environment.getLightState().isNight`. The light is deleted after the round, a cancel, leaving and a map change. On update, check: the light still appears at night and points down at the car, a bridge deck or tunnel roof blocks the beam, and no `cnr_heli_light` is left in the scene afterwards.
 - **Placement and roads** (`roads.lua`):
   - `map.getMap().nodes[id].pos` and `map.findClosestRoad(pos, radius)` (two node ids).
   - `map.getGraphpath().graph[a][b].{oneWay,inNode,gated}`: every link from both ends. Its `len` is a routing cost (length divided by drivability, plus 10 km on gated roads), so lengths come from node positions.

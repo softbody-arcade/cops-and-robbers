@@ -92,7 +92,7 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `crashPenaltySeconds` | 10 | Freeze for the cop at fault |
 | `helicopter` | true | Police helicopter that tracks the runner in the open |
 | `helicopterArrivalSeconds` | 60 | It arrives this long after the cops are released (0 = at release) |
-| `helicopterUpSeconds` | 120 | How long it flies before it refuels (at least 1) |
+| `helicopterUpSeconds` | 120 | How long it flies before it refuels (more than 0) |
 | `helicopterRefuelSeconds` | 90 | How long it is away refuelling (0 = stays up) |
 | `sightMaxMeters` | 400 | How far cops can see the runner (0 = sight off) |
 | `sightLiveIntervalSeconds` | 1 | Live runner position for all cops while one sees the runner (at least 3 s on BeamNG.Earth) |

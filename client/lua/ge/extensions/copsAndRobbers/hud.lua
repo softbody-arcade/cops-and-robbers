@@ -148,7 +148,7 @@ function M.heliItem(heli, now)
   if not text then return nil end
   local time
   if HELI_TIMED[phase] and type(heli.endsAt) == "number" then
-    time = M.formatTime(math.max(0, heli.endsAt - now))
+    time = M.formatTime(math.max(0, math.ceil(heli.endsAt - now - 1e-9)))
   end
   return { text = text, time = time }
 end

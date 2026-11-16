@@ -865,6 +865,7 @@ test("no last seen when the helicopter loses the runner while a cop sees them", 
     if t % 5 == 0 then r:sightReport(t, 2, true) end
     local fx = r:tick(t, farCars(), {})
     assertEq(find(fx, "lastSeen"), nil)
+    assertEq(count(fx, "live"), 1)
     searching = searching or find(fx, "heli")
   end
   assertEq(searching.phase, "searching")
@@ -904,6 +905,40 @@ test("a bridge pass under 2 s keeps the helicopter on the runner, 2 s of cover l
   assertEq(seen, 1)
   assertEq(searching.phase, "searching")
   assertEq(hidden.shown, false)
+end)
+
+test("the helicopter alone: each loss sends one last seen and hides the runner, tracking again shows them", function()
+  local r = chasing({helicopterArrivalSeconds=0, helicopterUpSeconds=30, helicopterRefuelSeconds=20})
+  assertEq(find(r:tick(12, farCars(), {}), "live") ~= nil, true)
+  assertEq(r.shown, true)
+  r:coverReport(13, 1, true)
+  local seen, hidden = 0, nil
+  for t = 13, 16 do
+    local fx = r:tick(t, farCars(), {})
+    seen = seen + count(fx, "lastSeen")
+    hidden = hidden or find(fx, "runnerShown")
+  end
+  assertEq(seen, 1)
+  assertEq(hidden.shown, false)
+  r:coverReport(17, 1, false)
+  local fx = r:tick(17, farCars(), {})
+  assertEq(find(fx, "heli").phase, "tracking")
+  assertEq(find(fx, "live") ~= nil, true)
+  assertEq(find(fx, "runnerShown").shown, true)
+  assertEq(find(fx, "lastSeen"), nil)
+  for t = 18, 40 do assertEq(find(r:tick(t, farCars(), {}), "lastSeen"), nil) end
+  fx = r:tick(41, farCars(), {})
+  assertEq(find(fx, "heli").phase, "refuelling")
+  assertEq(count(fx, "lastSeen"), 1)
+  assertEq(find(fx, "runnerShown").shown, false)
+  for t = 42, 60 do
+    fx = r:tick(t, farCars(), {})
+    assertEq(find(fx, "lastSeen"), nil); assertEq(find(fx, "live"), nil); assertEq(find(fx, "runnerShown"), nil)
+  end
+  fx = r:tick(61, farCars(), {})
+  assertEq(find(fx, "heli").phase, "tracking")
+  assertEq(find(fx, "live") ~= nil, true)
+  assertEq(find(fx, "runnerShown").shown, true)
 end)
 
 test("the helicopter alone sends live updates to every cop with a route", function()

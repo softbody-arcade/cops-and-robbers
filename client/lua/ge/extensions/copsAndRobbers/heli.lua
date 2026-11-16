@@ -27,6 +27,7 @@ M.FADEIN_SECONDS = 1
 M.REFOUND_AIM_OFFSET = 8
 M.JUMP_METERS = 30
 M.MAX_STEP = 0.1
+M.LEFTOVER_INTERVAL = 1
 
 local FIELDS = {
   { "brightness", M.BRIGHTNESS }, { "range", 120 }, { "innerAngle", 8 }, { "outerAngle", 16 },
@@ -149,8 +150,16 @@ local function createLight(state)
   return true
 end
 
+local function applyBrightness(obj, value)
+  obj:setField("brightness", 0, value)
+end
+
 local function setBrightness(state, factor)
-  state.light:setField("brightness", 0, tostring(M.BRIGHTNESS * math.max(0, math.min(1, factor))))
+  pcall(applyBrightness, state.light, tostring(M.BRIGHTNESS * math.max(0, math.min(1, factor))))
+end
+
+local function offsetFrom(p, car)
+  return p and { x = p.x - car.x, y = p.y - car.y, z = p.z - car.z } or nil
 end
 
 local function randomDir(random)
@@ -176,9 +185,11 @@ local function startApproach(state, car, clock, random)
   if fresh or not fx.pos then
     local dx, dy = randomDir(random)
     fx.startOff = { x = dx * M.APPROACH_DISTANCE, y = dy * M.APPROACH_DISTANCE, z = M.APPROACH_HEIGHT }
+    fx.fromBright = 1
     offsetAim(state, M.AIM_SWEEP_OFFSET, random)
   else
-    fx.startOff = { x = fx.pos.x - car.x, y = fx.pos.y - car.y, z = fx.pos.z - car.z }
+    fx.startOff = offsetFrom(fx.pos, car)
+    fx.fromBright = fx.bright or 1
   end
   toMode(state, "approach", clock)
 end
@@ -190,13 +201,19 @@ local function startRefound(state, clock, random)
   state.fx.dirty = true
 end
 
-local function startFadeIn(state, clock)
+local function startFadeIn(state, car, clock)
+  local fx = state.fx
+  fx.startOff = offsetFrom(fx.pos, car)
+  fx.fromBright = fx.bright or 0
   toMode(state, "fadein", clock)
 end
 
-local function startDepart(state, clock, random)
+local function startDepart(state, car, clock, random)
   local dx, dy = randomDir(random)
-  state.fx.dir = { x = dx, y = dy }
+  local fx = state.fx
+  fx.dir = { x = dx, y = dy }
+  fx.startOff = offsetFrom(fx.pos, car)
+  fx.fromBright = fx.bright or 1
   toMode(state, "depart", clock)
 end
 
@@ -207,6 +224,13 @@ local function startFade(state, clock)
   toMode(state, "fade", clock)
 end
 
+local function glide(car, hover, s, e)
+  return vec3(
+    car.x + s.x + (hover.x - car.x - s.x) * e,
+    car.y + s.y + (hover.y - car.y - s.y) * e,
+    car.z + s.z + (hover.z - car.z - s.z) * e)
+end
+
 local function advance(state, car, clock)
   local fx = state.fx
   local hover = M.lightPose(car, clock)
@@ -214,12 +238,8 @@ local function advance(state, car, clock)
   local elapsed = clock - fx.t0
   if fx.mode == "approach" then
     local p = math.min(1, elapsed / M.APPROACH_SECONDS)
-    local e = 1 - (1 - p) ^ 2
-    local s = fx.startOff
-    light = vec3(
-      car.x + s.x + (hover.x - car.x - s.x) * e,
-      car.y + s.y + (hover.y - car.y - s.y) * e,
-      car.z + s.z + (hover.z - car.z - s.z) * e)
+    light = glide(car, hover, fx.startOff, 1 - (1 - p) ^ 2)
+    bright = fx.fromBright + (1 - fx.fromBright) * p
     if p >= 1 then
       fx.mode = "hover"
       fx.dirty = true
@@ -228,11 +248,12 @@ local function advance(state, car, clock)
     local p = math.min(1, elapsed / M.DEPART_SECONDS)
     local e = p * p
     local d = fx.dir
+    local s = fx.startOff or offsetFrom(hover, car)
     light = vec3(
-      hover.x + d.x * M.APPROACH_DISTANCE * e,
-      hover.y + d.y * M.APPROACH_DISTANCE * e,
-      hover.z + (M.APPROACH_HEIGHT - M.LIGHT_HEIGHT) * e)
-    bright = (M.DEPART_SECONDS - elapsed) / M.DEPART_FADE_SECONDS
+      car.x + s.x + d.x * M.APPROACH_DISTANCE * e,
+      car.y + s.y + d.y * M.APPROACH_DISTANCE * e,
+      car.z + s.z + (M.APPROACH_HEIGHT - s.z) * e)
+    bright = fx.fromBright * (M.DEPART_SECONDS - elapsed) / M.DEPART_FADE_SECONDS
     extra = { x = d.x * M.DEPART_AIM_DRIFT * e, y = d.y * M.DEPART_AIM_DRIFT * e }
     if p >= 1 then return false end
   elseif fx.mode == "fade" then
@@ -241,7 +262,8 @@ local function advance(state, car, clock)
     if elapsed >= M.FADE_SECONDS then return false end
   elseif fx.mode == "fadein" then
     local p = math.min(1, elapsed / M.FADEIN_SECONDS)
-    bright = p
+    if fx.startOff then light = glide(car, hover, fx.startOff, 1 - (1 - p) ^ 2) end
+    bright = fx.fromBright + (1 - fx.fromBright) * p
     if p >= 1 then
       fx.mode = "hover"
       fx.dirty = true
@@ -264,17 +286,25 @@ local function advance(state, car, clock)
   return true
 end
 
+local function leftover(state, clock)
+  if state.light then return true end
+  local at = state.leftoverAt
+  if at and clock >= at and clock - at < M.LEFTOVER_INTERVAL then return false end
+  state.leftoverAt = clock
+  return scenetree.findObject(M.LIGHT_NAME) ~= nil
+end
+
 local function tickLight(state, target, night, clock)
   local random = state.random or math.random
   if state.light and not scenetree.findObject(M.LIGHT_NAME) then
     state.light, state.aim, state.fx = nil, nil, nil
   end
-  local phase, last = state.phase, state.lightPhase
-  state.lightPhase = phase
   if not target then
-    if state.light or scenetree.findObject(M.LIGHT_NAME) then removeLight(state) end
+    if leftover(state, clock) then removeLight(state) end
     return
   end
+  local phase, last = state.phase, state.lightPhase
+  state.lightPhase = phase
   local car = target:getPosition()
   local desired = phase == "tracking" and night
   if phase ~= last then
@@ -286,7 +316,7 @@ local function tickLight(state, target, night, clock)
       end
     elseif state.light then
       if phase == "refuelling" and last == "tracking" and state.fx.mode ~= "fade" then
-        startDepart(state, clock, random)
+        startDepart(state, car, clock, random)
       elseif not (state.fx.mode == "depart" and phase == "refuelling") then
         removeLight(state)
       end
@@ -297,22 +327,27 @@ local function tickLight(state, target, night, clock)
     if not state.light then
       if not createLight(state) then error("no light") end
     elseif state.fx.mode == "fade" or state.fx.mode == "depart" then
-      startFadeIn(state, clock)
+      startFadeIn(state, car, clock)
     end
   end
   if state.light and not advance(state, car, clock) then removeLight(state) end
 end
 
 function M.lightTick(state, target, night, clock)
+  clock = clock or 0
   if state.failed then
-    if state.light or scenetree.findObject(M.LIGHT_NAME) then pcall(removeLight, state) end
+    if leftover(state, clock) then pcall(removeLight, state) end
     return
   end
-  local ok = pcall(tickLight, state, target, night, clock or 0)
+  local ok = pcall(tickLight, state, target, night, clock)
   if not ok then
     pcall(removeLight, state)
     state.failed = true
   end
+end
+
+function M.wantsNight(state)
+  return state.phase == "tracking" or state.light ~= nil
 end
 
 function M.clear(state)

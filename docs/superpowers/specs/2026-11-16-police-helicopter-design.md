@@ -130,7 +130,7 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
   | refuelling | `HELICOPTER REFUELLING 0:50` |
   | grounded | `HELICOPTER GROUNDED (FOG)` |
 
-- **Icon:** one from the game's set. The countdown is in the mono font.
+- **Icon:** the game's `radar` icon. The countdown is in the mono font.
 - **Off:** with the helicopter switched off there's no item.
 - **How to play:**
   - The cop and runner tabs drop the "last position every 30 s" lines.
@@ -198,7 +198,7 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
 ## In-game check
 1. **Arrival:** in a clear round, the HUD counts down "HELICOPTER IN", then "HELICOPTER 2:00". Cops get live routes while the runner drives in the open.
 2. **Cover:** drive into a tunnel. After 2 s you get "HELICOPTER SEARCHING", and cops get one last-seen route to the tunnel mouth. Come out, and it's tracking again at once. Drive under a bridge without stopping: it keeps tracking, and at night the deck blocks the beam.
-3. **Refuel:** after the time up, "HELICOPTER REFUELLING" counts down, and cops get nothing but their own sight.
+3. **Refuel:** after the time up, "HELICOPTER REFUELLING" counts down. If no cop sees the runner, cops get one last-seen route to where the runner was when it left; after that they have only their own sight until it is back.
 4. **Weather:** a fog round shows "HELICOPTER GROUNDED (FOG)" all round, and no pings arrive.
 5. **Hiding:** as a cop, the runner shows in prep and disappears from your minimap at the head start. After that they have no name tag and aren't on your minimap until you see them or the helicopter tracks them. With the sight range Off, they show all round.
 6. **Searchlight at night:** it follows the runner's car while tracking and is gone afterwards. Every player sees it.
@@ -219,5 +219,4 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
 ## Left to the builder
 - `SpotLight` field names and values, checked in game.
 - The panel group's step sizes.
-- The HUD icon.
 - Where the helicopter state lives in `round.lua`: a field holding a `helicopter` instance, ticked from `Round:tick`.

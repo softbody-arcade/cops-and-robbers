@@ -546,6 +546,8 @@ test("practice as runner sends no runnerShown", function()
   env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
   env.go()
   for _ = 1, 50 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  assertEq(env.lastSent("cnr_runnerGo").pid, 1)
+  assertEq(env.lastSent("cnr_release").pid, 1)
   assertEq(env.lastSent("cnr_runnerShown"), nil)
   env.cleanup()
 end)

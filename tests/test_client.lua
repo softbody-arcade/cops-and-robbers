@@ -38,7 +38,7 @@ test("helicopter events drive the status item", function()
   startCop(env)
   env.fire("cnr_release", {})
   env.tick(0.2)
-  env.fire("cnr_heli", { phase = "arriving", seconds = 61 })
+  env.fire("cnr_heli", { phase = "arriving", seconds = 60 })
   env.tick(0.1)
   assertEq(env.hud().status.heli.text, "HELICOPTER IN")
   assertEq(env.hud().status.heli.time, "1:00")
@@ -2650,6 +2650,23 @@ test("practice as a cop: the practising cop's game reports cover for the AI runn
   env.fire("cnr_runnerGo", { headStartSeconds = 7 })
   env.tick(0.5)
   assertEq(env.lastSent("cnr_cover").covered, true)
+end)
+
+test("the game asks whether it is night only while the helicopter tracks or a light is up", function()
+  local env = bootClient()
+  local d = copy(SETUP)
+  d.phase, d.sky, d.heli = "running", NIGHT, { phase = "arriving", seconds = 60 }
+  env.fire("cnr_roundSetup", d)
+  env.tick(1)
+  local asked = 0
+  local getLightState = core_environment.getLightState
+  core_environment.getLightState = function() asked = asked + 1; return getLightState() end
+  env.tick(3)
+  assertEq(asked < 10, true, tostring(asked))
+  local idle = asked
+  env.fire("cnr_heli", { phase = "tracking", seconds = 100 })
+  env.tick(3)
+  assertEq(asked - idle >= 30, true, tostring(asked - idle))
 end)
 
 local function hiddenRunnerTag()
