@@ -514,7 +514,7 @@ test("the runner gets cnr_nearestCop every 30 s", function()
 end)
 
 test("heli phases reach every player", function()
-  local env = boot({ config = '{"helicopterArrivalSeconds": 0}' })
+  local env = boot({ config = '{"helicopterArrivalSeconds": 0, "weather": "clear"}' })
   runToChase(env)
   local seen = {}
   for _, m in ipairs(env.sent) do if m.ev == "cnr_heli" then seen[m.pid] = decodeJson(m.data).phase end end
@@ -551,7 +551,7 @@ test("practice as runner sends no runnerShown", function()
 end)
 
 test("a rejoining cop gets runnerShown and heli in setup", function()
-  local env = boot({ config = '{"helicopterArrivalSeconds": 0}' })
+  local env = boot({ config = '{"helicopterArrivalSeconds": 0, "weather": "clear"}' })
   runToChase(env)
   env.call("onPlayerDisconnect", 2)
   env.sent = {}
@@ -564,7 +564,7 @@ test("a rejoining cop gets runnerShown and heli in setup", function()
 end)
 
 test("cnr_cover from the runner reaches the round", function()
-  local env = boot({ config = '{"helicopterArrivalSeconds": 0, "helicopterUpSeconds": 200}' })
+  local env = boot({ config = '{"helicopterArrivalSeconds": 0, "helicopterUpSeconds": 200, "weather": "clear"}' })
   runToChase(env)
   env.sent = {}
   env.call("cnr_cover", 1, '{"covered":true}')
