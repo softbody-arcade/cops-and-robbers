@@ -95,8 +95,10 @@ Then do the checks for whatever actually updated.
   - `createVehiclePaint`, `jsonReadFile`, `deepcopy`.
   - Configs in `format: 4` are skipped for cop lights.
 - **Placement and roads** (`roads.lua`):
-  - `map.getMap().nodes[id].{pos,links}` and `map.findClosestRoad(pos)` (two node ids).
+  - `map.getMap().nodes[id].pos` and `map.findClosestRoad(pos, radius)` (two node ids).
+  - `map.getGraphpath().graph[a][b].{oneWay,inNode,gated}`: every link from both ends. Its `len` is a routing cost (length divided by drivability, plus 10 km on gated roads), so lengths come from node positions.
   - `spawn.safeTeleport(veh, pos, rot)`, `vec3`, `quatFromDir`.
+  - On update, check: `getMap().nodes[].links` is still one-sided (`convertToSingleSided` in `lua/ge/map.lua`; we no longer read it), the graph fields above keep their names, and in game cops start a short drive from the runner, facing it.
 - **Inputs** (`inputs.lua`):
   - `core_input_actionFilter.getActionTemplates().competitive`, `setGroup` and `addAction`.
   - `core_input_bindings.bindings[].contents.bindings[].action`.

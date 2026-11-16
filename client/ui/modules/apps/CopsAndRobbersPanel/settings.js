@@ -61,9 +61,9 @@ export const GROUPS = [
   ] },
   { title: "Cops", items: [
     { key: "copSpawnMinMeters", label: "Start distance min", unit: "m", step: 10, min: 0,
-      help: "Cops start at least this far from the runner" },
+      help: "Cops start at least this far from the runner, by road" },
     { key: "copSpawnMaxMeters", label: "Start distance max", unit: "m", step: 10, min: 0,
-      help: "Cops start at most this far from the runner" },
+      help: "Cops start at most this far from the runner, by road" },
     { key: "sightMaxMeters", label: "Sight range", unit: "m", step: 50, min: 0, offAtZero: true,
       help: "How far cops can see the runner; off means no sight" },
     { key: "sightLiveIntervalSeconds", label: "Live position every", unit: "s", step: 1, min: 1,
