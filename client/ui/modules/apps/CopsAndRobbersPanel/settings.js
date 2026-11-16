@@ -78,6 +78,8 @@ export const GROUPS = [
       help: "No route for a cop who sees the runner this close" },
     { key: "assistMinSightPercent", label: "Assist needs sight", unit: "%", step: 5, min: 0, max: 100,
       help: "Share of the chase a cop needs the runner in sight for an assist" },
+    { key: "sirensAllowed", label: "Cop sirens", kind: "bool",
+      help: "Cops may turn a siren on in their settings; off keeps every cop silent" },
   ] },
   { title: "Cars", items: [
     { key: "includeModVehicles", label: "Include mod cars", kind: "bool",

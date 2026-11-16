@@ -100,6 +100,7 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `roundTimeLimitSeconds` | 0 | Runner escapes after this long (0 = no limit) |
 | `excludedModels` | citybus, us_semi, md_series, percheron, rockbouncer | Never picked |
 | `explodeOnCatch` | false | Runner's car explodes when caught |
+| `sirensAllowed` | true | Cops may use a siren (each cop turns it on in their settings) |
 | `includeModVehicles` | false | Also pick mod vehicles |
 | `autoNextRound` | false | Prepare the next round automatically (panel switch) |
 | `autoNextDelaySeconds` | 15 | Delay before the next round is prepared |

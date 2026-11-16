@@ -27,6 +27,7 @@ M.DEFAULTS = {
   sightNoRouteSeconds = 5,
   sightNoRouteMinMeters = 50,
   assistMinSightPercent = 20,
+  sirensAllowed = true,
   carMode = "random",
   timeOfDay = "random",
   nightChancePercent = 25,

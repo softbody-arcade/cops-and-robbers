@@ -4,6 +4,7 @@ M.KEYS = {
   "runnerCountdownSeconds", "headStartSeconds", "catchHoldSeconds", "catchRadiusMeters", "catchMaxSpeedKmh",
   "resetWaitSeconds", "copResetMinDistanceMeters", "crashSpeedLossKmh", "crashPenaltySeconds",
   "sightMaxMeters", "lastSeenIntervalSeconds", "roundTimeLimitSeconds", "carMode", "trafficPerPlayer",
+  "sirensAllowed",
 }
 
 function M.payload(cfg, trafficPerPlayer)

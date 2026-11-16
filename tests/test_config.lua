@@ -160,3 +160,12 @@ test("traffic per player defaults to 5 and must be a whole number of at least 0"
   assertEq(cfg.trafficPerPlayer, 5); assertEq(#warnings, 1)
   assertEq(config.merge({ trafficPerPlayer = -1 }).trafficPerPlayer, 5)
 end)
+
+test("sirensAllowed defaults to true and takes only booleans", function()
+  assertEq(config.merge({}).sirensAllowed, true)
+  assertEq(config.merge({ sirensAllowed = false }).sirensAllowed, false)
+  local cfg, warnings = config.merge({ sirensAllowed = "no" })
+  assertEq(cfg.sirensAllowed, true)
+  assertEq(#warnings, 1)
+  assertEq(warnings[1], "sirensAllowed must be true or false, using true")
+end)
