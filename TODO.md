@@ -11,6 +11,23 @@
 - [ ] Cop sight that follows visibility: the sight range is worked out from what the game knows (fog thickness, how dark it is, street lights near the runner, whether the runner's lights are on, rain). Comes after night and weather rounds
 
 ## Issues
+- [ ] Traffic late clean-up: traffic that finishes spawning more than 15 s after the round ends stays on the map, and AI traffic a player starts within those 15 s is deleted (`traffic.lua` `LATE_CLEANUP_SECONDS`). Check in game whether spawns ever finish that late
+- [ ] Cop spots next to a narrow median: the runner can be matched to the other carriageway, so cops are placed for that side (`roads.lua` uses `findClosestRoad`, not the runner's heading)
+- [ ] Cop spots on a road piece not connected to the rest: the straight-line fallback widens from 0 and ignores gates, so a cop can start right next to the runner or behind a gate (`roads.lua` `lineSpots`)
+- [ ] Panel refusals ("Stop the round first", "Only the runner can apply the change", "Not available from the panel") show as plain info, not as warnings: the server's replies carry no tone for them (`main.lua` `reply`, Panel `app.vue`)
+- [ ] Panel tabs forget their state when you switch tabs, because the game only renders the open tab: the Settings "more" fold, the Car tab's choice and the Map tab's stations. Decide which to keep in Panel `app.vue`
+- [ ] Colour picker: the lobby card and the prep line each have their own `HudColor`, so a hex typed in the lobby is lost when prep starts (Hud `app.vue`)
+- [ ] Chase line distances ("Runner 640 m NE") use the display font, not the mono font, because they arrive inside one text (`HudChase.vue` `info-text`; hud.lua would have to send the distance on its own)
+- [ ] Leaderboard Cops tab: cops with only assists get no row (`leaderboard.lua` `cops`). Showing them needs a sort and empty-state decision, since the tab ranks catches
+- [ ] Leaving the server removes every app the mod placed, also one the player removed and then added back themselves (`apps.lua` leave). Decide what counts as the mod's
+- [ ] How to play forgets its size and position when reopened (`apps.lua` resets its placement). Decide whether to remember it
+- [ ] `useFit` (`fit.js`) only shrinks text and never grows it in a large app. Decide whether it should
+- [ ] How to play in game: the Rules tab scales to about 0.86 at 26em, and it may cover the prep title on short screens. Check in game
+- [ ] Leaderboard: the gold badge gradient may be paler than the mockup (Leaderboard `app.vue`). Check in game
+- [ ] Leaderboard `PLAYERS_TAB` / `ROUNDS_TAB` depend on the tab order (Leaderboard `app.vue`)
+- [ ] HUD styles repeated across components: `.title`, `.tone-*` and `.mono` (HudCenter, HudResult, HudChase), `.hud-btn` and `.swatch` (HudLobby, HudPrep, HudColor) and the root container (Hud, Announcements and How to play `app.vue`). Move them into the shared kit; needs a visual check in game
+- [ ] App preview images (`tools/previews/*.svg`) are drawn approximations; replace them with in-game screenshots
+- [ ] README says "Everything is clickable with the mouse cursor shown" without saying how a player shows the cursor. Check the game's control and say it
 
 ## BeamNG.Earth
 - [ ] Traffic (after traffic on normal maps has been played and tuned). BeamNG.Earth's navgraph manages any running traffic itself: it moves cars that stand still 45 s (our traffic is held still through prep), hides all traffic after a teleport until the new road graph arrives (round setup moves cops far), the road graph arrives after the round car is placed (a moved cop's traffic finds no roads), and a region change sets traffic up again with the player's own amount and police choice. Traffic positions would also have to travel as latitude/longitude for the crash fault rule
