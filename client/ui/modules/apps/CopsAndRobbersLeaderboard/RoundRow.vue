@@ -41,6 +41,7 @@ const sub = computed(() => {
   if (props.allMaps && props.mapLabel) parts.push(props.mapLabel(r.map))
   parts.push(r.car || r.model || "")
   parts.push(r.skyLabel)
+  if (Number(r.traffic) > 0) parts.push("Traffic")
   if (step !== null) parts.push(`step ${step}`)
   return parts.filter(Boolean).join(" · ")
 })

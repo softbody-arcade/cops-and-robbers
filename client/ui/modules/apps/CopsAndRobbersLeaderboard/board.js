@@ -93,7 +93,8 @@ function eventText(e) {
     case "lost": return `${name} lost the cops`
     case "penalty": {
       const s = Number(e.seconds)
-      return Number.isFinite(s) ? `${name}: crash penalty ${Math.round(s)} s` : `${name}: crash penalty`
+      const cause = e.cause === "traffic" ? " (traffic)" : ""
+      return (Number.isFinite(s) ? `${name}: crash penalty ${Math.round(s)} s` : `${name}: crash penalty`) + cause
     }
     case "illegalReset": return `${name} reset illegally`
     case "teleport": return `${name} teleported`

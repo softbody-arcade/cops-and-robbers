@@ -184,6 +184,7 @@ local function helpBlock(open, rules)
     r.noLimit = not ((tonumber(rules.roundTimeLimitSeconds) or 0) > 0)
     r.sightOff = not ((tonumber(rules.sightMaxMeters) or 0) > 0)
     r.lastSeenOff = not ((tonumber(rules.lastSeenIntervalSeconds) or 0) > 0)
+    r.trafficOn = (tonumber(rules.trafficPerPlayer) or 0) > 0
     help.rules = r
   end
   return help

@@ -12,7 +12,7 @@ export const GROUPS = [
     { key: "autoNextDelaySeconds", label: "Next round delay", unit: "s", step: 5, min: 0,
       help: "With automatic rounds on, the wait before the next round" },
   ] },
-  { title: "Sky", sky: true, items: [
+  { title: "Sky", noEarth: true, items: [
     { key: "timeOfDay", label: "Time of day", kind: "choice", common: true,
       options: [["map", "Map default"], ["sunrise", "Sunrise"], ["morning", "Morning"], ["noon", "Noon"], ["afternoon", "Afternoon"], ["sunset", "Sunset"], ["night", "Night"], ["random", "Random"]],
       help: "The time the chase starts at; random follows the night chance" },
@@ -27,6 +27,10 @@ export const GROUPS = [
       help: "How often random weather is rain, storm, fog or snow" },
     { key: "weatherDriving", label: "Weather affects driving", kind: "bool",
       help: "Rain, storm and snow change grip and bring gusty wind" },
+  ] },
+  { title: "Traffic", noEarth: true, items: [
+    { key: "trafficPerPlayer", label: "Traffic", unit: "per player", step: 1, min: 0, common: true, offAtZero: true,
+      help: "AI traffic cars around each player during a round" },
   ] },
   { title: "Catching", items: [
     { key: "catchHoldSeconds", label: "Hold time", unit: "s", step: 1, min: 1, common: true,

@@ -313,3 +313,8 @@ test("the role card adds the round's sky to the car line", function()
   local info = { active = true, role = "cop", prep = { role = "cop", car = "Gavril D-Series", sky = "Night · Rain", waiting = "go" } }
   assertEq(hud.payload(s, 0, info).center.car, "Gavril D-Series · Night · Rain")
 end)
+
+test("How to play knows whether traffic is on", function()
+  assertEq(hud.payload(hud.new(), 0, { helpOpen = true, rules = rules({ trafficPerPlayer = 5 }) }).help.rules.trafficOn, true)
+  assertEq(hud.payload(hud.new(), 0, { helpOpen = true, rules = rules({ trafficPerPlayer = 0 }) }).help.rules.trafficOn, false)
+end)

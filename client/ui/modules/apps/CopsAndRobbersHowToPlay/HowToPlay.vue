@@ -6,6 +6,7 @@
           One player is the <b class="runner">runner</b>, everyone else is a <b class="cop">cop</b>. Everyone drives the same car.
           The runner's score is how long they survive.
         </p>
+        <p v-if="trafficOn">There's traffic: <span class="v">{{ value("trafficPerPlayer") }}</span> cars around each player.</p>
         <div class="flow">
           <div class="step">
             <div class="step-name"><BngIcon :type="icons.cogSolid" />Prep</div>
@@ -89,7 +90,7 @@
           <BngIcon class="warn" :type="icons.caution" />
           <span>
             <b>Crash penalty:</b> crash into someone hard (losing <span class="v">{{ kmh("crashSpeedLossKmh") }}</span> in half a second)
-            and you're frozen for <span class="v">{{ sec("crashPenaltySeconds") }}</span>. Getting hit doesn't count.
+            and you're frozen for <span class="v">{{ sec("crashPenaltySeconds") }}</span>. Getting hit doesn't count.<template v-if="trafficOn"> Driving into traffic counts too; being hit by it doesn't.</template>
           </span>
         </div>
         <div class="li">
@@ -191,6 +192,7 @@ const noLimit = computed(() => r.value.noLimit !== false)
 const sightOff = computed(() => r.value.sightOff === true)
 const lastSeenOff = computed(() => r.value.lastSeenOff === true)
 const evolving = computed(() => r.value.carMode === "evolving")
+const trafficOn = computed(() => r.value.trafficOn === true)
 
 function value(key) {
   const n = Number(r.value[key])

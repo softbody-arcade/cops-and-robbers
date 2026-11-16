@@ -11,6 +11,7 @@
               </template>
             </BngDropdown>
             <BngDropdown v-model="modeFilter" class="b-filter" :items="MODES" />
+            <BngDropdown v-model="trafficFilter" class="b-filter" :items="TRAFFIC" />
           </div>
         </template>
         <BoardRunners tab-heading="Runners" :runners="runners" :mine="state.mine" :all-maps="allMaps" :map-label="mapLabel" />
@@ -53,6 +54,11 @@ const MODES = [
   { value: "all", label: "All car modes" },
   { value: "random", label: "Random car" },
   { value: "evolving", label: "Evolving build" },
+]
+const TRAFFIC = [
+  { value: "all", label: "All traffic" },
+  { value: "with", label: "With traffic" },
+  { value: "without", label: "No traffic" },
 ]
 
 const { api } = useBridge()
@@ -102,20 +108,25 @@ const filterLabel = computed(() => (allMaps.value ? "All maps" : mapLabel(state.
 
 const mapFilter = computed({
   get: () => state.value.filter,
-  set: value => filter(value, state.value.mode),
+  set: value => filter(value, state.value.mode, state.value.traffic),
 })
 
 const modeFilter = computed({
   get: () => state.value.mode || "all",
-  set: value => filter(state.value.filter, value),
+  set: value => filter(state.value.filter, value, state.value.traffic),
+})
+
+const trafficFilter = computed({
+  get: () => state.value.traffic || "all",
+  set: value => filter(state.value.filter, state.value.mode, value),
 })
 
 function send(msg) {
   api.engineLua(`if copsAndRobbers then copsAndRobbers.board(${api.serializeToLua(msg)}) end`)
 }
 
-function filter(map, mode) {
-  send({ action: "filter", map, mode })
+function filter(map, mode, traffic) {
+  send({ action: "filter", map, mode, traffic })
 }
 
 function more() {
