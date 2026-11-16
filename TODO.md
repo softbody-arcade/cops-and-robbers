@@ -16,6 +16,7 @@ One entry per piece of work that has started: what it is, its branch (or "design
 - [ ] Leaderboard filter by conditions (All / Normal / Night / Bad weather), next to the car-mode filter, so storm records don't compete with clear-day runs unless wanted. Runs already record their conditions (night and weather rounds)
 - [ ] Sit out rounds: a player's own switch to stay out of rounds (a break, AFK, watching) instead of being pulled into every round as a cop. Needs round decisions: where the sitting-out player's car goes, whether they can watch, how the runner pick and automatic next round skip them
 - [ ] Runner preference: a player's own choice not to be picked as runner by Next (whoever has run least) and the automatic next round. The host can still pick them by name in the Round tab
+- [ ] Thunder and lightning in storm rounds: the game has no lightning object in this version and no thunder sound, so it would be our own: a brief sky flash (the game's sky brightness) and a thunder sound a second or more later, timed from the round's weather seed so every player gets the same strikes. Needs a thunder recording with a free licence (CC0) shipped in the mod. Research notes in `docs/superpowers/specs/2026-11-16-sky-transitions-design.md`
 - [ ] Cop sight that follows visibility: the sight range is worked out from what the game knows (fog thickness, how dark it is, street lights near the runner, whether the runner's lights are on, rain). Comes after night and weather rounds
 
 ## Issues
