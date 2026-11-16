@@ -257,3 +257,26 @@ test("rounds pass the run's conditions on", function()
   local list = leaderboard.rounds(b, nil, 10)
   assertEq(list[2].sky.weather, "snow"); assertEq(list[1].sky, nil)
 end)
+
+test("the traffic filter splits runs with and without traffic", function()
+  local b = leaderboard.load(nil)
+  local a = run("A", 300); a.traffic = 5
+  local plain = run("B", 200)
+  local zero = run("C", 100); zero.traffic = 0
+  leaderboard.add(b, a); leaderboard.add(b, plain); leaderboard.add(b, zero)
+  local with = leaderboard.runners(b, { traffic = "with" }, 10)
+  assertEq(#with, 1); assertEq(with[1].player, "A")
+  local without = leaderboard.runners(b, { traffic = "without" }, 10)
+  assertEq(#without, 2); assertEq(without[1].player, "B"); assertEq(without[2].player, "C")
+  assertEq(#leaderboard.runners(b, {}, 10), 3)
+  assertEq(#leaderboard.rounds(b, { traffic = "without" }), 2)
+  assertEq(leaderboard.rounds(b, { traffic = "with" })[1].traffic, 5)
+end)
+
+test("a timeline cause reaches the rounds list", function()
+  local b = leaderboard.load(nil)
+  local r = run("Bob", 60)
+  r.timeline = { { t = 3, kind = "penalty", name = "Bob", seconds = 10, cause = "traffic" } }
+  leaderboard.add(b, r)
+  assertEq(leaderboard.rounds(b)[1].timeline[1].cause, "traffic")
+end)

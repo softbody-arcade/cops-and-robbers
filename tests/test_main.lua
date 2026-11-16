@@ -2377,3 +2377,13 @@ test("reported traffic keeps out the player's own car and stops at the count", f
   assertEq(others, 5)
   env.cleanup()
 end)
+
+test("the board app can filter by traffic", function()
+  local env = boot()
+  env.call("cnr_board", 2, '{"action":"open"}')
+  env.call("cnr_board", 2, '{"action":"filter","map":"all","traffic":"with"}')
+  assertEq(env.lastSent("cnr_boardState").data:find('"traffic":"with"', 1, true) ~= nil, true)
+  env.call("cnr_board", 2, '{"action":"filter","map":"all"}')
+  assertEq(env.lastSent("cnr_boardState").data:find('"traffic":"all"', 1, true) ~= nil, true)
+  env.cleanup()
+end)

@@ -21,10 +21,13 @@ function M.validShape(decoded)
 end
 
 local function matches(r, filter)
-  local map, mode = filter, nil
-  if type(filter) == "table" then map, mode = filter.map, filter.mode end
+  local map, mode, traffic = filter, nil, nil
+  if type(filter) == "table" then map, mode, traffic = filter.map, filter.mode, filter.traffic end
   if map ~= nil and r.map ~= map then return false end
   if mode ~= nil and (r.mode or "random") ~= mode then return false end
+  local withTraffic = (tonumber(r.traffic) or 0) > 0
+  if traffic == "with" and not withTraffic then return false end
+  if traffic == "without" and withTraffic then return false end
   return true
 end
 
@@ -258,7 +261,7 @@ function M.rounds(board, filter, limit)
       id = id, endedAt = r.endedAt, map = r.map, player = r.player, survivedSeconds = r.survivedSeconds,
       endReason = r.endReason, catchers = r.catchers, model = r.model, mode = r.mode, buildStep = r.buildStep,
       timeline = type(r.timeline) == "table" and #r.timeline > 0 and r.timeline or nil, cops = cops,
-      tracked = type(r.timeline) == "table" or nil, sky = r.sky,
+      tracked = type(r.timeline) == "table" or nil, sky = r.sky, traffic = r.traffic,
     }
   end
   return list, #ids

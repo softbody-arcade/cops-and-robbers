@@ -450,6 +450,7 @@ local function boardState(sub, viewerKey)
   local f = {
     map = sub.map ~= "all" and sub.map or nil,
     mode = (sub.mode == "random" or sub.mode == "evolving") and sub.mode or nil,
+    traffic = (sub.traffic == "with" or sub.traffic == "without") and sub.traffic or nil,
   }
   local runners = leaderboard.runners(board, f, BOARD_TOP)
   local mine
@@ -474,7 +475,7 @@ local function boardState(sub, viewerKey)
   local limit = sub.rounds or ROUNDS_DEFAULT
   local rounds, total = leaderboard.rounds(board, f, limit)
   return {
-    map = mapName, maps = leaderboard.maps(board), filter = sub.map or mapName, mode = f.mode or "all",
+    map = mapName, maps = leaderboard.maps(board), filter = sub.map or mapName, mode = f.mode or "all", traffic = f.traffic or "all",
     runners = runners, cops = cops, players = players, mine = mine,
     rounds = rounds, moreRounds = (total > #rounds and limit < ROUNDS_MAX) or nil,
   }
@@ -1309,7 +1310,10 @@ function cnrOnBoard(pid, data)
   elseif msg.action == "open" or msg.action == "filter" then
     local sub = boardSubs[pid] or { map = mapName }
     if msg.action == "filter" then
-      sub = { map = type(msg.map) == "string" and msg.map or sub.map, mode = type(msg.mode) == "string" and msg.mode or nil, rounds = sub.rounds }
+      sub = {
+        map = type(msg.map) == "string" and msg.map or sub.map, mode = type(msg.mode) == "string" and msg.mode or nil,
+        traffic = type(msg.traffic) == "string" and msg.traffic or nil, rounds = sub.rounds,
+      }
     end
     boardSubs[pid] = sub
     sendBoard(pid)
