@@ -132,6 +132,27 @@ local function changeBlock(change, role)
   }
 end
 
+local HELI_TEXTS = {
+  arriving = "HELICOPTER IN", tracking = "HELICOPTER", searching = "HELICOPTER SEARCHING", refuelling = "HELICOPTER REFUELLING",
+}
+local HELI_TIMED = { arriving = true, tracking = true, refuelling = true }
+
+function M.heliItem(heli, now)
+  if type(heli) ~= "table" then return nil end
+  local phase = heli.phase
+  if phase == "grounded" then
+    local reason = type(heli.reason) == "string" and heli.reason ~= "" and (" (" .. heli.reason:upper() .. ")") or ""
+    return { text = "HELICOPTER GROUNDED" .. reason }
+  end
+  local text = HELI_TEXTS[phase]
+  if not text then return nil end
+  local time
+  if HELI_TIMED[phase] and type(heli.endsAt) == "number" then
+    time = M.formatTime(math.max(0, math.ceil(heli.endsAt - now - 1e-9)))
+  end
+  return { text = text, time = time }
+end
+
 local function statusBlock(info, now)
   local isRunner = info.role == "runner"
   local status
@@ -152,6 +173,7 @@ local function statusBlock(info, now)
     status.info = { before = p.before, dist = p.meters and units.distance(p.meters, info.units) or nil, after = p.after }
   end
   status.tag = info.infoTag
+  status.heli = M.heliItem(info.heli, now)
   return status
 end
 
@@ -188,7 +210,8 @@ local function helpBlock(open, rules, unit)
     for k, v in pairs(rules) do r[k] = v end
     r.noLimit = not ((tonumber(rules.roundTimeLimitSeconds) or 0) > 0)
     r.sightOff = not ((tonumber(rules.sightMaxMeters) or 0) > 0)
-    r.lastSeenOff = not ((tonumber(rules.lastSeenIntervalSeconds) or 0) > 0)
+    r.heliOn = rules.helicopter == true
+    r.refuelNever = (tonumber(rules.helicopterRefuelSeconds) or 0) <= 0
     r.trafficOn = (tonumber(rules.trafficPerPlayer) or 0) > 0
     help.rules = r
   end

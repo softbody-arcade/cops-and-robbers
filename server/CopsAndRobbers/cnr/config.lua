@@ -17,7 +17,10 @@ M.DEFAULTS = {
   crashSpeedLossKmh = 50,
   crashPenaltySeconds = 10,
   roundTimeLimitSeconds = 0,
-  lastSeenIntervalSeconds = 30,
+  helicopter = true,
+  helicopterArrivalSeconds = 60,
+  helicopterUpSeconds = 120,
+  helicopterRefuelSeconds = 90,
   excludedModels = { "citybus", "us_semi", "md_series", "percheron", "rockbouncer" },
   autoNextRound = false,
   autoNextDelaySeconds = 15,
@@ -48,7 +51,7 @@ M.CHOICES = {
 
 local strictlyPositive = {
   catchHoldSeconds = true, catchRadiusMeters = true, crashSpeedLossKmh = true,
-  catchMaxSpeedKmh = true, stillMaxSpeedKmh = true, sightLiveIntervalSeconds = true,
+  catchMaxSpeedKmh = true, stillMaxSpeedKmh = true, sightLiveIntervalSeconds = true, helicopterUpSeconds = true,
 }
 
 local function copyList(t)
@@ -68,7 +71,7 @@ local function validList(v)
   return true
 end
 
-local RETIRED_KEYS = { clockSpeed = true }
+local RETIRED_KEYS = { clockSpeed = true, lastSeenIntervalSeconds = true }
 local RETIRED_VALUES = { timeOfDay = "map", weather = "map" }
 local MAXIMA = { assistMinSightPercent = 100, nightChancePercent = 100, badWeatherChancePercent = 100, trafficPerPlayer = 20 }
 local WHOLE = { trafficPerPlayer = true }

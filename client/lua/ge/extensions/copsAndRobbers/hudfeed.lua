@@ -10,7 +10,7 @@ local RESULT_TITLES = { caught = "RUNNER CAUGHT", called = "ROUND ENDED", escape
 local FLASH_SECONDS, EVENT_SECONDS, RESET_FLASH_SECONDS, RESULT_SECONDS = 2, 4, 1.5, 10
 
 local state = hud.new()
-local flash, prep, resetFlashUntil, result, change, applying, releaseAt
+local flash, prep, resetFlashUntil, result, change, applying, releaseAt, heli
 local events = {}
 local visibleSent = false
 local lastPush = 0
@@ -41,7 +41,11 @@ end
 
 function M.clearRound()
   state = hud.new()
-  flash, prep, resetFlashUntil, change, applying, releaseAt = nil, nil, nil, nil, nil, nil
+  flash, prep, resetFlashUntil, change, applying, releaseAt, heli = nil, nil, nil, nil, nil, nil, nil
+end
+
+function M.heli(h)
+  heli = h
 end
 
 function M.queued(runner, changes, canApply)
@@ -192,7 +196,7 @@ local function push(clock, info)
     active = info.active, role = info.role, chaseStart = info.chaseStart,
     resetAllowed = info.resetAllowed, resetHint = info.resetHint, penalty = info.penalty, infoParts = info.infoParts, units = units.read(), infoTag = info.infoTag,
     timer = info.timer, flash = flash, prep = prep, events = events, resetFlashUntil = resetFlashUntil,
-    change = change, applying = applying, releaseAt = releaseAt,
+    change = change, applying = applying, releaseAt = releaseAt, heli = heli,
     result = result, rules = rules, lobby = lobby, color = color, settings = prefs, warnings = M.warnings(), apps = appsOpen, helpOpen = helpOpen,
   }))
 end

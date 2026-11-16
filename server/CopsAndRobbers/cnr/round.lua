@@ -4,6 +4,7 @@ local crash = require("cnr.crash")
 local vec = require("cnr.vec")
 local sight = require("cnr.sight")
 local sky = require("cnr.sky")
+local helicopter = require("cnr.helicopter")
 
 local M = {}
 local Round = {}
@@ -14,6 +15,7 @@ local APPLY_TIMEOUT_SECONDS = 20
 local SETUP_REPLY_TIMEOUT_SECONDS = 5
 local MAX_SIGHT_STEP = 1
 local SIGHT_RANGE_MARGIN = 50
+local NEAREST_COP_SECONDS = 30
 local COLOR_RUNNER = "#d83a2c"
 local COLOR_COPS = { "#1f6fe0", "#6fb0ff" }
 
@@ -73,12 +75,16 @@ function Round:clear()
   self.leftPlayers = {}
   self.teleportAnnounced = {}
   self.lastTickAt = nil
-  self.lastSeenAt = nil
   self.sight = sight.new()
   self.queued = nil
   self.inSight = false
   self.liveAt = nil
   self.sightTickAt = nil
+  self.heli = nil
+  self.runnerCovered = false
+  self.tracked = false
+  self.shown = true
+  self.nearestAt = nil
   self.hiddenSeconds = 0
   self.lostCount = 0
   self.timeline = {}
@@ -109,6 +115,8 @@ function Round:setupFor(now, pid)
   self.resetTrackers[pid]:grant(now, SETUP_GRACE_SECONDS)
   self.crashDetectors[pid] = crash.new(self.cfg)
   local e = { kind = "setup", pid = pid, role = role, copIndex = copIndex, phase = self.state }
+  e.runnerShown = self.shown
+  e.heli = self.heli and helicopter.status(self.heli, now) or nil
   if self.state == "countdown" then
     e.countdownRemaining = math.max(0, self.countdownStartedAt + self.cfg.runnerCountdownSeconds - now)
   elseif self.state == "headstart" then
@@ -147,6 +155,7 @@ function Round:finish(now, reason)
       mode = self.evolving and "evolving" or "random", buildStep = self.buildStep, buildName = self.buildName,
       sky = sky.record(self.sky, self.cfg),
       traffic = (self.traffic or 0) > 0 and self.traffic or nil,
+      helicopter = self.heli and helicopter.flew(self.heli) or nil,
     } }
     local run = fx[#fx].run
     for _, pid in ipairs(self:copPids()) do
@@ -307,6 +316,7 @@ end
 
 function Round:tick(now, cars, stations, traffic)
   local fx = {}
+  local heliNew = false
   if self.state == "picking" then
     if now - self.pickStartedAt >= PICK_TIMEOUT_SECONDS then
       return self:cancel(now, "Vehicle pick timed out")
@@ -331,8 +341,12 @@ function Round:tick(now, cars, stations, traffic)
   if self.state == "headstart" and now - self.startedAt >= self.cfg.headStartSeconds then
     self.state = "running"
     self.releasedAt = now
-    self.lastSeenAt = now
+    self.nearestAt = now
     fx[#fx + 1] = { kind = "release" }
+    if self.cfg.helicopter then
+      self.heli = helicopter.new(self.cfg, self.sky and self.sky.weather, now)
+      heliNew = true
+    end
   end
 
   local runnerCar = cars[self.runnerId]
@@ -364,16 +378,18 @@ function Round:tick(now, cars, stations, traffic)
     end
     progress, caught = self.catchTracker:update(now, runnerCar, cops)
     if caught then self.catchers = self:copsNear(runnerCar, cars) end
-    if not caught and runnerCar then self:sightTick(now, cars, runnerCar, fx) end
-    local interval = self.cfg.lastSeenIntervalSeconds
-    if not caught and interval > 0 and runnerCar and now - self.lastSeenAt >= interval - 1e-9 then
-      self.lastSeenAt = now
-      local nearest
-      for _, car in ipairs(cops) do
-        local d = vec.dist(runnerCar.pos, car.pos)
-        if not nearest or d < nearest then nearest = d end
+    if self.heli and not caught and (helicopter.update(self.heli, now, self.runnerCovered) or heliNew) then
+      local s = helicopter.status(self.heli, now)
+      fx[#fx + 1] = { kind = "heli", phase = s.phase, seconds = s.seconds, reason = s.reason }
+    end
+    if not caught and runnerCar then
+      local nearest = self:nearestCop(cars, runnerCar)
+      local seeing = self:sightTick(now, cars, runnerCar, fx)
+      self:trackTick(now, cars, runnerCar, seeing, nearest, fx)
+      if nearest and now - self.nearestAt >= NEAREST_COP_SECONDS - 1e-9 then
+        self.nearestAt = now
+        fx[#fx + 1] = { kind = "nearestCop", dist = nearest }
       end
-      fx[#fx + 1] = { kind = "lastSeen", pos = runnerCar.pos, geo = runnerCar.geo, nearestCop = nearest }
     end
   end
 
@@ -412,6 +428,11 @@ function Round:tick(now, cars, stations, traffic)
   self.lastTickAt = now
   self.prevCars = cars
   self.prevTraffic = traffic
+  local shown = self.cfg.sightMaxMeters <= 0 or (self.state ~= "headstart" and self.state ~= "running") or self.tracked
+  if shown ~= self.shown then
+    self.shown = shown
+    fx[#fx + 1] = { kind = "runnerShown", shown = shown }
+  end
   local limit = self.cfg.roundTimeLimitSeconds
   if caught then
     for _, e in ipairs(self:finish(now, "caught")) do fx[#fx + 1] = e end
@@ -478,19 +499,28 @@ function Round:copPids()
   return pids
 end
 
+function Round:nearestCop(cars, runnerCar)
+  local nearest
+  for _, pid in ipairs(self:copPids()) do
+    local car = cars[pid]
+    if car and car.pos and not self.penalties[pid] then
+      local d = vec.dist(runnerCar.pos, car.pos)
+      if not nearest or d < nearest then nearest = d end
+    end
+  end
+  return nearest
+end
+
 function Round:sightTick(now, cars, runnerCar, fx)
   local cfg = self.cfg
-  if cfg.sightMaxMeters <= 0 then return end
-  local cops = self:copPids()
+  local seeing = {}
+  if cfg.sightMaxMeters <= 0 then return seeing end
   local dt = self.sightTickAt and math.min(MAX_SIGHT_STEP, math.max(0, now - self.sightTickAt)) or 0
   self.sightTickAt = now
-  local nearest
-  local seeing = {}
   local inSight = false
-  for _, pid in ipairs(cops) do
+  for _, pid in ipairs(self:copPids()) do
     local car = cars[pid]
     local d = car and car.pos and vec.dist(runnerCar.pos, car.pos)
-    if d and not self.penalties[pid] and (not nearest or d < nearest) then nearest = d end
     if d and d <= cfg.sightMaxMeters + SIGHT_RANGE_MARGIN and sight.sees(self.sight, pid, now, cfg.sightGraceSeconds) then
       seeing[pid] = true
       inSight = true
@@ -498,16 +528,27 @@ function Round:sightTick(now, cars, runnerCar, fx)
     end
   end
   if not inSight then self.hiddenSeconds = self.hiddenSeconds + dt end
-  if inSight then
-    if not self.inSight then
-      self.inSight = true
-      fx[#fx + 1] = { kind = "spotted", spotted = true }
-    end
-    self.lastSeenAt = now
+  if inSight and not self.inSight then
+    self.inSight = true
+    fx[#fx + 1] = { kind = "spotted", spotted = true }
+  elseif not inSight and self.inSight then
+    self.inSight = false
+    self.lostCount = self.lostCount + 1
+    self:note(now, "lost", self:runnerName())
+    fx[#fx + 1] = { kind = "spotted", spotted = false }
+  end
+  return seeing
+end
+
+function Round:trackTick(now, cars, runnerCar, seeing, nearest, fx)
+  local cfg = self.cfg
+  local tracked = self.inSight or (self.heli ~= nil and helicopter.tracking(self.heli))
+  if tracked then
+    self.tracked = true
     if self.liveAt and now - self.liveAt < cfg.sightLiveIntervalSeconds - 1e-9 then return end
     self.liveAt = now
     local noRoute = {}
-    for _, pid in ipairs(cops) do
+    for _, pid in ipairs(self:copPids()) do
       local car = cars[pid]
       if car and car.pos and car.vel and seeing[pid] then
         local limit = sight.noRouteDistance(vec.speedKmh(car.vel) / 3.6, cfg.sightNoRouteSeconds, cfg.sightNoRouteMinMeters)
@@ -515,15 +556,19 @@ function Round:sightTick(now, cars, runnerCar, fx)
       end
     end
     fx[#fx + 1] = { kind = "live", pos = runnerCar.pos, geo = runnerCar.geo, noRoute = noRoute, nearestCop = nearest }
-  elseif self.inSight then
-    self.inSight = false
-    self.lostCount = self.lostCount + 1
-    self:note(now, "lost", self:runnerName())
+  elseif self.tracked then
+    self.tracked = false
     self.liveAt = nil
-    self.lastSeenAt = now
-    fx[#fx + 1] = { kind = "spotted", spotted = false }
     fx[#fx + 1] = { kind = "lastSeen", pos = runnerCar.pos, geo = runnerCar.geo, nearestCop = nearest }
   end
+end
+
+function Round:coverReport(now, pid, covered)
+  if self.state ~= "headstart" and self.state ~= "running" then return end
+  local owner = self.runnerId
+  if M.isAI(owner) and self.test then owner = self.issuerId end
+  if M.isAI(owner) or pid ~= owner then return end
+  self.runnerCovered = covered == true
 end
 
 function Round:playerLeft(now, pid)

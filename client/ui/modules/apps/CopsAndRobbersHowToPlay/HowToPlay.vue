@@ -48,14 +48,37 @@
           <span v-if="!sightOff">
             <b>SPOTTED / HIDDEN:</b> whether any cop can see you, up to <span class="v">{{ dist("sightMaxMeters") }}</span> away.
             While you're spotted, every cop sees where you are.
-            <template v-if="!lastSeenOff">Otherwise they get your last position every <span class="v">{{ sec("lastSeenIntervalSeconds") }}</span>.</template>
+            <template v-if="heliOn">SPOTTED / HIDDEN is about cop sight only: while the helicopter tracks you, cops see you anyway
+              (your live position, the minimap and your name tag).</template>
           </span>
           <span v-else>
-            <b>Sight is off:</b> cops can't see where you are live.
-            <template v-if="!lastSeenOff">They get your last position every <span class="v">{{ sec("lastSeenIntervalSeconds") }}</span>.</template>
+            <b>Sight is off:</b> cops can't see you from their cars. They see you on the minimap and by name tag all round.
           </span>
         </div>
-        <div v-if="!sightOff || !lastSeenOff" class="li">
+        <div v-if="heliOn" class="li">
+          <BngIcon :type="icons.radar" />
+          <span>
+            <b>Police helicopter:</b>
+            <template v-if="arrivalNow">it arrives as the cops are released</template>
+            <template v-else>it arrives <span class="v">{{ duration("helicopterArrivalSeconds") }}</span> after the cops are released</template>
+            and flies for <span class="v">{{ duration("helicopterUpSeconds") }}</span>.
+            <template v-if="refuelNever">Then it stays up.</template>
+            <template v-else>Then it refuels for <span class="v">{{ duration("helicopterRefuelSeconds") }}</span>.</template>
+            It tracks you in the open. It loses you after 2 s under cover: tunnels, garages, or stopping under a bridge;
+            driving under a bridge doesn't. The moment you're back in the open, the cops know where you are again.
+            It stays grounded in storm, fog and snow.
+            <template v-if="sightOff">While it tracks you, cops see you live.</template>
+          </span>
+        </div>
+        <div v-if="!sightOff" class="li">
+          <BngIcon :type="icons.eyeSolidClosed" />
+          <span><b>Hiding:</b> cops only see you on the minimap and by name tag while you're spotted<template v-if="heliOn"> or the helicopter tracks you</template>.</span>
+        </div>
+        <div class="li">
+          <BngIcon :type="icons.eyeSolidClosed" />
+          <span><b>No cop radar:</b> you never see the cops on the minimap or by name tag. The Nearest cop distance is all you get.</span>
+        </div>
+        <div class="li">
           <BngIcon :type="icons.mapPoint" />
           <span><b>Nearest cop:</b> the HUD shows how far away the closest cop is.</span>
         </div>
@@ -79,11 +102,28 @@
           <BngIcon :type="sightOff ? icons.eyeSolidClosed : icons.eyeSolidOpened" />
           <span v-if="!sightOff">
             <b>Sight:</b> while any cop can see the runner (up to <span class="v">{{ dist("sightMaxMeters") }}</span>), every cop sees
-            where the runner is.
-            <template v-if="!lastSeenOff">Otherwise you get the runner's last position every <span class="v">{{ sec("lastSeenIntervalSeconds") }}</span>.</template>
+            where the runner is. Otherwise the runner is hidden on the minimap and by name tag.
           </span>
           <span v-else>
-            <b>Sight is off.</b> <template v-if="!lastSeenOff">You get the runner's last position every <span class="v">{{ sec("lastSeenIntervalSeconds") }}</span>.</template>
+            <b>Sight is off:</b> you see the runner on the minimap all round.
+          </span>
+        </div>
+        <div class="li">
+          <BngIcon :type="icons.eyeSolidClosed" />
+          <span><b>Cops stay hidden:</b> the runner never sees you on the minimap or by name tag.</span>
+        </div>
+        <div v-if="heliOn" class="li">
+          <BngIcon :type="icons.radar" />
+          <span>
+            <b>Police helicopter:</b>
+            <template v-if="arrivalNow">it arrives as you're released</template>
+            <template v-else>it arrives <span class="v">{{ duration("helicopterArrivalSeconds") }}</span> after you're released</template>
+            and flies for <span class="v">{{ duration("helicopterUpSeconds") }}</span>.
+            <template v-if="refuelNever">Then it stays up.</template>
+            <template v-else>Then it refuels for <span class="v">{{ duration("helicopterRefuelSeconds") }}</span>.</template>
+            While it tracks the runner in the open, every cop sees where they are. It loses them after 2 s under cover
+            (tunnels, garages, or stopping under a bridge) and finds them again the moment they're back in the open.
+            It stays grounded in storm, fog and snow.
           </span>
         </div>
         <div class="li">
@@ -195,7 +235,9 @@ const tab = ref(0)
 const r = computed(() => props.rules || {})
 const noLimit = computed(() => r.value.noLimit !== false)
 const sightOff = computed(() => r.value.sightOff === true)
-const lastSeenOff = computed(() => r.value.lastSeenOff === true)
+const heliOn = computed(() => r.value.heliOn === true)
+const refuelNever = computed(() => r.value.refuelNever === true)
+const arrivalNow = computed(() => value("helicopterArrivalSeconds") === 0)
 const evolving = computed(() => r.value.carMode === "evolving")
 const trafficOn = computed(() => r.value.trafficOn === true)
 const imperial = computed(() => props.units === "imperial")

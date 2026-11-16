@@ -110,6 +110,7 @@ function fakeEnvironment(opts)
     function obj:stop() self.playing = false end
     function obj:setVolumePitchCT(v) self.volume = v end
     function obj:setTransform() end
+    function obj:setPosition(p) self.pos = { x = p.x, y = p.y, z = p.z } end
     function obj:registerObject(name) self.name = name; fake.objects[name] = self end
     function obj:delete()
       if self.name then

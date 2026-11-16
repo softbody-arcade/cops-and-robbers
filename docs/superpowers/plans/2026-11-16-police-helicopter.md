@@ -1,5 +1,7 @@
 # Police Helicopter Implementation Plan
 
+> **Superseded in places:** in-game testing changed the searchlight (hover, operator movement, fly-in and fly-away), re-acquiring after cover (instant; rain no longer slows it), short cover (the helicopter loses the runner only after 2 s under a roof) and dropped the minimap ring. The spec is current; this plan records what was first built.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the periodic 30 s last-seen ping with a police helicopter that tracks the runner in the open, and hide the runner from the cops' minimap and name tags unless spotted.
@@ -7,7 +9,7 @@
 **Architecture:**
 - **Server:** a pure server module `cnr/helicopter.lua` owns the phases. `Round` ticks it, merges it with cop sight into one `tracked` flag (live updates, one ping per loss) and a `shown` flag (hiding). `main.lua` turns the new effects into `cnr_heli`, `cnr_runnerShown` and `cnr_nearestCop` events, and takes `cnr_cover` from the game that owns the runner's car.
 - **Client:**
-  - `copsAndRobbers/heli.lua`: cover reporting, the searchlight and the minimap ring
+  - `copsAndRobbers/heli.lua`: cover reporting and the searchlight (the minimap ring was dropped on 2026-11-16)
   - `copsAndRobbers/hiding.lua`: the name tag and the minimap filter
   - `hud.lua`: the helicopter item
 
@@ -59,7 +61,8 @@
 - **Client constants:**
   - cover check every `0.25` s, from `1.5` m above the car, with `shelter.step`
   - searchlight `cnr_heli_light`, `40` m above the runner's car, only while tracking and `sky.isNight()`
-- **BeamNG.Earth** (`geoMode`): no minimap ring, and no minimap hiding. The name tag is still hidden.
+- **BeamNG.Earth** (`geoMode`): no minimap hiding. The name tag is still hidden.
+- **No minimap ring:** the helicopter has no minimap ring or icon (dropped 2026-11-16). Nothing hooks `onDrawOnMinimap`.
 
 ## Review Focus
 
@@ -383,13 +386,13 @@
 - [ ] **Step 5: Commit**
   `git commit -am "feat: helicopter status on the HUD"`
 
-### Task 5: Cover reporting, searchlight and minimap ring
+### Task 5: Cover reporting and searchlight
 
 **Files:**
 - Create: `client/lua/ge/extensions/copsAndRobbers/heli.lua`
 - Modify: `client/lua/ge/extensions/copsAndRobbers.lua`:
   - `cnr_heli` and `onRoundSetup` also feed `heli.set`
-  - `onUpdate`, `endRound`, `M.onDrawOnMinimap`
+  - `onUpdate`, `endRound`
 - Test: create `tests/test_heli_client.lua`, modify `tests/test_client.lua`
 
 **Interfaces:**
@@ -411,9 +414,6 @@
     - Create it with `createObject("SpotLight")`, `canSave = false`, `registerObject(M.LIGHT_NAME)`, and `scenetree.MissionGroup:addObject`, guarded with `pcall` like `rain.lua`.
     - Otherwise delete it.
   - `M.clear(state)`: deletes the light and resets the phase and the cover.
-- **Ring:** `M.drawRing(state, target, utils)`
-  - While tracking and a target exists, it calls `utils.simpleCircle(target:getPosition(), fill, stroke, radius)`.
-  - The colours and radius are the builder's pick, with the same colour types the game's minimap uses.
 - **Wiring in `copsAndRobbers.lua`:**
   - **The cover owner's car:**
     - `ownVehicle()` when `role == "runner"`
@@ -423,9 +423,6 @@
     - `if c ~= nil then sendServer("cnr_cover", { covered = c }) end`
     - `castUp` casts `castRayStatic(pos, vec3(0, 0, 1), range)`. Call `heli.resetCover` in `onRelease` so the first check is always sent.
   - **The searchlight target:** `ownVehicle()` for the runner, `runnerObject()` otherwise. Call `heli.lightTick(heliState, target, sky.isNight())` every frame while `active`.
-  - **The ring:**
-    - `M.onDrawOnMinimap = function(td) if active and not geoMode and ui_apps_minimap_utils then heli.drawRing(heliState, ringTarget(), ui_apps_minimap_utils) end end`
-    - `ringTarget()` is the same target as the searchlight's, so the runner sees the ring on themselves too.
   - **Cleanup:** `endRound` calls `heli.clear(heliState)`.
 
 - [ ] **Step 1: Write the failing tests:**
@@ -441,11 +438,9 @@
       - none by day
       - deleted when the phase turns `searching`, when night ends, and on `clear`
       - its position follows the target at `z + 40`
-    - **The ring:** `drawRing` calls `utils.simpleCircle` once while tracking, and not while `searching` or with a nil target.
   - **`tests/test_client.lua`:**
     - as runner after `cnr_release`, `env.lastSent("cnr_cover").covered == false`
     - as cop, no `cnr_cover` is sent
-    - `M.onDrawOnMinimap` with `geoMode` set draws nothing (stub `ui_apps_minimap_utils`)
 
 - [ ] **Step 2: Run them to make sure they fail**
   Run: `make test 2>&1 | grep -E 'FAIL|passed'`. Expected: the new tests fail.
@@ -456,7 +451,7 @@
   Run: `make test 2>&1 | grep -E 'FAIL|passed'`. Expected: all pass except files Task 7 owns.
 
 - [ ] **Step 5: Commit**
-  `git commit -am "feat: cover reports, night searchlight and minimap ring for the helicopter"`
+  `git commit -am "feat: cover reports and night searchlight for the helicopter"`
 
 ### Task 6: Hiding the runner on cops' games
 
@@ -562,7 +557,6 @@
     - wrapping the game's `ui_apps_minimap_vehicles.drawOtherVehicles` and swapping the global `activeVehiclesIterator`
     - BeamMP's `hideNametag` on the runner's key
     - the `SpotLight` object
-    - the `onDrawOnMinimap` hook with `ui_apps_minimap_utils.simpleCircle`
 
 - [ ] **Step 1: Update the fixtures and write the failing tests**
   - Replace `lastSeenIntervalSeconds = 30` in the two rules fixtures with `helicopter = true, helicopterArrivalSeconds = 60, helicopterUpSeconds = 120, helicopterRefuelSeconds = 90`.

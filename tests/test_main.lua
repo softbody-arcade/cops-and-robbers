@@ -485,14 +485,95 @@ test("/cnr start next and again", function()
   env.cleanup()
 end)
 
-test("last seen goes to cops, nearest cop to the runner", function()
-  local env = boot({ config = '{"lastSeenIntervalSeconds": 5}' })
+test("losing sight pings the cops once, with the position", function()
+  local env = boot({ config = '{"helicopter": false}' })
+  runToChase(env)
+  env.positions[2] = 50
+  for _ = 1, 4 do env.clock = env.clock + 0.25; env.call("cnr_sight", 2, '{"seen":true}'); env.call("cnr_tick") end
+  env.sent = {}
+  env.call("cnr_sight", 2, '{"seen":false}')
+  for _ = 1, 24 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  local count = 0
+  for _, m in ipairs(env.sent) do if m.ev == "cnr_lastSeen" and m.data:find('"live"', 1, true) == nil then count = count + 1 end end
+  assertEq(count, 1)
+  local seen = env.lastSent("cnr_lastSeen")
+  assertEq(seen.pid, 2)
+  assertEq(seen.data:find('"pos"', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("the runner gets cnr_nearestCop every 30 s", function()
+  local env = boot({ config = '{"helicopter": false}' })
   runToChase(env)
   env.sent = {}
-  for _ = 1, 24 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
-  local seen, nearest = env.lastSent("cnr_lastSeen"), env.lastSent("cnr_nearestCop")
-  assertEq(seen.pid, 2)
-  assertEq(nearest.pid, 1)
+  for _ = 1, 130 do env.clock = env.clock + 0.25; env.positions[2] = 900; env.call("cnr_tick") end
+  local count = 0
+  for _, m in ipairs(env.sent) do if m.ev == "cnr_nearestCop" then count = count + 1; assertEq(m.pid, 1) end end
+  assertEq(count >= 1, true)
+  env.cleanup()
+end)
+
+test("heli phases reach every player", function()
+  local env = boot({ config = '{"helicopterArrivalSeconds": 0, "weather": "clear"}' })
+  runToChase(env)
+  local seen = {}
+  for _, m in ipairs(env.sent) do if m.ev == "cnr_heli" then seen[m.pid] = decodeJson(m.data).phase end end
+  assertEq(seen[-1], "tracking")
+  env.cleanup()
+end)
+
+test("runnerShown goes to cops only", function()
+  local env = boot()
+  env.startRound()
+  env.go()
+  for _ = 1, 44 do env.clock = env.clock + 0.25; env.positions[2] = 900; env.call("cnr_tick") end
+  local cop, runner = false, false
+  for _, m in ipairs(env.sent) do
+    if m.ev == "cnr_runnerShown" then
+      if m.pid == 2 then cop = decodeJson(m.data).shown == false end
+      if m.pid == 1 then runner = true end
+    end
+  end
+  assertEq(cop, true)
+  assertEq(runner, false)
+  env.cleanup()
+end)
+
+test("practice as runner sends no runnerShown", function()
+  local env = boot({ vehicles = { [1] = { [0] = "x" } } })
+  env.panel(1, "test runner")
+  env.positions[1] = 0
+  env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  env.go()
+  for _ = 1, 50 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  assertEq(env.lastSent("cnr_runnerGo").pid, 1)
+  assertEq(env.lastSent("cnr_release").pid, 1)
+  assertEq(env.lastSent("cnr_runnerShown"), nil)
+  env.cleanup()
+end)
+
+test("a rejoining cop gets runnerShown and heli in setup", function()
+  local env = boot({ config = '{"helicopterArrivalSeconds": 0, "weather": "clear"}' })
+  runToChase(env)
+  env.call("onPlayerDisconnect", 2)
+  env.sent = {}
+  env.call("onPlayerJoin", 2)
+  local setup = env.lastSent("cnr_roundSetup")
+  assertEq(setup ~= nil and setup.pid == 2, true)
+  assertEq(setup.data:find('"runnerShown":', 1, true) ~= nil, true)
+  assertEq(setup.data:find('"heli":', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("cnr_cover from the runner reaches the round", function()
+  local env = boot({ config = '{"helicopterArrivalSeconds": 0, "helicopterUpSeconds": 200, "weather": "clear"}' })
+  runToChase(env)
+  env.sent = {}
+  env.call("cnr_cover", 1, '{"covered":true}')
+  for _ = 1, 12 do env.clock = env.clock + 0.25; env.positions[2] = 900; env.call("cnr_tick") end
+  local last
+  for _, m in ipairs(env.sent) do if m.ev == "cnr_heli" then last = decodeJson(m.data).phase end end
+  assertEq(last, "searching")
   env.cleanup()
 end)
 
@@ -605,14 +686,24 @@ test("earth AI cars are reported by the test issuer", function()
 end)
 
 test("earth last seen carries lat/lon", function()
-  local env = boot({ map = EARTH, config = '{"lastSeenIntervalSeconds": 5}' })
+  local env = boot({ map = EARTH, config = '{"helicopter": false}' })
   env.panel(2, "start rein")
-  report(env, 1, geoCar(0)); report(env, 2, geoCar(900))
+  report(env, 1, geoCar(0)); report(env, 2, geoCar(300))
   env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
   env.go()
-  for _ = 1, 70 do env.clock = env.clock + 0.25; report(env, 1, geoCar(0, 60)); report(env, 2, geoCar(900, 60)); env.call("cnr_tick") end
+  local function step()
+    env.clock = env.clock + 0.25
+    report(env, 1, geoCar(0)); report(env, 2, geoCar(300))
+    env.call("cnr_tick")
+  end
+  for _ = 1, 60 do step() end
+  env.call("cnr_sight", 2, '{"seen":true}')
+  step()
+  env.sent = {}
+  env.call("cnr_sight", 2, '{"seen":false}')
+  for _ = 1, 8 do step() end
   local seen = env.lastSent("cnr_lastSeen")
-  assertEq(seen.pid, 2)
+  assertEq(seen ~= nil and seen.pid == 2, true)
   assertEq(seen.data:find('"lat"', 1, true) ~= nil, true)
   env.cleanup()
 end)
@@ -735,10 +826,11 @@ test("auto next round prepares a new round but waits for go", function()
 end)
 
 test("a save drops retired sky settings from config.json", function()
-  local env = boot({ config = '{"clockSpeed":30,"timeOfDay":"map","weather":"map"}' })
+  local env = boot({ config = '{"clockSpeed":30,"timeOfDay":"map","weather":"map","lastSeenIntervalSeconds":5}' })
   env.panel(1, "auto on")
   local saved = assert(io.open(env.dir .. "config.json")):read("*a")
   assertEq(saved:find("clockSpeed", 1, true), nil)
+  assertEq(saved:find("lastSeenIntervalSeconds", 1, true), nil)
   assertEq(saved:find('"map"', 1, true), nil)
   assertEq(saved:find('"autoNextRound":true', 1, true) ~= nil, true)
   env.cleanup()

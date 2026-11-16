@@ -530,26 +530,11 @@ test("time limit ends the round as escaped", function()
   assertEq(find(fx, "record").run.endReason, "escaped")
 end)
 
-test("last seen ping every interval with nearest cop distance", function()
-  local r = started({lastSeenIntervalSeconds=30})
+test("no periodic last seen any more", function()
+  local r = started()
   r:tick(4, stillCars(), {}); r:tick(11, stillCars(), {})
   local far = {[1]=kmh(0, 50), [2]=kmh(300, 50), [3]=kmh(900, 50)}
-  local fx = r:tick(40.9, far, {})
-  assertEq(find(fx, "lastSeen"), nil)
-  fx = r:tick(41, far, {})
-  local e = find(fx, "lastSeen")
-  assertNear(e.pos.x, 0, 1e-9); assertNear(e.nearestCop, 300, 1e-9)
-  fx = r:tick(42, far, {})
-  assertEq(find(fx, "lastSeen"), nil)
-  fx = r:tick(71, far, {})
-  assertEq(find(fx, "lastSeen") ~= nil, true)
-end)
-
-test("last seen off when interval is 0", function()
-  local r = started({lastSeenIntervalSeconds=0})
-  r:tick(4, stillCars(), {}); r:tick(11, stillCars(), {})
-  local far = {[1]=kmh(0, 50), [2]=kmh(300, 50), [3]=kmh(900, 50)}
-  for t = 12, 100, 1 do assertEq(find(r:tick(t, far, {}), "lastSeen"), nil) end
+  for t = 12, 70, 1 do assertEq(find(r:tick(t, far, {}), "lastSeen"), nil) end
 end)
 
 test("catch credits cops within the radius", function()
@@ -685,7 +670,7 @@ end
 local function farCars() return {[1]=kmh(0, 50), [2]=kmh(300, 50), [3]=kmh(900, 50)} end
 
 test("sight pings carry the exact runner position the round used, geo included", function()
-  local r = chasing({lastSeenIntervalSeconds=30})
+  local r = chasing()
   local function cars()
     local c = farCars()
     c[1].geo = { lat = 52, lon = 5, h = 0 }
@@ -697,13 +682,10 @@ test("sight pings carry the exact runner position the round used, geo included",
   local lost
   for t = 13, 16 do lost = lost or find(r:tick(t, cars(), {}), "lastSeen") end
   assertEq(lost.geo.lat, 52)
-  local regular
-  for t = 17, 50 do regular = regular or find(r:tick(t, cars(), {}), "lastSeen") end
-  assertEq(regular.geo.lat, 52)
 end)
 
-test("a cop's sight sends live updates and holds back the regular ping", function()
-  local r = chasing({lastSeenIntervalSeconds=30})
+test("a cop's sight sends live updates and no last seen while it holds", function()
+  local r = chasing()
   r:sightReport(12, 2, true)
   local fx = r:tick(12, farCars(), {})
   local e = find(fx, "live")
@@ -729,7 +711,7 @@ test("only a close cop who sees the runner gets no route", function()
 end)
 
 test("losing sight sends an immediate last seen after the grace period", function()
-  local r = chasing({lastSeenIntervalSeconds=30})
+  local r = chasing()
   r:sightReport(12, 2, true)
   r:tick(12, farCars(), {})
   r:sightReport(20, 2, false)
@@ -739,8 +721,6 @@ test("losing sight sends an immediate last seen after the grace period", functio
   assertEq(find(fx, "lastSeen") ~= nil, true)
   assertEq(find(fx, "spotted").spotted, false)
   assertEq(find(r:tick(22, farCars(), {}), "live"), nil)
-  assertEq(find(r:tick(51.5, farCars(), {}), "lastSeen"), nil)
-  assertEq(find(r:tick(51.6, farCars(), {}), "lastSeen") ~= nil, true)
 end)
 
 test("spotted is announced once when sight starts", function()
@@ -751,10 +731,12 @@ test("spotted is announced once when sight starts", function()
 end)
 
 test("sight is off when sightMaxMeters is 0", function()
-  local r = chasing({sightMaxMeters=0, lastSeenIntervalSeconds=30})
+  local r = chasing({sightMaxMeters=0, helicopter=false})
   r:sightReport(12, 2, true)
-  assertEq(find(r:tick(12, farCars(), {}), "live"), nil)
-  assertEq(find(r:tick(41, farCars(), {}), "lastSeen") ~= nil, true)
+  for t = 12, 200 do
+    local fx = r:tick(t, farCars(), {})
+    assertEq(find(fx, "live"), nil); assertEq(find(fx, "lastSeen"), nil)
+  end
 end)
 
 test("sight reports from the runner or before the chase are ignored", function()
@@ -785,7 +767,7 @@ test("no live updates after the runner is caught", function()
 end)
 
 test("the record carries cops, their sight time, hidden time and lost count", function()
-  local r = chasing({lastSeenIntervalSeconds=30})
+  local r = chasing()
   r:sightReport(11, 2, true)
   for t = 11, 20 do r:tick(t, farCars(), {}) end
   r:sightReport(20, 2, false)
@@ -816,7 +798,7 @@ test("a cop who left before the end is not in the record", function()
 end)
 
 test("a cop whose game stops reporting stops counting as sight", function()
-  local r = chasing({lastSeenIntervalSeconds=30})
+  local r = chasing()
   r:sightReport(12, 2, true)
   r:tick(12, farCars(), {})
   local lost
@@ -841,6 +823,291 @@ test("sight time stays with the cop's name when they leave, not with the reused 
   for i, pid in ipairs(run.copIds) do byPid[pid] = run.copSight[i] end
   assertEq(byPid[3], 0)
   assertEq(byPid[4] >= 8, true)
+end)
+
+test("no periodic last seen with the helicopter off", function()
+  local r = chasing({helicopter=false})
+  for t = 12, 200 do assertEq(find(r:tick(t, farCars(), {}), "lastSeen"), nil) end
+end)
+
+test("one last seen when sight is lost and the helicopter is not tracking", function()
+  local r = chasing({helicopter=false})
+  r:sightReport(12, 2, true)
+  r:tick(12, farCars(), {})
+  r:sightReport(20, 2, false)
+  local n = 0
+  for t = 21, 200 do n = n + count(r:tick(t, farCars(), {}), "lastSeen") end
+  assertEq(n, 1)
+end)
+
+test("no last seen when sight is lost while the helicopter tracks", function()
+  local r = chasing({helicopterArrivalSeconds=0})
+  r:sightReport(12, 2, true)
+  for t = 12, 19 do r:tick(t, farCars(), {}) end
+  r:sightReport(20, 2, false)
+  local lost
+  for t = 20, 30 do
+    local fx = r:tick(t, farCars(), {})
+    assertEq(find(fx, "lastSeen"), nil)
+    assertEq(find(fx, "live") ~= nil, true)
+    lost = lost or find(fx, "spotted")
+  end
+  assertEq(lost.spotted, false)
+end)
+
+test("no last seen when the helicopter loses the runner while a cop sees them", function()
+  local r = chasing({helicopterArrivalSeconds=0})
+  r:sightReport(12, 2, true)
+  r:tick(12, farCars(), {})
+  r:coverReport(13, 1, true)
+  local searching
+  for t = 13, 29 do
+    if t % 5 == 0 then r:sightReport(t, 2, true) end
+    local fx = r:tick(t, farCars(), {})
+    assertEq(find(fx, "lastSeen"), nil)
+    assertEq(count(fx, "live"), 1)
+    searching = searching or find(fx, "heli")
+  end
+  assertEq(searching.phase, "searching")
+  r:sightReport(30, 2, false)
+  local n = 0
+  for t = 30, 32 do n = n + count(r:tick(t, farCars(), {}), "lastSeen") end
+  assertEq(n, 1)
+end)
+
+test("a bridge pass under 2 s keeps the helicopter on the runner, 2 s of cover loses them once", function()
+  local r = chasing({helicopterArrivalSeconds=0})
+  for i = 0, 4 do r:tick(12 + i * 0.25, farCars(), {}) end
+  r:coverReport(13.1, 1, true)
+  local lives = 0
+  for i = 1, 4 do
+    local fx = r:tick(13 + i * 0.25, farCars(), {})
+    assertEq(find(fx, "lastSeen"), nil); assertEq(find(fx, "runnerShown"), nil); assertEq(find(fx, "heli"), nil)
+    lives = lives + count(fx, "live")
+  end
+  r:coverReport(14.1, 1, false)
+  for i = 1, 4 do
+    local fx = r:tick(14 + i * 0.25, farCars(), {})
+    assertEq(find(fx, "lastSeen"), nil); assertEq(find(fx, "runnerShown"), nil); assertEq(find(fx, "heli"), nil)
+    lives = lives + count(fx, "live")
+  end
+  assertEq(lives, 2)
+  assertEq(r.shown, true)
+  r:coverReport(15.1, 1, true)
+  local seen, searching, hidden = 0, nil, nil
+  for i = 1, 16 do
+    local fx = r:tick(15 + i * 0.25, farCars(), {})
+    seen = seen + count(fx, "lastSeen")
+    searching = searching or find(fx, "heli")
+    hidden = hidden or find(fx, "runnerShown")
+    if i < 8 then assertEq(find(fx, "heli"), nil) end
+  end
+  assertEq(seen, 1)
+  assertEq(searching.phase, "searching")
+  assertEq(hidden.shown, false)
+end)
+
+test("the helicopter alone: each loss sends one last seen and hides the runner, tracking again shows them", function()
+  local r = chasing({helicopterArrivalSeconds=0, helicopterUpSeconds=30, helicopterRefuelSeconds=20})
+  assertEq(find(r:tick(12, farCars(), {}), "live") ~= nil, true)
+  assertEq(r.shown, true)
+  r:coverReport(13, 1, true)
+  local seen, hidden = 0, nil
+  for t = 13, 16 do
+    local fx = r:tick(t, farCars(), {})
+    seen = seen + count(fx, "lastSeen")
+    hidden = hidden or find(fx, "runnerShown")
+  end
+  assertEq(seen, 1)
+  assertEq(hidden.shown, false)
+  r:coverReport(17, 1, false)
+  local fx = r:tick(17, farCars(), {})
+  assertEq(find(fx, "heli").phase, "tracking")
+  assertEq(find(fx, "live") ~= nil, true)
+  assertEq(find(fx, "runnerShown").shown, true)
+  assertEq(find(fx, "lastSeen"), nil)
+  for t = 18, 40 do assertEq(find(r:tick(t, farCars(), {}), "lastSeen"), nil) end
+  fx = r:tick(41, farCars(), {})
+  assertEq(find(fx, "heli").phase, "refuelling")
+  assertEq(count(fx, "lastSeen"), 1)
+  assertEq(find(fx, "runnerShown").shown, false)
+  for t = 42, 60 do
+    fx = r:tick(t, farCars(), {})
+    assertEq(find(fx, "lastSeen"), nil); assertEq(find(fx, "live"), nil); assertEq(find(fx, "runnerShown"), nil)
+  end
+  fx = r:tick(61, farCars(), {})
+  assertEq(find(fx, "heli").phase, "tracking")
+  assertEq(find(fx, "live") ~= nil, true)
+  assertEq(find(fx, "runnerShown").shown, true)
+end)
+
+test("the helicopter alone sends live updates to every cop with a route", function()
+  local r = chasing({helicopterArrivalSeconds=0})
+  local close = {[1]=kmh(0, 50), [2]=kmh(40, 50), [3]=kmh(45, 50)}
+  local e = find(r:tick(12, close, {}), "live")
+  assertNear(e.pos.x, 0, 1e-9)
+  assertEq(next(e.noRoute), nil)
+  assertEq(find(r:tick(12.5, close, {}), "live"), nil)
+  assertEq(find(r:tick(13, close, {}), "live") ~= nil, true)
+end)
+
+test("live goes out once per tick when sight and helicopter both track", function()
+  local r = chasing({helicopterArrivalSeconds=0})
+  r:sightReport(12, 2, true)
+  for t = 12, 20 do assertEq(count(r:tick(t, farCars(), {}), "live"), 1) end
+end)
+
+test("the helicopter starts at release with the round's weather", function()
+  local function released(weather)
+    local r = round.new((config.merge(nil)))
+    r:start(0, 1, 2, players, { sky = { weather = "clear" } })
+    r:vehiclePicked(1, 2, "pickup", "cfg", players)
+    r.sky = { weather = weather }
+    r:go(1, 3)
+    r:tick(4, stillCars(), {})
+    return find(r:tick(11, stillCars(), {}), "heli")
+  end
+  local e = released("fog")
+  assertEq(e.phase, "grounded"); assertEq(e.reason, "fog")
+  e = released("clear")
+  assertEq(e.phase, "arriving"); assertNear(e.seconds, 60, 1e-9)
+end)
+
+test("heli effects follow phase changes", function()
+  local r = started({helicopterArrivalSeconds=60, helicopterUpSeconds=120, helicopterRefuelSeconds=90})
+  r:tick(4, stillCars(), {})
+  assertEq(find(r:tick(11, stillCars(), {}), "heli").phase, "arriving")
+  local seen = {}
+  for t = 12, 200 do
+    local e = find(r:tick(t, farCars(), {}), "heli")
+    if e then seen[#seen + 1] = t .. " " .. e.phase end
+  end
+  assertEq(table.concat(seen, ","), "71 tracking,191 refuelling")
+end)
+
+test("helicopter off means no heli effects", function()
+  local r = started({helicopter=false})
+  r:tick(4, stillCars(), {})
+  assertEq(find(r:tick(11, stillCars(), {}), "heli"), nil)
+  for t = 12, 200 do assertEq(find(r:tick(t, farCars(), {}), "heli"), nil) end
+  assertEq(r.heli, nil)
+end)
+
+test("runnerShown hides the runner from the head start and shows them while tracked", function()
+  local r = round.new((config.merge(nil)))
+  assertEq(find(r:start(0, 1, 2, players), "runnerShown"), nil)
+  assertEq(find(r:vehiclePicked(1, 2, "pickup", "cfg", players), "runnerShown"), nil)
+  assertEq(find(r:go(1, 3), "runnerShown"), nil)
+  assertEq(find(r:tick(2, stillCars(), {}), "runnerShown"), nil)
+  assertEq(find(r:tick(3.9, stillCars(), {}), "runnerShown"), nil)
+  assertEq(r.shown, true)
+  assertEq(find(r:tick(4, stillCars(), {}), "runnerShown").shown, false)
+  assertEq(find(r:tick(11, stillCars(), {}), "runnerShown"), nil)
+  r:sightReport(12, 2, true)
+  assertEq(find(r:tick(12, farCars(), {}), "runnerShown").shown, true)
+  assertEq(find(r:tick(13, farCars(), {}), "runnerShown"), nil)
+  r:sightReport(14, 2, false)
+  assertEq(find(r:tick(15, farCars(), {}), "runnerShown"), nil)
+  assertEq(find(r:tick(15.6, farCars(), {}), "runnerShown").shown, false)
+  assertEq(r.shown, false)
+  local h = started({helicopterArrivalSeconds=0})
+  h:tick(4, stillCars(), {})
+  assertEq(find(h:tick(11, stillCars(), {}), "runnerShown").shown, true)
+end)
+
+test("sight off never hides the runner", function()
+  local r = started({sightMaxMeters=0})
+  for t = 2, 200 do
+    assertEq(find(r:tick(t, t <= 11 and stillCars() or farCars(), {}), "runnerShown"), nil)
+    assertEq(r.shown, true)
+  end
+end)
+
+test("setup carries runnerShown and the helicopter status", function()
+  local prep = round.new((config.merge(nil)))
+  prep:start(0, 1, 2, players)
+  local s = find(prep:vehiclePicked(1, 2, "pickup", "cfg", players), "setup", 3)
+  assertEq(s.runnerShown, true); assertEq(s.heli, nil)
+  local r = started({helicopterArrivalSeconds=0})
+  r:tick(4, stillCars(), {})
+  assertEq(find(r:playerJoined(5, 4, "Dan"), "setup", 4).runnerShown, false)
+  r:tick(11, stillCars(), {})
+  s = find(r:playerJoined(12, 5, "Eve"), "setup", 5)
+  assertEq(s.runnerShown, true); assertEq(s.heli.phase, "tracking")
+  assertNear(s.heli.seconds, 119, 1e-9)
+end)
+
+test("cover only counts from the runner's game during the chase", function()
+  local r = round.new((config.merge(nil)))
+  r:start(0, 1, 2, players)
+  r:vehiclePicked(1, 2, "pickup", "cfg", players)
+  r:coverReport(1, 1, true)
+  assertEq(r.runnerCovered, false)
+  r:go(1, 3)
+  r:tick(4, stillCars(), {}); r:tick(11, stillCars(), {})
+  r:coverReport(12, 2, true)
+  assertEq(r.runnerCovered, false)
+  r:coverReport(12, 1, true)
+  assertEq(r.runnerCovered, true)
+  r:coverReport(13, 1, false)
+  assertEq(r.runnerCovered, false)
+  local a1 = round.AI_FIRST
+  local p = round.new((config.merge(nil)))
+  p:start(0, nil, 2, players, { test = true, role = "cop" })
+  p:vehiclePicked(1, 2, "pickup", "cfg", players)
+  p:go(2, 2)
+  local cars = {[2]=car(500), [a1]=car(0), [a1 - 1]=car(900)}
+  p:tick(5, cars, {}); p:tick(12, cars, {})
+  assertEq(p.state, "running")
+  p:coverReport(13, a1, true)
+  assertEq(p.runnerCovered, false)
+  p:coverReport(13, 2, true)
+  assertEq(p.runnerCovered, true)
+end)
+
+test("a runner under cover in the head start is not revealed when the helicopter is up at release", function()
+  local r = started({helicopterArrivalSeconds=0})
+  r:tick(4, stillCars(), {})
+  assertEq(r.state, "headstart")
+  r:coverReport(5, 1, true)
+  assertEq(r.runnerCovered, true)
+  local fx = r:tick(11, stillCars(), {})
+  assertEq(r.state, "running")
+  assertEq(find(fx, "heli").phase, "searching")
+  assertEq(find(fx, "live"), nil)
+  assertEq(find(fx, "runnerShown"), nil)
+  assertEq(r.shown, false)
+  for t = 12, 15 do
+    fx = r:tick(t, farCars(), {})
+    assertEq(find(fx, "live"), nil); assertEq(find(fx, "lastSeen"), nil); assertEq(find(fx, "runnerShown"), nil)
+  end
+end)
+
+test("the runner gets the nearest cop every 30 s", function()
+  local r = chasing({helicopter=false})
+  local at = {}
+  for t = 12, 101 do
+    local e = find(r:tick(t, farCars(), {}), "nearestCop")
+    if e then
+      at[#at + 1] = t
+      assertNear(e.dist, 300, 1e-9)
+    end
+  end
+  assertEq(table.concat(at, ","), "41,71,101")
+end)
+
+test("runs note when the helicopter flew", function()
+  local function flew(cfg, weather)
+    local r = round.new((config.merge(cfg)))
+    r:start(0, 1, 2, players, { sky = { weather = weather } })
+    r:vehiclePicked(1, 2, "pickup", "cfg", players)
+    r:go(1, 3)
+    r:tick(4, stillCars(), {}); r:tick(11, stillCars(), {})
+    return find(r:endCalled(20, 2), "record").run.helicopter
+  end
+  assertEq(flew(nil, "clear"), true)
+  assertEq(flew(nil, "fog"), nil)
+  assertEq(flew({helicopter=false}, "clear"), nil)
 end)
 
 local BUILD = { model = "pickup", config = { format = 2, model = "pickup", parts = { pickup_engine = "v8" }, vars = {} }, step = 3, name = "Gavril D-Series" }
@@ -1044,7 +1311,7 @@ test("a crash penalty is noted with its seconds", function()
 end)
 
 test("losing the cops is noted", function()
-  local r = chasing({lastSeenIntervalSeconds=30})
+  local r = chasing()
   r:sightReport(11, 2, true)
   for t = 11, 20 do r:tick(t, farCars(), {}) end
   r:sightReport(20, 2, false)

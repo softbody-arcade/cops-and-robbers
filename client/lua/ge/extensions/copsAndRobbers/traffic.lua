@@ -152,6 +152,12 @@ function M.roundCar(pid)
   return ownerCar[tostring(pid)]
 end
 
+function M.roundCarOwners()
+  local owners = {}
+  for owner, key in pairs(ownerCar) do owners[owner] = key end
+  return owners
+end
+
 function M.isTraffic(key)
   local owner = type(key) == "string" and key:match("^(%d+)%-")
   return owner ~= nil and ownerCar[owner] ~= nil and not roundCars[key]

@@ -3,7 +3,7 @@ local hud = require("copsAndRobbers/hud")
 local RULES = {
   runnerCountdownSeconds = 3, headStartSeconds = 7, catchHoldSeconds = 7, catchRadiusMeters = 10, catchMaxSpeedKmh = 3,
   resetWaitSeconds = 7, copResetMinDistanceMeters = 1000, crashSpeedLossKmh = 50, crashPenaltySeconds = 10,
-  sightMaxMeters = 400, lastSeenIntervalSeconds = 30, roundTimeLimitSeconds = 0, carMode = "random",
+  sightMaxMeters = 400, helicopter = true, helicopterArrivalSeconds = 60, helicopterUpSeconds = 120, helicopterRefuelSeconds = 90, roundTimeLimitSeconds = 0, carMode = "random",
 }
 
 local function rules(over)
@@ -66,6 +66,31 @@ test("payload status line", function()
   assertEq(q.status.role, "runner"); assertEq(q.status.reset, "Penalty")
   local h = hud.payload(s, 200, { active = true, role = "runner", chaseStart = 0, resetHint = "Stay still 4s to reset" })
   assertEq(h.status.reset, "Stay still 4s to reset")
+end)
+
+test("heliItem texts and times per phase", function()
+  local function item(h, now) return hud.heliItem(h, now or 0) end
+  local a = item({ phase = "arriving", endsAt = 45 })
+  assertEq(a.text, "HELICOPTER IN"); assertEq(a.time, "0:45")
+  local t = item({ phase = "tracking", endsAt = 90 })
+  assertEq(t.text, "HELICOPTER"); assertEq(t.time, "1:30")
+  assertEq(item({ phase = "tracking" }).time, nil)
+  local s = item({ phase = "searching", endsAt = 5 })
+  assertEq(s.text, "HELICOPTER SEARCHING"); assertEq(s.time, nil)
+  assertEq(item({ phase = "refuelling", endsAt = 30 }).text, "HELICOPTER REFUELLING")
+  assertEq(item({ phase = "refuelling", endsAt = 30 }).time, "0:30")
+  local g = item({ phase = "grounded", reason = "fog" })
+  assertEq(g.text, "HELICOPTER GROUNDED (FOG)"); assertEq(g.time, nil)
+  assertEq(item({ phase = "arriving", endsAt = 5 }, 10).time, "0:00")
+  assertEq(item({ phase = "arriving", endsAt = 60 }, 0.1).time, "1:00")
+  assertEq(item({ phase = "arriving", endsAt = 60 }, 59.5).time, "0:01")
+  assertEq(item({ phase = "arriving", endsAt = 60 }, 60).time, "0:00")
+  assertEq(item(nil), nil); assertEq(item({ phase = "bogus" }), nil)
+end)
+
+test("status carries the helicopter item", function()
+  local p = hud.payload(hud.new(), 200, { active = true, role = "cop", chaseStart = 7.3, heli = { phase = "searching" } })
+  assertEq(p.status.heli.text, "HELICOPTER SEARCHING")
 end)
 
 test("percent stays at 99 until the server says 1", function()
@@ -275,14 +300,14 @@ test("time limit shows only when set", function()
 end)
 
 test("help rules read sensibly at 0", function()
-  local off = rules({ roundTimeLimitSeconds = 0, sightMaxMeters = 0, lastSeenIntervalSeconds = 0 })
+  local off = rules({ roundTimeLimitSeconds = 0, sightMaxMeters = 0, helicopter = false, helicopterRefuelSeconds = 0 })
   local p = hud.payload(hud.new(), 0, { active = false, rules = off, helpOpen = true })
   assertEq(p.help.open, true)
   for k, v in pairs(off) do assertEq(p.help.rules[k], v, k) end
-  assertEq(p.help.rules.noLimit, true); assertEq(p.help.rules.sightOff, true); assertEq(p.help.rules.lastSeenOff, true)
-  assertEq(off.noLimit, nil); assertEq(off.sightOff, nil); assertEq(off.lastSeenOff, nil)
+  assertEq(p.help.rules.noLimit, true); assertEq(p.help.rules.sightOff, true); assertEq(p.help.rules.heliOn, false); assertEq(p.help.rules.refuelNever, true); assertEq(p.help.rules.lastSeenOff, nil)
+  assertEq(off.noLimit, nil); assertEq(off.sightOff, nil); assertEq(off.heliOn, nil); assertEq(off.refuelNever, nil)
   local on = hud.payload(hud.new(), 0, { active = false, rules = rules({ roundTimeLimitSeconds = 600 }), helpOpen = true })
-  assertEq(on.help.rules.noLimit, false); assertEq(on.help.rules.sightOff, false); assertEq(on.help.rules.lastSeenOff, false)
+  assertEq(on.help.rules.noLimit, false); assertEq(on.help.rules.sightOff, false); assertEq(on.help.rules.heliOn, true); assertEq(on.help.rules.refuelNever, false)
   local closed = hud.payload(hud.new(), 0, { active = false, rules = off, helpOpen = false })
   assertEq(closed.help.open, false); assertEq(closed.help.rules, nil)
 end)
