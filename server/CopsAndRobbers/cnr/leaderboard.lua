@@ -258,7 +258,7 @@ function M.rounds(board, filter, limit)
       id = id, endedAt = r.endedAt, map = r.map, player = r.player, survivedSeconds = r.survivedSeconds,
       endReason = r.endReason, catchers = r.catchers, model = r.model, mode = r.mode, buildStep = r.buildStep,
       timeline = type(r.timeline) == "table" and #r.timeline > 0 and r.timeline or nil, cops = cops,
-      tracked = type(r.timeline) == "table" or nil,
+      tracked = type(r.timeline) == "table" or nil, sky = r.sky,
     }
   end
   return list, #ids

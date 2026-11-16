@@ -98,3 +98,37 @@ test("assistMinSightPercent can't go above 100", function()
   assertEq(cfg.assistMinSightPercent, 20); assertEq(#warnings, 1)
   assertEq(config.merge({ assistMinSightPercent = 100 }).assistMinSightPercent, 100)
 end)
+
+test("sky settings have defaults", function()
+  local c = config.merge(nil)
+  assertEq(c.timeOfDay, "map"); assertEq(c.nightChancePercent, 25); assertEq(c.clockSpeed, 0)
+  assertEq(c.weather, "map"); assertEq(c.badWeatherChancePercent, 25); assertEq(c.weatherDriving, true)
+end)
+
+test("every time and weather choice is accepted", function()
+  for _, t in ipairs({ "map", "sunrise", "morning", "noon", "afternoon", "sunset", "night", "random" }) do
+    assertEq(config.merge({ timeOfDay = t }).timeOfDay, t)
+  end
+  for _, w in ipairs({ "map", "clear", "cloudy", "rain", "storm", "fog", "snow", "random" }) do
+    assertEq(config.merge({ weather = w }).weather, w)
+  end
+end)
+
+test("sky settings reject unknown choices and out-of-range numbers", function()
+  local c, w = config.merge({ timeOfDay = "dusk", weather = "hail", nightChancePercent = 101, badWeatherChancePercent = -1, clockSpeed = 121 })
+  assertEq(c.timeOfDay, "map"); assertEq(c.weather, "map")
+  assertEq(c.nightChancePercent, 25); assertEq(c.badWeatherChancePercent, 25); assertEq(c.clockSpeed, 0)
+  assertEq(#w, 5)
+end)
+
+test("clock speed must be a whole number", function()
+  local c, w = config.merge({ clockSpeed = 2.5 })
+  assertEq(c.clockSpeed, 0); assertEq(#w, 1)
+  assertEq(config.merge({ clockSpeed = 120 }).clockSpeed, 120)
+end)
+
+test("a broken weatherDriving doesn't block saving weather", function()
+  local updated = config.setValue({ weatherDriving = "yes" }, "weather", "rain")
+  assertEq(updated ~= nil, true)
+  assertEq(updated.weather, "rain")
+end)

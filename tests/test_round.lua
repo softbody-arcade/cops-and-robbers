@@ -1082,3 +1082,30 @@ test("the timeline is saved with the run", function()
   local quiet = find(running():endCalled(20, 1), "record").run
   assertEq(#quiet.timeline, 0)
 end)
+
+test("start keeps the sky it is given, New car keeps it, clear drops it", function()
+  local r = round.new((config.merge(nil)))
+  r:start(0, 1, 2, players, { sky = { weather = "rain" } })
+  r:vehiclePicked(1, 2, "pickup", "cfg", players)
+  r:reroll(2, 2)
+  r:vehiclePicked(3, 2, "etk800", "cfg", players)
+  assertEq(r.sky.weather, "rain")
+  r:clear()
+  assertEq(r.sky, nil)
+end)
+
+test("a recorded run keeps the round's conditions", function()
+  local r = round.new((config.merge({ weather = "rain" })))
+  r:start(0, 1, 2, players, { sky = { weather = "rain", time = "night", windDir = 0, windSeed = 1 } })
+  r:vehiclePicked(1, 2, "pickup", "cfg", players)
+  r:go(1, 3)
+  r:tick(4, stillCars(), {}); r:tick(11, stillCars(), {})
+  local fx
+  for i = 1, 40 do
+    fx = r:tick(11 + i * 0.25, stillCars(), {})
+    if find(fx, "record") then break end
+  end
+  local run = find(fx, "record").run
+  assertEq(run.sky.weather, "rain"); assertEq(run.sky.time, "night"); assertEq(run.sky.driving, true)
+  assertEq(run.sky.windSeed, nil)
+end)

@@ -12,8 +12,9 @@ local sight = require("copsAndRobbers/sight")
 local buildDiff = require("copsAndRobbers/build")
 local modes = require("copsAndRobbers/modes")
 local nearby = require("copsAndRobbers/nearby")
+local sky = require("copsAndRobbers/sky")
 
-local CLIENT_VERSION = "2.1.0"
+local CLIENT_VERSION = "2.2.0"
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
 local LIGHTS_OFF = "electrics.set_lightbar_signal(0)"
 local SETUP_DELAY = 0.5
@@ -175,11 +176,16 @@ local function onRoundSetup(data)
   local pos, rot = setupPosition(d)
   placeVehicle(d.model, roundConfig, pos, rot, d.color)
 
+  sky.apply(d.sky)
+  local skyLabel = sky.label(d.sky)
   local phase = d.phase or "running"
+  if phase == "countdown" or phase == "headstart" or phase == "running" then
+    sky.startClock(d.sky and d.sky.clockSeconds or 0)
+  end
   frozen = phase == "prep" or phase == "applying" or phase == "ready" or phase == "countdown" or (phase == "headstart" and role == "cop")
   if phase == "applying" then hudfeed.applying(true) end
   if phase == "prep" or phase == "applying" or phase == "ready" then
-    hudfeed.prep(role, game.carName(d.model), (evolving and phase == "prep") and "change" or "go", playerName(d.runnerId))
+    hudfeed.prep(role, game.carName(d.model), (evolving and phase == "prep") and "change" or "go", playerName(d.runnerId), skyLabel)
     timerEnd = nil
   elseif phase == "countdown" then
     startTimer(tonumber(d.countdownRemaining), "Runner starts in")
@@ -197,8 +203,18 @@ local function onRoundSetup(data)
   end
 end
 
+local function onSky(data)
+  if not active then return end
+  local d = jsonDecode(data) or {}
+  sky.apply(d)
+  local label = sky.label(d)
+  hudfeed.prepSky(label)
+  if label then hudfeed.event("New sky: " .. label, clock, "info") end
+end
+
 local function onCountdown(data)
   local d = jsonDecode(data) or {}
+  sky.startClock(0)
   hudfeed.prep(nil)
   inputs.setPartsMenu(false)
   inputs.lockEditing("all")
@@ -417,6 +433,7 @@ end
 
 local function endRound()
   hudfeed.clearRound()
+  sky.restore()
   local own = ownVehicle()
   if active and role == "cop" and own then own:queueLuaCommand(LIGHTS_OFF) end
   active = false
@@ -471,7 +488,10 @@ local function onBoardState(data)
   end
   for _, row in ipairs(type(d.runners) == "table" and d.runners or {}) do addCar(row) end
   addCar(d.mine)
-  for _, row in ipairs(type(d.rounds) == "table" and d.rounds or {}) do addCar(row) end
+  for _, row in ipairs(type(d.rounds) == "table" and d.rounds or {}) do
+    addCar(row)
+    if type(row) == "table" then row.skyLabel = sky.label(row.sky) end
+  end
   local names = {}
   local function name(id)
     if type(id) == "string" and id ~= "" and id ~= "all" and not names[id] then names[id] = game.mapTitle(id) end
@@ -585,7 +605,7 @@ local function updateLightsAndPatch()
     veh:queueLuaCommand(inputs.VEHICLE_PATCH)
     if role == "cop" then veh:queueLuaCommand(LIGHTS_ON) end
   end
-  ai.lightsOn()
+  ai.lightsOn(sky.isNight())
 end
 
 local function updateGeo()
@@ -646,6 +666,7 @@ end
 
 local function onUpdate(dtReal)
   clock = clock + (dtReal or 0)
+  sky.update(dtReal or 0)
   updatePendingPlacement()
   updateOwnCar()
   local report = ai.tick(clock)
@@ -739,6 +760,7 @@ local function onExtensionLoaded()
   AddEventHandler("cnr_paint", onPaint)
   AddEventHandler("cnr_penalty", onPenalty)
   AddEventHandler("cnr_setupAI", onSetupAI)
+  AddEventHandler("cnr_sky", onSky)
   AddEventHandler("cnr_notice", onNotice)
   AddEventHandler("cnr_top", onTop)
   AddEventHandler("cnr_autoNext", onAutoNext)
@@ -857,7 +879,10 @@ M.onExtensionUnloaded = function()
     if name:find("^copsAndRobbers/") then package.loaded[name] = nil end
   end
 end
-M.onClientEndMission = leaveServer
+M.onClientEndMission = function()
+  sky.drop()
+  leaveServer()
+end
 M.onBeamMPServerLeave = leaveServer
 M.onGameStateUpdate = function()
   apps.layoutChanged(clock)

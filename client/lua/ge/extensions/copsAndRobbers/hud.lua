@@ -76,8 +76,10 @@ local function center(info, now)
   local prep = info.prep
   if not prep then return nil end
   local runner = prep.role == "runner"
+  local car
+  if prep.car and prep.sky then car = prep.car .. " · " .. prep.sky else car = prep.car or prep.sky end
   return {
-    kind = "role", role = runner and "runner" or "cop", car = prep.car,
+    kind = "role", role = runner and "runner" or "cop", car = car,
     title = runner and "YOU'RE THE RUNNER" or "YOU'RE A COP",
     runner = not runner and knownName(prep.runner) or nil,
   }

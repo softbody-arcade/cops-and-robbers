@@ -1,3 +1,4 @@
+dofile("tests/env_stubs.lua")
 local vecMeta = {}
 vecMeta.__index = vecMeta
 local function v3(x, y, z) return setmetatable({ x = x or 0, y = y or 0, z = z or 0 }, vecMeta) end
@@ -150,6 +151,7 @@ function bootClient(opts)
   _G.resetGameplay = function() end
 
   function env.addObject(id, pos) return fakeVehicle(env, id, pos) end
+  env.sky = fakeEnvironment()
   env.M = assert(loadfile("client/lua/ge/extensions/copsAndRobbers.lua"))()
   function env.fire(ev, data) return env.handlers[ev](data) end
   function env.tick(seconds, step)

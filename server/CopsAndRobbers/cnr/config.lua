@@ -28,9 +28,19 @@ M.DEFAULTS = {
   sightNoRouteMinMeters = 50,
   assistMinSightPercent = 20,
   carMode = "random",
+  timeOfDay = "map",
+  nightChancePercent = 25,
+  clockSpeed = 0,
+  weather = "map",
+  badWeatherChancePercent = 25,
+  weatherDriving = true,
 }
 
-M.CHOICES = { carMode = { random = true, evolving = true } }
+M.CHOICES = {
+  carMode = { random = true, evolving = true },
+  timeOfDay = { map = true, sunrise = true, morning = true, noon = true, afternoon = true, sunset = true, night = true, random = true },
+  weather = { map = true, clear = true, cloudy = true, rain = true, storm = true, fog = true, snow = true, random = true },
+}
 
 local strictlyPositive = {
   catchHoldSeconds = true, catchRadiusMeters = true, crashSpeedLossKmh = true,
@@ -54,11 +64,13 @@ local function validList(v)
   return true
 end
 
-local MAXIMA = { assistMinSightPercent = 100 }
+local MAXIMA = { assistMinSightPercent = 100, nightChancePercent = 100, badWeatherChancePercent = 100, clockSpeed = 120 }
+local WHOLE = { clockSpeed = true }
 
 local function validNumber(key, v)
   if type(v) ~= "number" or v ~= v or v == math.huge or v == -math.huge then return false end
   if MAXIMA[key] and v > MAXIMA[key] then return false end
+  if WHOLE[key] and v % 1 ~= 0 then return false end
   if strictlyPositive[key] then return v > 0 end
   return v >= 0
 end
@@ -140,7 +152,7 @@ function M.setValue(raw, key, text)
   updated[key] = value
   local _, warnings = M.merge(updated)
   for _, w in ipairs(warnings) do
-    if w:find(key, 1, true) == 1 then return nil, invalid end
+    if w:find(key .. " ", 1, true) == 1 then return nil, invalid end
   end
   return updated
 end

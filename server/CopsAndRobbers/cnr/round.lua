@@ -3,6 +3,7 @@ local resets = require("cnr.resets")
 local crash = require("cnr.crash")
 local vec = require("cnr.vec")
 local sight = require("cnr.sight")
+local sky = require("cnr.sky")
 
 local M = {}
 local Round = {}
@@ -55,6 +56,7 @@ function Round:clear()
   self.vehicle = nil
   self.evolving = false
   self.buildStep, self.buildName = nil, nil
+  self.sky = nil
   self.applyStartedAt, self.setupDone, self.readyPids, self.rebuildId = nil, false, {}, nil
   self.startedAt = nil
   self.countdownStartedAt = nil
@@ -140,6 +142,7 @@ function Round:finish(now, reason)
       lostCount = self.cfg.sightMaxMeters > 0 and self.lostCount or nil,
       timeline = self.timeline,
       mode = self.evolving and "evolving" or "random", buildStep = self.buildStep, buildName = self.buildName,
+      sky = sky.record(self.sky, self.cfg),
     } }
     local run = fx[#fx].run
     for _, pid in ipairs(self:copPids()) do
@@ -191,6 +194,7 @@ function Round:start(now, runnerId, issuerId, players, opts)
   self.state = "picking"
   self.issuerId = issuerId
   self.pickStartedAt = now
+  self.sky = opts and opts.sky or nil
   local b = opts and opts.build
   if b then
     self.evolving = true
