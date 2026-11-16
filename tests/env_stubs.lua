@@ -24,7 +24,7 @@ function fakeEnvironment(opts)
   local fake = {
     locked = opts.locked or false,
     setStates = {}, profiles = {}, modelSets = {}, queued = {}, groundWinds = {},
-    objects = {}, deleted = {},
+    objects = {}, deleted = {}, lerps = {}, resets = 0, resetAt = {},
   }
   fake.state = {
     time = 0.1, play = true, dayLength = 1800, cloudCover = 0.3, fogDensity = 1,
@@ -56,8 +56,14 @@ function fakeEnvironment(opts)
     return copy
   end
   function env.getInitState() return fake.init end
-  function env.setState(s)
+  function env.setState(s, seconds)
+    if s == nil then
+      fake.resets = fake.resets + 1
+      fake.resetAt[fake.resets] = #fake.setStates
+      return
+    end
     if fake.locked then return end
+    fake.lerps[#fake.setStates + 1] = seconds
     local copy = {}
     for k, v in pairs(s) do copy[k] = v end
     if s.groundWind then

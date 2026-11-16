@@ -23,21 +23,29 @@ M.WEATHER = {
   },
 }
 
+M.BLEND_SECONDS = 3
+local LOCK_DELAY = M.BLEND_SECONDS + 0.5
 local PRECIPITATION_NAME = "cnr_precipitation"
 local WIND_INTERVAL = 0.25
 local COVER_INTERVAL = 0.25
 local MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
 local DAYS_IN_MONTH = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
 
-local saved, wasLocked, round, clockStart
+local saved, wasLocked, round, clockStart, target
+local lockTimer, lockAfter, restoring
 local roundTime, started, sinceWind = 0, false, 0
 local cover, sinceCover = shelter.new(), 0
 
 local function forget()
   wind.reset()
-  saved, wasLocked, round, clockStart = nil, false, nil, nil
+  saved, wasLocked, round, clockStart, target = nil, false, nil, nil, nil
   roundTime, started, sinceWind = 0, false, 0
   cover, sinceCover = shelter.new(), 0
+end
+
+local function blend(env, state)
+  env.setState(nil)
+  env.setState(state, M.BLEND_SECONDS)
 end
 
 local function capitalise(key)
@@ -164,24 +172,33 @@ function M.apply(p)
   local env = core_environment
   if not env or not setsSomething(p) then return end
   if not saved then
-    saved = env.getState() or {}
-    local g = saved.groundWind
-    if g then saved.groundWind = vec3(g.x, g.y, g.z) end
-    wasLocked = not env.canChange()
+    if restoring then
+      saved, wasLocked = restoring.state, restoring.wasLocked
+    else
+      saved = env.getState() or {}
+      local g = saved.groundWind
+      if g then saved.groundWind = vec3(g.x, g.y, g.z) end
+      wasLocked = not env.canChange()
+    end
   end
   local state = roundState(env, p)
-  round, clockStart = p, state.time
+  round, clockStart, target = p, state.time, state
   env.enableChanges(true)
   local ok, err = pcall(function()
-    env.setState(state)
+    blend(env, state)
     local weather = M.WEATHER[p.weather]
     removePrecipitation()
     cover, sinceCover = shelter.new(), 0
     if weather and weather.precipitation then createPrecipitation(weather.precipitation) end
     surfaces.apply(p.driving and p.weather or nil)
   end)
-  env.enableChanges(false)
-  if not ok then log("E", "cnr_sky", tostring(err)) end
+  if ok then
+    lockTimer, lockAfter = LOCK_DELAY, true
+  else
+    env.enableChanges(false)
+    lockTimer, restoring = nil, nil
+    log("E", "cnr_sky", tostring(err))
+  end
 end
 
 function M.startClock(clockSeconds)
@@ -189,18 +206,35 @@ function M.startClock(clockSeconds)
   if not env or not round then return end
   roundTime, started = clockSeconds or 0, true
   local daySeconds = round.daySeconds or 0
-  if daySeconds <= 0 or not clockStart then return end
-  env.enableChanges(true)
-  env.setState({
-    time = (clockStart + roundTime / daySeconds) % 1,
-    play = true,
-    dayLength = daySeconds,
-  })
-  env.enableChanges(false)
+  local landing = lockTimer ~= nil
+  if landing then
+    env.enableChanges(true)
+    env.setState(target)
+  end
+  if daySeconds > 0 and clockStart then
+    env.enableChanges(true)
+    env.setState({
+      time = (clockStart + roundTime / daySeconds) % 1,
+      play = true,
+      dayLength = daySeconds,
+    })
+    env.enableChanges(false)
+  elseif landing then
+    env.enableChanges(false)
+  end
+  lockTimer, restoring = nil, nil
 end
 
 function M.update(dt)
-  if not core_environment or not round then return end
+  if not core_environment then return end
+  if lockTimer then
+    lockTimer = lockTimer - dt
+    if lockTimer <= 0 then
+      core_environment.enableChanges(not lockAfter)
+      lockTimer, restoring = nil, nil
+    end
+  end
+  if not round then return end
   if started then roundTime = roundTime + dt end
   if precipitates(round) then updateCover(dt) end
   if not windy(round) then return end
@@ -212,20 +246,34 @@ function M.update(dt)
   be:setGroundWind(vec3(x, y, z))
 end
 
-function M.restore()
+function M.restore(immediate)
   local env = core_environment
   if not env or not saved then return end
   env.enableChanges(true)
-  env.setState(saved)
   surfaces.restore()
   removePrecipitation()
-  env.enableChanges(not wasLocked)
+  if immediate then
+    env.setState(saved)
+    env.enableChanges(not wasLocked)
+    lockTimer, restoring = nil, nil
+  else
+    blend(env, saved)
+    restoring = { state = saved, wasLocked = wasLocked }
+    lockTimer, lockAfter = LOCK_DELAY, wasLocked
+  end
   forget()
 end
 
 function M.drop()
   surfaces.drop()
-  if core_environment and saved then core_environment.enableChanges(not wasLocked) end
+  if core_environment then
+    if saved then
+      core_environment.enableChanges(not wasLocked)
+    elseif restoring then
+      core_environment.enableChanges(not restoring.wasLocked)
+    end
+  end
+  lockTimer, restoring = nil, nil
   forget()
 end
 
