@@ -147,8 +147,11 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
 
 ### Client: searchlight
 - **When:** while the helicopter is `tracking` and it is night (`sky.isNight()`), each game shows a searchlight.
-- **What:** a `SpotLight` object `cnr_heli_light`, not saved with the level. It hovers 40 m above the runner's car with a slight drift, and the beam keeps on the car with small operator-style corrections (it lags a sudden move then corrects, nudges every 0.4-1.2 s, slight tremor) (`runnerObject()` on cops' games, the own car on the runner's).
-- **Removed when:** tracking stops, it gets light, the round ends, on cancel, on leaving or on a map change.
+- **What:** a `SpotLight` object `cnr_heli_light`, not saved with the level (`runnerObject()` on cops' games, the own car on the runner's). It hovers 40 m above the car with a slight drift. The beam keeps on the car with smooth operator-style corrections: it lags a sudden move then settles (near-critically damped), nudges every 1.5-3 s within 1 m, and has a slight tremor.
+- **Flying in:** when tracking starts after `arriving` or `refuelling`, the light starts 300 m away at 60 m up in a random heading and eases out to the hover point over 8 s. Its aim starts 15 m off the car and sweeps onto it.
+- **Flying away:** on `tracking` to `refuelling` the light stays 8 s, flies 300 m away climbing to 60 m (ease-in), its aim drifts off the car, and it fades to nothing over the last 3 s.
+- **Under cover:** on `tracking` to `searching` the light is deleted at once. On `searching` to `tracking` it comes back at the hover point, fades in over 1 s, and its aim starts 8 m off the car and swings back on. When night ends it fades out over 1.5 s.
+- **Removed when:** the round ends, on cancel, on leaving or on a map change (at once), or when an animation above finishes.
 - **Values:** cone 8 and 16 degrees, brightness 80, range about 120 m, colour warm white.
 
 ## Tests
@@ -200,7 +203,7 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
 - **Re-find times:** 5 s in the open, 10 s in rain.
 - **The runner's SPOTTED / HIDDEN tag** stays about cop sight. The helicopter has its own HUD item.
 - **Cover is reported** by the game that owns the runner's car, using the roof check from 1.5 m above it.
-- **Searchlight:** hovers 40 m above the car with a slight drift; the beam keeps on the car with small operator-style corrections.
+- **Searchlight:** hovers 40 m above the car with a slight drift; the beam keeps on the car with smooth operator-style corrections (nudges every 1.5-3 s); flies in over 8 s from 300 m, flies away over 8 s with a fade, is cut at once under cover and fades in over 1 s when re-found.
 - **Earth:** the helicopter flies, the name tag is hidden, and there's no minimap hiding.
 - **Pings:** one last-seen ping per loss of the runner by both sight and the helicopter. It replaces the two separate pings, so neither cuts into the other's live stream.
 - **Settings:** time up must be more than 0, and a refuel of 0 means the helicopter stays up.
