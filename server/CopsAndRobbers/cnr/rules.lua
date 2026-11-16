@@ -3,8 +3,8 @@ local M = {}
 M.KEYS = {
   "runnerCountdownSeconds", "headStartSeconds", "catchHoldSeconds", "catchRadiusMeters", "catchMaxSpeedKmh",
   "resetWaitSeconds", "copResetMinDistanceMeters", "crashSpeedLossKmh", "crashPenaltySeconds",
-  "sightMaxMeters", "lastSeenIntervalSeconds", "roundTimeLimitSeconds", "carMode", "trafficPerPlayer", "trafficRunnerOnly",
-  "sirensAllowed",
+  "sightMaxMeters", "roundTimeLimitSeconds", "carMode", "trafficPerPlayer", "trafficRunnerOnly",
+  "sirensAllowed", "helicopter", "helicopterArrivalSeconds", "helicopterUpSeconds", "helicopterRefuelSeconds",
 }
 
 function M.payload(cfg, trafficPerPlayer)
