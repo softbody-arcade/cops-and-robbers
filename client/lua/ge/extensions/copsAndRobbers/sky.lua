@@ -26,6 +26,7 @@ local PRECIPITATION_NAME = "cnr_precipitation"
 local WIND_INTERVAL = 0.25
 local COVER_INTERVAL = 0.25
 local MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
+local DAYS_IN_MONTH = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
 
 local saved, wasLocked, round, clockStart
 local roundTime, started, sinceWind = 0, false, 0
@@ -40,6 +41,18 @@ end
 
 local function capitalise(key)
   return key:sub(1, 1):upper() .. key:sub(2)
+end
+
+local function localDate(month, day, latitude)
+  if not (latitude and latitude < 0) then return month, day end
+  local shifted = (month + 5) % 12 + 1
+  return shifted, math.min(day, DAYS_IN_MONTH[shifted])
+end
+
+local function mapLatitude()
+  local env = core_environment
+  local state = env and env.getState and env.getState()
+  return state and state.latitude
 end
 
 local function setsSomething(p)
@@ -103,8 +116,9 @@ local function roundState(env, p)
   local solar = env.getState() or {}
   if p.month and p.day then
     local year = p.year or solar.year
-    state.year, state.month, state.day = year, p.month, p.day
-    solar.year, solar.month, solar.day = year, p.month, p.day
+    local month, day = localDate(p.month, p.day, solar.latitude)
+    state.year, state.month, state.day = year, month, day
+    solar.year, solar.month, solar.day = year, month, day
   end
   if p.time then
     state.time = env.getSolarTimeOfDayValue(p.time, solar) or env.timeOfDayKeyToTime[p.time]
@@ -127,7 +141,10 @@ function M.label(p, withDate)
   local parts = {}
   if p.time then parts[#parts + 1] = capitalise(p.time) end
   if p.weather then parts[#parts + 1] = capitalise(p.weather) end
-  if withDate and p.day and MONTHS[p.month] then parts[#parts + 1] = string.format("%d %s", p.day, MONTHS[p.month]) end
+  if withDate and p.day and MONTHS[p.month] then
+    local month, day = localDate(p.month, p.day, mapLatitude())
+    parts[#parts + 1] = string.format("%d %s", day, MONTHS[month])
+  end
   if #parts == 0 then return nil end
   return table.concat(parts, " · ")
 end

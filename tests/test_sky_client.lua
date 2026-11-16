@@ -49,6 +49,25 @@ test("a sky without a year keeps the player's year for the sunrise lookup", func
   assertEq(fake.state.year, 2025); assertEq(fake.state.month, 12)
 end)
 
+test("a map south of the equator gets the same season six months on", function()
+  local sky, fake = load()
+  fake.state.latitude = -44.57
+  sky.apply(WINTER)
+  local s = fake.setStates[1]
+  assertEq(s.year, 2026); assertEq(s.month, 6); assertEq(s.day, 14)
+  assertEq(fake.solarState.month, 6); assertEq(fake.solarState.day, 14)
+  assertEq(sky.label(WINTER, true), "Sunrise · Snow · 14 Jun")
+end)
+
+test("the shifted date stays a real day", function()
+  local sky, fake = load()
+  fake.state.latitude = -44.57
+  sky.apply({ time = "noon", weather = "clear", year = 2026, month = 12, day = 31, windDir = 0, windSeed = 1 })
+  assertEq(fake.setStates[1].month, 6); assertEq(fake.setStates[1].day, 30)
+  assertEq(sky.label({ time = "noon", weather = "clear", month = 8, day = 31 }, true), "Noon · Clear · 28 Feb")
+  assertEq(sky.label({ time = "noon", weather = "clear", month = 1, day = 31 }, true), "Noon · Clear · 31 Jul")
+end)
+
 test("restore gives the player's own date back", function()
   local sky, fake = load()
   sky.apply(WINTER)

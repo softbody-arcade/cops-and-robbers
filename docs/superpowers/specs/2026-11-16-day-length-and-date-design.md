@@ -31,6 +31,8 @@ The server picks a random day inside the weather's window, together with the wea
 | Rain, Storm | 1 Mar – 30 Apr or 1 Oct – 30 Nov |
 | Clear, Cloudy | any day of the year (no 29 Feb) |
 
+On a map south of the equator (Automation Test Track, latitude −44.6°) each client moves the date six months, kept to a real day (31 Dec becomes 30 Jun), so the season still fits the weather. Added after the build review; the server keeps the northern windows because only the client knows the map's latitude.
+
 How much it matters: on West Coast USA (latitude 38°) a December day is about 9.5 h and a June day about 14.8 h; at Moderate that is roughly 6 extra real minutes of dark in a winter round. Maps tested for latitude: jungle_rock_island 22°, west_coast_usa 38°, italy 41°, east_coast_usa 44°.
 
 ## Approaches
