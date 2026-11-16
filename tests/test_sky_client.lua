@@ -17,10 +17,25 @@ local WINTER = { time = "sunrise", weather = "snow", year = 2026, month = 12, da
 
 test("labels end with the date only when asked", function()
   local sky = load()
-  assertEq(sky.label(WINTER, true), "Sunrise · Snow · 14 Dec")
+  assertEq(sky.label(WINTER, true), "Sunrise · Snow · 14 Dec · -4 to 0 °C")
   assertEq(sky.label(WINTER), "Sunrise · Snow")
-  assertEq(sky.label({ time = "noon", weather = "clear", month = 1, day = 3 }, true), "Noon · Clear · 3 Jan")
+  assertEq(sky.label({ time = "noon", weather = "clear", month = 1, day = 3 }, true), "Noon · Clear · 3 Jan · 0 to 8 °C")
   assertEq(sky.label({ time = "noon", weather = "clear", month = 13, day = 3 }, true), "Noon · Clear")
+end)
+
+test("the label shows the range in Fahrenheit when the game does", function()
+  local sky = load()
+  local saved = _G.settings
+  _G.settings = { getValue = function(k) return k == "uiUnitTemperature" and "f" or nil end }
+  local label = sky.label(WINTER, true)
+  _G.settings = saved
+  assertEq(label, "Sunrise · Snow · 14 Dec · 25 to 32 °F")
+end)
+
+test("a label without a month or with an unknown weather has no temperature", function()
+  local sky = load()
+  assertEq(sky.label({ time = "noon", weather = "clear", day = 3 }, true), "Noon · Clear")
+  assertEq(sky.label({ time = "noon", weather = "hail", month = 1, day = 3 }, true), "Noon · Hail · 3 Jan")
 end)
 
 test("old runs without a date still get a label", function()
@@ -56,7 +71,7 @@ test("a map south of the equator gets the same season six months on", function()
   local s = fake.setStates[1]
   assertEq(s.year, 2026); assertEq(s.month, 6); assertEq(s.day, 14)
   assertEq(fake.solarState.month, 6); assertEq(fake.solarState.day, 14)
-  assertEq(sky.label(WINTER, true), "Sunrise · Snow · 14 Jun")
+  assertEq(sky.label(WINTER, true), "Sunrise · Snow · 14 Jun · -4 to 0 °C")
 end)
 
 test("the shifted date stays a real day", function()
@@ -64,8 +79,8 @@ test("the shifted date stays a real day", function()
   fake.state.latitude = -44.57
   sky.apply({ time = "noon", weather = "clear", year = 2026, month = 12, day = 31, windDir = 0, windSeed = 1 })
   assertEq(fake.setStates[1].month, 6); assertEq(fake.setStates[1].day, 30)
-  assertEq(sky.label({ time = "noon", weather = "clear", month = 8, day = 31 }, true), "Noon · Clear · 28 Feb")
-  assertEq(sky.label({ time = "noon", weather = "clear", month = 1, day = 31 }, true), "Noon · Clear · 31 Jul")
+  assertEq(sky.label({ time = "noon", weather = "clear", month = 8, day = 31 }, true), "Noon · Clear · 28 Feb · 19 to 30 °C")
+  assertEq(sky.label({ time = "noon", weather = "clear", month = 1, day = 31 }, true), "Noon · Clear · 31 Jul · 0 to 8 °C")
 end)
 
 test("restore gives the player's own date back", function()

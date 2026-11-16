@@ -2,6 +2,7 @@ local wind = require("copsAndRobbers/wind")
 local surfaces = require("copsAndRobbers/surfaces")
 local rain = require("copsAndRobbers/rain")
 local climate = require("copsAndRobbers/climate")
+local units = require("copsAndRobbers/units")
 
 local M = {}
 
@@ -114,6 +115,13 @@ function M.label(p, withDate)
     parts[#parts + 1] = string.format("%d %s", day, MONTHS[month])
   end
   if #parts == 0 then return nil end
+  if withDate then
+    local low, high = climate.range(p.weather, p.month)
+    if low then
+      local unit = units.temperatureUnit()
+      parts[#parts + 1] = string.format("%d to %d %s", units.temperature(low, unit), units.temperature(high, unit), unit == "f" and "°F" or "°C")
+    end
+  end
   return table.concat(parts, " · ")
 end
 

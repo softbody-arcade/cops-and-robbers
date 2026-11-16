@@ -10,6 +10,17 @@ function M.read()
   return ok and M.unit(value) or "metric"
 end
 
+function M.temperatureUnit()
+  if type(settings) ~= "table" or type(settings.getValue) ~= "function" then return "c" end
+  local ok, value = pcall(settings.getValue, "uiUnitTemperature")
+  return ok and value == "f" and "f" or "c"
+end
+
+function M.temperature(c, unit)
+  local value = unit == "f" and c * 9 / 5 + 32 or c
+  return math.floor(value + 0.5)
+end
+
 function M.distance(meters, unit)
   if unit == "imperial" then
     local feet = math.floor(meters * 3.28084 / 10 + 0.5) * 10
