@@ -1,17 +1,15 @@
 local M = {}
 
 M.GROUNDED = { storm = true, fog = true, snow = true }
-M.REFIND_SECONDS = 5
-M.RAIN_REFIND_SECONDS = 10
+M.LOSE_SECONDS = 2
 
 function M.new(cfg, weather, now)
-  local h = { cfg = cfg, tracking = false, openSince = nil }
+  local h = { cfg = cfg, tracking = false, coveredSince = nil }
   if weather and M.GROUNDED[weather] then
     h.phase = "grounded"
     h.reason = weather
     return h
   end
-  h.refind = weather == "rain" and M.RAIN_REFIND_SECONDS or M.REFIND_SECONDS
   h.phase = "arriving"
   h.phaseEnd = now + cfg.helicopterArrivalSeconds
   return h
@@ -20,7 +18,7 @@ end
 local function enterUp(h, start, covered)
   h.phase = "up"
   h.tracking = not covered
-  h.openSince = nil
+  h.coveredSince = nil
   if h.cfg.helicopterRefuelSeconds > 0 then
     h.phaseEnd = start + h.cfg.helicopterUpSeconds
   else
@@ -51,25 +49,21 @@ function M.update(h, now, covered)
     if h.phase == "up" then
       h.phase = "refuelling"
       h.tracking = false
-      h.openSince = nil
+      h.coveredSince = nil
       h.phaseEnd = ended + h.cfg.helicopterRefuelSeconds
     else
       enterUp(h, ended, covered)
     end
   end
   if h.phase == "up" then
-    if h.tracking then
-      if covered then
+    if not covered then
+      h.tracking = true
+      h.coveredSince = nil
+    elseif h.tracking then
+      h.coveredSince = h.coveredSince or now
+      if now - h.coveredSince >= M.LOSE_SECONDS - 1e-9 then
         h.tracking = false
-        h.openSince = nil
-      end
-    elseif covered then
-      h.openSince = nil
-    else
-      h.openSince = h.openSince or now
-      if now - h.openSince >= h.refind then
-        h.tracking = true
-        h.openSince = nil
+        h.coveredSince = nil
       end
     end
   end

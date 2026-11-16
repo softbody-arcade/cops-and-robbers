@@ -568,7 +568,7 @@ test("cnr_cover from the runner reaches the round", function()
   runToChase(env)
   env.sent = {}
   env.call("cnr_cover", 1, '{"covered":true}')
-  for _ = 1, 4 do env.clock = env.clock + 0.25; env.positions[2] = 900; env.call("cnr_tick") end
+  for _ = 1, 12 do env.clock = env.clock + 0.25; env.positions[2] = 900; env.call("cnr_tick") end
   local last
   for _, m in ipairs(env.sent) do if m.ev == "cnr_heli" then last = decodeJson(m.data).phase end end
   assertEq(last, "searching")

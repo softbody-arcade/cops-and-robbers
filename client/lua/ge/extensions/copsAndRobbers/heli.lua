@@ -24,13 +24,13 @@ M.DEPART_FADE_SECONDS = 3
 M.DEPART_AIM_DRIFT = 60
 M.FADE_SECONDS = 1.5
 M.FADEIN_SECONDS = 1
-M.FADEIN_AIM_OFFSET = 8
+M.REFOUND_AIM_OFFSET = 8
 M.JUMP_METERS = 30
 M.MAX_STEP = 0.1
 
 local FIELDS = {
   { "brightness", M.BRIGHTNESS }, { "range", 120 }, { "innerAngle", 8 }, { "outerAngle", 16 },
-  { "color", "0.85 0.92 1 1" }, { "castShadows", "false" },
+  { "color", "0.85 0.92 1 1" }, { "castShadows", "true" },
 }
 
 function M.new()
@@ -183,9 +183,14 @@ local function startApproach(state, car, clock, random)
   toMode(state, "approach", clock)
 end
 
-local function startFadeIn(state, clock, random)
+local function startRefound(state, clock, random)
   if not state.light and not createLight(state) then error("no light") end
-  offsetAim(state, M.FADEIN_AIM_OFFSET, random)
+  offsetAim(state, M.REFOUND_AIM_OFFSET, random)
+  toMode(state, "hover", clock)
+  state.fx.dirty = true
+end
+
+local function startFadeIn(state, clock)
   toMode(state, "fadein", clock)
 end
 
@@ -277,7 +282,7 @@ local function tickLight(state, target, night, clock)
       if desired and (last == "arriving" or last == "refuelling") then
         startApproach(state, car, clock, random)
       elseif desired and last == "searching" then
-        startFadeIn(state, clock, random)
+        startRefound(state, clock, random)
       end
     elseif state.light then
       if phase == "refuelling" and last == "tracking" and state.fx.mode ~= "fade" then
@@ -292,7 +297,7 @@ local function tickLight(state, target, night, clock)
     if not state.light then
       if not createLight(state) then error("no light") end
     elseif state.fx.mode == "fade" or state.fx.mode == "depart" then
-      startFadeIn(state, clock, random)
+      startFadeIn(state, clock)
     end
   end
   if state.light and not advance(state, car, clock) then removeLight(state) end

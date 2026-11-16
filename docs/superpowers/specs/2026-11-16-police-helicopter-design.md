@@ -11,7 +11,8 @@ Status: design for review, 2026-11-16. Replaces the periodic last-seen ping (`la
 - **A police helicopter, on by default.** It's a tracking rule, not a flying model: the game ships no helicopter.
   - **Host settings:** arrival time, time up, refuel time.
   - **While up and the runner is in the open:** cops get the runner's live position, like cop sight.
-  - **Under cover** (tunnels, bridges, garages, canopies): it loses the runner and searches. If no cop sees the runner either, cops get one last-seen ping where the runner went under.
+  - **Under cover** (tunnels, bridges, garages, canopies): after 2 s under cover in a row it loses the runner and searches, so driving under a bridge doesn't lose them. If no cop sees the runner either, cops get one last-seen ping where the runner went under.
+  - **Back in the open:** it tracks the runner again at once. It knows where the cover ends, so there is no wait.
   - **Weather:** it stays grounded in storm, fog and snow.
 - **Everyone sees the helicopter's state on the HUD.**
   - At night, a searchlight shines on the runner while it tracks.
@@ -44,12 +45,15 @@ Status: design for review, 2026-11-16. Replaces the periodic last-seen ping (`la
 | Hiding starts | at the runner's release (the head start); prep and the countdown show the runner as today |
 | Sight range Off | the runner is never hidden |
 | Visuals | searchlight at night only; no model, no minimap ring (dropped 2026-11-16) |
+| Back in the open | tracked again at once, in any weather (no re-find wait) |
+| Short cover | lost only after 2 s under cover in a row, so a bridge doesn't break tracking |
+| Searchlight when re-found | back at once at full brightness, the aim swinging in from 8 m off |
 
 ## Weather and night
 | Round weather | Helicopter |
 |---|---|
 | Clear, Cloudy, the map's own (no weather set), BeamNG.Earth | flies normally |
-| Rain | flies; finds the runner again after **10 s** in the open instead of 5 |
+| Rain | flies normally |
 | Storm, Fog, Snow | **grounded** for the whole round. The HUD says "HELICOPTER GROUNDED (FOG)" |
 | Night (any time of day setting) | flies as normal, with the searchlight on |
 
@@ -84,9 +88,9 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
     - `refuelling` lasts the refuel time, then `up` again.
   - **Grounded:** a weather of storm, fog or snow means `grounded` for the whole round.
   - **Tracking and searching:**
-    - On entering `up`, it is `tracking` if the runner is in the open, otherwise `searching`.
-    - When the runner goes under cover while tracking, it switches to `searching`. The round sends a `lastSeen` only under the rule in "Pings" below.
-    - While searching, after the runner has been in the open for the re-find time (5 s, or 10 s in rain), it switches to `tracking`.
+    - On entering `up`, it is `tracking` if the runner is in the open, otherwise `searching` at once (it never saw the runner).
+    - While tracking, it switches to `searching` once the runner has been under cover for 2 s in a row (`LOSE_SECONDS`). Back in the open before that, the 2 s start again, so driving under a bridge keeps it tracking. The round sends a `lastSeen` only under the rule in "Pings" below.
+    - While searching, it switches to `tracking` as soon as the runner is back in the open, in any weather: there is no re-find wait. The client's cover check (two equal checks 0.25 s apart) is the only smoothing.
 - **Effects:**
   - **Live position while tracking:** a `live` update every `sightLiveIntervalSeconds` (the same throttle as sight, at least 3 s on Earth), sent to every cop like sight's live update.
   - **No-route rule:** `noRoute` stays per cop, worked out exactly as now, for cops who themselves see the runner.
@@ -150,21 +154,23 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
 - **What:** a `SpotLight` object `cnr_heli_light`, not saved with the level (`runnerObject()` on cops' games, the own car on the runner's). It hovers 40 m above the car with a slight drift. The beam keeps on the car with smooth operator-style corrections: it lags a sudden move then settles (near-critically damped), nudges every 1.5-3 s within 1 m, and has a slight tremor.
 - **Flying in:** when tracking starts after `arriving` or `refuelling`, the light starts 300 m away at 60 m up in a random heading and eases out to the hover point over 8 s. Its aim starts 15 m off the car and sweeps onto it.
 - **Flying away:** on `tracking` to `refuelling` the light stays 8 s, flies 300 m away climbing to 60 m (ease-in), its aim drifts off the car, and it fades to nothing over the last 3 s.
-- **Under cover:** on `tracking` to `searching` the light is deleted at once. On `searching` to `tracking` it comes back at the hover point, fades in over 1 s, and its aim starts 8 m off the car and swings back on. When night ends it fades out over 1.5 s.
+- **Under cover:** the light casts shadows, so in the first 2 s under a bridge deck or a tunnel roof the roof blocks the beam. On `tracking` to `searching` the light is deleted at once. On `searching` to `tracking` it comes back at once at the hover point at full brightness, and its aim starts 8 m off the car and swings back on. When night ends it fades out over 1.5 s; if night comes back during that fade, it fades back in over 1 s from where it is.
 - **Removed when:** the round ends, on cancel, on leaving or on a map change (at once), or when an animation above finishes.
-- **Values:** cone 8 and 16 degrees, brightness 80, range about 120 m, colour warm white.
+- **Values:** cone 8 and 16 degrees, brightness 80, range about 120 m, colour warm white, casts shadows.
 
 ## Tests
 - **`cnr/helicopter.lua`:**
   - phases and their timers (arrival, up, refuel, up again)
   - time up counts while searching
   - grounded for storm, fog and snow, and never arriving
-  - the re-find time is 5 s, and 10 s in rain
+  - it loses the runner only after 2 s under cover in a row, and a shorter cover restarts the 2 s
+  - back in the open it tracks again at once, also in rain
   - an arrival of 0 means up at release
   - a refuel of 0 means it stays up with no countdown
 - **Round:**
   - no periodic `lastSeen` any more, also with the helicopter off and with sight Off
   - one `lastSeen` when `tracked` goes false
+  - a cover shorter than 2 s (a bridge pass) sends no `lastSeen`, keeps the runner shown and keeps `live` coming
   - no `lastSeen` when the helicopter loses the runner while a cop sees them, or when sight is lost while the helicopter tracks
   - while tracking, `live` comes every `sightLiveIntervalSeconds`, and only once per tick when a cop also sees the runner
   - `heli` goes to everyone on each phase change and in setup
@@ -191,7 +197,7 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
 
 ## In-game check
 1. **Arrival:** in a clear round, the HUD counts down "HELICOPTER IN", then "HELICOPTER 2:00". Cops get live routes while the runner drives in the open.
-2. **Cover:** drive into a tunnel. You get "HELICOPTER SEARCHING", and cops get one last-seen route to the tunnel mouth. Come out, and it's tracking again after 5 s.
+2. **Cover:** drive into a tunnel. After 2 s you get "HELICOPTER SEARCHING", and cops get one last-seen route to the tunnel mouth. Come out, and it's tracking again at once. Drive under a bridge without stopping: it keeps tracking, and at night the deck blocks the beam.
 3. **Refuel:** after the time up, "HELICOPTER REFUELLING" counts down, and cops get nothing but their own sight.
 4. **Weather:** a fog round shows "HELICOPTER GROUNDED (FOG)" all round, and no pings arrive.
 5. **Hiding:** as a cop, the runner shows in prep and disappears from your minimap at the head start. After that they have no name tag and aren't on your minimap until you see them or the helicopter tracks them. With the sight range Off, they show all round.
@@ -200,10 +206,9 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
 
 ## Calls made (not discussed, easy to change)
 - **Defaults:** arrival 60 s, time up 2 min, refuel 90 s.
-- **Re-find times:** 5 s in the open, 10 s in rain.
 - **The runner's SPOTTED / HIDDEN tag** stays about cop sight. The helicopter has its own HUD item.
 - **Cover is reported** by the game that owns the runner's car, using the roof check from 1.5 m above it.
-- **Searchlight:** hovers 40 m above the car with a slight drift; the beam keeps on the car with smooth operator-style corrections (nudges every 1.5-3 s); flies in over 8 s from 300 m, flies away over 8 s with a fade, is cut at once under cover and fades in over 1 s when re-found.
+- **Searchlight:** hovers 40 m above the car with a slight drift; the beam keeps on the car with smooth operator-style corrections (nudges every 1.5-3 s); flies in over 8 s from 300 m, flies away over 8 s with a fade, is cut at once when the helicopter loses the runner and is back at once at full brightness when it finds them again.
 - **Earth:** the helicopter flies, the name tag is hidden, and there's no minimap hiding.
 - **Pings:** one last-seen ping per loss of the runner by both sight and the helicopter. It replaces the two separate pings, so neither cuts into the other's live stream.
 - **Settings:** time up must be more than 0, and a refuel of 0 means the helicopter stays up.

@@ -874,6 +874,38 @@ test("no last seen when the helicopter loses the runner while a cop sees them", 
   assertEq(n, 1)
 end)
 
+test("a bridge pass under 2 s keeps the helicopter on the runner, 2 s of cover loses them once", function()
+  local r = chasing({helicopterArrivalSeconds=0})
+  for i = 0, 4 do r:tick(12 + i * 0.25, farCars(), {}) end
+  r:coverReport(13.1, 1, true)
+  local lives = 0
+  for i = 1, 4 do
+    local fx = r:tick(13 + i * 0.25, farCars(), {})
+    assertEq(find(fx, "lastSeen"), nil); assertEq(find(fx, "runnerShown"), nil); assertEq(find(fx, "heli"), nil)
+    lives = lives + count(fx, "live")
+  end
+  r:coverReport(14.1, 1, false)
+  for i = 1, 4 do
+    local fx = r:tick(14 + i * 0.25, farCars(), {})
+    assertEq(find(fx, "lastSeen"), nil); assertEq(find(fx, "runnerShown"), nil); assertEq(find(fx, "heli"), nil)
+    lives = lives + count(fx, "live")
+  end
+  assertEq(lives, 2)
+  assertEq(r.shown, true)
+  r:coverReport(15.1, 1, true)
+  local seen, searching, hidden = 0, nil, nil
+  for i = 1, 16 do
+    local fx = r:tick(15 + i * 0.25, farCars(), {})
+    seen = seen + count(fx, "lastSeen")
+    searching = searching or find(fx, "heli")
+    hidden = hidden or find(fx, "runnerShown")
+    if i < 8 then assertEq(find(fx, "heli"), nil) end
+  end
+  assertEq(seen, 1)
+  assertEq(searching.phase, "searching")
+  assertEq(hidden.shown, false)
+end)
+
 test("the helicopter alone sends live updates to every cop with a route", function()
   local r = chasing({helicopterArrivalSeconds=0})
   local close = {[1]=kmh(0, 50), [2]=kmh(40, 50), [3]=kmh(45, 50)}

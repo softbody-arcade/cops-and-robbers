@@ -60,7 +60,8 @@
             and flies for <span class="v">{{ duration("helicopterUpSeconds") }}</span>.
             <template v-if="refuelNever">Then it stays up.</template>
             <template v-else>Then it refuels for <span class="v">{{ duration("helicopterRefuelSeconds") }}</span>.</template>
-            It tracks you in the open and loses you under tunnels, bridges and roofs.
+            It tracks you in the open. It loses you after 2 s under cover: tunnels, garages, or stopping under a bridge;
+            driving under a bridge doesn't. The moment you're back in the open, the cops know where you are again.
             It stays grounded in storm, fog and snow.
             <template v-if="sightOff">While it tracks you, cops see you live.</template>
           </span>
@@ -106,8 +107,9 @@
             and flies for <span class="v">{{ duration("helicopterUpSeconds") }}</span>.
             <template v-if="refuelNever">Then it stays up.</template>
             <template v-else>Then it refuels for <span class="v">{{ duration("helicopterRefuelSeconds") }}</span>.</template>
-            While it tracks the runner in the open, every cop sees where they are. Under tunnels, bridges and roofs it loses them,
-            and it stays grounded in storm, fog and snow.
+            While it tracks the runner in the open, every cop sees where they are. It loses them after 2 s under cover
+            (tunnels, garages, or stopping under a bridge) and finds them again the moment they're back in the open.
+            It stays grounded in storm, fog and snow.
           </span>
         </div>
         <div class="li">
