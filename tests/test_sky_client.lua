@@ -1,7 +1,7 @@
 dofile("tests/env_stubs.lua")
 local function load(opts)
   local fake = fakeEnvironment(opts)
-  for _, n in ipairs({ "copsAndRobbers/sky", "copsAndRobbers/surfaces", "copsAndRobbers/wind" }) do package.loaded[n] = nil end
+  for _, n in ipairs({ "copsAndRobbers/sky", "copsAndRobbers/surfaces", "copsAndRobbers/wind", "copsAndRobbers/shelter" }) do package.loaded[n] = nil end
   return require("copsAndRobbers/sky"), fake
 end
 local RAIN_NIGHT = { time = "night", weather = "rain", driving = true, windDir = 90, windSeed = 7 }
@@ -166,4 +166,51 @@ test("the map's own rain is put back to its start value during a round", functio
   assertEq(fake.setStates[#fake.setStates].numOfDrops, 0)
   sky.restore()
   assertEq(fake.state.numOfDrops, 500)
+end)
+
+local function withRoof(height, fn)
+  local oldCast, oldCamera = _G.castRayStatic, _G.core_camera
+  local roof = { height = height }
+  _G.core_camera = { getPosition = function() return vec3(0, 0, 0) end }
+  _G.castRayStatic = function(pos, dir, len)
+    if roof.height and roof.height < len then return roof.height end
+    return len + 1
+  end
+  local ok, err = pcall(fn, roof)
+  _G.castRayStatic, _G.core_camera = oldCast, oldCamera
+  if not ok then error(err, 0) end
+end
+
+local function hidden(fake)
+  return fake.objects.cnr_precipitation:getField("hidden") == "1"
+end
+
+test("rain stops under a close roof and comes back in the open", function()
+  withRoof(3, function(roof)
+    local sky, fake = load()
+    sky.apply(RAIN_NIGHT)
+    sky.update(0.25); sky.update(0.25)
+    assertEq(hidden(fake), true)
+    roof.height = nil
+    sky.update(0.25); sky.update(0.25)
+    assertEq(hidden(fake), false)
+  end)
+end)
+
+test("rain keeps falling under a high bridge", function()
+  withRoof(20, function()
+    local sky, fake = load()
+    sky.apply(RAIN_NIGHT)
+    for _ = 1, 4 do sky.update(0.25) end
+    assertEq(hidden(fake), false)
+  end)
+end)
+
+test("the roof check runs before GO and without driving effects", function()
+  withRoof(3, function()
+    local sky, fake = load()
+    sky.apply({ weather = "snow", windDir = 0, windSeed = 1 })
+    sky.update(0.25); sky.update(0.25)
+    assertEq(hidden(fake), true)
+  end)
 end)
