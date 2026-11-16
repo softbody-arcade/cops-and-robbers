@@ -2,7 +2,7 @@
   <CnrRoot ref="box" class="cnr-hud">
     <div ref="stack" class="hud-stack" :style="fit">
       <template v-if="hud.visible">
-        <HudNotices :notices="hud.notices" />
+        <HudNotices v-if="!settingsShown" :notices="hud.notices" />
         <template v-if="mode === 'lobby' && hud.lobby">
           <HudLobby v-show="!settingsOpen" :lobby="hud.lobby" @settings="openSettings" @help="openHelp" @toggle="toggleApp" />
         </template>
@@ -14,7 +14,7 @@
           <HudChase v-if="chaseShown" :status="hud.status" :bar="hud.catch" />
         </template>
         <HudSettings
-          v-if="settingsOpen && settingsAllowed"
+          v-if="settingsShown"
           v-model:draft="colorDraft"
           :settings="settings"
           @pick="hex => ui({ action: 'color', hex })"
@@ -49,6 +49,8 @@ const colorDraft = ref("")
 const mode = computed(() => hud.value.mode)
 const chaseShown = computed(() => !!(hud.value.status || (hud.value.catch && hud.value.catch.visible)))
 const settingsAllowed = computed(() => !!(hud.value.visible && ((mode.value === "lobby" && hud.value.lobby) || (mode.value === "round" && hud.value.prep))))
+
+const settingsShown = computed(() => settingsOpen.value && settingsAllowed.value)
 
 const settings = computed(() => hud.value.settings || { headlights: false, siren: false, sirensAllowed: false })
 
