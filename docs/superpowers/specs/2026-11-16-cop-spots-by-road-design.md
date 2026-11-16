@@ -22,7 +22,7 @@ cops start a long way behind. Placement should go by how far a cop has to drive 
 - Lane choice: cops still start on the road's centre line, as today.
 - Travel time (speed limits, road type): distance only.
 - Spreading cops over different directions: they still take the nearest free spots, 8 m apart, as today.
-- Skipping private, gated or dirt roads: every road the game's graph has stays a candidate, as today.
+- Skipping private or dirt roads: they stay candidates, as today. Gated roads are the exception (see Walk).
 
 ## Found in the current code
 
@@ -44,29 +44,36 @@ cops start a long way behind. Placement should go by how far a cop has to drive 
 
 ## Design
 
-**Graph.** `map.getGraphpath().graph[a][b]` has every link from both ends, with `len`, `oneWay` and `inNode`
+**Graph.** `map.getGraphpath().graph[a][b]` has every link from both ends, with `oneWay`, `inNode` and `gated`
 (traffic on a one-way link flows from `inNode` to `outNode`). Node positions come from `map.getMap().nodes[id].pos`.
-A cop may drive a link from `x` to `y` when it is not one-way or `inNode == x`.
+A cop may drive a link from `x` to `y` when it is not one-way or `inNode == x`. The link's `len` is a routing
+cost, not a length (length divided by drivability, plus 10 km on gated roads), so lengths come from node
+positions.
 
 **Start.** `map.findClosestRoad(center, 2000)` gives the runner's link `(a, b)`. Project the runner onto it at
 point `P`. Seed `a` with `|aP|` if a cop may drive `a` to `b`, and `b` with `|bP|` if a cop may drive `b` to `a`.
 The runner's own distance from the road doesn't count.
 
-**Walk.** Dijkstra with a small binary heap. From a reached node `u`, a neighbour `v` gets `dist(u) + len` when
-a cop may drive `v` to `u`. Stop once the cheapest open node is past the current upper bound.
+**Walk.** Dijkstra with a small binary heap. From a reached node `u`, a neighbour `v` gets `dist(u) + |uv|` when
+a cop may drive `v` to `u`. Gated links (`gated > 0`; the gate may be closed) are neither walked nor used for
+spots. Stop once the cheapest open node is past `max(maxD, 2 km)`.
 
 **Spots.** Every link with at least one reached end is sampled every 15 m (as today). A spot's distance is the
 smaller of the legal options: a reached end's distance plus the distance along the link to that end. It faces
 toward the end it uses. Spots on the runner's own link measure straight along the link to `P`, again only in a
 direction a cop may drive.
 
-**Pick.** Unchanged: keep spots with `min <= distance <= max`, sort by distance, keep spots 8 m apart, and take
-the `index`-th. When there are too few, widen as today (`lo = 0`, `hi` doubles, up to 2 km), now by road.
+**Pick.** Keep spots with `min <= distance <= max`, sort by distance, keep spots 8 m apart, and take the
+`index`-th (as today). Sort ties break on position (distance rounded to cm, then x, then y), so every player's
+game orders the spots the same way and two cops never pick the same spot. When there are too few, `hi` doubles
+up to 2 km by road, but the minimum stays: on a short dead end, widening from 0 as today would put a cop on top
+of the runner.
 
 **Fallback.** When no road is within 2 km of the runner, or the roads a cop can reach within 2 km hold too few
-spots (a car park or track not connected to the rest of the map), use today's straight-line search instead.
-It is fixed to see every link, and a spot faces along its link toward the runner (the legal direction on one-way
-links). If that finds nothing either, the cop gets today's notice and starts where they are.
+spots (a car park or track not connected to the rest of the map), use today's straight-line search instead
+(widening from 0 as today). It is fixed to see every link, and a spot faces along its link toward the runner
+(the legal direction on one-way links). If that finds nothing either, the cop gets today's notice and starts where
+they are.
 
 **Same misread elsewhere.** `closestNodeFallback` walks `getGraphpath().graph` instead of the one-sided links.
 
