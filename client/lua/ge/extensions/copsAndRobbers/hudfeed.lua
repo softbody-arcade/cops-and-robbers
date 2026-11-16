@@ -1,5 +1,6 @@
 local hud = require("copsAndRobbers/hud")
 local apps = require("copsAndRobbers/apps")
+local units = require("copsAndRobbers/units")
 
 local M = {}
 
@@ -185,7 +186,7 @@ local function push(clock, info)
   end
   guihooks.trigger("CnRHud", hud.payload(state, clock, {
     active = info.active, role = info.role, chaseStart = info.chaseStart,
-    resetAllowed = info.resetAllowed, resetHint = info.resetHint, penalty = info.penalty, infoText = info.infoText, infoTag = info.infoTag,
+    resetAllowed = info.resetAllowed, resetHint = info.resetHint, penalty = info.penalty, infoParts = info.infoParts, units = units.read(), infoTag = info.infoTag,
     timer = info.timer, flash = flash, prep = prep, events = events, resetFlashUntil = resetFlashUntil,
     change = change, applying = applying, releaseAt = releaseAt,
     result = result, rules = rules, lobby = lobby, color = color, warnings = M.warnings(), apps = appsOpen, helpOpen = helpOpen,

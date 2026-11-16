@@ -1,4 +1,5 @@
 local game = require("copsAndRobbers/game")
+local units = require("copsAndRobbers/units")
 
 local M = {}
 
@@ -37,10 +38,8 @@ function M.compass(from, to)
   return COMPASS[math.floor((angle + 22.5) / 45) % 8 + 1]
 end
 
-function M.formatDistance(m)
-  local rounded = math.floor(m + 0.5)
-  if rounded >= 1000 then return string.format("%.1f km", m / 1000) end
-  return string.format("%d m", rounded)
+function M.formatDistance(m, unit)
+  return units.distance(m, unit)
 end
 
 function M.clearRoute()
@@ -73,9 +72,9 @@ function M.gpsInfo()
   local dir = (here and target) and (" " .. M.compass(here, target)) or ""
   local ok, g = pcall(function() return api and api.gps and api.gps() end)
   if ok and type(g) == "table" and type(g.remaining) == "number" and not g.planning then
-    return string.format("Runner %s by road%s", M.formatDistance(g.remaining), dir)
+    return { before = "Runner", meters = g.remaining, after = "by road" .. dir }
   end
-  if here and target then return string.format("Runner %s%s", M.formatDistance(here:distance(target)), dir) end
+  if here and target then return { before = "Runner", meters = here:distance(target), after = dir ~= "" and dir:sub(2) or nil } end
   return nil
 end
 

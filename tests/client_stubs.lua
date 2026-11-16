@@ -43,6 +43,8 @@ function bootClient(opts)
     if d == "{}" then return {} end
     return nil
   end
+  env.gameSettings = opts.gameSettings or {}
+  _G.settings = { getValue = function(k) return env.gameSettings[k] end }
   env.reads = {}
   env.written = {}
   _G.jsonWriteFile = function(path, data) env.written[path] = deepcopy(data) return true end

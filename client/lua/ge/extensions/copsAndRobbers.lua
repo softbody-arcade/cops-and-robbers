@@ -47,7 +47,7 @@ local geoMode = false
 local lastGeoSent = 0
 local chaseStart
 local lastStatusAt = 0
-local infoText
+local infoParts
 local pendingPlacement
 local rebuildId
 local suppressResetUntil = 0
@@ -60,7 +60,7 @@ local sightMax = 0
 local sightState = sight.new()
 local lastSightCheck = 0
 local infoTag
-local spotted, nearestText
+local spotted, nearestParts
 local buildBaselineAt, buildBaseline
 local lastChangeKey, lastChanges, lastChangeCheck = "", {}, 0
 local modesState = modes.new()
@@ -102,7 +102,7 @@ local function startStatus()
   statusActive = true
   chaseStart = clock
   lastStatusAt = 0
-  infoText, infoTag = nil, nil
+  infoParts, infoTag = nil, nil
 end
 
 local function onSetupAI(data)
@@ -346,14 +346,14 @@ local function onLastSeen(data)
   infoTag = d.live and "LIVE" or nil
   if d.live and d.route == false then
     geo.clearRoute()
-    infoTag, infoText = "IN SIGHT", nil
+    infoTag, infoParts = "IN SIGHT", nil
     return
   end
   local target = d.geo and geo.toGame(d.geo) or (d.pos and vec3(d.pos.x, d.pos.y, d.pos.z))
   if not target then return end
   if geoMode and d.geo and geo.setGpsTarget(d.geo) then
     local info = geo.gpsInfo()
-    infoText = info or infoText
+    infoParts = info or infoParts
     return
   end
   if core_groundMarkers then pcall(core_groundMarkers.setPath, target) end
@@ -361,31 +361,27 @@ local function onLastSeen(data)
   if veh then
     local here = veh:getPosition()
     local meters = math.floor(here:distance(target) + 0.5)
-    if d.live then
-      infoText = string.format("Runner %s %s", geo.formatDistance(meters), geo.compass(here, target))
-    else
-      infoText = string.format("Runner seen %s %s", geo.formatDistance(meters), geo.compass(here, target))
-    end
+    infoParts = { before = d.live and "Runner" or "Runner seen", meters = meters, after = geo.compass(here, target) }
   end
 end
 
 local function runnerInfo()
   infoTag = spotted == true and "SPOTTED" or spotted == false and "HIDDEN" or nil
-  return nearestText
+  return nearestParts
 end
 
 local function onNearestCop(data)
   local d = jsonDecode(data) or {}
   if d.dist then
-    nearestText = "Nearest cop " .. geo.formatDistance(d.dist)
-    infoText = runnerInfo()
+    nearestParts = { before = "Nearest cop", meters = d.dist }
+    infoParts = runnerInfo()
   end
 end
 
 local function onSpotted(data)
   local d = jsonDecode(data) or {}
   spotted = d.spotted == true
-  infoText = runnerInfo()
+  infoParts = runnerInfo()
 end
 
 local function onMode(data)
@@ -424,7 +420,7 @@ local function onRelease()
     hudfeed.flash("GO!", clock)
   end
   startStatus()
-  if role == "runner" then infoText = runnerInfo() end
+  if role == "runner" then infoParts = runnerInfo() end
 end
 
 local function onState(data)
@@ -448,9 +444,9 @@ local function endRound()
   active = false
   role = nil
   statusActive = false
-  infoText = nil
+  infoParts = nil
   infoTag = nil
-  spotted, nearestText = nil, nil
+  spotted, nearestParts = nil, nil
   runnerId = nil
   evolving = false
   buildBaselineAt, buildBaseline, lastChangeKey, lastChanges = nil, nil, "", {}
@@ -631,7 +627,7 @@ local function updateGpsInfo()
   lastStatusAt = clock
   if geo.hasTarget() then
     local info = geo.gpsInfo()
-    if info then infoText = info end
+    if info then infoParts = info end
   end
 end
 
@@ -689,7 +685,7 @@ local function onUpdate(dtReal)
   updateGpsInfo()
   hudfeed.update(clock, {
     active = active, role = role, chaseStart = statusActive and chaseStart or nil,
-    resetAllowed = resetAllowed, resetHint = lastHint, penalty = penaltyActive, infoText = infoText, infoTag = infoTag,
+    resetAllowed = resetAllowed, resetHint = lastHint, penalty = penaltyActive, infoParts = infoParts, infoTag = infoTag,
     timer = timerEnd and { label = timerLabel, endsAt = timerEnd } or nil,
   })
 end

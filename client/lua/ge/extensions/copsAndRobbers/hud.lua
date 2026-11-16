@@ -1,3 +1,5 @@
+local units = require("copsAndRobbers/units")
+
 local M = {}
 
 local EXTRAPOLATE_MAX = 0.3
@@ -145,7 +147,10 @@ local function statusBlock(info, now)
   status.limit = limit and limit > 0 and M.formatTime(limit) or nil
   status.reset = resetText(info)
   status.resetFlash = type(info.resetFlashUntil) == "number" and now < info.resetFlashUntil
-  status.info = info.infoText
+  local p = info.infoParts
+  if type(p) == "table" then
+    status.info = { before = p.before, dist = p.meters and units.distance(p.meters, info.units) or nil, after = p.after }
+  end
   status.tag = info.infoTag
   return status
 end
@@ -176,8 +181,8 @@ local function resultBlock(result, now)
   }
 end
 
-local function helpBlock(open, rules)
-  local help = { open = open == true }
+local function helpBlock(open, rules, unit)
+  local help = { open = open == true, units = units.unit(unit) }
   if help.open and type(rules) == "table" then
     local r = {}
     for k, v in pairs(rules) do r[k] = v end
@@ -201,7 +206,7 @@ function M.payload(state, now, info)
     driving = mode == "round" and info.prep == nil,
     catch = mode == "result" and { visible = false, percent = 0 } or catchBlock(state, now, info),
     notices = notices(info.events, now),
-    help = helpBlock(info.helpOpen, info.rules),
+    help = helpBlock(info.helpOpen, info.rules, info.units),
   }
   if mode == "result" then
     payload.result = resultBlock(result, now)

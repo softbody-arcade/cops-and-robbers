@@ -386,10 +386,12 @@ test("a live update without route shows IN SIGHT, with route the live distance",
   assertEq(env.hud().status.tag, "IN SIGHT"); assertEq(env.hud().status.info, nil)
   env.fire("cnr_lastSeen", { live = true, route = true, pos = { x = 0, y = 640, z = 0 } })
   env.tick(0.2)
-  assertEq(env.hud().status.tag, "LIVE"); assertEq(env.hud().status.info, "Runner 640 m N")
+  assertEq(env.hud().status.tag, "LIVE"); local i = env.hud().status.info
+  assertEq(i.before, "Runner"); assertEq(i.dist, "640 m"); assertEq(i.after, "N")
   env.fire("cnr_lastSeen", { pos = { x = 0, y = 640, z = 0 } })
   env.tick(0.2)
-  assertEq(env.hud().status.tag, nil); assertEq(env.hud().status.info, "Runner seen 640 m N")
+  assertEq(env.hud().status.tag, nil); local i2 = env.hud().status.info
+  assertEq(i2.before, "Runner seen"); assertEq(i2.dist, "640 m"); assertEq(i2.after, "N")
 end)
 
 test("a last-seen ping past 1 km shows in km", function()
@@ -398,7 +400,21 @@ test("a last-seen ping past 1 km shows in km", function()
   env.veh.pos = vec3(0, 0, 0)
   env.fire("cnr_lastSeen", { pos = { x = 0, y = 1500, z = 0 } })
   env.tick(0.2)
-  assertEq(env.hud().status.info, "Runner seen 1.5 km N")
+  local i = env.hud().status.info
+  assertEq(i.before, "Runner seen"); assertEq(i.dist, "1.5 km")
+end)
+
+test("the chase distance follows the game's unit", function()
+  local env = bootClient()
+  copInChase(env)
+  env.veh.pos = vec3(0, 0, 0)
+  env.gameSettings.uiUnitLength = "imperial"
+  env.fire("cnr_lastSeen", { pos = { x = 0, y = 640, z = 0 } })
+  env.tick(0.2)
+  assertEq(env.hud().status.info.dist, "0.4 mi")
+  env.gameSettings.uiUnitLength = "metric"
+  env.tick(0.2)
+  assertEq(env.hud().status.info.dist, "640 m")
 end)
 
 test("the runner sees SPOTTED or HIDDEN with the nearest cop", function()
@@ -409,10 +425,12 @@ test("the runner sees SPOTTED or HIDDEN with the nearest cop", function()
   env.fire("cnr_nearestCop", { dist = 1200 })
   env.fire("cnr_spotted", { spotted = true })
   env.tick(0.2)
-  assertEq(env.hud().status.tag, "SPOTTED"); assertEq(env.hud().status.info, "Nearest cop 1.2 km")
+  assertEq(env.hud().status.tag, "SPOTTED"); local i = env.hud().status.info
+  assertEq(i.before, "Nearest cop"); assertEq(i.dist, "1.2 km")
   env.fire("cnr_spotted", { spotted = false })
   env.tick(0.2)
-  assertEq(env.hud().status.tag, "HIDDEN"); assertEq(env.hud().status.info, "Nearest cop 1.2 km")
+  assertEq(env.hud().status.tag, "HIDDEN"); local i = env.hud().status.info
+  assertEq(i.before, "Nearest cop"); assertEq(i.dist, "1.2 km")
 end)
 
 test("the leaderboard bridge forwards requests and state with car names", function()
