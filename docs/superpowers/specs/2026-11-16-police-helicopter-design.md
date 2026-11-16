@@ -15,7 +15,6 @@ Status: design for review, 2026-11-16. Replaces the periodic last-seen ping (`la
   - **Weather:** it stays grounded in storm, fog and snow.
 - **Everyone sees the helicopter's state on the HUD.**
   - At night, a searchlight shines on the runner while it tracks.
-  - A ring on the minimap marks the runner while it tracks.
 - **The runner is hidden from cops unless spotted.**
   - **From the runner's release (the head start) on,** the runner's name tag and minimap marker show on the cops' games only while the runner is spotted, meaning a cop has sight or the helicopter is tracking.
   - **In prep and the countdown,** the runner shows as today.
@@ -26,7 +25,8 @@ Status: design for review, 2026-11-16. Replaces the periodic last-seen ping (`la
 - **A host switch for the hiding.** It always applies.
 - **Pings while the helicopter is grounded or away.** There are none; cops have their own sight only.
 - **Hiding the runner's car itself.** Cops still see the car in the world when it's in view. Only the marker and the name tag are hidden.
-- **The minimap ring and minimap hiding on BeamNG.Earth.** Earth uses its own map. The helicopter still tracks there, through Earth's GPS like sight does.
+- **A minimap ring or icon for the helicopter.** Dropped on 2026-11-16: the helicopter does not show on the minimap.
+- **Minimap hiding on BeamNG.Earth.** Earth uses its own map. The helicopter still tracks there, through Earth's GPS like sight does.
 
 ## Anti-goals
 - **A cop who sees the runner losing their live position** because of the helicopter's state. Cop sight keeps working as today.
@@ -43,7 +43,7 @@ Status: design for review, 2026-11-16. Replaces the periodic last-seen ping (`la
 | Hiding the runner | always, also with the helicopter off |
 | Hiding starts | at the runner's release (the head start); prep and the countdown show the runner as today |
 | Sight range Off | the runner is never hidden |
-| Visuals | searchlight at night and minimap ring; no model |
+| Visuals | searchlight at night only; no model, no minimap ring (dropped 2026-11-16) |
 
 ## Weather and night
 | Round weather | Helicopter |
@@ -151,10 +151,6 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
 - **Removed when:** tracking stops, it gets light, the round ends, on cancel, on leaving or on a map change.
 - **Values:** brightness, range (about 60 m), cone angles and colour (warm white) are tuned in game.
 
-### Client: minimap ring
-- **What:** in the extension's `onDrawOnMinimap(td)` hook, while tracking, a ring at the runner's position via `ui_apps_minimap_utils` (for example `simpleCircle`), for every player.
-- **Not on BeamNG.Earth.**
-
 ## Tests
 - **`cnr/helicopter.lua`:**
   - phases and their timers (arrival, up, refuel, up again)
@@ -189,7 +185,6 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
     - The wrap is applied once the minimap extension appears, and again after it reloads.
     - In practice as a cop, the AI runner's id is the one skipped.
   - **Searchlight:** created at night while tracking, never by day, removed on each exit path.
-  - **Minimap ring:** drawn while tracking only.
 
 ## In-game check
 1. **Arrival:** in a clear round, the HUD counts down "HELICOPTER IN", then "HELICOPTER 2:00". Cops get live routes while the runner drives in the open.
@@ -198,8 +193,7 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
 4. **Weather:** a fog round shows "HELICOPTER GROUNDED (FOG)" all round, and no pings arrive.
 5. **Hiding:** as a cop, the runner shows in prep and disappears from your minimap at the head start. After that they have no name tag and aren't on your minimap until you see them or the helicopter tracks them. With the sight range Off, they show all round.
 6. **Searchlight at night:** it follows the runner's car while tracking and is gone afterwards. Every player sees it.
-7. **Ring:** it shows on the minimap while tracking.
-8. **Wrapper safety:** the minimap still works normally outside rounds.
+7. **Wrapper safety:** the minimap still works normally outside rounds.
 
 ## Calls made (not discussed, easy to change)
 - **Defaults:** arrival 60 s, time up 2 min, refuel 90 s.
@@ -207,8 +201,7 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
 - **The runner's SPOTTED / HIDDEN tag** stays about cop sight. The helicopter has its own HUD item.
 - **Cover is reported** by the game that owns the runner's car, using the roof check from 1.5 m above it.
 - **Searchlight:** 40 m above the car, pointing straight down.
-- **The minimap ring** shows for every player, including the runner, so they know they're tracked.
-- **Earth:** the helicopter flies, the name tag is hidden, and there's no ring or minimap hiding.
+- **Earth:** the helicopter flies, the name tag is hidden, and there's no minimap hiding.
 - **Pings:** one last-seen ping per loss of the runner by both sight and the helicopter. It replaces the two separate pings, so neither cuts into the other's live stream.
 - **Settings:** time up must be more than 0, and a refuel of 0 means the helicopter stays up.
 - **Nearest cop:** the runner's readout keeps updating every 30 s, since the periodic ping that refreshed it is gone.
@@ -216,7 +209,6 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
 - **Practice as a cop:** the AI runner is hidden from the minimap too.
 
 ## Left to the builder
-- The exact `ui_apps_minimap_utils` call and look for the ring.
 - `SpotLight` field names and values, checked in game.
 - The panel group's step sizes.
 - The HUD icon.
