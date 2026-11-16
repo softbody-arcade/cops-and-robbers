@@ -97,7 +97,7 @@ The two string keys go in `CHOICES`; the percentages and `clockSpeed` in `MAXIMA
 - A new **Sky** group in `settings.js` `GROUPS`: Time of day, Night chance, Clock speed, Weather, Bad weather chance, Weather affects driving. Time of day and Weather are `common` (in the short list).
 - A new item kind for a pick-one setting (a list of values with labels: "Map default", "Sunrise", ..., "Random"), rendered in `PanelSettings.vue` and handled by `shown()`.
 - Each chance item only shows while its setting is on random (a show-when condition on the item). Clock speed shows "stopped" at 0 and "N×" otherwise.
-- On `beamng_earth` the group shows one line: "Not available on BeamNG.Earth yet".
+- On `beamng_earth` the group shows one line instead of its settings: "Not available on BeamNG.Earth yet". New sky is not offered there, and the server refuses it.
 
 ### Picking (server, new pure module `cnr/sky.lua`, random function passed in)
 - `pick(cfg, random)` returns `{ time = key or nil, weather = key or nil }`; `nil` means the map's own.
@@ -164,12 +164,12 @@ The two string keys go in `CHOICES`; the percentages and `clockSpeed` in `MAXIMA
   - Gusts are the same in every game only as far as the clocks agree: each game counts from its own GO message, and a rejoin from `clockSeconds`. A few tenths of a second apart is fine.
 
   My calls (the host left them to me): rain is moderate, so no mud; a storm turns dirt (not gravel, which drains) into mud; grass loses some grip in rain so a field isn't grippier than the wet road; snow covers everything you drive on. Mud is not tested yet: if road cars get stuck too easily in it, storm dirt becomes GRAVEL_WET like rain.
-- **apply(sky):** if the sky has nothing set (time and weather on the map's own, clock speed 0), do nothing: no change, no lock. Otherwise, if nothing is saved yet this round, save `getState()`, whether the sky was locked (`canChange()`), and nothing else yet. Unlock, apply, then lock:
+- **apply(sky):** if the sky has nothing set (time and weather on the map's own, clock speed 0), do nothing: no change, no lock. Otherwise, if nothing is saved yet this round, save `getState()` (copying `groundWind`, which the game hands out as its live vector) and whether the sky was locked (`canChange()`). Unlock, apply, then lock:
   - a set time: `time` from the key, `play = false` (the clock starts at GO, see Clock);
-  - a set weather: the sky values, then the temperature with `setTemperatureProfile({ averageC })` when the weather has one;
-  - a part on the map's own takes the map's default values from `core_environment.getInitState()`, not whatever the player had, so everyone in the round shares one sky even when only one part is set;
+  - a set weather: the sky values; the temperature always goes back to the map's own curve (`temperatureCurveOverrideC = false`), then `setTemperatureProfile({ averageC })` when the weather has a temperature;
+  - a part on the map's own takes the map's default values from `core_environment.getInitState()`, not whatever the player had, so everyone in the round shares one sky even when only one part is set; the clock stays stopped (`play = false`) unless a clock speed starts it at GO;
   - precipitation: our own Precipitation object (name like `cnr_precipitation`), created or updated for rain, storm and snow, deleted for the others; `numOfDrops` is not passed to `setState`, so the map's own rain object is left alone;
-  - wind, when `sky.driving` is set and the weather has wind: `groundWind` from `wind.at(..., t)` in the `setState` call;
+  - wind: `groundWind` from `wind.at(..., t)` in the `setState` call when `sky.driving` is set and the weather has wind, otherwise zero, so every player in the round has the same wind;
   - grip, when `sky.driving` is set and the weather has surfaces: before the first change this round, save the physics fields of each target surface; then for each rule in the Surfaces table either copy the source surface's physics fields (friction, hydrodynamic friction, Stribeck velocity, roughness, depth, strength, fluid fields) onto the target, or multiply its two friction values, and call `be:setGroundModel` for the target and each of its aliases. Groups whose surface the map doesn't have are skipped. A New sky first puts the saved surfaces back, then applies the new ones.
 - **startClock(clockSeconds):** at GO, start counting the round time from `clockSeconds` (used by the wind) and, with a clock speed, unlock, set `play = true`, `dayLength`, and `time` as in Clock, lock.
 - **update(dt):** called from the extension's `onUpdate`; while the round has wind, every 0.25 s sets the wind at the current round time as described under Wind.

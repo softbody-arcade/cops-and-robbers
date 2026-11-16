@@ -20,7 +20,8 @@
 - A client only touches the sky when the round sets something (time or weather set, or `clockSpeed > 0`).
 - Wind seed: whole number 1 to 2147483646; generator `seed = seed * 16807 % 2147483647` (exact in doubles); never `math.random` on the client for wind.
 - Commit messages: `feat:` / `fix:` / `docs:` prefix, say why, end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
-- Every task ends with `make test` passing (`N passed, 0 failed`); UI tasks also `make vuecheck`.
+- Every task ends with `make test` passing (`N passed, 0 failed`); UI tasks also `make vuecheck`; tasks that add or change client Lua also `luajit -bl <file> >/dev/null` for each such file (the tests run on Lua 5.3, this checks LuaJIT syntax).
+- The game's `getState().groundWind` and `getInitState().groundWind` are the live wind vector, not copies (`environment.lua:30`, `:878`, `:1375`, `:1785`): never keep them without copying x, y and z.
 
 ## Review Focus
 
@@ -28,14 +29,17 @@
 2. **New sky from a wet weather to a dry one** must put surfaces back and remove the rain object, not stack changes. Pinned in Task 5 (`a new weather first puts the old surfaces back`) and Task 6 (`a calm sky removes our precipitation object`).
 3. **After the round nothing keeps running**: no wind updates, no lock, no precipitation object, original surfaces. Pinned in Task 6 (`restore stops the wind updates`).
 4. **A player whose sky was locked before the round** (another mod) gets it locked again after; a player whose sky was unlocked gets it unlocked. Pinned in Task 6 (`restore puts the earlier lock back`).
-5. **A rejoin mid-chase with a running clock or wind** lands on the same time and gust as everyone else. Pinned in Task 3 (`a mid-chase join gets clockSeconds`) and Task 7 (`a mid-chase setup starts the clock at clockSeconds`).
+5. **The player's own ground wind comes back after the round** (the game's state holds the live wind vector, so a saved copy taken carelessly changes with the round's wind). Pinned in Task 6 (`restore gives the player's own wind back`).
+6. **BeamNG.Earth never gets a sky or New sky**, also with a clock speed set. Pinned in Task 2 (`nothing is sent on BeamNG.Earth, also with a clock speed`) and Task 3 (`Earth rounds get no sky`).
+7. **A rejoin mid-chase with a running clock or wind** lands on the same time and gust as everyone else. Pinned in Task 3 (`a mid-chase join gets clockSeconds`) and Task 7 (`a mid-chase setup starts the clock at clockSeconds`).
 
 ---
 
 ### Task 1: Sky settings on the server
 
 **Files:**
-- Modify: `server/CopsAndRobbers/cnr/config.lua` (`DEFAULTS`, `CHOICES`, `MAXIMA`, `validNumber`)
+- Modify: `server/CopsAndRobbers/cnr/config.lua` (`DEFAULTS`, `CHOICES`, `MAXIMA`, `validNumber`, `M.setValue`)
+- Modify: `server/CopsAndRobbers/cnr/panel.lua` (`applyValues` warning match)
 - Test: `tests/test_config.lua`
 
 **Interfaces:**
@@ -71,11 +75,17 @@ test("clock speed must be a whole number", function()
   assertEq(c.clockSpeed, 0); assertEq(#w, 1)
   assertEq(config.merge({ clockSpeed = 120 }).clockSpeed, 120)
 end)
+
+test("a broken weatherDriving doesn't block saving weather", function()
+  local updated = config.setValue({ weatherDriving = "yes" }, "weather", "rain")
+  assertEq(updated ~= nil, true)
+  assertEq(updated.weather, "rain")
+end)
 ```
 
-- [ ] **Step 2: Run** `make test` — expected: the four new tests FAIL (`expected map, got nil`).
+- [ ] **Step 2: Run** `make test` — expected: the new tests FAIL (`expected map, got nil`; the setValue test returns nil).
 
-- [ ] **Step 3: Implement in `cnr/config.lua`**: add the six keys to `DEFAULTS`; add `timeOfDay` and `weather` sets to `CHOICES` (values as in the test); add `nightChancePercent = 100`, `badWeatherChancePercent = 100`, `clockSpeed = 120` to `MAXIMA`; add a `WHOLE = { clockSpeed = true }` set that `validNumber` checks (`v % 1 == 0`).
+- [ ] **Step 3: Implement in `cnr/config.lua`**: add the six keys to `DEFAULTS`; add `timeOfDay` and `weather` sets to `CHOICES` (values as in the test); add `nightChancePercent = 100`, `badWeatherChancePercent = 100`, `clockSpeed = 120` to `MAXIMA`; add a `WHOLE = { clockSpeed = true }` set that `validNumber` checks (`v % 1 == 0`). `weather` is a prefix of `weatherDriving`, so the warning match in `config.setValue` (`config.lua:143`) and `panel.applyValues` (`panel.lua:162`) must match `key .. " "` at the start of the warning instead of `key`.
 
 - [ ] **Step 4: Run** `make test` — expected: all pass. If another test counts every setting (for example a panel or chat listing), update its expected count, not the new keys.
 
@@ -94,7 +104,7 @@ end)
 - Produces:
   - `sky.pick(cfg, random, geo) -> table`: `{}` when `geo` is true; otherwise `{ time = key|nil, weather = key|nil, windDir = integer, windSeed = integer }`.
   - `sky.hasRandom(cfg) -> boolean`: time or weather is `"random"`.
-  - `sky.payload(s, cfg, clockSeconds) -> table|nil`: `nil` when `s.time`, `s.weather` are nil and `cfg.clockSpeed` is 0; otherwise `{ time, weather, clockSpeed (only > 0), driving (true only when s.weather and cfg.weatherDriving), windDir, windSeed, clockSeconds }`.
+  - `sky.payload(s, cfg, clockSeconds) -> table|nil`: `nil` when `s` is nil or empty (`next(s) == nil`, which is what Earth gets), or when `s.time`, `s.weather` are nil and `cfg.clockSpeed` is 0; otherwise `{ time, weather, clockSpeed (only > 0), driving (true only when s.weather and cfg.weatherDriving), windDir, windSeed, clockSeconds }`.
 - `random` follows `math.random`: `random()` for chance rolls (night when `random() * 100 < nightChancePercent`, same for bad weather), `random(#list)` to pick from a list, `random(0, 359)` for `windDir`, `random(1, 2147483646)` for `windSeed`. Day list: sunrise, morning, noon, afternoon, sunset. Calm list: clear, cloudy. Bad list: rain, storm, fog, snow (in that order).
 
 - [ ] **Step 1: Write the failing tests** (`tests/test_sky.lua`)
@@ -161,6 +171,12 @@ test("payload sends driving only with a weather and the switch on", function()
   assertEq(sky.payload(s, cfg(nil), nil).clockSpeed, nil)
 end)
 
+test("nothing is sent on BeamNG.Earth, also with a clock speed", function()
+  local c = cfg({ clockSpeed = 30, weather = "rain" })
+  assertEq(sky.payload(sky.pick(c, rng(0, 1), true), c, nil), nil)
+  assertEq(sky.payload(nil, c, nil), nil)
+end)
+
 test("payload passes clockSeconds", function()
   assertEq(sky.payload({ time = "noon", windDir = 1, windSeed = 1 }, cfg(nil), 12.5).clockSeconds, 12.5)
 end)
@@ -187,8 +203,8 @@ end)
   - `round.sky` (table or nil): set from `opts.sky` in `Round:start`, cleared in `Round:clear`; New car (`reroll`) keeps it.
   - `cnr_roundSetup` payload gains `sky = sky.payload(current.sky, cfg, clockSeconds)` where `clockSeconds = current.countdownStartedAt and math.max(0, now() - current.countdownStartedAt) or nil` (so it is absent before GO).
   - New client event `cnr_sky`, data = the same payload table, sent to every non-AI pid in `current.players` on New sky.
-  - Panel command `sky`; `panel.can(state, test, evolving, skyRandom)` gains `sky = (state == "prep" or state == "ready") and skyRandom == true`; `panel.snapshot(info)` passes `info.skyRandom`; `panelState()` sets `skyRandom = sky.hasRandom(cfg)`.
-- `handlers.sky(pid)`: state not `prep`/`ready` → reply `"You can only change the sky before GO"`; no random setting → reply `"Set time of day or weather to random first"`; else `current.sky = sky.pick(cfg, math.random, geoMode)` and send `cnr_sky`. The "New sky: Night · Rain" notice is shown by the client when `cnr_sky` arrives (Task 7), so the server sends no notice text.
+  - Panel command `sky`; `panel.can(state, test, evolving, skyRandom)` gains `sky = (state == "prep" or state == "ready") and skyRandom == true`; `panel.snapshot(info)` passes `info.skyRandom`; `panelState()` sets `skyRandom = not geoMode and sky.hasRandom(cfg)`.
+- `handlers.sky(pid)`: on Earth (`geoMode`) → reply `"Not available on BeamNG.Earth yet"`; state not `prep`/`ready` → reply `"You can only change the sky before GO"`; no random setting → reply `"Set time of day or weather to random first"`; else `current.sky = sky.pick(cfg, math.random, geoMode)` and send `cnr_sky`. The "New sky: Night · Rain" notice is shown by the client when `cnr_sky` arrives (Task 7), so the server sends no notice text.
 - `handlers.start` passes `{ build = ..., sky = sky.pick(cfg, math.random, geoMode) }` to `current:start` (the pick must happen before `start`, because evolving mode emits setup effects from inside `start`); `handlers.test` adds `sky = ...` to its opts.
 
 - [ ] **Step 1: Write the failing tests**
@@ -219,7 +235,7 @@ test("New sky is offered before GO with a random setting", function()
 end)
 ```
 
-`tests/test_main.lua` (after the local `countSent` helper):
+`tests/test_main.lua` (after the local `countSent` helper; `EARTH` is the Earth map path defined at `test_main.lua:501`; if a geo-mode round needs more setup before `cnr_roundSetup` is sent, follow the existing Earth tests there):
 ```lua
 test("round setup has no sky by default", function()
   local env = boot()
@@ -263,6 +279,16 @@ test("New sky needs a random setting", function()
   env.startRound()
   env.panel(1, "sky")
   assertEq(env.replyHas("to random first"), true)
+  env.cleanup()
+end)
+
+test("Earth rounds get no sky", function()
+  local env = boot({ map = EARTH, config = '{"clockSpeed":30,"weather":"rain"}' })
+  env.startRound()
+  local setup = env.lastSent("cnr_roundSetup")
+  if setup then assertEq(setup.data:find('"sky"', 1, true), nil) end
+  env.panel(1, "sky")
+  assertEq(env.replyHas("BeamNG.Earth"), true)
   env.cleanup()
 end)
 
@@ -373,15 +399,15 @@ end)
 - Test: `tests/test_surfaces.lua`
 
 **Interfaces:**
-- Produces (test helper) `fakeEnvironment(opts) -> fake` (`opts` may be nil), installing `_G.core_environment`, `_G.be`, `_G.createObject`, `_G.scenetree` and `_G.vec3` (if missing, `{x, y, z}` tables). The fake behaves like the game where it matters: setters and `setState` are ignored while locked.
-  - `fake.state` — current state: `time = 0.1, play = true, dayLength = 1800, cloudCover = 0.3, fogDensity = 1, windSpeed = 1, groundWind = vec3(0, 0, 0), temperatureCurveOverrideC = false`; `getState()` returns a copy, `setState(s)` merges `s` into it (when unlocked) and appends a copy of `s` to `fake.setStates`.
-  - `fake.init` — what `getInitState()` returns (a copy of the starting state).
+- Produces (test helper) `fakeEnvironment(opts) -> fake` (`opts` may be nil), installing `_G.core_environment`, `_G.be`, `_G.createObject`, `_G.scenetree` and `_G.vec3` (if missing, a function returning `{ x = x, y = y, z = z }`). The fake behaves like the game where it matters: setters and `setState` are ignored while locked.
+  - `fake.state` — current state: `time = 0.1, play = true, dayLength = 1800, cloudCover = 0.3, fogDensity = 1, windSpeed = 1, groundWind = vec3(0, 0, 0), temperatureCurveOverrideC = false`; `getState()` returns a shallow copy whose `groundWind` is the live `fake.state.groundWind` vector itself (as in the game); `setState(s)` (when unlocked) sets x, y and z of `fake.state.groundWind` in place from `s.groundWind`, merges the other fields of `s`, and appends a copy of `s` to `fake.setStates`.
+  - `fake.init` — what `getInitState()` returns: a copy of the starting state whose `groundWind` is also the live `fake.state.groundWind` vector (as in the game).
   - `fake.locked`, `enableChanges(b)` sets `fake.locked = not b`, `canChange()` returns `not fake.locked`; `fake.locked` starts as `opts.locked or false`.
   - `getSolarTimeOfDayValue(key)` returns `timeOfDayKeyToTime[key]`; `timeOfDayKeyToTime = { sunrise = 0.775, morning = 0.825, noon = 0, afternoon = 0.175, sunset = 0.245, night = 0.5 }`.
   - `setTemperatureProfile(p)` appends to `fake.profiles` when unlocked.
   - `getLightState()` returns `{ isNight = fake.state.time > 0.25 and fake.state.time < 0.75 }`.
   - `fake.models` is the same table as `core_environment.groundModels`: ASPHALT (static 0.98, sliding 0.70, roughness 0) with alias CONCRETE (same `cdata` table, `isAlias = true, parent = "ASPHALT"`), ASPHALT_WET (0.92, 0.55, 0.2), RUMBLE_STRIP (0.98, 0.70, 0.5), GRAVEL (0.69, 0.74, 0.44), GRAVEL_WET (0.62, 0.60, 0.38), DIRT (0.70, 0.73, 0.42) with alias DIRT_GRASS, MUD (0.55, 0.55, 0.5, defaultDepth 0.15), GRASS (0.61, 0.65, 0.43), SNOW (0.65, 0.40, 0.3), SAND (0.6, 0.6, 0.5); every `cdata` also has `hydrodynamicFriction, stribeckVelocity, defaultDepth, strength, fluidDensity, flowConsistencyIndex, flowBehaviorIndex, dragAnisotropy, shearStrength`.
-  - `be:setGroundModel(name, cdata)` appends `{ name, static, sliding }` to `fake.modelSets`; `be:queueAllObjectLua(cmd)` appends to `fake.queued`; `be:setGroundWind(v)` appends to `fake.groundWinds`.
+  - `be:setGroundModel(name, cdata)` appends `{ name = name, static = cdata.staticFrictionCoefficient, sliding = cdata.slidingFrictionCoefficient }` to `fake.modelSets`; `be:queueAllObjectLua(cmd)` appends to `fake.queued`; `be:setGroundWind(v)` appends to `fake.groundWinds`.
   - `createObject(class)` returns an object with `setField(name, _, value)`, `getField(name)`, `registerObject(name)` (stores it in `fake.objects[name]`), `delete()` (removes it, appends name to `fake.deleted`); `scenetree.findObject(name)` reads `fake.objects`; `scenetree.MissionGroup:addObject(obj)` is a no-op.
 - Produces `surfaces.apply(weather)`, `surfaces.restore()`, `surfaces.drop()`:
   - `apply` first restores anything this module changed, then applies `surfaces.RULES[weather]` (the spec's Surfaces table). A rule is `{ targets = {...}, become = "ASPHALT_WET" }` (copy the spec's physics fields from the source `cdata`) or `{ targets = {...}, static = f, sliding = f }` (multiply the two friction values). Targets missing from `core_environment.groundModels` are skipped. Before changing a target the first time, save its physics fields. After changing it, call `be:setGroundModel` for the target and for every model whose `isAlias` and `parent == target`.
@@ -469,11 +495,11 @@ end)
 - Consumes: `wind.at` (Task 4), `surfaces.apply/restore/drop` (Task 5), the payload from Task 3 (`time, weather, clockSpeed, driving, windDir, windSeed, clockSeconds`).
 - Produces:
   - `sky.label(p) -> string|nil` — e.g. `"Night · Rain"`, `"Snow"`, nil when neither is set.
-  - `sky.apply(p)` — nothing when `p` is nil or sets nothing (no time, no weather, no `clockSpeed`). Otherwise: if nothing is saved this round, save `core_environment.getState()` and `wasLocked = not core_environment.canChange()`; `enableChanges(true)`; one `setState` with the whole round sky; temperature; precipitation; surfaces (when `p.driving`); `enableChanges(false)`.
-    - Time fields: a set time gives `time = getSolarTimeOfDayValue(key) or timeOfDayKeyToTime[key]`, `play = false`; no time gives `time`, `play`, `dayLength` from `getInitState()` (with `play = false` when `clockSpeed > 0`). Remember the applied `time` as the clock start.
+  - `sky.apply(p)` — nothing when `p` is nil or sets nothing (no time, no weather, no `clockSpeed`). Otherwise: if nothing is saved this round, save `core_environment.getState()` with `groundWind` copied (`vec3(g.x, g.y, g.z)`, because the game hands out its live vector) and `wasLocked = not core_environment.canChange()`; `enableChanges(true)`; one `setState` with the whole round sky; temperature; precipitation; surfaces (when `p.driving`); `enableChanges(false)`.
+    - Time fields: a set time gives `time = getSolarTimeOfDayValue(key) or timeOfDayKeyToTime[key]`, `play = false`; no time gives `time` and `dayLength` from `getInitState()` with `play = false` (the clock is stopped for the whole round unless a clock speed starts it at GO). Remember the applied `time` as the clock start.
     - Weather fields from `sky.WEATHER[key]` (`cloudCover`, `fogDensity`, `windSpeed`); no weather takes those from `getInitState()`.
-    - `groundWind = vec3(wind.at(p.weather, p.windSeed, p.windDir, 0))` when `p.driving`, else `vec3(0, 0, 0)` with a weather, or the init value without one.
-    - Temperature: weathers with `temperatureC` call `setTemperatureProfile({ averageC = temperatureC })`; others put `temperatureCurveOverrideC = false` in the `setState`.
+    - `groundWind = vec3(wind.at(p.weather, p.windSeed, p.windDir, 0))` when `p.driving` and the weather is windy, else `vec3(0, 0, 0)`, so every player in the round has the same wind.
+    - Temperature: the `setState` always has `temperatureCurveOverrideC = false` (back to the map's curve, dropping any curve the player made); weathers with `temperatureC` then call `setTemperatureProfile({ averageC = temperatureC })`.
     - Precipitation: always delete our object `cnr_precipitation` if it exists; weathers with `precipitation` create it again (`createObject("Precipitation")`, `setField` for `dataBlock, numDrops, dropSize, minSpeed, maxSpeed, boxWidth = 40, boxHeight = 20, useWind = 1`, `registerObject("cnr_precipitation")`, `scenetree.MissionGroup:addObject`). `numOfDrops` is never passed to `setState`.
     - Surfaces: `surfaces.apply(p.driving and p.weather or nil)`.
   - `sky.startClock(clockSeconds)` — sets the round time to `clockSeconds or 0`; with `clockSpeed > 0`: unlock, `setState({ time = (start + clockSeconds * speed / 86400) % 1, play = true, dayLength = 86400 / speed })`, lock.
@@ -481,7 +507,7 @@ end)
   - `sky.restore()` — if something is saved: unlock, `setState(saved)`, `surfaces.restore()`, delete `cnr_precipitation`, `enableChanges(not wasLocked)`, forget everything (round time, wind, saved state).
   - `sky.drop()` — `surfaces.drop()`, `enableChanges(not wasLocked)` if something was saved, forget everything; no `setState`.
   - `sky.isNight() -> boolean` — `core_environment.getLightState()` and its `isNight`, false when missing.
-  - Every function returns quietly when `core_environment` is nil.
+  - Every function returns quietly when `core_environment` is nil. `sky.lua` and `surfaces.lua` read `core_environment`, `be`, `createObject` and `scenetree` as globals at call time (no locals cached at load), so tests can swap the fakes.
 - Starting weather values (`sky.WEATHER`, tuned in Task 9): clear `{ cloudCover = 0.2, fogDensity = 1, windSpeed = 1 }`; cloudy `{ cloudCover = 0.9, fogDensity = 2, windSpeed = 2 }`; rain `{ cloudCover = 1.0, fogDensity = 4, windSpeed = 3, temperatureC = 8, precipitation = { dataBlock = "rain_medium", numDrops = 3000, dropSize = 1, minSpeed = 0.1, maxSpeed = 0.3 } }`; storm `{ cloudCover = 1.2, fogDensity = 8, windSpeed = 8, temperatureC = 8, precipitation = { dataBlock = "rain_medium", numDrops = 6000, dropSize = 1, minSpeed = 0.1, maxSpeed = 0.3 } }`; fog `{ cloudCover = 0.4, fogDensity = 25, windSpeed = 1, temperatureC = 5 }`; snow `{ cloudCover = 1.0, fogDensity = 5, windSpeed = 2, temperatureC = -5, precipitation = { dataBlock = "Snow_menu", numDrops = 5000, dropSize = 0.2, minSpeed = 0.1, maxSpeed = 0.3 } }`.
 
 - [ ] **Step 1: Write the failing tests** (`tests/test_sky_client.lua`)
@@ -524,8 +550,25 @@ test("a part on the map's own comes from the map's start values", function()
   local sky, fake = load()
   fake.state.time = 0.3
   sky.apply({ weather = "fog", windDir = 0, windSeed = 1 })
-  assertEq(fake.setStates[1].time, 0.1)
-  assertEq(fake.setStates[1].temperatureCurveOverrideC, nil)
+  assertEq(fake.setStates[1].time, 0.1); assertEq(fake.setStates[1].play, false)
+  assertEq(fake.setStates[1].temperatureCurveOverrideC, false)
+  assertEq(fake.profiles[1].averageC, 5)
+end)
+
+test("restore gives the player's own wind back", function()
+  local sky, fake = load()
+  fake.state.groundWind.x = 1
+  sky.apply({ weather = "storm", driving = true, windDir = 0, windSeed = 7 })
+  assertEq(fake.state.groundWind.y > 1, true)
+  sky.restore()
+  assertEq(fake.state.groundWind.x, 1); assertEq(fake.state.groundWind.y, 0)
+end)
+
+test("a round without a windy weather has no ground wind", function()
+  local sky, fake = load()
+  fake.state.groundWind.x = 3
+  sky.apply({ time = "night", windDir = 0, windSeed = 1 })
+  assertEq(fake.state.groundWind.x, 0)
 end)
 
 test("weathers without a temperature hand the map's curve back", function()
@@ -626,7 +669,7 @@ end)
 - Modify: `client/lua/ge/extensions/copsAndRobbers/hudfeed.lua` (`M.prep`, new `M.prepSky`)
 - Modify: `client/lua/ge/extensions/copsAndRobbers/hud.lua` (`center` role card)
 - Modify: `client/lua/ge/extensions/copsAndRobbers/ai.lua` (`M.lightsOn`)
-- Modify: `tests/client_stubs.lua` (`bootClient` installs `fakeEnvironment()` as `env.sky`)
+- Modify: `tests/client_stubs.lua` (`bootClient` installs `fakeEnvironment()` as `env.sky`, before it loads `copsAndRobbers.lua`)
 - Test: `tests/test_client.lua`, `tests/test_hud.lua`
 
 **Interfaces:**
@@ -718,7 +761,7 @@ end)
 If the AI setup event or fields differ from what `copsAndRobbers.lua` registers (check its `AddEventHandler` list and `ai.setup`), adjust the test's event data, not the assertion.
 
 - [ ] **Step 2: Run** `make test` — expected: the new tests FAIL (`env.sky` nil, card without the sky).
-- [ ] **Step 3: Implement** the wiring, the `hudfeed`/`hud`/`ai` changes, and `bootClient` setting `env.sky = fakeEnvironment()` (after `dofile("tests/env_stubs.lua")` at the top of `client_stubs.lua`).
+- [ ] **Step 3: Implement** the wiring, the `hudfeed`/`hud`/`ai` changes, and `bootClient` setting `env.sky = fakeEnvironment()` before its `loadfile("client/lua/ge/extensions/copsAndRobbers.lua")` line (with `dofile("tests/env_stubs.lua")` at the top of `client_stubs.lua`).
 - [ ] **Step 4: Run** `make test` — expected: all pass, including every existing client test.
 - [ ] **Step 5: Commit** — `feat: round setup, New sky, GO and round end drive the sky in every game`
 
@@ -741,7 +784,7 @@ If the AI setup event or fields differ from what `copsAndRobbers.lua` registers 
   - `badWeatherChancePercent` — "Bad weather chance", unit "%", step 5, min 0, max 100, `when: v => v("weather") === "random"`; help "How often random weather is rain, storm, fog or snow".
   - `weatherDriving` — "Weather affects driving", `kind: "bool"`; help "Rain, storm and snow change grip and bring gusty wind".
 - `shown(item, v)` returns the option label for `kind: "choice"`; `stepped` moves a choice to the previous/next option (wrapping), so the existing minus/plus buttons work for it.
-- `PanelSettings.vue`: the `common` and `more` lists drop items whose `when(props.store.valueOf)` is false; under the common Sky group title, when `state.geo`, a `p-why` line "Not available on BeamNG.Earth yet".
+- `PanelSettings.vue`: the `common` and `more` lists drop items whose `when(props.store.valueOf)` is false; when `state.geo`, the Sky group shows only a `p-why` line "Not available on BeamNG.Earth yet" under its title, without its settings (the design's choice).
 - `PanelRound.vue`: a "New sky" button (`v-if="can.sky"`, secondary accent) next to New car that emits `command` `"sky"`.
 
 - [ ] **Step 1: Implement** the changes above.
@@ -753,12 +796,33 @@ If the AI setup event or fields differ from what `copsAndRobbers.lua` registers 
 ### Task 9: Docs, version, and the in-game check with the host
 
 **Files:**
-- Modify: `README.md` (Settings table rows for the six keys), `docs/FEATURES.md` (a "Night and weather" section: settings, random chances, New sky, clock, grip table summary, wind, temperature, restore after the round, not on BeamNG.Earth), version `2.2.0` in `server/CopsAndRobbers/main.lua` (`VERSION`), `client/mod_info/CopsAndRobbers/info.json` (`version_string`) and the `docs/FEATURES.md` title.
+- Modify: `README.md` (Settings table rows for the six keys), `docs/FEATURES.md` (a "Night and weather" section: settings, random chances, New sky, clock, grip table summary, wind, temperature, restore after the round, not on BeamNG.Earth), version `2.2.0` in `server/CopsAndRobbers/main.lua` (`VERSION`), `client/lua/ge/extensions/copsAndRobbers.lua` (`CLIENT_VERSION`, line 16; the client warns "rejoin to update" when it differs from the server), `client/mod_info/CopsAndRobbers/info.json` (`version_string`), the `docs/FEATURES.md` title and `tools/previews/panel.svg` (cosmetic); tests expecting `2.1.0` (`tests/test_main.lua:758-759`, the `version = "2.1.0"` lines and the warning text in `tests/test_client.lua`) move to `2.2.0`.
+- Modify: `TODO.md` (tick "Night and weather rounds").
+- Modify: `docs/DEPENDENCIES.md` (what the sky, weather and grip code relies on in the game and the maps, and what to check when they update).
 - Values tuned in game go into `client/lua/ge/extensions/copsAndRobbers/sky.lua` (`WEATHER`), `wind.lua` (`WEATHER`) and `surfaces.lua` (grass factors) with their tests updated.
 
 - [ ] **Step 1: Write the docs and bump the version**; run `make test` and `make vuecheck` — expected: all pass.
-- [ ] **Step 2: Commit** — `docs: night and weather rounds in the README and features list, 2.2.0`
-- [ ] **Step 3: Build** `make package` — expected: `dist/Client/CopsAndRobbers.zip` and `dist/Server/CopsAndRobbers/`. Install it on the host's test setup (`make install-local`, or deploy only when the host asks).
-- [ ] **Step 4: Check in game with the host** (the spec's in-game list): rain and snow on west_coast_usa and Utah; night lights at night; weather values look right on two or three maps; drag tires against road tires on wet and snow; a road car on a storm's muddy Utah dirt road (stuck too easily → storm dirt becomes GRAVEL_WET); wind strengths and gusts feel right; two players see a storm gust at about the same moment; exhaust steam in snow; clock speed 60 runs dusk into night; a rejoin mid-chase lands on the same time; after the round sky, grip, temperature and wind are back and the environment menu works again.
-- [ ] **Step 5: Tune** the values the check calls for, update the affected tests, `make test`, commit — `fix: tune weather values after playing them`.
-- [ ] **Step 6: Clean up** — ask the host whether to delete the throwaway test extension `~/.local/share/BeamNG/BeamNG.drive/current/lua/ge/extensions/cnrSnowTest.lua` (outside the repo).
+- [ ] **Step 2: Add the sky, weather and grip dependencies to `docs/DEPENDENCIES.md`**, in its existing format (Used in / What we use / On update, check):
+  - In "BeamNG.drive: game engine Lua (GE)", a **Sky, weather and grip** area (`copsAndRobbers/sky.lua`, `surfaces.lua`, `wind.lua`):
+    - `core_environment`: `getState` / `setState` (fields `time`, `play`, `dayLength`, `cloudCover`, `fogDensity` in thousandths, `windSpeed`, `groundWind`, `temperatureCurveOverrideC`), `getInitState`, `enableChanges` / `canChange` (the lock: every setter, `setState` and its fade do nothing while locked), `getSolarTimeOfDayValue(key)` and `timeOfDayKeyToTime` (keys sunrise, morning, noon, afternoon, sunset, night), `setTemperatureProfile({ averageC })`, `getLightState().isNight`, `groundModels[name].{cdata, isAlias, parent}`.
+    - `be:setGroundModel(name, cdata)`, `be:queueAllObjectLua(cmd)`, `be:setGroundWind(vec3)`.
+    - `createObject("Precipitation")` with the fields `dataBlock`, `numDrops`, `dropSize`, `minSpeed`, `maxSpeed`, `boxWidth`, `boxHeight`, `useWind`; `registerObject`, `delete`, `scenetree.findObject`, `scenetree.MissionGroup:addObject`.
+    - **Game data:** the precipitation datablocks `rain_medium` and `Snow_menu` (`art/datablocks/managedDatablocks.datablocks.json` in `gameengine.zip`); the ground models and their alias lists in `art/groundmodels.json` (targets ASPHALT, ASPHALT_OLD, ASPHALT_PREPPED, COBBLESTONE, RUMBLE_STRIP, GRAVEL, DIRT, DIRT_DUSTY, DIRT_DUSTY_LOOSE, GRASS, GRAVEL_WET, MUD; sources ASPHALT_WET, GRAVEL_WET, MUD, SNOW).
+    - **Map materials:** maps say which surface a road or terrain layer is by naming one of those ground models or an alias (`groundmodelName` / `groundType` in their material files). Checked on 0.40.5 for west_coast_usa, Utah, italy, east_coast_usa, johnson_valley and jungle_rock_island. A surface name we don't list, or a map with its own `groundModels/` folder (a mod map), stays dry in rain and snow.
+    - `getState().groundWind` and `getInitState().groundWind` are the game's live wind vector, not copies; we copy it when saving.
+    - While the sky is locked the game skips its own `onVehicleSpawned = applyGroundWind` (the lock check in `applyGroundWind`), so cars spawned during a round get wind only from our 0.25 s updates.
+    - On a map change the game's `onClientEndMission` reloads ground models, clears the temperature override and zeroes the wind, but never undoes `enableChanges(false)`; that's why our `drop()` puts the lock back. Check after an update: leave mid-round or change map, and on the next map the environment menu works and grip is normal.
+    - On update, check: the functions above still exist (grep the game's `lua/ge/extensions/core/environment.lua`); `groundmodels.json` still has the listed names and aliases with similar values; the two datablocks still exist; the map scan below shows no new road, dirt or grass surface names (add any to `surfaces.lua` `RULES`); in game, a practice round with Night and Rain shows rain and night lights, wet roads slide, gusts push the car, the environment menu is greyed out, and after End chase the sky, grip, wind and menu are back.
+    - The map scan (prints each map's surface names with counts):
+      ```bash
+      for z in ~/.local/share/Steam/steamapps/common/BeamNG.drive/content/levels/*.zip; do echo "== $(basename "$z" .zip): $(unzip -p "$z" '*.json' 2>/dev/null | grep -oi '"groundmodelName" *: *"[^"]*"\|"groundType" *: *"[^"]*"' | sed 's/.*: *"//;s/"//' | tr a-z A-Z | sort | uniq -c | sort -rn | awk '{printf "%s(%s) ", $2, $1}')"; done
+      ```
+  - In "BeamNG.drive: vehicle Lua and jbeam", the vehicle commands `obj:setWind(x, y, z)` (sent to every car through `be:queueAllObjectLua`) and `electrics.setLightsState(1)` (practice AI headlights at night).
+  - In the quick check's practice-round list (step 4), a **Sky** line: with Time of day Night and Weather Rain, rain shows, the AI cars have headlights, and everything is back after End chase; set Time of day and Weather back to Map default afterwards (the panel writes the live server's `config.json`).
+  - In the "BeamNG.Earth" section: we send no sky on `beamng_earth`, because a change through `core_environment` flips the player's Earth sky to Manual and saves it in their Earth settings.
+  - If the New sky button got an icon, add its name to the UI section's icon list.
+- [ ] **Step 3: Commit** — `docs: night and weather rounds in the README, features and dependencies, 2.2.0`
+- [ ] **Step 4: Build** `make package` — expected: `dist/Client/CopsAndRobbers.zip` and `dist/Server/CopsAndRobbers/`. Install it on the host's test setup (`make install-local`, or deploy only when the host asks).
+- [ ] **Step 5: Check in game with the host** (the spec's in-game list): rain and snow on west_coast_usa and Utah; night lights at night; weather values look right on two or three maps; drag tires against road tires on wet and snow; a road car on a storm's muddy Utah dirt road (stuck too easily → storm dirt becomes GRAVEL_WET); wind strengths and gusts feel right; two players see a storm gust at about the same moment; exhaust steam in snow; clock speed 60 runs dusk into night; a rejoin mid-chase lands on the same time; after the round sky, grip, temperature and wind are back and the environment menu works again.
+- [ ] **Step 6: Tune** the values the check calls for, update the affected tests, `make test`, commit — `fix: tune weather values after playing them`.
+- [ ] **Step 7: Clean up** — ask the host whether to delete the throwaway test extension `~/.local/share/BeamNG/BeamNG.drive/current/lua/ge/extensions/cnrSnowTest.lua` (outside the repo).
