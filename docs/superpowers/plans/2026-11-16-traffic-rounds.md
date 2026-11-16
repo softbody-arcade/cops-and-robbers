@@ -30,7 +30,7 @@
 - **Events:**
   - Server → one game: `cnr_trafficStart {count}`.
   - Game → server: `cnr_trafficCars {vids = [..]}`.
-  - Server → games: `cnr_roundCars {keys = ["1-0", "2-3"]}`. Sent to everyone, also in practice. An empty list goes to everyone at every round end.
+  - Server → games: `cnr_roundCars {keys = ["1-0", "2-3"]}`. Sent to everyone, also in practice. At round end an empty list goes to everyone, but only if a non-empty list was broadcast.
 - **Exact copy:**
   - Notices: "Bob: crash penalty 10s (traffic)", "Traffic could not spawn", "Only 2 of 3 traffic cars spawned".
   - Panel notes: "5 each · 30 cars with 6 players", "5 each · 5 cars with 1 player", "MaxCars is 4 on this server: 3 per player", "MaxCars is 1 on this server: no room for traffic". On BeamNG.Earth the Traffic group shows the Sky group's existing "Not available on BeamNG.Earth yet".
@@ -223,7 +223,7 @@ end)
 ```
 The "no cause" test is a guard: it already passes before this task, and must still pass after it.
 
-- [ ] **Step 2: Run `make test`.** Expected: the crash test and the "labelled traffic" and "hit by traffic" round tests FAIL (`cause` is nil, or the fourth `tick` argument is ignored). The "no cause" and "never holds" tests may already pass; they are guards.
+- [ ] **Step 2: Run `make test`.** Expected: the crash test and the "labelled traffic", "hit by traffic" and "records the traffic" round tests FAIL (`cause` and `run.traffic` are nil, or the fourth `tick` argument is ignored). The "no cause" and "never holds" tests may already pass; they are guards.
 - [ ] **Step 3: Implement** `atFault`'s second return value, `tick`'s fourth parameter, `prevTraffic`, `otherCars`, `cause` on the effect and on `note`.
 - [ ] **Step 4: Run `make test`.** Expected: all pass, including the existing crash and round tests.
 - [ ] **Step 5: Commit** `feat: traffic counts in the crash fault rule, traffic crashes are labelled`
@@ -248,10 +248,12 @@ The "no cause" test is a guard: it already passes before this task, and must sti
   - **`cnrOnMyVehicle`:**
     - The clean-up (`MP.RemoveVehicle` of the other cars) still runs, but only when `not current.test and not trafficOpen[pid]`. Once the go-ahead is out it doesn't run for that player again. Lobby leftovers were already removed before the go-ahead, and the vehicle rule caps extra cars at the traffic count, so every extra car is traffic, reported or not (spec updated to say so).
     - Then `openTraffic(pid)` and `pushRoundCars()` run. Both run in practice too, and also when `MP.GetPlayerVehicles(pid)` isn't a table: today's early `return`s for practice and for a non-table must move below them, or apply only to the clean-up.
-  - **`vehicleAllowed(pid, vid, data, isSpawn)`:** gains `vid`. After the "not in a round" check, only for a car that isn't the player's own (`trafficOpen[pid]` set and `vid ~= activeVid[pid]`):
+  - **`vehicleAllowed(pid, vid, data, isSpawn)`:** gains `vid`. With `trafficOpen[pid]` set and `vid ~= activeVid[pid]` (a car that isn't the player's own):
+    - **During any active round**, including a New car re-pick (`picking`, where `roundCarActive()` is false and today's rule lets everything through), this check comes first, before the "not in a round" early return. A spawn by anyone but the practice issuer is allowed only while the number of the player's cars other than `activeVid[pid]` is below `trafficOpen[pid]`. Without this, extra cars spawned during a re-pick would slip past the cap, and the clean-up no longer removes them.
     - The practice issuer → allowed, whatever the spawn or edit. BeamMP's own `MaxCars` still limits it. Its AI cars, which are respawned in place on an evolving Apply, need this.
-    - Anyone else: an edit → allowed. A spawn → allowed while the number of the player's cars other than `activeVid[pid]` is below `trafficOpen[pid]`.
+    - Anyone else: an edit → allowed, even when `activeVid[pid]` is nil (an edit refused here would delete a traffic car). A spawn → the count above, but only while `activeVid[pid]` is set. With the round car gone (`activeVid[pid]` nil), a spawn goes through today's model and config rule without the `firstVid` clause, so the game can put back a round car while traffic fills the cap.
     - The player's own car (`vid == activeVid[pid]`) always goes through today's rule, with `decoded` returned, so its model and parts checks stay on, in practice too.
+  - **`cnrOnVehicleReset`:** its first line becomes `if (activeVid[pid] or trafficOpen[pid]) and activeVid[pid] ~= vid then return end`. The game counts moving a traffic car to a new spot as a reset (`gameplay/traffic.lua` → `spawn.lua`), and BeamMP reports a reset for every car the player owns. Without this, once the round car is gone, every traffic respawn would read "Bob reset illegally".
   - **`vidFor(pid)`:** with `trafficOpen[pid]` set, no fallback to `firstVid`. A missing `activeVid` gives nil, never a traffic car.
   - **`cnrOnVehicleSpawn` / `cnrOnVehicleEdited`:**
     - They only set `activeVid[pid] = vid` when `not trafficOpen[pid]`.
@@ -261,8 +263,8 @@ The "no cause" test is a guard: it already passes before this task, and must sti
     - It stores up to `trafficOpen[pid]` numeric vids, never `activeVid[pid]` and never an `aiVid` value.
   - **`pushRoundCars(pid)`:**
     - The keys are `"pid-vid"` from `activeVid` for every non-AI pid in `current.players`, sorted.
-    - With a `pid` argument it sends to that pid. Without one, it sends to everyone (−1), in practice too, so lobby players also hide the name tags on the practice traffic. It only sends when the list changed since the last send.
-    - The `roundEnd` effect sends `cnr_roundCars {keys = {}}` to everyone (also after a practice, whose `roundEnd` only reaches the issuer) and resets the last-sent list.
+    - With a `pid` argument it always sends to that pid. Without one, it broadcasts to everyone (−1), in practice too, so lobby players also hide the name tags on the practice traffic. The broadcast only goes out when the list changed since the last broadcast.
+    - The `roundEnd` effect sends `cnr_roundCars {keys = {}}` to everyone (also after a practice, whose `roundEnd` only reaches the issuer), but only when the last broadcast list was non-empty. Then it resets the last-broadcast list. This keeps the existing test "test round events reach only the issuer" passing: that practice never places a car, so nothing was broadcast.
     - `cnrOnPlayerJoin` calls `pushRoundCars(pid)` during an active round. `cnrOnPlayerDisconnect` calls `pushRoundCars()`.
 - **Test harness** (`boot` in `tests/test_main.lua`):
   - `MP.Settings = { Map = 4, MaxCars = 2 }`.
@@ -303,6 +305,14 @@ The "no cause" test is a guard: it already passes before this task, and must sti
   - `"a deleted round car never hands the player's checks to a traffic car"`:
     - After the go-ahead for pid 2, with `env.vehicles[2] = {[0]="x",[3]="t"}`: `onVehicleDeleted(2, 0)`, then set `env.vehicles[2] = {[3]="t"}`.
     - During one `cnr_tick`, a `MP.GetPositionRaw` wrapper records no call for pid 2 with vid 3.
+  - `"with the round car gone, traffic resets are ignored and a round car can be put back"`:
+    - After the go-ahead for pid 2, with `env.vehicles[2] = {[0]="x",[1]="t",[2]="t",[3]="t",[4]="t",[5]="t"}`, run to the chase, then `onVehicleDeleted(2, 0)` and drop `[0]` from `env.vehicles[2]`.
+    - `onVehicleReset(2, 3, "")` gives no notice.
+    - An edit of vid 3 to `etk800` returns 0.
+    - A spawn `'USER:Bob:2-9:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc"}}'` returns 0, and one of `etk800` with vid 10 returns 1.
+  - `"a New car re-pick lets no extra car past the cap"`:
+    - After the go-ahead for pid 2, with `env.vehicles[2]` holding the round car (vid 0) and 5 traffic cars, `env.panel(1, "reroll")`.
+    - A spawn of `etk800` with vid 9 from pid 2 returns 1.
   - `"a mid-round joiner gets the round cars and its own go-ahead"`:
     - Set `env.names = {"Reinder","Bob","Kim"}`, extend `GetPlayers` for pid 3, and set `env.vehicles[3] = {[0]="x"}`.
     - In the chase, `onPlayerJoin(3)` sends `cnr_roundCars` to pid 3.
@@ -385,7 +395,7 @@ The "no cause" test is a guard: it already passes before this task, and must sti
   - `tests/test_main.lua`, `"the board app can filter by traffic"`:
     - A filter message with `"traffic":"with"` gives `cnr_boardState` data containing `"traffic":"with"`.
     - A later filter message without `traffic` gives `"traffic":"all"`.
-- [ ] **Step 2: Run `make test`.** Expected: the new tests FAIL.
+- [ ] **Step 2: Run `make test`.** Expected: the traffic filter tests FAIL; the timeline cause test already passes (a guard).
 - [ ] **Step 3: Implement** the Interfaces.
 - [ ] **Step 4: Run `make test`.** Expected: all pass.
 - [ ] **Step 5: Commit** `feat: leaderboard filter by traffic`
@@ -409,7 +419,7 @@ The "no cause" test is a guard: it already passes before this task, and must sti
     - The lowercased `key` or `Name` contains any of `police`, `sheriff`, `interceptor`, `ambulance`, `fire`, `rescue`, `emergency`, `taxi`.
   - **`M.start(count, held, clock)`:**
     1. `gameplay_traffic.deleteVehicles()`, to clear the player's lobby traffic.
-    2. `gameplay_traffic.setTrafficVars({ activeAmount = count, enableRandomEvents = false })`.
+    2. `gameplay_traffic.setTrafficVars({ aiMode = "traffic", activeAmount = count, enableRandomEvents = false })`. `aiMode` matters because `spawnTraffic` (unlike `setupTraffic`) doesn't reset it, and the game's "AI: all vehicles chase/flee" menu leaves it changed.
     3. Build the group: `gameplay_traffic_trafficUtils.createTrafficGroup(count * 2)`, keep the entries whose config passes `civilian` (look the config up by `model_key` and `key` in the config list), and trim to `count`.
     4. `gameplay_traffic.spawnTraffic(#group, group)`. This skips the special-vehicle providers: no police, no reserved taxi.
     - Remembers `count`, `held`, `startedAt = clock`, and `running = true`.
@@ -462,12 +472,12 @@ The "no cause" test is a guard: it already passes before this task, and must sti
 - [ ] **Step 1: Write the failing tests:**
   - `"traffic spawns only on the server's go-ahead, without police"`:
     - After `startCop`, `#env.trafficSpawns == 0`.
-    - `cnr_trafficStart {count=3}` gives `env.trafficSpawns[1].amount == 3`, every group entry has `model == "pickup"`, and `env.trafficVars.enableRandomEvents == false`.
+    - `cnr_trafficStart {count=3}` gives `env.trafficSpawns[1].amount == 3`, every group entry has `model == "pickup"`, `env.trafficVars.enableRandomEvents == false` and `env.trafficVars.aiMode == "traffic"`.
   - `"traffic stands still until the runner's GO"`:
     - After the go-ahead and `env.tick(1)`, each traffic object's commands contain `"controller.setFreeze(1)"`.
     - After `cnr_runnerGo {headStartSeconds=7}`, they contain `"controller.setFreeze(0)"`, and `env.tick(2)` adds no further `setFreeze(1)`.
   - `"traffic for a player who joins during the chase drives at once"`:
-    - Setup with `phase = "running"`, then the go-ahead: no `"controller.setFreeze(1)"` on any traffic object.
+    - Setup with `phase = "running"`, then the go-ahead and `env.tick(1)`: `env.trafficSpawns[1].amount == 3`, the 3 traffic objects exist, and none has `"controller.setFreeze(1)"`.
   - `"traffic is deleted at round end and on leaving, never when none was started"`:
     - `cnr_roundEnd` after a go-ahead: `env.trafficDeletes` goes up and no traffic object remains.
     - A round without a go-ahead ending leaves `env.trafficDeletes` unchanged.
@@ -493,7 +503,7 @@ The "no cause" test is a guard: it already passes before this task, and must sti
   - `"in bad weather traffic gets headlights and keeps them, in a clear round none from us"`:
     - Setup with `sky = { weather = "fog" }` (prep), the go-ahead, then `env.tick(1.2)`: each traffic object's commands contain `"electrics.setLightsState(1)"` (held).
     - Clear the commands, `env.tick(1.1)`: sent again.
-    - A setup with `sky = { weather = "clear" }` and the go-ahead: after `env.tick(2)`, no traffic object has `"electrics.setLightsState(1)"`.
+    - A setup with `sky = { weather = "clear" }` and the go-ahead: after `env.tick(2)`, the 3 traffic objects exist and none has `"electrics.setLightsState(1)"`.
     - From that clear round, `cnr_sky {weather = "rain"}`, then `env.tick(1.2)`: the commands contain it.
   - `"a failed traffic spawn tells the player once"`:
     - With `env.deferTraffic = true` and never finished, `env.tick(16)` gives a HUD event "Traffic could not spawn" exactly once.
