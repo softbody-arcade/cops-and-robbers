@@ -1499,6 +1499,7 @@ test("New sky updates the card and says so", function()
   env.fire("cnr_sky", { time = "noon", weather = "snow", year = 2026, month = 1, day = 3, windDir = 0, windSeed = 9 })
   env.tick(0.2)
   assertEq(env.hud().center.car, "Gavril Pickup · Noon · Snow · 3 Jan")
+  env.tick(3.5)
   assertEq(env.sky.objects.cnr_precipitation:getField("dataBlock"), "Snow_menu")
   local found = false
   for _, n in ipairs(env.hud().notices) do if n.text == "New sky: Noon · Snow · 3 Jan" then found = true end end

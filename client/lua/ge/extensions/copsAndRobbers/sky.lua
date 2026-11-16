@@ -1,6 +1,6 @@
 local wind = require("copsAndRobbers/wind")
 local surfaces = require("copsAndRobbers/surfaces")
-local shelter = require("copsAndRobbers/shelter")
+local rain = require("copsAndRobbers/rain")
 local climate = require("copsAndRobbers/climate")
 
 local M = {}
@@ -10,11 +10,11 @@ M.WEATHER = {
   cloudy = { cloudCover = 1.8, fogDensity = 1, windSpeed = 0.3 },
   rain = {
     cloudCover = 2.2, fogDensity = 4, windSpeed = 0.5,
-    precipitation = { dataBlock = "rain_medium", numDrops = 3000, dropSize = 1, minSpeed = 0.1, maxSpeed = 0.3 },
+    precipitation = { dataBlock = "rain_medium", numDrops = 3000, dropSize = 1, minSpeed = 0.4, maxSpeed = 0.5, volume = 1.0 },
   },
   storm = {
     cloudCover = 3.0, fogDensity = 8, windSpeed = 1.5,
-    precipitation = { dataBlock = "rain_medium", numDrops = 6000, dropSize = 1, minSpeed = 0.1, maxSpeed = 0.3 },
+    precipitation = { dataBlock = "rain_medium", numDrops = 7000, dropSize = 1.3, minSpeed = 0.6, maxSpeed = 0.8, volume = 2.0 },
   },
   fog = { cloudCover = 1.5, fogDensity = 15, windSpeed = 0.1 },
   snow = {
@@ -25,22 +25,18 @@ M.WEATHER = {
 
 M.BLEND_SECONDS = 3
 local LOCK_DELAY = M.BLEND_SECONDS + 0.5
-local PRECIPITATION_NAME = "cnr_precipitation"
 local WIND_INTERVAL = 0.25
-local COVER_INTERVAL = 0.25
 local MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
 local DAYS_IN_MONTH = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
 
 local saved, wasLocked, round, clockStart, target
 local lockTimer, lockAfter, restoring
 local roundTime, started, sinceWind = 0, false, 0
-local cover, sinceCover = shelter.new(), 0
 
 local function forget()
   wind.reset()
   saved, wasLocked, round, clockStart, target = nil, false, nil, nil, nil
   roundTime, started, sinceWind = 0, false, 0
-  cover, sinceCover = shelter.new(), 0
 end
 
 local function blend(env, state)
@@ -70,53 +66,6 @@ end
 
 local function windy(p)
   return p.driving and wind.WEATHER[p.weather] ~= nil
-end
-
-local function precipitates(p)
-  local weather = M.WEATHER[p.weather]
-  return weather ~= nil and weather.precipitation ~= nil
-end
-
-local function castUp(pos, range)
-  return castRayStatic(pos, vec3(0, 0, 1), range)
-end
-
-local function setHidden(obj, hide)
-  if obj.setHidden then obj:setHidden(hide) else obj:setField("hidden", 0, hide and "1" or "0") end
-end
-
-local function updateCover(dt)
-  sinceCover = sinceCover + dt
-  if sinceCover < COVER_INTERVAL then return end
-  sinceCover = 0
-  local cam = core_camera and core_camera.getPosition and core_camera.getPosition()
-  if not cam or not castRayStatic then return end
-  if not shelter.step(cover, shelter.roofed(cam, castUp)) then return end
-  local obj = scenetree.findObject(PRECIPITATION_NAME)
-  if obj then setHidden(obj, cover.covered) end
-end
-
-local function removePrecipitation()
-  local obj = scenetree.findObject(PRECIPITATION_NAME)
-  if obj then obj:delete() end
-end
-
-local function createPrecipitation(spec)
-  local obj = createObject("Precipitation")
-  local fields = {
-    { "dataBlock", spec.dataBlock }, { "numDrops", spec.numDrops }, { "dropSize", spec.dropSize },
-    { "minSpeed", spec.minSpeed }, { "maxSpeed", spec.maxSpeed },
-    { "boxWidth", 40 }, { "boxHeight", 20 }, { "useWind", 1 },
-  }
-  for _, field in ipairs(fields) do obj:setField(field[1], 0, tostring(field[2])) end
-  obj.canSave = false
-  obj:registerObject(PRECIPITATION_NAME)
-  if scenetree.findObject(PRECIPITATION_NAME) then
-    scenetree.MissionGroup:addObject(obj)
-  else
-    obj:delete()
-    log("E", "cnr_sky", "precipitation object did not register")
-  end
 end
 
 local function roundState(env, p)
@@ -187,15 +136,14 @@ function M.apply(p)
   local ok, err = pcall(function()
     blend(env, state)
     local weather = M.WEATHER[p.weather]
-    removePrecipitation()
-    cover, sinceCover = shelter.new(), 0
-    if weather and weather.precipitation then createPrecipitation(weather.precipitation) end
+    rain.target(weather and weather.precipitation or nil, M.BLEND_SECONDS)
     surfaces.apply(p.driving and p.weather or nil)
   end)
   if ok then
     lockTimer, lockAfter = LOCK_DELAY, true
   else
     pcall(env.setState, target)
+    rain.clear()
     env.enableChanges(false)
     lockTimer, restoring = nil, nil
     log("E", "cnr_sky", tostring(err))
@@ -227,6 +175,7 @@ function M.startClock(clockSeconds)
 end
 
 function M.update(dt)
+  if rain.active() then rain.update(dt) end
   if not core_environment then return end
   if lockTimer then
     lockTimer = lockTimer - dt
@@ -237,7 +186,6 @@ function M.update(dt)
   end
   if not round then return end
   if started then roundTime = roundTime + dt end
-  if precipitates(round) then updateCover(dt) end
   if not windy(round) then return end
   sinceWind = sinceWind + dt
   if sinceWind < WIND_INTERVAL then return end
@@ -249,6 +197,7 @@ end
 
 function M.restore(immediate)
   local env = core_environment
+  if immediate then rain.clear() end
   if env and immediate and not saved and restoring then
     env.enableChanges(true)
     env.setState(restoring.state)
@@ -259,7 +208,7 @@ function M.restore(immediate)
   if not env or not saved then return end
   env.enableChanges(true)
   surfaces.restore()
-  removePrecipitation()
+  if not immediate then rain.target(nil, M.BLEND_SECONDS) end
   if immediate then
     env.setState(saved)
     env.enableChanges(not wasLocked)
@@ -274,6 +223,7 @@ end
 
 function M.drop()
   surfaces.drop()
+  rain.clear()
   if core_environment then
     if saved then
       core_environment.enableChanges(not wasLocked)

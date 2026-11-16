@@ -1,0 +1,117 @@
+dofile("tests/env_stubs.lua")
+local fake, rain
+local function load()
+  fake = fakeEnvironment()
+  for _, n in ipairs({ "copsAndRobbers/rain", "copsAndRobbers/shelter" }) do package.loaded[n] = nil end
+  rain = require("copsAndRobbers/rain")
+end
+
+local RAIN = { dataBlock = "rain_medium", numDrops = 3000, dropSize = 1, minSpeed = 0.4, maxSpeed = 0.5, volume = 1.0 }
+local STORM = { dataBlock = "rain_medium", numDrops = 7000, dropSize = 1.3, minSpeed = 0.6, maxSpeed = 0.8, volume = 2.0 }
+local SNOW = { dataBlock = "Snow_menu", numDrops = 5000, dropSize = 0.2, minSpeed = 0.1, maxSpeed = 0.3 }
+
+local function run(seconds)
+  for _ = 1, math.floor(seconds * 10 + 0.5) do rain.update(0.1) end
+end
+
+local function full(spec)
+  rain.target(spec, 3)
+  run(3.1)
+end
+
+test("rain fades in over the blend with its sound", function()
+  load()
+  rain.target(RAIN, 3)
+  rain.update(0.1)
+  local obj = fake.objects.cnr_precipitation
+  assertEq(obj:getField("dataBlock"), "rain_medium"); assertEq(obj:getField("splashSize"), "0.25"); assertEq(obj:getField("hitVehicles"), nil)
+  assertEq(obj:getField("minSpeed"), "0.4"); assertEq(obj.canSave, false)
+  for _ = 1, 14 do rain.update(0.1) end
+  assertNear(tonumber(obj:getField("numDrops")), 1500, 120)
+  for _ = 1, 20 do rain.update(0.1) end
+  assertEq(obj:getField("numDrops"), "3000")
+  local snd = fake.objects.cnr_rain_sound
+  assertEq(snd:getField("track"), "amb_rain_medium"); assertNear(snd.volume, 1.0, 1e-6)
+  assertEq(snd.playing, true); assertEq(snd.canSave, false)
+end)
+
+test("rain to clear fades out, then removes rain and sound", function()
+  load()
+  full(RAIN)
+  rain.target(nil, 3)
+  run(1.5)
+  assertNear(tonumber(fake.objects.cnr_precipitation:getField("numDrops")), 1500, 220)
+  run(1.6)
+  assertEq(fake.objects.cnr_precipitation, nil); assertEq(fake.objects.cnr_rain_sound, nil)
+  assertEq(rain.active(), false)
+end)
+
+test("rain to storm moves the count and raises the volume", function()
+  load()
+  full(RAIN)
+  rain.target(STORM, 3)
+  run(3.1)
+  local obj = fake.objects.cnr_precipitation
+  assertEq(obj:getField("numDrops"), "7000"); assertEq(obj:getField("minSpeed"), "0.6")
+  assertNear(fake.objects.cnr_rain_sound.volume, 2.0, 1e-6)
+  local created = 0
+  for _, n in ipairs(fake.deleted) do if n == "cnr_precipitation" then created = created + 1 end end
+  assertEq(created, 0)
+end)
+
+test("rain to snow fades out, then snow fades in without a sound", function()
+  load()
+  full(RAIN)
+  rain.target(SNOW, 3)
+  run(1.6)
+  local obj = fake.objects.cnr_precipitation
+  assertEq(obj == nil or tonumber(obj:getField("numDrops")) < 400 or obj:getField("dataBlock") == "Snow_menu", true)
+  assertEq(fake.objects.cnr_rain_sound, nil)
+  run(1.5)
+  obj = fake.objects.cnr_precipitation
+  assertEq(obj:getField("dataBlock"), "Snow_menu"); assertEq(obj:getField("numDrops"), "5000")
+  assertEq(fake.objects.cnr_rain_sound, nil)
+end)
+
+test("a second target mid-fade heads for the newest one and never makes two objects", function()
+  load()
+  rain.target(RAIN, 3); run(1)
+  rain.target(STORM, 3); run(1)
+  rain.target(nil, 3); run(3.1)
+  assertEq(fake.objects.cnr_precipitation, nil); assertEq(fake.objects.cnr_rain_sound, nil)
+  local n = 0
+  for _, name in ipairs(fake.deleted) do if name == "cnr_precipitation" then n = n + 1 end end
+  assertEq(n, 1)
+end)
+
+test("a zero length target lands at once", function()
+  load()
+  rain.target(STORM, 0)
+  assertEq(fake.objects.cnr_precipitation:getField("numDrops"), "7000")
+  rain.clear()
+  assertEq(fake.objects.cnr_precipitation, nil); assertEq(fake.objects.cnr_rain_sound, nil)
+  assertEq(rain.active(), false)
+end)
+
+local function withRoof(height, fn)
+  local oldCast, oldCamera = _G.castRayStatic, _G.core_camera
+  local roof = { height = height }
+  _G.core_camera = { getPosition = function() return vec3(0, 0, 0) end }
+  _G.castRayStatic = function(pos, dir, len)
+    if roof.height and roof.height < len then return roof.height end
+    return len + 1
+  end
+  local ok, err = pcall(fn, roof)
+  _G.castRayStatic, _G.core_camera = oldCast, oldCamera
+  if not ok then error(err, 0) end
+end
+
+test("the roof lowers the sound to half and hides the rain", function()
+  withRoof(3, function()
+    load()
+    full(RAIN)
+    rain.update(0.25); rain.update(0.25)
+    assertEq(fake.objects.cnr_precipitation:getField("hidden"), "1")
+    assertNear(fake.objects.cnr_rain_sound.volume, 0.5, 1e-6)
+  end)
+end)

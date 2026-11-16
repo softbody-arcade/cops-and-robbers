@@ -102,7 +102,14 @@ function fakeEnvironment(opts)
   _G.createObject = function()
     local obj = { fields = {}, name = nil }
     function obj:setField(name, _, value) self.fields[name] = value end
-    function obj:getField(name) return self.fields[name] end
+    function obj:getField(name)
+      if name == "numDrops" and self.numDrops then return tostring(self.numDrops) end
+      return self.fields[name]
+    end
+    function obj:play() self.playing = true end
+    function obj:stop() self.playing = false end
+    function obj:setVolumePitchCT(v) self.volume = v end
+    function obj:setTransform() end
     function obj:registerObject(name) self.name = name; fake.objects[name] = self end
     function obj:delete()
       if self.name then

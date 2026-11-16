@@ -1,7 +1,7 @@
 dofile("tests/env_stubs.lua")
 local function load(opts)
   local fake = fakeEnvironment(opts)
-  for _, n in ipairs({ "copsAndRobbers/sky", "copsAndRobbers/surfaces", "copsAndRobbers/wind", "copsAndRobbers/shelter" }) do package.loaded[n] = nil end
+  for _, n in ipairs({ "copsAndRobbers/sky", "copsAndRobbers/rain", "copsAndRobbers/surfaces", "copsAndRobbers/wind", "copsAndRobbers/shelter" }) do package.loaded[n] = nil end
   return require("copsAndRobbers/sky"), fake
 end
 local RAIN_NIGHT = { time = "night", weather = "rain", driving = true, windDir = 90, windSeed = 7 }
@@ -89,6 +89,7 @@ test("a round sky is applied and locked", function()
   assertEq(s.time, 0.5); assertEq(s.play, false); assertEq(s.cloudCover, 2.2); assertEq(s.numOfDrops, nil)
   assertNear(s.groundWind.x, 5, 1e-6)
   assertEq(s.temperatureCurveOverrideC, false); assertEq(#fake.profiles, 0)
+  sky.update(0.1)
   assertEq(fake.objects.cnr_precipitation:getField("dataBlock"), "rain_medium")
   assertEq(fake.models.ASPHALT.cdata.staticFrictionCoefficient, 0.92)
   sky.update(4)
@@ -178,7 +179,7 @@ test("restore stops the wind updates and removes everything", function()
   for _ = 1, 4 do sky.update(0.25) end
   local before = #fake.queued
   assertEq(before >= 3, true)
-  sky.restore(); sky.update(1)
+  sky.restore(); sky.update(4)
   assertEq(#fake.queued, before)
   assertEq(fake.objects.cnr_precipitation, nil)
   assertEq(fake.models.ASPHALT.cdata.staticFrictionCoefficient, 0.98)
@@ -228,10 +229,11 @@ end)
 test("a failing apply still relocks and restore still works", function()
   local sky, fake = load()
   fake.state.cloudCover = 0.05
-  local make = _G.createObject
-  _G.createObject = function() error("boom") end
+  local make = _G.be.setGroundModel
+  _G.be.setGroundModel = function() error("boom") end
   sky.apply(RAIN_NIGHT)
-  _G.createObject = make
+  _G.be.setGroundModel = make
+  assertEq(fake.objects.cnr_precipitation, nil)
   assertEq(fake.locked, true)
   assertEq(fake.lerps[#fake.setStates], nil); assertEq(fake.state.cloudCover, 2.2)
   sky.restore(); sky.update(4)
@@ -240,7 +242,7 @@ end)
 
 test("precipitation is not saved with the level", function()
   local sky, fake = load()
-  sky.apply(RAIN_NIGHT)
+  sky.apply(RAIN_NIGHT); sky.update(0.1)
   assertEq(fake.objects.cnr_precipitation.canSave, false)
 end)
 
@@ -419,4 +421,24 @@ test("an immediate restore during the round-end blend lands the sky and lock", f
   local n = #fake.setStates
   sky.update(5)
   assertEq(#fake.setStates, n); assertEq(fake.locked, true)
+end)
+
+test("drop removes rain and sound at once and cancels the lock timer", function()
+  local sky, fake = load()
+  sky.apply(RAIN_NIGHT); sky.update(1)
+  assertEq(fake.objects.cnr_rain_sound ~= nil, true)
+  sky.drop()
+  assertEq(fake.objects.cnr_precipitation, nil); assertEq(fake.objects.cnr_rain_sound, nil)
+  local n, locked = #fake.setStates, fake.locked
+  sky.update(5)
+  assertEq(#fake.setStates, n); assertEq(fake.locked, locked)
+end)
+
+test("round end fades the rain out", function()
+  local sky, fake = load()
+  sky.apply(RAIN_NIGHT); sky.update(4)
+  sky.restore()
+  assertEq(fake.objects.cnr_precipitation ~= nil, true)
+  sky.update(3.2)
+  assertEq(fake.objects.cnr_precipitation, nil); assertEq(fake.objects.cnr_rain_sound, nil)
 end)
