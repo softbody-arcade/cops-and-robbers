@@ -22,7 +22,7 @@
   - `TODO.md` is edited only on main: before entering the worktree, the controller updates the In progress entry on main with the branch name.
   - No version bump in the branch (`make version` on main after the merge).
 - **Timing:**
-  - Blend length `BLEND_SECONDS = 3`.
+  - Blend length `BLEND_SECONDS = 3`. Every blend is started as `env.setState(nil)` then `env.setState(state, 3)`, so a change that arrives mid-blend gets a full blend from where the sky is (the game's own shortcut would cut it to 0.3 s).
   - The lock goes back on `BLEND_SECONDS + 0.5` s after the last blend started.
   - The rain fade writes `numDrops` at most 10 times a second (`FADE_INTERVAL = 0.1`).
 - **Climate, monthly normals** (°C), indexed by month 1–12:
@@ -40,16 +40,19 @@
 
   - **Snow:** `high = min(normalHigh − 9, 0)` and `low = min(normalLow, high − 4)`.
   - **Every weather except snow:** if `high < low + 2` then `high = low + 2`. A storm in November gives 6 to 8.
-- **Temperature call:** `setTemperatureProfile({ averageC = (low + high) / 2, minC = low, maxC = high })`.
-  - It uses the month the server sent (`p.month`), never the hemisphere-shifted month.
-  - It is skipped when `p.weather` or `p.month` is missing.
-- **Precipitation specs** (every one also has `boxWidth = 40`, `boxHeight = 20`, `useWind = 1`, `hitVehicles = 1`, `splashSize = 0.25`):
+- **Temperature: our own day curve,** set in the round state as `temperatureCurveOverrideC` (applied at once by `setState`; no `setTemperatureProfile` call any more):
+  - two points, sorted by time: `{ sunriseT, low }` and `{ (noonT + 2 / 24) % 1, high }`
+  - `sunriseT = env.getSolarTimeOfDayValue("sunrise", solar)` and `noonT = env.getSolarTimeOfDayValue("noon", solar)`, with the same `solar` table `roundState` already builds for the round's date
+  - `low, high = climate.range(p.weather, p.month)`: the month the server sent, never the hemisphere-shifted one
+  - when that returns nil (no weather or no month), `temperatureCurveOverrideC = false` as today (the map's own curve)
+- **Precipitation specs** (every one also has `boxWidth = 40`, `boxHeight = 20`, `useWind = 1`, `splashSize = 0.25`; no `hitVehicles`):
   - **rain:** `dataBlock = "rain_medium"`, `numDrops = 3000`, `dropSize = 1`, `minSpeed = 0.4`, `maxSpeed = 0.5`, `volume = 0.6`
   - **storm:** `dataBlock = "rain_medium"`, `numDrops = 7000`, `dropSize = 1.3`, `minSpeed = 0.6`, `maxSpeed = 0.8`, `volume = 1.0`
   - **snow:** `dataBlock = "Snow_menu"`, `numDrops = 5000`, `dropSize = 0.2`, `minSpeed = 0.1`, `maxSpeed = 0.3`, no `volume`
 - **Rain sound:**
   - an `SFXEmitter` registered as `cnr_rain_sound`, with field `track = "amb_rain_medium"` and `canSave = false`
   - started with `play()`; volume set with `setVolumePitchCT(volume, 1, 0, 0)`, the way `core/audioForest.lua` does it
+  - added to `scenetree.MissionGroup` like the rain object, so a map unload removes it
   - volume = `spec.volume × drops / spec.numDrops`, times 1/3 while the rain is hidden by the roof check
 - **Object names:** the precipitation object stays `cnr_precipitation`.
 - **Project style:** no code comments, no emojis.
@@ -59,7 +62,7 @@
 1. **New sky pressed several times quickly.** Each press heads straight for the newest sky and the rain fade follows the newest target. No second precipitation object or sound piles up. Test in Task 3: `a second target mid-fade heads for the newest one and never makes two objects`.
 2. **GO pressed right after New sky.** Clouds and fog land on the new sky, the clock runs, and the environment is locked. Test in Task 2: `GO during a blend lands the full sky and locks`.
 3. **A new round starting within 3 s of the last one ending** (a cancel then a quick start). The player's own sky is saved, not a half-blended one. Test in Task 2: `a round starting during the restore blend saves the player's own sky`.
-4. **Leaving the server or changing map during a fade or blend.** No rain object, no sound and no pending lock may be left behind. Test in Task 3: `drop removes rain and sound at once and cancels the lock timer`.
+4. **Leaving the server or changing map during a fade or blend** (`leaveServer` runs on server leave and on extension unload). No rain object, no sound and no pending lock may be left behind. Tests: `leaving the server mid-rain removes the rain at once` (Task 2) and `drop removes rain and sound at once and cancels the lock timer` (Task 3).
 5. **A storm in a month where the offsets meet** (November). Low below high. Test in Task 1: `the low is always below the high`.
 
 ---
@@ -69,7 +72,7 @@
 **Files:**
 - Create: `client/lua/ge/extensions/copsAndRobbers/climate.lua`
 - Create: `tests/test_climate.lua`
-- Modify: `client/lua/ge/extensions/copsAndRobbers/sky.lua` (the `M.WEATHER` `temperatureC` entries, the temperature call in `M.apply`)
+- Modify: `client/lua/ge/extensions/copsAndRobbers/sky.lua` (the `M.WEATHER` `temperatureC` entries, `roundState`, the temperature call in `M.apply`)
 - Modify: `tests/test_sky_client.lua` (tests at lines 85-104 that assert `averageC` 8 and 5)
 
 **Interfaces:**
@@ -106,11 +109,12 @@ test("unknown weather or month gives nothing", function()
 end)
 ```
 In `tests/test_sky_client.lua`:
-- `"a round sky is applied and locked"` stops asserting `profiles[1].averageC == 8`. RAIN_NIGHT has no month, so it asserts `#fake.profiles == 0`.
-- `"a part on the map's own comes from the map's start values"` stops asserting `averageC == 5` and asserts `#fake.profiles == 0`.
+- `"a round sky is applied and locked"` stops asserting `profiles[1].averageC == 8`. RAIN_NIGHT has no month, so the state's `temperatureCurveOverrideC == false` and `#fake.profiles == 0`.
+- `"a part on the map's own comes from the map's start values"` stops asserting `averageC == 5`; same two asserts.
 - Add `test("the temperature follows the weather and the server's month")`:
-  - `sky.apply(WINTER)` (snow, month 12) gives one profile `{ averageC = -2, minC = -4, maxC = 0 }`
-  - on a fresh load with `fake.state.latitude = -44.57`, the same `sky.apply(WINTER)` gives the same profile (the server's month, not the shifted June)
+  - `sky.apply(WINTER)` (snow, month 12). The state's `temperatureCurveOverrideC` has two points. With the stub's times (noon 0, sunrise 0.775): `{ 2 / 24, 0 }` then `{ 0.775, -4 }`.
+  - On a fresh load with `fake.state.latitude = -44.57`, the same `sky.apply(WINTER)` gives the same temperatures: the server's December, not the shifted June.
+  - `#fake.profiles == 0` in both cases.
 
 - [ ] **Step 2: Run the tests to make sure they fail**
 
@@ -120,7 +124,7 @@ Expected: FAIL (`copsAndRobbers/climate` not found; the profile asserts).
 - [ ] **Step 3: Implement**
 
 - `climate.lua`: tables and offsets from Global Constraints, the snow rule, then the `low + 2` floor for every weather except snow.
-- `sky.lua`: drop `temperatureC` from `M.WEATHER`. In `M.apply`, replace the average-only call with the Global Constraints call, using `climate.range(p.weather, p.month)`. Skip it when that returns nil.
+- `sky.lua`: drop `temperatureC` from `M.WEATHER` and the `setTemperatureProfile` call. `roundState` sets `state.temperatureCurveOverrideC` from Global Constraints.
 
 - [ ] **Step 4: Run the tests to make sure they pass**
 
@@ -138,7 +142,9 @@ git commit -m "feat: outside temperature from the weather and the round's month"
 
 **Files:**
 - Modify: `client/lua/ge/extensions/copsAndRobbers/sky.lua` (`M.apply`, `M.startClock`, `M.update`, `M.restore`, `M.drop`, `forget`)
-- Modify: `tests/env_stubs.lua` (`env.setState(s, seconds)` records `fake.lerps[#fake.setStates] = seconds`)
+- Modify: `tests/env_stubs.lua`: `env.setState(s, seconds)` records `fake.lerps[#fake.setStates] = seconds`; `env.setState(nil)` counts `fake.resets` and returns
+- Modify: `client/lua/ge/extensions/copsAndRobbers.lua` (`endRound(leaving)`, `leaveServer` calls `endRound(true)`, which calls `sky.restore(true)`)
+- Modify: `tests/test_client.lua`
 - Modify: `tests/test_sky_client.lua`
 
 **Interfaces:**
@@ -168,6 +174,9 @@ In `tests/test_sky_client.lua`, using `fake.lerps`:
   - the restore `setState` has `fake.lerps == 3`, and `fake.locked == false` during the blend
   - after `update(4)`, `fake.locked == true`
   - unlocked case: the same flow ends with `fake.locked == false`
+- `test("every blend clears a running one first")`: two applies and a restore give `fake.resets == 3`, each reset straight before its blended `setState`.
+- `test("an immediate restore lands at once and locks back")`: apply, `update(1)`, `restore(true)`. The restore `setState` has no lerp, the lock is back the way it was before the round, and `update(5)` changes nothing.
+- In `tests/test_client.lua`, `test("leaving the server mid-rain removes the rain at once")`: a rain round, `env.tick(1)`, then `env.M.onBeamMPServerLeave()`. `env.sky.objects.cnr_precipitation == nil` straight away.
 - `test("a round starting during the restore blend saves the player's own sky")`:
   - `fake.state.cloudCover = 0.05`
   - apply RAIN_NIGHT, `update(4)`, restore
@@ -205,7 +214,9 @@ Expected: FAIL (no lerp recorded, locked straight after apply).
   - count the timer down first, even without a round
   - at zero: `env.enableChanges(not lockAfter)`, clear the timer and `restoring`
   - then the existing round work
-- **`drop`:** clear the timer and `restoring`, and set the lock back the way it was before the round, as today.
+- **`drop`:** clear the timer and `restoring`, and set the lock back the way it was before the round at once, as today.
+- **`restore(immediate)`:** with `immediate`, `env.setState(saved)` with no blend, remove our rain object at once, set the lock back now, no timer.
+- **Every blend:** `env.setState(nil)` straight before `env.setState(state, M.BLEND_SECONDS)`.
 
 - [ ] **Step 4: Run the tests to make sure they pass**
 
@@ -251,7 +262,7 @@ test("rain fades in over the blend with its sound", function()
   rain.target(RAIN, 3)
   rain.update(0.1)
   local obj = fake.objects.cnr_precipitation
-  assertEq(obj:getField("dataBlock"), "rain_medium"); assertEq(obj:getField("hitVehicles"), "1")
+  assertEq(obj:getField("dataBlock"), "rain_medium"); assertEq(obj:getField("splashSize"), "0.25"); assertEq(obj:getField("hitVehicles"), nil)
   assertEq(obj:getField("minSpeed"), "0.4"); assertEq(obj.canSave, false)
   for _ = 1, 14 do rain.update(0.1) end
   assertNear(tonumber(obj:getField("numDrops")), 1500, 120)
@@ -292,13 +303,13 @@ The fade (the part the tests leave open):
   1. If `cur` exists and `goal` is nil or a different kind, lower `cur.drops` by `rateOut * dt`. At 0, delete the object and the sound, and clear `cur`.
   2. Otherwise, if `goal` exists and `cur` doesn't, create the object at 0 drops from `goal`, with the sound if `goal.volume`.
   3. If `cur` and `goal` are the same kind, move `cur.drops` toward `goal.numDrops` by `rateIn * dt`.
-  4. Write `numDrops` (`math.floor`) and the sound volume when `FADE_INTERVAL` has passed or the target was just reached.
+  4. Write the drop count (`math.floor`) and the sound volume when `FADE_INTERVAL` has passed or the target was just reached. **How the count is written to a live object is settled by the in-game probe before execution** (`obj.numDrops = n`, `setField`, or `setPercentage(n / numDrops)`); this line is updated with the answer.
   5. Run the roof check as today, hiding the object and applying the 1/3 volume.
 
 In `sky.lua`:
 - `apply` calls `rain.target(M.WEATHER[p.weather] and M.WEATHER[p.weather].precipitation or nil, M.BLEND_SECONDS)`. This replaces the old remove-and-create.
 - `update` calls `rain.update(dt)` whenever `rain.active()`, even without a round.
-- `restore` calls `rain.target(nil, M.BLEND_SECONDS)`. `drop` calls `rain.clear()`.
+- `restore` calls `rain.target(nil, M.BLEND_SECONDS)`; `restore(true)` and `drop` call `rain.clear()`.
 - On a failing apply: `rain.clear()`.
 
 - [ ] **Step 4: Run the tests to make sure they pass**
@@ -332,7 +343,7 @@ git commit -m "feat: rain and snow fade with the sky, faster rain, heavier storm
 - **DEPENDENCIES:**
   - `core_environment.setState(state, lerpSeconds)`: blends clouds, fog, fog height and time; only advances while changes are enabled; a new state mid-blend shortens it to 0.3 s
   - `setTemperatureProfile({ averageC, minC, maxC })`
-  - `Precipitation.numDrops` changed at runtime, `hitVehicles`, `splashSize`
+  - how the rain's drop count is changed at runtime (from the probe), `splashSize`
   - the `SFXEmitter` with the `amb_rain_medium` profile, `setVolumePitchCT` and `play()`
   - an update check matching the spec's In-game check
 
