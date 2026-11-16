@@ -33,7 +33,20 @@ function M.new(saved)
   return { byModel = type(saved.byModel) == "table" and saved.byModel or {}, last = type(saved.last) == "table" and saved.last or nil }
 end
 
+local function withoutCouplers(data)
+  if type(data) ~= "table" or type(data.controller) ~= "table" then return data end
+  local controller = {}
+  for k, v in pairs(data.controller) do
+    if not (type(k) == "string" and k:find("_groupState$")) then controller[k] = v end
+  end
+  local out = {}
+  for k, v in pairs(data) do out[k] = v end
+  out.controller = next(controller) and controller or nil
+  return out
+end
+
 function M.remember(state, model, data)
+  data = withoutCouplers(data)
   if type(data) ~= "table" or (data.controller == nil and data.powertrain == nil) then return false end
   local key = tostring(model)
   if state.byModel[key] and literal(state.byModel[key]) == literal(data) then return false end
@@ -47,7 +60,8 @@ function M.forModel(state, model)
 end
 
 function M.restoreCommand(data)
-  if type(data) ~= "table" then return nil end
+  data = withoutCouplers(data)
+  if type(data) ~= "table" or (data.controller == nil and data.powertrain == nil) then return nil end
   return "local m = " .. literal(data) ..
     " if m.controller and controller.setState then controller.setState(m.controller) end" ..
     " if m.powertrain and powertrain and powertrain.setState then powertrain.setState(m.powertrain) end"

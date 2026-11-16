@@ -1075,6 +1075,28 @@ test("noted modes are saved and put back on the next car", function()
   assertEq(hasCommand(env, '"locked"', mark), true)
 end)
 
+test("doors, bonnet and boot are never carried over to the next car", function()
+  local env = bootClient()
+  startCop(env)
+  env.M.vehicleModes({ controller = { escMode = "off", doorFL_coupler_groupState = "detached", hood_latch_groupState = "broken" } })
+  local saved = env.written[MODES_FILE].byModel.pickup.controller
+  assertEq(saved.escMode, "off"); assertEq(saved.doorFL_coupler_groupState, nil); assertEq(saved.hood_latch_groupState, nil)
+  env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 30, runnerId = 2 })
+  local mark = #env.veh.commands + 1
+  env.fire("cnr_roundSetup", copy(SETUP))
+  env.tick(1)
+  assertEq(hasCommand(env, '"off"', mark), true)
+  assertEq(hasCommand(env, "groupState", mark), false)
+end)
+
+test("door states already in the saved file are not put back", function()
+  local env = bootClient({ files = { [MODES_FILE] = { byModel = { pickup = { controller = { escMode = "off", doorRL_coupler_groupState = "detached" } } } } } })
+  local mark = #env.veh.commands + 1
+  startCop(env)
+  assertEq(hasCommand(env, '"off"', mark), true)
+  assertEq(hasCommand(env, "groupState", mark), false)
+end)
+
 test("saved modes from an earlier session are used", function()
   local env = bootClient({ files = { [MODES_FILE] = { byModel = { pickup = { controller = { escMode = "off" } } } } } })
   local mark = #env.veh.commands + 1
