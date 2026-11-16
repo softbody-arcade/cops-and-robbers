@@ -42,6 +42,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
   - at a gas station, when standing still
   - after standing still for 7 s anywhere
   - for a cop who is 1 km or more from the runner, at any time
+  - for the runner, once, right after a cop crashes into them (the cop at fault): a free reset without standing still, while that cop serves the crash penalty. It isn't allowed while the runner is being caught, and using it (or any reset) ends it. The HUD shows "Free reset (cop crashed into you)".
 - **When a reset is not allowed:**
   - for the runner while the catch timer is running
   - during a crash penalty

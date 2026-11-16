@@ -36,6 +36,9 @@ function Tracker:evaluate(now, car, ctx)
   if ctx.beingCaught then
     return false, "Can't reset while being caught"
   end
+  if ctx.freeReset then
+    return true, "Free reset (cop crashed into you)"
+  end
   if ctx.role == "cop" and ctx.runnerPos and vec.dist(car.pos, ctx.runnerPos) >= cfg.copResetMinDistanceMeters then
     return true, "Reset available (far from runner)"
   end

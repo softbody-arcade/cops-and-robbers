@@ -68,6 +68,7 @@ function Round:clear()
   self.resetTrackers = {}
   self.crashDetectors = {}
   self.penalties = {}
+  self.freeResetUntil = nil
   self.prevCars = {}
   self.leftPlayers = {}
   self.teleportAnnounced = {}
@@ -349,6 +350,7 @@ function Round:tick(now, cars, stations, traffic)
             local seconds = self.cfg.crashPenaltySeconds
             local cause = nearest and nearest.traffic and "traffic" or nil
             self.penalties[pid] = now + seconds
+            if pid ~= self.runnerId and nearest and nearest == self.prevCars[self.runnerId] then self.freeResetUntil = now + seconds end
             if self.resetTrackers[pid] then self.resetTrackers[pid]:block(now + seconds) end
             fx[#fx + 1] = { kind = "penalty", pid = pid, seconds = seconds, name = self.players[pid], cause = cause }
             self:note(now, "penalty", self.players[pid], seconds, cause)
@@ -381,7 +383,8 @@ function Round:tick(now, cars, stations, traffic)
     if tracker and (self.state == "running" or pid == self.runnerId) then
       local role = pid == self.runnerId and "runner" or "cop"
       local beingCaught = role == "runner" and progress > 0
-      local allowed, hint = tracker:update(now, cars[pid], { role = role, runnerPos = runnerPos, stations = stations, beingCaught = beingCaught })
+      local freeReset = role == "runner" and self.freeResetUntil ~= nil and now < self.freeResetUntil
+      local allowed, hint = tracker:update(now, cars[pid], { role = role, runnerPos = runnerPos, stations = stations, beingCaught = beingCaught, freeReset = freeReset })
       local p = math.floor(progress * 100 + 1e-9) / 100
       local last = self.lastState[pid]
       if not last or last.resetAllowed ~= allowed or last.resetHint ~= hint or last.catchProgress ~= p then
@@ -552,6 +555,7 @@ function Round:vehicleReset(now, pid)
   local tracker = self.resetTrackers[pid]
   if (self.state ~= "headstart" and self.state ~= "running") or not tracker then return {} end
   if tracker:consume(now) then
+    if pid == self.runnerId then self.freeResetUntil = nil end
     if self.crashDetectors[pid] then self.crashDetectors[pid]:reset() end
     return {}
   end

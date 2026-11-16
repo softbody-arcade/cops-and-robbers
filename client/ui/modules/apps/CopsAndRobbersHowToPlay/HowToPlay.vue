@@ -115,6 +115,10 @@
               <BngIcon :type="icons.carChase01" />
               <span>as a cop, any time you're <span class="v">{{ dist("copResetMinDistanceMeters") }}</span> or more from the runner</span>
             </div>
+            <div class="li">
+              <BngIcon :type="icons.restart" />
+              <span>as the runner, once right away when a cop crashes into you, while that cop serves the penalty (not while being caught)</span>
+            </div>
           </div>
           <div class="box">
             <div class="box-title warn"><BngIcon :type="icons.abandon" />You may not</div>

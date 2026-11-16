@@ -1160,3 +1160,58 @@ test("a run records the traffic it was played with", function()
   quiet:tick(4, stillCars(), {}); quiet:tick(11, stillCars(), {})
   assertEq(find(quiet:endCalled(20, 2), "record").run.traffic, nil)
 end)
+
+local FREE = "Free reset (cop crashed into you)"
+
+local function stateOf(fx, pid)
+  local s = find(fx, "state", pid)
+  return s and s.resetAllowed, s and s.resetHint
+end
+
+test("a cop who crashes into the runner gives the runner a free reset", function()
+  local r = running()
+  r:tick(11.25, { [1] = kmh(0, 60), [2] = kmh(8, -100), [3] = kmh(500, 0) }, {})
+  local fx = r:tick(11.5, { [1] = kmh(0, 60), [2] = kmh(3, 0), [3] = kmh(500, 0) }, {})
+  assertEq(find(fx, "penalty", 2) ~= nil, true)
+  local allowed, hint = stateOf(fx, 1)
+  assertEq(allowed, true); assertEq(hint, FREE)
+  assertEq(find(r:vehicleReset(11.6, 1), "broadcast"), nil)
+  fx = r:tick(11.75, { [1] = kmh(0, 60), [2] = kmh(3, 0), [3] = kmh(500, 0) }, {})
+  allowed, hint = stateOf(fx, 1)
+  assertEq(allowed, false); assertEq(hint, "Stop to reset")
+end)
+
+test("the free reset ends with the cop's penalty", function()
+  local r = running()
+  r:tick(11.25, { [1] = kmh(0, 60), [2] = kmh(8, -100), [3] = kmh(500, 0) }, {})
+  r:tick(11.5, { [1] = kmh(0, 60), [2] = kmh(3, 0), [3] = kmh(500, 0) }, {})
+  local allowed, hint
+  for i = 1, 44 do
+    local fx = r:tick(11.5 + i * 0.25, { [1] = kmh(0, 60), [2] = kmh(3, 0), [3] = kmh(500, 0) }, {})
+    local a, h = stateOf(fx, 1)
+    if h then allowed, hint = a, h end
+  end
+  assertEq(allowed, false); assertEq(hint, "Stop to reset")
+end)
+
+test("no free reset while other cops are catching the runner", function()
+  local r = running()
+  for i = 0, 8 do r:tick(11 + i * 0.25, { [1] = kmh(0, 0), [2] = kmh(-300, 0), [3] = kmh(5, 0) }, {}) end
+  r:tick(13.25, { [1] = kmh(0, 0), [2] = kmh(-8, 100), [3] = kmh(5, 0) }, {})
+  local fx = r:tick(13.5, { [1] = kmh(0, 0), [2] = kmh(-3, 0), [3] = kmh(5, 0) }, {})
+  assertEq(find(fx, "penalty", 2) ~= nil, true)
+  local s = r.lastState[1]
+  assertEq(s.resetAllowed, false); assertEq(s.resetHint, "Can't reset while being caught")
+end)
+
+test("a cop crashing into traffic or the runner causing the crash gives no free reset", function()
+  local r = running()
+  r:tick(11.25, { [1] = kmh(-500, 60), [2] = kmh(100, 120), [3] = kmh(500, 0) }, {}, parkedAt(108))
+  r:tick(11.5, { [1] = kmh(-500, 60), [2] = kmh(104, 0), [3] = kmh(500, 0) }, {}, parkedAt(108))
+  assertEq(r.lastState[1].resetHint ~= FREE, true)
+  local r2 = running()
+  r2:tick(11.25, { [1] = kmh(10, -100), [2] = kmh(0, 0), [3] = kmh(500, 0) }, {})
+  r2:tick(11.5, { [1] = kmh(5, -100), [2] = kmh(0, 60), [3] = kmh(500, 0) }, {})
+  r2:tick(11.75, { [1] = kmh(4, 0), [2] = kmh(0, 0), [3] = kmh(500, 0) }, {})
+  assertEq(r2.lastState[1].resetHint ~= FREE, true)
+end)
