@@ -42,6 +42,7 @@
       <div v-if="!can.go && state.goBlocked" class="p-why">{{ state.goBlocked }}</div>
       <div class="p-buttons">
         <BngButton v-if="can.reroll" class="p-btn" :accent="ACCENTS.secondary" :icon="icons.restart" @click="emit('command', 'reroll')">New car</BngButton>
+        <BngButton v-if="can.sky" class="p-btn" :accent="ACCENTS.secondary" @click="emit('command', 'sky')">New sky</BngButton>
         <BngButton v-if="can.stop" class="p-btn" :accent="ACCENTS.destructive" @click="emit('command', 'stop')">Cancel round</BngButton>
       </div>
     </template>

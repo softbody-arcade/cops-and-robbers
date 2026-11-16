@@ -12,6 +12,22 @@ export const GROUPS = [
     { key: "autoNextDelaySeconds", label: "Next round delay", unit: "s", step: 5, min: 0,
       help: "With automatic rounds on, the wait before the next round" },
   ] },
+  { title: "Sky", items: [
+    { key: "timeOfDay", label: "Time of day", kind: "choice", common: true,
+      options: [["map", "Map default"], ["sunrise", "Sunrise"], ["morning", "Morning"], ["noon", "Noon"], ["afternoon", "Afternoon"], ["sunset", "Sunset"], ["night", "Night"], ["random", "Random"]],
+      help: "The time the chase starts at; random follows the night chance" },
+    { key: "nightChancePercent", label: "Night chance", unit: "%", step: 5, min: 0, max: 100, when: v => v("timeOfDay") === "random",
+      help: "How often a random time of day is night" },
+    { key: "clockSpeed", label: "Clock speed", step: 1, min: 0, max: 120, speed: true,
+      help: "How fast time passes once the chase starts; 1 is real time" },
+    { key: "weather", label: "Weather", kind: "choice", common: true,
+      options: [["map", "Map default"], ["clear", "Clear"], ["cloudy", "Cloudy"], ["rain", "Rain"], ["storm", "Storm"], ["fog", "Fog"], ["snow", "Snow"], ["random", "Random"]],
+      help: "Random follows the bad weather chance" },
+    { key: "badWeatherChancePercent", label: "Bad weather chance", unit: "%", step: 5, min: 0, max: 100, when: v => v("weather") === "random",
+      help: "How often random weather is rain, storm, fog or snow" },
+    { key: "weatherDriving", label: "Weather affects driving", kind: "bool",
+      help: "Rain, storm and snow change grip and bring gusty wind" },
+  ] },
   { title: "Catching", items: [
     { key: "catchHoldSeconds", label: "Hold time", unit: "s", step: 1, min: 1, common: true,
       help: "How long cops must hold the runner to catch them" },
@@ -87,9 +103,14 @@ export function shown(item, v) {
   if (item.kind === "mode") return v === "evolving" ? "evolving build" : "random car"
   if (item.kind === "bool") return v ? "on" : "off"
   if (item.kind === "list") return listText(v) || "none"
+  if (item.kind === "choice") {
+    const o = item.options.find(p => p[0] === v)
+    return o ? o[1] : "–"
+  }
   const n = Number(v)
   if (v === undefined || v === null || !Number.isFinite(n)) return "–"
   if (item.offAtZero && n === 0) return "off"
+  if (item.speed) return n === 0 ? "stopped" : `${n}×`
   if (item.duration) return n % 60 === 0 ? `${n / 60} min` : formatTime(n)
   return `${n} ${item.unit || ""}`.trim()
 }
@@ -109,6 +130,10 @@ export function settingGroups(settings) {
 }
 
 function stepped(item, current, dir) {
+  if (item.kind === "choice") {
+    const i = item.options.findIndex(p => p[0] === current)
+    return item.options[(Math.max(i, 0) + dir + item.options.length) % item.options.length][0]
+  }
   const q = (Number(current) || 0) / item.step
   const onGrid = Math.abs(q - Math.round(q)) < 1e-6
   const n = onGrid ? Math.round(q) + dir : dir > 0 ? Math.ceil(q) : Math.floor(q)
