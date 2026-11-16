@@ -11,7 +11,7 @@ Status: approved 2026-11-16, with the host's Cop sirens switch added at approval
 ## Goals
 - **One settings card** in the HUD, opened from a **Settings** button that replaces the Colour button in the lobby card and on the prep line. It holds:
   - **Car colour:** today's colour picker, unchanged in what it does.
-  - **Auto headlights** (off by default): your round car's headlights come on at night and in rain, storm, fog and snow, and go off when neither applies.
+  - **Auto headlights** (on by default, changed from off after the build, 2026-11-16): your round car's headlights come on at night and in rain, storm, fog and snow, and go off when neither applies.
   - **Siren** (off by default): as a cop, your light bar runs with its siren once cops are released.
 - **Host switch: Cop sirens** (on by default) in the Host panel's Settings tab. Off grays out the Siren option on every player's card and silences every cop, also those who had their Siren switched on (asked for at approval, 2026-11-16).
 - **Units follow the game.** Every distance and speed the mod shows players follows the game's own unit setting (metric or imperial): the HUD and How to play. No switch on the card. The Host panel stays metric.
@@ -68,7 +68,7 @@ Status: approved 2026-11-16, with the host's Cop sirens switch added at approval
 - **Title:** "Your settings", so it can't be mixed up with the Host panel's settings.
 
 ### Saving the switches
-- The client reads `settings/cnr_settings.json` when the extension loads. A missing or broken file means both switches are off. The client writes the file on every change.
+- The client reads `settings/cnr_settings.json` when the extension loads. A missing or broken file, or a missing or non-boolean value, means Auto headlights on and Siren off. The client writes the file on every change.
 - The HUD feed carries the current switch values (next to `color`), and the card sends `{ action = "setting", key = "headlights" | "siren", value = true | false }` through `copsAndRobbers.ui`. Unknown keys and values that aren't booleans are ignored.
 
 ### Auto headlights
@@ -119,7 +119,7 @@ Status: approved 2026-11-16, with the host's Cop sirens switch added at approval
 
 ### Tests
 Lua tests, as for the rest of the client:
-- **Settings file:** missing or broken file means both switches off; a change is written and read back; unknown keys and non-booleans are ignored.
+- **Settings file:** missing or broken file means Auto headlights on and Siren off; a change is written and read back; unknown keys and non-booleans are ignored.
 - **Headlights:**
   - wanted at night, in each bad weather, not on a clear or cloudy day, never with the switch off
   - placing a car while lights are wanted sends low beam once; placing one when they aren't sends nothing
@@ -143,7 +143,7 @@ Lua tests, as for the rest of the client:
 8. Find the game's control for showing the mouse cursor (default binding and its name in Options > Controls) and put it in the README line.
 
 ## Calls made (not discussed, easy to change)
-- Both switches **off by default**. This keeps the night and weather decision that lights are the player's choice, and keeps today's "no siren".
+- **Auto headlights on by default** (the user's call after the build; a runner who wants to hide at night turns it off in Settings), **Siren off by default**, which keeps today's "no siren".
 - Auto headlights also cover **bad weather**, not only night, matching the traffic rule.
 - Lights go **off at sunrise** when the mod would no longer want them, like a car's real auto lights.
 - Siren only **from cop release**, never while cops stand frozen.
