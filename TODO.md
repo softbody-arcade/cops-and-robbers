@@ -5,6 +5,8 @@ The shared ledger for every agent and worktree. Edit this file only on main (in 
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
+- [ ] Sky polish: time and weather changes blend over up to 3 s (round start, New sky, round end), rain and storm drops tuned against the stock maps' rain (faster rain, heavier storm), and the game's rain sound during rain and storm. No thunder (the game has no lightning or thunder). Design: `docs/superpowers/specs/2026-11-16-sky-transitions-design.md`, being written; no branch yet
+
 ## Ideas
 - [ ] Hard mode vs normal mode (a round setting): hard mode gives cops a route/position only while someone has sight (no 30 s last-seen pings), hides the name plates above cars, and whatever else fits when planning it (for example no "Nearest cop" for the runner, no minimap markers for other cars). Hard mode also raises the night and bad weather chances of night and weather rounds
 - [ ] Police helicopter instead of the 30 s last-seen ping (`lastSeenIntervalSeconds`): a helicopter tracks the runner and gives the cops the runner's position, in place of the fixed ping every 30 s. Ties in with hard mode, which drops the 30 s pings
