@@ -5,6 +5,8 @@ The shared ledger for every agent and worktree. Edit this file only on main (in 
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
+- [ ] Visible searchlight beam in the air: BeamNG lights only light surfaces (only clouds are volumetric), so fake the shaft from the helicopter down to the runner's car, faint on a clear night, stronger in cloudy and rain. Start with a quick in-game test of a soft glowing cone model shipped with the mod against a cone drawn by the debug drawer; a glare at the light source when looking up is a third option (no flare definition found in the game yet). Builds on the police helicopter searchlight. Target: 2.9.1. Stage: spike (throwaway in-game probe in the user folder), then design; no branch yet
+
 ## In-game checks
 Things only a player in the game can confirm, each with what to look for. Add them here when work is merged or deployed without the check; delete a line once it is checked, and turn anything that fails into an Issue.
 
@@ -18,7 +20,6 @@ Things only a player in the game can confirm, each with what to look for. Add th
 - [ ] 2.9.0 hiding, with two or more players: cops don't see the runner's name tag or minimap marker from the head start until a cop sees them or the helicopter tracks them; with Sight range Off the runner shows all round; the runner never sees the cops' name tags or markers (also after a cop resets), and practice as runner hides the AI cops on the minimap; everything is back after the round and after leaving; the minimap works normally outside rounds and when the Navigation app is opened later
 
 ## Ideas
-- [ ] Visible searchlight beam in the air: BeamNG lights only light surfaces (only clouds are volumetric), so fake the shaft from the helicopter down to the runner's car, faint on a clear night, stronger in cloudy and rain. Start with a quick in-game test of a soft glowing cone model shipped with the mod against a cone drawn by the debug drawer; a glare at the light source when looking up is a third option (no flare definition found in the game yet). Builds on the police helicopter searchlight
 - [ ] Hard mode vs normal mode (a round setting): the police helicopter already removes the 30 s pings and hides the runner unless spotted; hard mode adds whatever else fits when planning it (for example no "Nearest cop" for the runner, no name plates or minimap markers for other cars, a shorter helicopter time up). Hard mode also raises the night and bad weather chances of night and weather rounds
 - [ ] Spike strips for cops: a few per round on a button (keybind), placed behind or ahead of the cop and visible to everyone (the game has spike strip props)
 - [ ] Dynamic roadblocks: parked cop cars that block part of the road ahead of the runner. Same goal as spike strips (stop the runner ahead), so plan them together
