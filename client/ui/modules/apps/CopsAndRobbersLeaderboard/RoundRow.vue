@@ -40,6 +40,7 @@ const sub = computed(() => {
   const parts = [clock(r)]
   if (props.allMaps && props.mapLabel) parts.push(props.mapLabel(r.map))
   parts.push(r.car || r.model || "")
+  parts.push(r.skyLabel)
   if (step !== null) parts.push(`step ${step}`)
   return parts.filter(Boolean).join(" · ")
 })

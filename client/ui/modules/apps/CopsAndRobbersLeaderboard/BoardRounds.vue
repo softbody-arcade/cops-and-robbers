@@ -76,7 +76,7 @@ const detailSub = computed(() => {
   const when = [dayLabel(r), clock(r)].filter(Boolean).join(" ")
   const step = buildStep(r)
   const car = (r.car || r.model || "") + (step !== null ? `, build step ${step}` : "")
-  return [when, r.map ? props.mapLabel(r.map) : "", car].filter(Boolean).join(" · ")
+  return [when, r.map ? props.mapLabel(r.map) : "", [car, r.skyLabel].filter(Boolean).join(" · ")].filter(Boolean).join(" · ")
 })
 
 const timeline = computed(() => {

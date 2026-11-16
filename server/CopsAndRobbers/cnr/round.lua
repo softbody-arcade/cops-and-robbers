@@ -3,6 +3,7 @@ local resets = require("cnr.resets")
 local crash = require("cnr.crash")
 local vec = require("cnr.vec")
 local sight = require("cnr.sight")
+local sky = require("cnr.sky")
 
 local M = {}
 local Round = {}
@@ -141,6 +142,7 @@ function Round:finish(now, reason)
       lostCount = self.cfg.sightMaxMeters > 0 and self.lostCount or nil,
       timeline = self.timeline,
       mode = self.evolving and "evolving" or "random", buildStep = self.buildStep, buildName = self.buildName,
+      sky = sky.record(self.sky, self.cfg),
     } }
     local run = fx[#fx].run
     for _, pid in ipairs(self:copPids()) do

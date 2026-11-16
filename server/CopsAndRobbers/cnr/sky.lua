@@ -50,4 +50,10 @@ function M.payload(s, cfg, clockSeconds)
   return p
 end
 
+function M.record(s, cfg)
+  local p = M.payload(s, cfg, nil)
+  if not p then return nil end
+  return { time = p.time, weather = p.weather, clockSpeed = p.clockSpeed, driving = p.driving }
+end
+
 return M

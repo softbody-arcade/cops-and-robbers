@@ -487,7 +487,10 @@ local function onBoardState(data)
   end
   for _, row in ipairs(type(d.runners) == "table" and d.runners or {}) do addCar(row) end
   addCar(d.mine)
-  for _, row in ipairs(type(d.rounds) == "table" and d.rounds or {}) do addCar(row) end
+  for _, row in ipairs(type(d.rounds) == "table" and d.rounds or {}) do
+    addCar(row)
+    if type(row) == "table" then row.skyLabel = sky.label(row.sky) end
+  end
   local names = {}
   local function name(id)
     if type(id) == "string" and id ~= "" and id ~= "all" and not names[id] then names[id] = game.mapTitle(id) end
