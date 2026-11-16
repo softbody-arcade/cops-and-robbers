@@ -91,9 +91,9 @@ test("the searchlight follows the target", function()
   heli.lightTick(state, target, true)
   assertEq(fake.objects["cnr_heli_light"].pos.z, 5 + heli.LIGHT_HEIGHT)
   pos = vec3(30, 40, 7)
-  heli.lightTick(state, target, true)
+  heli.lightTick(state, target, true, 0)
   local p = fake.objects["cnr_heli_light"].pos
-  assertEq(p.x, 30); assertEq(p.y, 40); assertEq(p.z, 47)
+  assertEq(p.x, 42); assertEq(p.y, 40); assertEq(p.z, 47)
 end)
 
 test("set stores the phase, reason and end time", function()
@@ -102,4 +102,36 @@ test("set stores the phase, reason and end time", function()
   assertEq(state.phase, "grounded"); assertEq(state.reason, "fog"); assertEq(state.endsAt, 15)
   heli.set(state, nil, 20)
   assertEq(state.phase, nil)
+end)
+
+local function near(a, b) return math.abs(a - b) < 1e-6 end
+
+test("the light pose circles the car and aims with a wobble", function()
+  load()
+  local car = vec3(10, 20, 5)
+  local l, a = heli.lightPose(car, 0)
+  assertEq(near(l.x, 22) and near(l.y, 20) and near(l.z, 45), true)
+  assertEq(near(a.x, 10) and near(a.y, 21.5) and near(a.z, 5), true)
+  local l2 = heli.lightPose(car, 2 * math.pi / heli.ORBIT_SPEED)
+  assertEq(near(l2.x, 22) and near(l2.y, 20) and near(l2.z, 45), true)
+  for _, t in ipairs({ 1, 3.7, 9, 20 }) do
+    local p = heli.lightPose(car, t)
+    assertEq(near(math.sqrt((p.x - 10) ^ 2 + (p.y - 20) ^ 2), 12), true)
+  end
+end)
+
+test("the light is aimed on every tick", function()
+  load()
+  local n = 0
+  _G.quatFromDir = function(dir)
+    n = n + 1
+    return { x = dir.x, y = dir.y, z = dir.z, w = 1 }
+  end
+  heli.set(state, { phase = "tracking" }, 0)
+  heli.lightTick(state, target, true, 0)
+  heli.lightTick(state, target, true, 3)
+  local rot = fake.objects["cnr_heli_light"].fields.rotation
+  _G.quatFromDir = nil
+  assertEq(n, 2)
+  assertEq(type(rot), "string")
 end)

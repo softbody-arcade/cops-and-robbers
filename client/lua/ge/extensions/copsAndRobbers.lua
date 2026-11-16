@@ -767,7 +767,7 @@ local function updateHeli()
   end
   if active then
     local target = role == "runner" and ownVehicle() or runnerObject()
-    heli.lightTick(heliState, target, sky.isNight())
+    heli.lightTick(heliState, target, sky.isNight(), clock)
   else
     heli.lightTick(heliState, nil, false)
   end

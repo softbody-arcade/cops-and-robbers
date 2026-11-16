@@ -6,9 +6,12 @@ M.COVER_INTERVAL = 0.25
 M.COVER_HEIGHT = 1.5
 M.LIGHT_HEIGHT = 40
 M.LIGHT_NAME = "cnr_heli_light"
+M.ORBIT_RADIUS = 12
+M.ORBIT_SPEED = 0.25
+M.AIM_WOBBLE = 1.5
 
 local FIELDS = {
-  { "brightness", 40 }, { "range", 90 }, { "innerAngle", 8 }, { "outerAngle", 16 },
+  { "brightness", 80 }, { "range", 120 }, { "innerAngle", 24 }, { "outerAngle", 40 },
   { "color", "0.85 0.92 1 1" }, { "castShadows", "false" },
 }
 
@@ -55,9 +58,16 @@ local function removeLight(state)
   state.light = nil
 end
 
-local function pointDown(obj)
+function M.lightPose(carPos, t)
+  local a = M.ORBIT_SPEED * t
+  local light = vec3(carPos.x + M.ORBIT_RADIUS * math.cos(a), carPos.y + M.ORBIT_RADIUS * math.sin(a), carPos.z + M.LIGHT_HEIGHT)
+  local aim = vec3(carPos.x + M.AIM_WOBBLE * math.sin(1.3 * t), carPos.y + M.AIM_WOBBLE * math.cos(1.1 * t), carPos.z)
+  return light, aim
+end
+
+local function aimLight(obj, lightPos, aimPos)
   if not quatFromDir then return end
-  local q = quatFromDir(vec3(0, 0, -1), vec3(0, 1, 0))
+  local q = quatFromDir(vec3(aimPos.x - lightPos.x, aimPos.y - lightPos.y, aimPos.z - lightPos.z), vec3(0, 0, 1))
   if q.toTorqueQuat then q = q:toTorqueQuat() end
   obj:setField("rotation", 0, q.x .. " " .. q.y .. " " .. q.z .. " " .. q.w)
 end
@@ -66,7 +76,6 @@ local function createLight(state)
   local obj = createObject("SpotLight")
   if not obj then return false end
   for _, f in ipairs(FIELDS) do obj:setField(f[1], 0, tostring(f[2])) end
-  pcall(pointDown, obj)
   obj.canSave = false
   obj:registerObject(M.LIGHT_NAME)
   if not scenetree.findObject(M.LIGHT_NAME) then
@@ -79,18 +88,19 @@ local function createLight(state)
   return true
 end
 
-local function placeLight(state, target)
-  local p = target:getPosition()
-  state.light:setPosition(vec3(p.x, p.y, p.z + M.LIGHT_HEIGHT))
+local function placeLight(state, target, clock)
+  local lightPos, aimPos = M.lightPose(target:getPosition(), clock or 0)
+  state.light:setPosition(lightPos)
+  pcall(aimLight, state.light, lightPos, aimPos)
 end
 
-function M.lightTick(state, target, night)
+function M.lightTick(state, target, night, clock)
   if M.tracking(state) and night and target and not state.failed then
     local ok = pcall(function()
       if not state.light or not scenetree.findObject(M.LIGHT_NAME) then
         if not createLight(state) then error("no light") end
       end
-      placeLight(state, target)
+      placeLight(state, target, clock)
     end)
     if not ok then
       pcall(removeLight, state)

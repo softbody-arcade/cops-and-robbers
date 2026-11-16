@@ -147,9 +147,9 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
 
 ### Client: searchlight
 - **When:** while the helicopter is `tracking` and it is night (`sky.isNight()`), each game shows a searchlight.
-- **What:** a `SpotLight` object `cnr_heli_light`, not saved with the level. It sits 40 m above the runner's car, points straight down, and moves every frame with the car (`runnerObject()` on cops' games, the own car on the runner's).
+- **What:** a `SpotLight` object `cnr_heli_light`, not saved with the level. It circles 12 m off the runner's car at 40 m up (one circle about every 25 s), aims at the car with a slight wobble, and moves every frame with the car (`runnerObject()` on cops' games, the own car on the runner's).
 - **Removed when:** tracking stops, it gets light, the round ends, on cancel, on leaving or on a map change.
-- **Values:** brightness, range (about 60 m), cone angles and colour (warm white) are tuned in game.
+- **Values:** brightness, range (about 120 m), cone angles and colour (warm white) are tuned in game.
 
 ## Tests
 - **`cnr/helicopter.lua`:**
@@ -200,7 +200,7 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
 - **Re-find times:** 5 s in the open, 10 s in rain.
 - **The runner's SPOTTED / HIDDEN tag** stays about cop sight. The helicopter has its own HUD item.
 - **Cover is reported** by the game that owns the runner's car, using the roof check from 1.5 m above it.
-- **Searchlight:** 40 m above the car, pointing straight down.
+- **Searchlight:** circles 12 m off the car at 40 m up (one circle about every 25 s), aimed at the car with a slight wobble.
 - **Earth:** the helicopter flies, the name tag is hidden, and there's no minimap hiding.
 - **Pings:** one last-seen ping per loss of the runner by both sight and the helicopter. It replaces the two separate pings, so neither cuts into the other's live stream.
 - **Settings:** time up must be more than 0, and a refuel of 0 means the helicopter stays up.
