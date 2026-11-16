@@ -1446,12 +1446,12 @@ test("New sky updates the card and says so", function()
   local env = bootClient()
   local d = copy(SETUP); d.sky = { weather = "rain", windDir = 0, windSeed = 7 }
   env.fire("cnr_roundSetup", d); env.tick(1)
-  env.fire("cnr_sky", { time = "noon", weather = "snow", windDir = 0, windSeed = 9 })
+  env.fire("cnr_sky", { time = "noon", weather = "snow", year = 2026, month = 1, day = 3, windDir = 0, windSeed = 9 })
   env.tick(0.2)
-  assertEq(env.hud().center.car, "Gavril Pickup · Noon · Snow")
+  assertEq(env.hud().center.car, "Gavril Pickup · Noon · Snow · 3 Jan")
   assertEq(env.sky.objects.cnr_precipitation:getField("dataBlock"), "Snow_menu")
   local found = false
-  for _, n in ipairs(env.hud().notices) do if n.text == "New sky: Noon · Snow" then found = true end end
+  for _, n in ipairs(env.hud().notices) do if n.text == "New sky: Noon · Snow · 3 Jan" then found = true end end
   assertEq(found, true)
 end)
 

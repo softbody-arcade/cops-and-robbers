@@ -14,7 +14,6 @@
 
 ## Issues
 - [ ] Cop start spots are picked by straight-line distance from the runner (50-150 m), not by how far it is to drive there. A mountain road above the runner, the other side of a hairpin, or a road across a river or divided highway counts as close even when driving there takes much longer, and switchbacks make it worse. Pick spots by driving distance along the road network instead (the same goes for moving AI cops back near the runner)
-- [ ] No test pins the round date in the New sky message (`cnr_sky` in `tests/test_client.lua`) or that New sky picks a new date on the server (`tests/test_main.lua`)
 - [ ] The client copies `p.year` into the solar lookup even when a sky has a month and day but no year, which quietly drops the date from the sunrise lookup; `p.year or solar.year` would be sturdier (`client/lua/ge/extensions/copsAndRobbers/sky.lua`, roundState). The server always sends a year today
 - [ ] `docs/DEPENDENCIES.md` lists `latitude` among the `setState` fields, but the mod only reads it through `getState` for the sunrise lookup
 - [ ] Round dates follow northern-hemisphere seasons (snow in December or January), so a southern-hemisphere mod map gets snow with long summer days. Cosmetic; vanilla maps are all northern

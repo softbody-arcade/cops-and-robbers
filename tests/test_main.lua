@@ -895,6 +895,22 @@ test("New sky gives different conditions when it can", function()
   env.cleanup()
 end)
 
+test("New sky picks a date that fits the new weather", function()
+  local env = boot({ config = '{"weather":"random","timeOfDay":"noon","badWeatherChancePercent":100}' })
+  env.startRound()
+  local fits = { snow = { [12] = true, [1] = true }, fog = { [10] = true, [11] = true },
+    rain = { [3] = true, [4] = true, [10] = true, [11] = true }, storm = { [3] = true, [4] = true, [10] = true, [11] = true } }
+  math.randomseed(3)
+  for _ = 1, 8 do
+    env.sent = {}
+    env.panel(1, "sky")
+    local s = decodeJson(env.lastSent("cnr_sky").data)
+    assertEq(fits[s.weather][s.month], true)
+    assertEq(type(s.day), "number"); assertEq(type(s.year), "number")
+  end
+  env.cleanup()
+end)
+
 test("New sky needs a random setting", function()
   local env = boot({ config = '{"timeOfDay":"noon","weather":"clear"}' })
   env.startRound()
