@@ -103,10 +103,10 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `includeModVehicles` | false | Also pick mod vehicles |
 | `autoNextRound` | false | Prepare the next round automatically (panel switch) |
 | `autoNextDelaySeconds` | 15 | Delay before the next round is prepared |
-| `timeOfDay` | map | `map` (the map's own), `sunrise`, `morning`, `noon`, `afternoon`, `sunset`, `night` or `random` |
+| `timeOfDay` | random | `sunrise`, `morning`, `noon`, `afternoon`, `sunset`, `night` or `random` |
 | `nightChancePercent` | 25 | Chance of night when Time of day is random |
-| `clockSpeed` | 0 | Speed of the sky clock during a round: 0 stopped, 1 real time, a whole number up to 120 |
-| `weather` | map | `map` (the map's own), `clear`, `cloudy`, `rain`, `storm`, `fog`, `snow` or `random` |
+| `dayLength` | moderate | How long a full day lasts during the chase: `off` (stopped), `fast` (15 min), `moderate` (30 min), `slow` (2 h) or `realtime` (24 h) |
+| `weather` | random | `clear`, `cloudy`, `rain`, `storm`, `fog`, `snow` or `random` |
 | `badWeatherChancePercent` | 25 | Chance of rain, storm, fog or snow when Weather is random |
 | `weatherDriving` | true | Weather changes grip and adds wind (not on BeamNG.Earth) |
 | `trafficPerPlayer` | 5 | AI traffic cars around each player during a round (0 = off; normal maps only, not on BeamNG.Earth yet) |
