@@ -208,11 +208,20 @@ function M.payload(state, now, info)
     notices = notices(info.events, now),
     help = helpBlock(info.helpOpen, info.rules, info.units),
   }
+  local prefs = type(info.settings) == "table" and info.settings or {}
+  local settings = {
+    color = info.color,
+    headlights = prefs.headlights == true,
+    siren = prefs.siren == true,
+    sirensAllowed = not (type(info.rules) == "table" and info.rules.sirensAllowed == false),
+  }
   if mode == "result" then
     payload.result = resultBlock(result, now)
   elseif mode == "lobby" then
     payload.lobby = lobbyBlock(info)
+    payload.settings = settings
   else
+    payload.settings = settings
     payload.center = center(info, now)
     if info.prep then payload.prep = { waiting = waitingText(info.prep, info.applying), color = info.color } end
     if type(info.change) == "table" then payload.change = changeBlock(info.change, info.role) end

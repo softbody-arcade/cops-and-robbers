@@ -1,0 +1,18 @@
+local ps = require("copsAndRobbers/playerSettings")
+test("a broken settings file means both switches off", function()
+  for _, bad in ipairs({ "x", 3, { headlights = "yes", siren = 1 }, { 1, 2 } }) do
+    local p = ps.load(bad)
+    assertEq(p.headlights, false); assertEq(p.siren, false)
+  end
+  local n = ps.load(nil)
+  assertEq(n.headlights, false); assertEq(n.siren, false)
+  local p = ps.load({ headlights = true, siren = false, extra = true })
+  assertEq(p.headlights, true); assertEq(p.siren, false); assertEq(p.extra, nil)
+end)
+test("set takes only known keys and booleans", function()
+  local p = ps.load(nil)
+  assertEq(ps.set(p, "headlights", true), true); assertEq(p.headlights, true)
+  assertEq(ps.set(p, "headlights", true), false)
+  assertEq(ps.set(p, "siren", "on"), false); assertEq(p.siren, false)
+  assertEq(ps.set(p, "color", true), false); assertEq(p.color, nil)
+end)

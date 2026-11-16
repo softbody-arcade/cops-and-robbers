@@ -14,6 +14,7 @@ local modes = require("copsAndRobbers/modes")
 local nearby = require("copsAndRobbers/nearby")
 local sky = require("copsAndRobbers/sky")
 local traffic = require("copsAndRobbers/traffic")
+local playerSettings = require("copsAndRobbers/playerSettings")
 
 local CLIENT_VERSION = "2.4.1"
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
@@ -67,6 +68,8 @@ local modesState = modes.new()
 local modesHoldUntil, lastModesCapture = 0, 0
 local requestReset
 local helpSeen = false
+local prefs = playerSettings.load(nil)
+local sirensAllowed = true
 
 local function setFreeze(on)
   frozen = on
@@ -751,6 +754,9 @@ end
 local function onExtensionLoaded()
   local ok, saved = pcall(jsonReadFile, modes.FILE)
   modesState = modes.new(ok and saved or nil)
+  local readOk, savedPrefs = pcall(jsonReadFile, playerSettings.FILE)
+  prefs = playerSettings.load(readOk and savedPrefs or nil)
+  hudfeed.settings(prefs)
   apps.refreshApps()
   apps.start(clock)
   inputs.setNotify(function(msg, tone) hudfeed.event(msg, clock, tone) end)
@@ -778,7 +784,11 @@ local function onExtensionLoaded()
   AddEventHandler("cnr_top", onTop)
   AddEventHandler("cnr_autoNext", onAutoNext)
   AddEventHandler("cnr_mode", onMode)
-  AddEventHandler("cnr_rules", function(data) hudfeed.rules(jsonDecode(data)) end)
+  AddEventHandler("cnr_rules", function(data)
+    local r = jsonDecode(data)
+    hudfeed.rules(r)
+    sirensAllowed = not (type(r) == "table" and r.sirensAllowed == false)
+  end)
   AddEventHandler("cnr_lobby", function(data)
     hudfeed.lobby(jsonDecode(data))
     checkBinding()
@@ -858,7 +868,12 @@ function M.ui(msg)
   local action = msg.action
   if action == "apply" then return M.applyChange() end
   if action == "color" then return sendServer("cnr_color", { hex = type(msg.hex) == "string" and msg.hex or nil }) end
-  if action == "toggleApp" then
+  if action == "setting" then
+    if playerSettings.set(prefs, msg.key, msg.value) then
+      pcall(jsonWriteFile, playerSettings.FILE, prefs, true)
+      hudfeed.settings(prefs)
+    end
+  elseif action == "toggleApp" then
     apps.toggle(msg.name)
   elseif action == "help" then
     hudfeed.help(msg.open == true)

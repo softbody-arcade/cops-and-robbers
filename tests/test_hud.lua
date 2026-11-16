@@ -325,3 +325,20 @@ test("help carries the game's unit", function()
   assertEq(hud.payload(hud.new(), 0, { helpOpen = true, units = "imperial", rules = {} }).help.units, "imperial")
   assertEq(hud.payload(hud.new(), 0, { helpOpen = true, rules = {} }).help.units, "metric")
 end)
+
+test("lobby payload carries the player settings and the host's siren rule", function()
+  local s = { headlights = true, siren = false }
+  local p = hud.payload(hud.new(), 0, { active = false, color = "#00ff00", settings = s })
+  assertEq(p.settings.color, "#00ff00"); assertEq(p.settings.headlights, true); assertEq(p.settings.siren, false)
+  assertEq(p.settings.sirensAllowed, true)
+  local off = hud.payload(hud.new(), 0, { active = false, settings = s, rules = { sirensAllowed = false } })
+  assertEq(off.settings.sirensAllowed, false)
+  local round = hud.payload(hud.new(), 0, { active = true, settings = s })
+  assertEq(round.settings.headlights, true)
+end)
+
+test("a result payload has no settings", function()
+  local p = hud.payload(hud.new(), 0, { settings = { headlights = true, siren = true },
+    result = { title = "X", untilT = 10, shownAt = 0 } })
+  assertEq(p.mode, "result"); assertEq(p.settings, nil)
+end)

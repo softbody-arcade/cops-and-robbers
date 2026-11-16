@@ -16,7 +16,7 @@ local visibleSent = false
 local lastPush = 0
 local warningKeys, warningTexts = {}, {}
 local connected, helpOpen = false, false
-local rules, lobby, color
+local rules, lobby, color, prefs
 local appsOpen, appsCheckedAt = {}, -math.huge
 local lastClock, lastInfo = 0, {}
 local lobbyCheck
@@ -141,6 +141,10 @@ function M.color(hex)
   color = type(hex) == "string" and hex ~= "" and hex or nil
 end
 
+function M.settings(p)
+  prefs = p
+end
+
 function M.help(open)
   helpOpen = open == true
 end
@@ -189,7 +193,7 @@ local function push(clock, info)
     resetAllowed = info.resetAllowed, resetHint = info.resetHint, penalty = info.penalty, infoParts = info.infoParts, units = units.read(), infoTag = info.infoTag,
     timer = info.timer, flash = flash, prep = prep, events = events, resetFlashUntil = resetFlashUntil,
     change = change, applying = applying, releaseAt = releaseAt,
-    result = result, rules = rules, lobby = lobby, color = color, warnings = M.warnings(), apps = appsOpen, helpOpen = helpOpen,
+    result = result, rules = rules, lobby = lobby, color = color, settings = prefs, warnings = M.warnings(), apps = appsOpen, helpOpen = helpOpen,
   }))
 end
 
