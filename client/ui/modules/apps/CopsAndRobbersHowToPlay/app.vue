@@ -1,7 +1,7 @@
 <template>
   <CnrRoot ref="box" class="cnr-howto">
     <div v-if="shown" ref="card" class="howto-card" :style="fit">
-      <HowToPlay :rules="hud.help.rules" @close="ui({ action: 'help', open: false })" />
+      <HowToPlay :rules="hud.help.rules" :units="hud.help.units" @close="ui({ action: 'help', open: false })" />
     </div>
   </CnrRoot>
 </template>

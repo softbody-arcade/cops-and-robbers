@@ -10,7 +10,7 @@
         <div class="flow">
           <div class="step">
             <div class="step-name"><BngIcon :type="icons.cogSolid" />Prep</div>
-            <div class="step-text">The host starts a round. You're frozen; pick your colour.</div>
+            <div class="step-text">The host starts a round. You're frozen; open Settings for your colour.</div>
           </div>
           <div class="step">
             <div class="step-name"><BngIcon :type="icons.play" />GO</div>
@@ -155,8 +155,8 @@
         <div class="li">
           <span class="swatch"></span>
           <span>
-            <b>Your colour:</b> use the Colour button. Set in prep, it repaints your car straight away; otherwise it applies from
-            the next round.
+            <b>Your settings:</b> use the Settings button for your car colour, auto headlights at night and in bad weather<span v-if="r.sirensAllowed !== false">, and a siren as a cop</span>.
+            A colour set in prep repaints your car straight away; otherwise it applies from the next round.
           </span>
         </div>
         <div v-if="evolving" class="li">
@@ -183,6 +183,7 @@ import { formatTime } from "../../copsAndRobbers/format.js"
 
 const props = defineProps({
   rules: Object,
+  units: String,
 })
 const emit = defineEmits(["close"])
 
@@ -193,6 +194,7 @@ const sightOff = computed(() => r.value.sightOff === true)
 const lastSeenOff = computed(() => r.value.lastSeenOff === true)
 const evolving = computed(() => r.value.carMode === "evolving")
 const trafficOn = computed(() => r.value.trafficOn === true)
+const imperial = computed(() => props.units === "imperial")
 
 function value(key) {
   const n = Number(r.value[key])
@@ -206,10 +208,18 @@ function unit(key, suffix) {
   return n === null ? "–" : `${round1(n)} ${suffix}`
 }
 const sec = key => unit(key, "s")
-const kmh = key => unit(key, "km/h")
+function kmh(key) {
+  const n = value(key)
+  if (n === null) return "–"
+  return imperial.value ? `${round1(n * 0.621371)} mph` : `${round1(n)} km/h`
+}
 function dist(key) {
   const n = value(key)
   if (n === null) return "–"
+  if (imperial.value) {
+    const ft = Math.round(n * 3.28084)
+    return ft < 1000 ? `${ft} ft` : `${round1(n / 1609.344)} mi`
+  }
   return n >= 1000 ? `${round1(n / 1000)} km` : `${round1(n)} m`
 }
 function duration(key) {
