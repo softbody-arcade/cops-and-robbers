@@ -23,7 +23,7 @@ test("a round sky is applied and locked", function()
   local sky, fake = load()
   sky.apply(RAIN_NIGHT)
   local s = fake.setStates[#fake.setStates]
-  assertEq(s.time, 0.5); assertEq(s.play, false); assertEq(s.cloudCover, 1.0); assertEq(s.numOfDrops, nil)
+  assertEq(s.time, 0.5); assertEq(s.play, false); assertEq(s.cloudCover, 2.2); assertEq(s.numOfDrops, nil)
   assertNear(s.groundWind.x, 5, 1e-6)
   assertEq(fake.profiles[1].averageC, 8)
   assertEq(fake.objects.cnr_precipitation:getField("dataBlock"), "rain_medium")

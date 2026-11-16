@@ -5,19 +5,19 @@ local shelter = require("copsAndRobbers/shelter")
 local M = {}
 
 M.WEATHER = {
-  clear = { cloudCover = 0.2, fogDensity = 1, windSpeed = 1 },
-  cloudy = { cloudCover = 0.9, fogDensity = 2, windSpeed = 2 },
+  clear = { cloudCover = 0.4, fogDensity = 0.4, windSpeed = 0.1 },
+  cloudy = { cloudCover = 1.8, fogDensity = 1, windSpeed = 0.3 },
   rain = {
-    cloudCover = 1.0, fogDensity = 4, windSpeed = 3, temperatureC = 8,
+    cloudCover = 2.2, fogDensity = 4, windSpeed = 0.5, temperatureC = 8,
     precipitation = { dataBlock = "rain_medium", numDrops = 3000, dropSize = 1, minSpeed = 0.1, maxSpeed = 0.3 },
   },
   storm = {
-    cloudCover = 1.2, fogDensity = 8, windSpeed = 8, temperatureC = 8,
+    cloudCover = 3.0, fogDensity = 8, windSpeed = 1.5, temperatureC = 8,
     precipitation = { dataBlock = "rain_medium", numDrops = 6000, dropSize = 1, minSpeed = 0.1, maxSpeed = 0.3 },
   },
-  fog = { cloudCover = 0.4, fogDensity = 25, windSpeed = 1, temperatureC = 5 },
+  fog = { cloudCover = 1.5, fogDensity = 15, windSpeed = 0.1, temperatureC = 5 },
   snow = {
-    cloudCover = 1.0, fogDensity = 5, windSpeed = 2, temperatureC = -5,
+    cloudCover = 2.2, fogDensity = 5, windSpeed = 0.4, temperatureC = -5,
     precipitation = { dataBlock = "Snow_menu", numDrops = 5000, dropSize = 0.2, minSpeed = 0.1, maxSpeed = 0.3 },
   },
 }
