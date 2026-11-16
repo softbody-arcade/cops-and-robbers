@@ -17,7 +17,7 @@
 - `timeOfDay` and `weather` lose `map`; both default to `random`.
 - Date windows: snow 1 Dec – 31 Jan; fog 1 Oct – 30 Nov; rain and storm 1 Mar – 30 Apr or 1 Oct – 30 Nov; clear and cloudy any day of the year. Never 29 Feb.
 - Year: the server's current year.
-- Label format: "Sunset · Snow · 14 Dec" (short English month names).
+- Label format: prep card and "New sky" message "Sunset · Snow · 14 Dec" (short English month names); the leaderboard's Rounds tab "Sunset · Snow" (its rows already show the real date).
 - Panel labels: "Day length"; options "Off", "Fast (15 min)", "Moderate (30 min)", "Slow (2 h)", "Realtime (24 h)"; help "How long a full day lasts once the chase starts".
 - No code comments (project rule in AGENTS.md).
 
@@ -119,7 +119,7 @@ test("every date in a window exists and each day comes up once", function()
     local total, months, first, last = w[1], w[2], w[3], w[4]
     local seen, count = {}, 0
     for n = 1, total do
-      local month, day = sky.date(weather, function() return n end)
+      local month, day = sky.date(weather, function(a, b) assertEq(a, 1); assertEq(b, total); return n end)
       assertEq(months == nil or months[month] == true, true)
       assertEq(day >= 1 and day <= DAYS[month], true)
       local key = month * 100 + day
@@ -222,16 +222,17 @@ git commit -m "feat: day length choice, a date picked by the weather, random sky
 
 **Files:**
 - Modify: `client/lua/ge/extensions/copsAndRobbers/sky.lua:45-47` (setsSomething), `:101-117` (roundState), `:119-126` (label), `:155-168` (startClock)
-- Modify: `tests/env_stubs.lua:29-31` (fake state), `:67` (getSolarTimeOfDayValue)
-- Test: `tests/test_sky_client.lua`
+- Modify: `client/lua/ge/extensions/copsAndRobbers.lua:182, 215` (prep card and "New sky" pass `true` for the date; `:502`, the leaderboard rows, stays without)
+- Modify: `tests/env_stubs.lua:29-31` (fake state), `:72` (getSolarTimeOfDayValue)
+- Test: `tests/test_sky_client.lua`, `tests/test_client.lua:1430-1473, 1527-1532`
 
 **Interfaces:**
 - Consumes: the payload fields from Task 1 (`year`, `month`, `day`, `daySeconds`, `time`, `weather`, ...).
-- Produces: `sky.label(p) -> string|nil`, which the prep card and the leaderboard's Rounds tab already call (`copsAndRobbers.lua:182, 215, 502`). No signature changes.
+- Produces: `sky.label(p, withDate?) -> string|nil`. The date part is added only when `withDate` is true and `MONTHS[p.month]` and `p.day` are set.
 
 - [ ] **Step 1: Update the stubs in `tests/env_stubs.lua`**
 
-Add `latitude = 37.77, year = 2026, month = 6, day = 20` to `fake.state`. Change the solar stub to record the state it is given:
+Add `latitude = 37.77, year = 2025, month = 6, day = 20` to `fake.state` (2025 on purpose, so the round's 2026 shows the year is copied and restored). Change the solar stub to record the state it is given:
 
 ```lua
 function env.getSolarTimeOfDayValue(key, state)
@@ -260,10 +261,12 @@ Add:
 ```lua
 local WINTER = { time = "sunrise", weather = "snow", year = 2026, month = 12, day = 14, windDir = 0, windSeed = 1 }
 
-test("labels end with the date", function()
+test("labels end with the date only when asked", function()
   local sky = load()
-  assertEq(sky.label(WINTER), "Sunrise · Snow · 14 Dec")
-  assertEq(sky.label({ time = "noon", weather = "clear", month = 1, day = 3 }), "Noon · Clear · 3 Jan")
+  assertEq(sky.label(WINTER, true), "Sunrise · Snow · 14 Dec")
+  assertEq(sky.label(WINTER), "Sunrise · Snow")
+  assertEq(sky.label({ time = "noon", weather = "clear", month = 1, day = 3 }, true), "Noon · Clear · 3 Jan")
+  assertEq(sky.label({ time = "noon", weather = "clear", month = 13, day = 3 }, true), "Noon · Clear")
 end)
 
 test("old runs without a date still get a label", function()
@@ -290,9 +293,24 @@ test("restore gives the player's own date back", function()
   sky.apply(WINTER)
   assertEq(fake.state.month, 12)
   sky.restore()
-  assertEq(fake.state.year, 2026); assertEq(fake.state.month, 6); assertEq(fake.state.day, 20)
+  assertEq(fake.state.year, 2025); assertEq(fake.state.month, 6); assertEq(fake.state.day, 20)
 end)
 ```
+
+In `tests/test_client.lua`:
+- "the countdown starts the round clock" and "a mid-chase setup starts the clock at clockSeconds" (`:1458-1473`): replace `clockSpeed = 60` with `daySeconds = 1440`; the expected time becomes `(0.245 + 110 / 1440) % 1`.
+- Add, next to "a round sky is applied at setup and shown on the role card":
+
+```lua
+test("the role card shows the round's date", function()
+  local env = bootClient()
+  local d = copy(SETUP); d.sky = { time = "night", weather = "rain", year = 2026, month = 12, day = 14, windDir = 0, windSeed = 7 }
+  env.fire("cnr_roundSetup", d); env.tick(1)
+  assertEq(env.hud().center.car, "Gavril Pickup · Night · Rain · 14 Dec")
+end)
+```
+
+- In "leaderboard round rows get a sky label" (`:1527-1532`), give the first row's sky `month = 12, day = 14`; the expected label stays "Night · Rain".
 
 - [ ] **Step 3: Run the tests to see them fail**
 
@@ -304,7 +322,8 @@ Expected: FAIL in `test_sky_client.lua` (date label missing, `setStates[1].month
 - `setsSomething(p)`: `(p.daySeconds or 0) > 0` replaces the `clockSpeed` check.
 - `roundState(env, p)`: when `p.month` and `p.day` are set, put `year`, `month`, `day` from `p` into `state`. For a named time, pass a copy of `env.getState()` with the round's date put in as the second argument of `env.getSolarTimeOfDayValue(p.time, solar)` (fall back to `env.timeOfDayKeyToTime[p.time]` as today). Don't modify the table `getTimeOfDay` returns; the game reuses it.
 - `M.startClock`: read `round.daySeconds`; when it is above 0, `setState({ time = (clockStart + roundTime / daySeconds) % 1, play = true, dayLength = daySeconds })`. Remove `SECONDS_PER_DAY`.
-- `M.label(p)`: after time and weather, add `string.format("%d %s", p.day, MONTHS[p.month])` when both are set; `MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }`.
+- `M.label(p, withDate)`: after time and weather, add `string.format("%d %s", p.day, MONTHS[p.month])` when `withDate` is true and `p.day` and `MONTHS[p.month]` are set; `MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }`.
+- `copsAndRobbers.lua:182` and `:215`: call `sky.label(..., true)`. `:502` stays `sky.label(row.sky)`.
 
 - [ ] **Step 5: Run the tests to see them pass**
 
@@ -314,7 +333,7 @@ Expected: `N passed, 0 failed`
 - [ ] **Step 6: Commit**
 
 ```bash
-git add client/lua/ge/extensions/copsAndRobbers/sky.lua tests/env_stubs.lua tests/test_sky_client.lua
+git add client/lua/ge/extensions/copsAndRobbers/sky.lua client/lua/ge/extensions/copsAndRobbers.lua tests/env_stubs.lua tests/test_sky_client.lua tests/test_client.lua
 git commit -m "feat: rounds set the date and run the clock by day length"
 ```
 
@@ -323,9 +342,9 @@ git commit -m "feat: rounds set the date and run the clock by day length"
 ### Task 3: Panel, docs and version 2.4.0
 
 **Files:**
-- Modify: `client/ui/modules/apps/CopsAndRobbersPanel/settings.js:16-25` (Sky group), `:38` (the `item.speed` branch in the value formatter)
-- Modify: `README.md:106-109`, `docs/FEATURES.md:1, 115, 145-151, 257-260`
-- Modify: version `2.3.0` → `2.4.0` in `client/lua/ge/extensions/copsAndRobbers.lua:18`, `client/mod_info/CopsAndRobbers/info.json:5`, `server/CopsAndRobbers/main.lua:18`, `docs/FEATURES.md:1`, and the fixtures in `tests/test_client.lua:521, 569, 586, 587, 591, 1019`
+- Modify: `client/ui/modules/apps/CopsAndRobbersPanel/settings.js:16-25` (Sky group), `:117` (the `item.speed` branch in the value formatter)
+- Modify: `README.md:106-109`, `docs/FEATURES.md:1, 115, 145-160, 257-260`, `docs/DEPENDENCIES.md:22-23, 117`
+- Modify: version `2.3.0` → `2.4.0` in `client/lua/ge/extensions/copsAndRobbers.lua:18`, `client/mod_info/CopsAndRobbers/info.json:5`, `server/CopsAndRobbers/main.lua:18`, `docs/FEATURES.md:1`, `tests/test_main.lua:763-764`, and the fixtures in `tests/test_client.lua:521, 569, 586, 587, 591, 1019, 1072, 1078, 1082, 1203`
 
 **Interfaces:**
 - Consumes: config key `dayLength` and its five choices (Task 1).
@@ -352,20 +371,22 @@ Expected: exits 0 with no errors for `CopsAndRobbersPanel`.
 - README and FEATURES settings tables: `timeOfDay` default `random`, choices without `map`; the `clockSpeed` row becomes `| \`dayLength\` | moderate | How long a full day lasts during the chase: \`off\` (stopped), \`fast\` (15 min), \`moderate\` (30 min), \`slow\` (2 h) or \`realtime\` (24 h) |`; `weather` default `random`, choices without `map`.
 - FEATURES "Night and weather" (`:145-151`): Settings bullet lists Day length instead of Clock speed and says Time of day and Weather are a fixed choice or random (random by default; the sky is always set off Earth). Clock bullet: stopped with Off, otherwise stopped in prep and running from GO at the chosen day length. New bullet **Date:** "Each round gets a date that fits its weather: snow in December or January, fog in October or November, rain and storms in March, April, October or November, clear and cloudy any day. It sets sunrise, sunset and how long the night lasts, it is the same for everyone, and it shows on the prep card and in the Rounds tab ("Sunset · Snow · 14 Dec")."
 - FEATURES `:115` "Saved per run": "clock speed" becomes "day length, date".
+- FEATURES "After the round" bullet: the date goes back too. "Prep line" bullet: example "Gavril D-Series · Night · Rain · 14 Dec". The Rounds tab example stays without a date.
+- DEPENDENCIES `:22`: drop "Set Time of day and Weather back to Map default afterwards"; say instead that the panel writes the live server's `config.json`, so set Time of day and Weather back to Random afterwards. `:23`: "(or Map default)" goes. `:117`: `getSolarTimeOfDayValue(key, state)` and the `getState`/`setState` fields add `year`, `month`, `day`, `latitude`.
 
 - [ ] **Step 4: Version 2.4.0**
 
-Change the four version strings and the six `tests/test_client.lua` fixtures listed under Files (the "Your copy is 2.3.0" message becomes "Your copy is 2.4.0").
+Change the four version strings, `tests/test_main.lua:763-764` and the ten `tests/test_client.lua` fixtures listed under Files (the "Your copy is 2.3.0" message becomes "Your copy is 2.4.0").
 
 - [ ] **Step 5: Run everything**
 
-Run: `make test 2>&1 | tail -1 && grep -rn "clockSpeed\|Map default\|2\.3\.0" client server README.md docs/FEATURES.md tests`
-Expected: `N passed, 0 failed`. The grep shows only the old-record label test in `tests/test_sky_client.lua` and the old-config test in `tests/test_config.lua`.
+Run: `make test 2>&1 | tail -1 && grep -rn "clockSpeed\|Map default\|2\.3\.0" client server README.md docs/FEATURES.md docs/DEPENDENCIES.md tests`
+Expected: `N passed, 0 failed`. The grep shows only `tests/test_config.lua` ("sky settings have defaults" and the old-config test) and the old-run label test in `tests/test_sky_client.lua`.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add client/ui/modules/apps/CopsAndRobbersPanel/settings.js README.md docs/FEATURES.md client/lua/ge/extensions/copsAndRobbers.lua client/mod_info/CopsAndRobbers/info.json server/CopsAndRobbers/main.lua tests/test_client.lua
+git add client/ui/modules/apps/CopsAndRobbersPanel/settings.js README.md docs/FEATURES.md docs/DEPENDENCIES.md client/lua/ge/extensions/copsAndRobbers.lua client/mod_info/CopsAndRobbers/info.json server/CopsAndRobbers/main.lua tests/test_client.lua tests/test_main.lua
 git commit -m "feat: 2.4.0 - day length list and a date that follows the weather"
 ```
 
@@ -377,11 +398,15 @@ Manual, with the host. See the in-game testing notes in memory: console commands
 
 - [ ] **Step 1: Install on the local server**
 
-Run: `make install-local`
-Expected: `.testserver/Resources/Client/CopsAndRobbers.zip` and `.testserver/Resources/Server/CopsAndRobbers` updated; the server log shows 2.4.0 loading with no Lua errors.
+The local server lives in the main checkout, not in this worktree.
+
+Run: `make install-local TESTSERVER=<repo>/.testserver`
+Expected: that server's `Resources/Client/CopsAndRobbers.zip` and `Resources/Server/CopsAndRobbers` updated; after a restart the server log shows 2.4.0 loading with no Lua errors. The local server has no `config.json`, so no old-setting warnings. The remote server's `config.json` may still hold `clockSpeed` or `"map"`: expect "unknown setting clockSpeed ignored" / "invalid value map" warnings there until those keys are removed at deploy.
 
 - [ ] **Step 2: The host checks, on west_coast_usa**
 - The panel shows Day length with the five options, Moderate selected; Time of day and Weather show Random and have no "Map default".
 - A practice round with Weather Snow and Time of day Sunrise: the prep card reads "Sunrise · Snow · <day> Dec" or "Jan", and the sun is at the horizon when the round starts.
+- A practice round with Weather Snow, Time of day Sunset and Day length Fast: the street lights come on soon after GO (the night-lights window follows the round's date).
 - With Day length Fast, the sky visibly moves within a minute after GO.
+- The Rounds tab shows the round's time and weather without an in-game date.
 - After the round, the environment menu shows the date the player had before.

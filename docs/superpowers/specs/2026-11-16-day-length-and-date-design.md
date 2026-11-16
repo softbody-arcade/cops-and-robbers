@@ -56,14 +56,15 @@ How much it matters: on West Coast USA (latitude 38°) a December day is about 9
 - Restoring after the round already puts back the saved `getState()`, which includes the player's own date.
 
 **Labels**
-- The conditions label adds the date: "Sunset · Snow · 14 Dec". It shows on the prep card and in the leaderboard's Rounds tab (both use the same label).
+- The prep card and the "New sky" message add the date: "Sunset · Snow · 14 Dec".
+- The leaderboard's Rounds tab keeps "Sunset · Snow": its rows already show the real date the round was played ("Mon 14 Dec 14:05"), and a second, in-game date next to it would read as a mistake. The run still records the date.
 
 **Docs**
 - README and FEATURES settings tables and the Night and weather section follow the new settings (no map default, Day length, date by weather).
 
 ## Calls made (not discussed, easy to change)
 - Year is the server's current year.
-- The date shows in the conditions label on the prep card and the Rounds tab.
+- The date shows on the prep card and in the "New sky" message, not in the Rounds tab (changed after the plan review).
 - New sky still only shows while Time of day or Weather is random (now the default, so normally always). It re-picks the date too.
 - No 29 Feb in the clear and cloudy window.
 
