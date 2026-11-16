@@ -227,13 +227,6 @@ function M.players(board, map, assistPercent)
   return list
 end
 
-function M.rankOf(board, filter, key)
-  for i, e in ipairs(M.runners(board, filter, math.huge)) do
-    if e.key == key then return i, e end
-  end
-  return nil
-end
-
 function M.rounds(board, filter, limit)
   local ids = {}
   for i, r in ipairs(board.runs) do

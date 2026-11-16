@@ -84,11 +84,7 @@ end
 local function inLayout(env, appName)
   local current = env.api.getCurrentLayout()
   if type(current) ~= "table" or not current.filename then return false end
-  local fresh = env.readLayout(current.filename) or current
-  for _, app in ipairs(fresh.apps or {}) do
-    if app.appName == appName then return true end
-  end
-  return false
+  return placement.appIndex(env.readLayout(current.filename) or current, appName) ~= nil
 end
 
 function M.placed()

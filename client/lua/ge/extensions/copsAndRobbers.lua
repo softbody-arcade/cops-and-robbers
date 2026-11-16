@@ -433,7 +433,7 @@ local function onState(data)
     resetAllowed = d.resetAllowed and true or false
     inputs.setResetKey()
   end
-  if d.resetHint and d.resetHint ~= lastHint then lastHint = d.resetHint end
+  if d.resetHint then lastHint = d.resetHint end
   local p = tonumber(d.catchProgress) or 0
   hudfeed.catchSample(clock, p)
 end

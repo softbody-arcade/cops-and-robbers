@@ -20,6 +20,8 @@ local function appIndex(layout, appName)
   return nil
 end
 
+M.appIndex = appIndex
+
 local function same(a, b)
   if type(a) ~= "table" or type(b) ~= "table" then return a == b end
   for k, v in pairs(a) do

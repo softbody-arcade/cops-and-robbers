@@ -452,11 +452,14 @@ local function boardState(sub, viewerKey)
     mode = (sub.mode == "random" or sub.mode == "evolving") and sub.mode or nil,
     traffic = (sub.traffic == "with" or sub.traffic == "without") and sub.traffic or nil,
   }
-  local runners = leaderboard.runners(board, f, BOARD_TOP)
-  local mine
-  local rank, entry = leaderboard.rankOf(board, f, viewerKey)
-  if rank and rank > BOARD_TOP then
-    mine = { rank = rank, player = entry.player, survivedSeconds = entry.survivedSeconds, model = entry.model, map = entry.map }
+  local runners, mine = {}, nil
+  for rank, entry in ipairs(leaderboard.runners(board, f, math.huge)) do
+    if rank <= BOARD_TOP then
+      runners[rank] = entry
+    elseif entry.key == viewerKey then
+      mine = { rank = rank, player = entry.player, survivedSeconds = entry.survivedSeconds, model = entry.model, map = entry.map }
+      break
+    end
   end
   for _, e in ipairs(runners) do
     if e.key == viewerKey then e.me = true end
@@ -715,7 +718,7 @@ local function lobbyState()
   local online = 0
   for _ in pairs(players) do online = online + 1 end
   local practice
-  if current:isActive() and current.test then practice = MP.GetPlayerName(current.issuerId) end
+  if current:isActive() and current.test then practice = MP.GetPlayerName(current.issuerId) or "someone" end
   return { online = online, practice = practice, active = current:isActive() and not current.test or false }
 end
 
@@ -980,7 +983,9 @@ function cnrOnPanel(pid, data)
   elseif msg.action == "station" then
     if msg.op ~= "add" and msg.op ~= "remove" then return end
     panelMirror = pid
-    local ran, err = pcall(msg.op == "add" and handlers.addstation or handlers.removestation, pid)
+    local handler = handlers.removestation
+    if msg.op == "add" then handler = handlers.addstation end
+    local ran, err = pcall(handler, pid)
     panelMirror = nil
     pushPanel()
     if not ran then error(err, 0) end
