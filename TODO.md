@@ -17,20 +17,20 @@ One entry per piece of work that has started: what it is, its branch (or "design
 - [ ] Cop sight that follows visibility: the sight range is worked out from what the game knows (fog thickness, how dark it is, street lights near the runner, whether the runner's lights are on, rain). Comes after night and weather rounds
 
 ## Issues
-- [ ] Traffic late clean-up: traffic that finishes spawning more than 15 s after the round ends stays on the map, and AI traffic a player starts within those 15 s is deleted (`traffic.lua` `LATE_CLEANUP_SECONDS`). Check in game whether spawns ever finish that late
 - [ ] Cop spots next to a narrow median: the runner can be matched to the other carriageway, so cops are placed for that side (`roads.lua` uses `findClosestRoad`, not the runner's heading)
-- [ ] Panel refusals ("Stop the round first", "Only the runner can apply the change", "Not available from the panel") show as plain info, not as warnings: the server's replies carry no tone for them (`main.lua` `reply`, Panel `app.vue`)
-- [ ] Panel tabs forget their state when you switch tabs, because the game only renders the open tab: the Settings "more" fold, the Car tab's choice and the Map tab's stations. Decide which to keep in Panel `app.vue`
-- [ ] README says "Everything is clickable with the mouse cursor shown" without saying how a player shows the cursor. Check the game's control and say it
-- [ ] Leaderboard Cops tab: cops with only assists get no row (`leaderboard.lua` `cops`). Showing them needs a sort and empty-state decision, since the tab ranks catches
 - [ ] Cop spots on a road piece not connected to the rest: the straight-line fallback widens from 0 and ignores gates, so a cop can start right next to the runner or behind a gate (`roads.lua` `lineSpots`)
+- [ ] Traffic late clean-up: traffic that finishes spawning more than 15 s after the round ends stays on the map, and AI traffic a player starts within those 15 s is deleted (`traffic.lua` `LATE_CLEANUP_SECONDS`). Check in game whether spawns ever finish that late
+- [ ] Leaderboard Cops tab: cops with only assists get no row (`leaderboard.lua` `cops`). Showing them needs a sort and empty-state decision, since the tab ranks catches
+- [ ] README says "Everything is clickable with the mouse cursor shown" without saying how a player shows the cursor. Check the game's control and say it
 - [ ] Leaving the server removes every app the mod placed, also one the player removed and then added back themselves (`apps.lua` leave). Decide what counts as the mod's
 - [ ] How to play forgets its size and position when reopened (`apps.lua` resets its placement). Decide whether to remember it
+- [ ] Panel refusals ("Stop the round first", "Only the runner can apply the change", "Not available from the panel") show as plain info, not as warnings: the server's replies carry no tone for them (`main.lua` `reply`, Panel `app.vue`)
+- [ ] Panel tabs forget their state when you switch tabs, because the game only renders the open tab: the Settings "more" fold, the Car tab's choice and the Map tab's stations. Decide which to keep in Panel `app.vue`
 - [ ] Leaderboard: the gold badge gradient may be paler than the mockup (Leaderboard `app.vue`). Check in game
+- [ ] App preview images (`tools/previews/*.svg`) are drawn approximations; replace them with in-game screenshots
 - [ ] `useFit` (`fit.js`) only shrinks text and never grows it in a large app. Decide whether it should
 - [ ] HUD styles repeated across components: `.title`, `.tone-*` and `.mono` (HudCenter, HudResult, HudChase) and the root container (Hud, Announcements and How to play `app.vue`). Move them into the shared kit; needs a visual check in game. (`.hud-btn` and `.swatch` are already shared: `.cnr-btn`, `.cnr-swatch` in `CnrRoot.vue`)
 - [ ] Leaderboard `PLAYERS_TAB` / `ROUNDS_TAB` depend on the tab order (Leaderboard `app.vue`)
-- [ ] App preview images (`tools/previews/*.svg`) are drawn approximations; replace them with in-game screenshots
 - [ ] The HUD's settings card clears the colour draft in its not-allowed watch (`app.vue`). That is safe only while no HUD push lands between the lobby and prep payloads; the spec asks for the draft to survive such a gap
 
 ## BeamNG.Earth
