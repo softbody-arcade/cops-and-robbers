@@ -1274,7 +1274,7 @@ local HELP_FILE = "settings/cnr_help_seen.json"
 local RULES = {
   runnerCountdownSeconds = 3, headStartSeconds = 7, catchHoldSeconds = 7, catchRadiusMeters = 10, catchMaxSpeedKmh = 3,
   resetWaitSeconds = 7, copResetMinDistanceMeters = 1000, crashSpeedLossKmh = 50, crashPenaltySeconds = 10,
-  sightMaxMeters = 400, lastSeenIntervalSeconds = 30, roundTimeLimitSeconds = 0, carMode = "random",
+  sightMaxMeters = 400, helicopter = true, helicopterArrivalSeconds = 60, helicopterUpSeconds = 120, helicopterRefuelSeconds = 90, roundTimeLimitSeconds = 0, carMode = "random",
 }
 
 local function join(env)

@@ -210,7 +210,8 @@ local function helpBlock(open, rules, unit)
     for k, v in pairs(rules) do r[k] = v end
     r.noLimit = not ((tonumber(rules.roundTimeLimitSeconds) or 0) > 0)
     r.sightOff = not ((tonumber(rules.sightMaxMeters) or 0) > 0)
-    r.lastSeenOff = not ((tonumber(rules.lastSeenIntervalSeconds) or 0) > 0)
+    r.heliOn = rules.helicopter == true
+    r.refuelNever = (tonumber(rules.helicopterRefuelSeconds) or 0) <= 0
     r.trafficOn = (tonumber(rules.trafficPerPlayer) or 0) > 0
     help.rules = r
   end

@@ -72,8 +72,6 @@ export const GROUPS = [
       help: "How often cops get the runner's position while one sees them" },
     { key: "sightGraceSeconds", label: "Sight grace", unit: "s", step: 0.5, min: 0,
       help: "Sight still counts this long after a cop loses it" },
-    { key: "lastSeenIntervalSeconds", label: "Last seen every", unit: "s", step: 5, min: 0, offAtZero: true,
-      help: "How often cops get the runner's last position when nobody sees them; off means never" },
     { key: "sightNoRouteSeconds", label: "No route within", unit: "s", step: 1, min: 0,
       help: "No route for a cop who sees the runner within this many seconds of driving" },
     { key: "sightNoRouteMinMeters", label: "No route minimum", unit: "m", step: 10, min: 0,
@@ -82,6 +80,16 @@ export const GROUPS = [
       help: "Share of the chase a cop needs the runner in sight for an assist" },
     { key: "sirensAllowed", label: "Cop sirens", kind: "bool",
       help: "Cops may turn a siren on in their settings; off keeps every cop silent" },
+  ] },
+  { title: "Helicopter", items: [
+    { key: "helicopter", label: "Police helicopter", kind: "bool",
+      help: "Tracks the runner in the open; grounded in storm, fog and snow" },
+    { key: "helicopterArrivalSeconds", label: "Arrives after", unit: "s", step: 15, min: 0, duration: true, zeroText: "at release",
+      when: v => v("helicopter"), help: "How long after the cops are released the helicopter arrives" },
+    { key: "helicopterUpSeconds", label: "Time up", unit: "s", step: 15, min: 15, duration: true,
+      when: v => v("helicopter"), help: "How long the helicopter flies before it must refuel" },
+    { key: "helicopterRefuelSeconds", label: "Refuel", unit: "s", step: 15, min: 0, duration: true, zeroText: "stays up",
+      when: v => v("helicopter"), help: "How long it is away refuelling; 0 means it stays up once it has arrived" },
   ] },
   { title: "Cars", items: [
     { key: "includeModVehicles", label: "Include mod cars", kind: "bool",
@@ -118,6 +126,7 @@ export function shown(item, v) {
   }
   const n = Number(v)
   if (v === undefined || v === null || !Number.isFinite(n)) return "–"
+  if (item.zeroText && n === 0) return item.zeroText
   if (item.offAtZero && n === 0) return "off"
   if (item.duration) return n % 60 === 0 ? `${n / 60} min` : formatTime(n)
   return `${n} ${item.unit || ""}`.trim()

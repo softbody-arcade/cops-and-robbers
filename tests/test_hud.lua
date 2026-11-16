@@ -3,7 +3,7 @@ local hud = require("copsAndRobbers/hud")
 local RULES = {
   runnerCountdownSeconds = 3, headStartSeconds = 7, catchHoldSeconds = 7, catchRadiusMeters = 10, catchMaxSpeedKmh = 3,
   resetWaitSeconds = 7, copResetMinDistanceMeters = 1000, crashSpeedLossKmh = 50, crashPenaltySeconds = 10,
-  sightMaxMeters = 400, lastSeenIntervalSeconds = 30, roundTimeLimitSeconds = 0, carMode = "random",
+  sightMaxMeters = 400, helicopter = true, helicopterArrivalSeconds = 60, helicopterUpSeconds = 120, helicopterRefuelSeconds = 90, roundTimeLimitSeconds = 0, carMode = "random",
 }
 
 local function rules(over)
@@ -297,14 +297,14 @@ test("time limit shows only when set", function()
 end)
 
 test("help rules read sensibly at 0", function()
-  local off = rules({ roundTimeLimitSeconds = 0, sightMaxMeters = 0, lastSeenIntervalSeconds = 0 })
+  local off = rules({ roundTimeLimitSeconds = 0, sightMaxMeters = 0, helicopter = false, helicopterRefuelSeconds = 0 })
   local p = hud.payload(hud.new(), 0, { active = false, rules = off, helpOpen = true })
   assertEq(p.help.open, true)
   for k, v in pairs(off) do assertEq(p.help.rules[k], v, k) end
-  assertEq(p.help.rules.noLimit, true); assertEq(p.help.rules.sightOff, true); assertEq(p.help.rules.lastSeenOff, true)
-  assertEq(off.noLimit, nil); assertEq(off.sightOff, nil); assertEq(off.lastSeenOff, nil)
+  assertEq(p.help.rules.noLimit, true); assertEq(p.help.rules.sightOff, true); assertEq(p.help.rules.heliOn, false); assertEq(p.help.rules.refuelNever, true); assertEq(p.help.rules.lastSeenOff, nil)
+  assertEq(off.noLimit, nil); assertEq(off.sightOff, nil); assertEq(off.heliOn, nil); assertEq(off.refuelNever, nil)
   local on = hud.payload(hud.new(), 0, { active = false, rules = rules({ roundTimeLimitSeconds = 600 }), helpOpen = true })
-  assertEq(on.help.rules.noLimit, false); assertEq(on.help.rules.sightOff, false); assertEq(on.help.rules.lastSeenOff, false)
+  assertEq(on.help.rules.noLimit, false); assertEq(on.help.rules.sightOff, false); assertEq(on.help.rules.heliOn, true); assertEq(on.help.rules.refuelNever, false)
   local closed = hud.payload(hud.new(), 0, { active = false, rules = off, helpOpen = false })
   assertEq(closed.help.open, false); assertEq(closed.help.rules, nil)
 end)

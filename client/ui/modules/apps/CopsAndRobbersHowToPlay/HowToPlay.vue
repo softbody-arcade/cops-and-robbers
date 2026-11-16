@@ -48,14 +48,28 @@
           <span v-if="!sightOff">
             <b>SPOTTED / HIDDEN:</b> whether any cop can see you, up to <span class="v">{{ dist("sightMaxMeters") }}</span> away.
             While you're spotted, every cop sees where you are.
-            <template v-if="!lastSeenOff">Otherwise they get your last position every <span class="v">{{ sec("lastSeenIntervalSeconds") }}</span>.</template>
           </span>
           <span v-else>
-            <b>Sight is off:</b> cops can't see where you are live.
-            <template v-if="!lastSeenOff">They get your last position every <span class="v">{{ sec("lastSeenIntervalSeconds") }}</span>.</template>
+            <b>Sight is off:</b> cops can't see you from their cars. They see you on the minimap and by name tag all round.
           </span>
         </div>
-        <div v-if="!sightOff || !lastSeenOff" class="li">
+        <div v-if="heliOn" class="li">
+          <BngIcon :type="icons.mapPoint" />
+          <span>
+            <b>Police helicopter:</b> it arrives <span class="v">{{ duration("helicopterArrivalSeconds") }}</span> after the cops are released
+            and flies for <span class="v">{{ duration("helicopterUpSeconds") }}</span>.
+            <template v-if="refuelNever">Then it stays up.</template>
+            <template v-else>Then it refuels for <span class="v">{{ duration("helicopterRefuelSeconds") }}</span>.</template>
+            It tracks you in the open and loses you under tunnels, bridges and roofs.
+            It stays grounded in storm, fog and snow.
+            <template v-if="sightOff">While it tracks you, cops see you live.</template>
+          </span>
+        </div>
+        <div v-if="!sightOff" class="li">
+          <BngIcon :type="icons.eyeSolidClosed" />
+          <span><b>Hiding:</b> cops only see you on the minimap and by name tag while you're spotted.</span>
+        </div>
+        <div class="li">
           <BngIcon :type="icons.mapPoint" />
           <span><b>Nearest cop:</b> the HUD shows how far away the closest cop is.</span>
         </div>
@@ -79,11 +93,21 @@
           <BngIcon :type="sightOff ? icons.eyeSolidClosed : icons.eyeSolidOpened" />
           <span v-if="!sightOff">
             <b>Sight:</b> while any cop can see the runner (up to <span class="v">{{ dist("sightMaxMeters") }}</span>), every cop sees
-            where the runner is.
-            <template v-if="!lastSeenOff">Otherwise you get the runner's last position every <span class="v">{{ sec("lastSeenIntervalSeconds") }}</span>.</template>
+            where the runner is. Otherwise the runner is hidden on the minimap and by name tag.
           </span>
           <span v-else>
-            <b>Sight is off.</b> <template v-if="!lastSeenOff">You get the runner's last position every <span class="v">{{ sec("lastSeenIntervalSeconds") }}</span>.</template>
+            <b>Sight is off:</b> you see the runner on the minimap all round.
+          </span>
+        </div>
+        <div v-if="heliOn" class="li">
+          <BngIcon :type="icons.mapPoint" />
+          <span>
+            <b>Police helicopter:</b> it arrives <span class="v">{{ duration("helicopterArrivalSeconds") }}</span> after you're released
+            and flies for <span class="v">{{ duration("helicopterUpSeconds") }}</span>.
+            <template v-if="refuelNever">Then it stays up.</template>
+            <template v-else>Then it refuels for <span class="v">{{ duration("helicopterRefuelSeconds") }}</span>.</template>
+            While it tracks the runner in the open, every cop sees where they are. Under tunnels, bridges and roofs it loses them,
+            and it stays grounded in storm, fog and snow.
           </span>
         </div>
         <div class="li">
@@ -195,7 +219,8 @@ const tab = ref(0)
 const r = computed(() => props.rules || {})
 const noLimit = computed(() => r.value.noLimit !== false)
 const sightOff = computed(() => r.value.sightOff === true)
-const lastSeenOff = computed(() => r.value.lastSeenOff === true)
+const heliOn = computed(() => r.value.heliOn === true)
+const refuelNever = computed(() => r.value.refuelNever === true)
 const evolving = computed(() => r.value.carMode === "evolving")
 const trafficOn = computed(() => r.value.trafficOn === true)
 const imperial = computed(() => props.units === "imperial")
