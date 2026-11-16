@@ -91,7 +91,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
   - **BeamNG.Earth:** a destination in BeamNG.Earth's own GPS ("Runner last seen"). The status line shows the distance by road, for example "Runner 2.4 km by road NE".
 - **Line of sight:** each cop's game checks 4 times a second whether it can see the runner: rays from eye height to the runner's car, blocked by terrain and buildings (not by other cars), up to `sightMaxMeters` (400 m), mirrors included.
   - While any cop sees the runner, every cop gets the runner's position live (every second, every 3 s on BeamNG.Earth) instead of the 30 s ping: "Runner 640 m NE · live".
-  - A cop who sees the runner and is within their own speed × 5 s (at least 50 m) gets no route and reads "IN SIGHT".
+  - A cop who sees the runner and is within their own speed × 5 s (at least 50 m) gets no route and reads "IN SIGHT". This is the Out of sight default: a cop's Route to the runner setting can keep the route while in sight (Always) or turn it off (Never).
   - When all cops lose sight (after a 1.5 s grace), one "last seen" ping goes out at that spot, then the normal pings resume.
   - The client log notes each change ("runner in sight (120 m)"), handy to check what blocks sight on BeamNG.Earth.
 - **Runner:** sees "SPOTTED" or "HIDDEN" plus "Nearest cop 1.2 km".
@@ -245,7 +245,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | `lastSeenIntervalSeconds` | 30 | Runner location ping for cops (0 = off) |
 | `sightMaxMeters` | 400 | How far cops can see the runner (0 = sight off) |
 | `sightLiveIntervalSeconds` | 1 | Live runner position for all cops while one sees the runner (at least 3 s on BeamNG.Earth) |
-| `sightNoRouteSeconds` | 5 | A cop who sees the runner within their speed × this many seconds gets no route |
+| `sightNoRouteSeconds` | 5 | A cop who sees the runner within their speed × this many seconds gets no route (with the default Out of sight route setting) |
 | `sightNoRouteMinMeters` | 50 | ...and always within this distance |
 | `carMode` | random | `random` (a random car each round) or `evolving` (the shared build) |
 | `sightGraceSeconds` | 1.5 | Sight still counts this long after a cop loses it |

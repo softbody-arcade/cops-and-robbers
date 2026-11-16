@@ -13,8 +13,10 @@ function M.load(decoded)
     if type(decoded) == "table" then v = decoded[k] end
     if type(v) == "boolean" then prefs[k] = v else prefs[k] = DEFAULTS[k] end
   end
-  local route = type(decoded) == "table" and decoded.route
-  prefs.route = type(route) == "string" and CHOICES.route[route] and route or DEFAULTS.route
+  for k, choices in pairs(CHOICES) do
+    local v = type(decoded) == "table" and decoded[k]
+    prefs[k] = type(v) == "string" and choices[v] and v or DEFAULTS[k]
+  end
   return prefs
 end
 

@@ -340,6 +340,7 @@ end)
 test("payload settings carry the route choice, out of sight by default", function()
   assertEq(hud.payload(hud.new(), 0, { active = false, settings = {} }).settings.route, "sight")
   assertEq(hud.payload(hud.new(), 0, { active = false, settings = { route = "never" } }).settings.route, "never")
+  assertEq(hud.payload(hud.new(), 0, { active = true, settings = { route = "never" } }).settings.route, "never")
 end)
 
 test("a result payload has no settings", function()

@@ -443,6 +443,7 @@ test("always keeps the route while you see the runner", function()
   assertEq(last ~= false and last.y, 100)
   assertEq(env.hud().status.tag, "IN SIGHT")
   assertEq(env.hud().status.info.before, "Runner"); assertEq(env.hud().status.info.dist, "100 m")
+  assertEq(env.hud().status.info.after, "N")
 end)
 
 test("never draws no route and still shows distance and direction", function()
@@ -474,6 +475,28 @@ test("Never clears a route left from before", function()
   assertEq(targetPaths(env), 1)
 end)
 
+test("Never leaves a waypoint the mod did not draw alone", function()
+  local env = bootClient({ files = { ["settings/cnr_settings.json"] = { route = "never" } } })
+  trackPaths(env)
+  copInChase(env)
+  local before = #env.paths
+  env.veh.pos = vec3(0, 0, 0)
+  env.fire("cnr_lastSeen", { pos = { x = 0, y = 640, z = 0 } })
+  env.fire("cnr_lastSeen", { live = true, route = false, pos = { x = 0, y = 100, z = 0 } })
+  assertEq(#env.paths, before)
+end)
+
+test("Never shows IN SIGHT on a live update in sight and draws nothing", function()
+  local env = bootClient({ files = { ["settings/cnr_settings.json"] = { route = "never" } } })
+  trackPaths(env)
+  copInChase(env)
+  env.veh.pos = vec3(0, 0, 0)
+  env.fire("cnr_lastSeen", { live = true, route = false, pos = { x = 0, y = 100, z = 0 } })
+  env.tick(0.2)
+  assertEq(env.hud().status.tag, "IN SIGHT"); assertEq(env.hud().status.info, nil)
+  assertEq(targetPaths(env), 0)
+end)
+
 test("Never on BeamNG.Earth sets no GPS destination and shows the straight distance", function()
   local env = bootClient({ files = { ["settings/cnr_settings.json"] = { route = "never" } } })
   earthStub(env)
@@ -499,8 +522,11 @@ test("Always keeps the Earth GPS destination while in sight", function()
   local before = env.gpsSet
   env.fire("cnr_lastSeen", { live = true, route = false, geo = { lat = 100, lon = 0, h = 0 } })
   local after = env.gpsSet
+  env.tick(0.2)
+  local tag = env.hud().status.tag
   _G.beamngEarth_api = nil
   assertEq(after, before + 1)
+  assertEq(tag, "IN SIGHT")
 end)
 
 test("a last-seen ping past 1 km shows in km", function()

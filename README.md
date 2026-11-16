@@ -93,7 +93,7 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `lastSeenIntervalSeconds` | 30 | Runner location ping for cops (0 = off) |
 | `sightMaxMeters` | 400 | How far cops can see the runner (0 = sight off) |
 | `sightLiveIntervalSeconds` | 1 | Live runner position for all cops while one sees the runner (at least 3 s on BeamNG.Earth) |
-| `sightNoRouteSeconds` | 5 | A cop who sees the runner within their speed × this many seconds gets no route |
+| `sightNoRouteSeconds` | 5 | A cop who sees the runner within their speed × this many seconds gets no route (with the default Out of sight route setting) |
 | `sightNoRouteMinMeters` | 50 | ...and always within this distance |
 | `carMode` | random | `random` (a random car each round) or `evolving` (the shared build) |
 | `sightGraceSeconds` | 1.5 | Sight still counts this long after a cop loses it |

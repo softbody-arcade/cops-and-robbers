@@ -38,7 +38,7 @@
         @update:modelValue="v => emit('setting', 'siren', v)"
       />
     </div>
-    <div class="row">
+    <div class="row stack">
       <div class="label">
         <div class="name">Route to the runner</div>
         <div class="desc">As a cop</div>
@@ -182,6 +182,19 @@ function done() {
   display: flex;
   flex: 0 0 auto;
   gap: 0.25rem;
+}
+.row.stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.25rem;
+}
+.row.stack .choices {
+  display: flex;
+  gap: 0.5rem;
+}
+.row.stack .choices :deep(.cnr-btn) {
+  flex: 1 1 0;
+  min-width: 0;
 }
 .row.off .label {
   opacity: 0.5;

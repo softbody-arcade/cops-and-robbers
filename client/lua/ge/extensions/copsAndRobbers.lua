@@ -70,6 +70,7 @@ local requestReset
 local helpSeen = false
 local prefs = playerSettings.load(nil)
 local sirensAllowed = true
+local routeDrawn = false
 local lightsState, lightsPlaced, lastLightsCheck = nil, nil, false, 0
 
 local function setFreeze(on)
@@ -154,13 +155,11 @@ local function playerName(id)
   return type(p) == "table" and type(p.name) == "string" and p.name or nil
 end
 
-local routeCleared = false
-
 local function onRoundSetup(data)
   local d = jsonDecode(data) or {}
   hudfeed.clearRound()
   hudfeed.clearResult()
-  routeCleared = false
+  routeDrawn = false
   active = true
   role = d.role
   runnerId = d.runnerId
@@ -355,16 +354,17 @@ local function onLastSeen(data)
   local never, always = prefs.route == "never", prefs.route == "always"
   infoTag = d.live and "LIVE" or nil
   if never then
-    if not routeCleared then
+    if routeDrawn then
       geo.clearRoute()
-      routeCleared = true
+      routeDrawn = false
     end
-  else
-    routeCleared = false
   end
   local inSight = d.live and d.route == false
   if inSight and not always then
-    if not never then geo.clearRoute() end
+    if not never then
+      geo.clearRoute()
+      routeDrawn = false
+    end
     infoTag, infoParts = "IN SIGHT", nil
     return
   end
@@ -373,11 +373,15 @@ local function onLastSeen(data)
   if not target then return end
   if not never then
     if geoMode and d.geo and geo.setGpsTarget(d.geo) then
+      routeDrawn = true
       local info = geo.gpsInfo()
       infoParts = info or infoParts
       return
     end
-    if core_groundMarkers then pcall(core_groundMarkers.setPath, target) end
+    if core_groundMarkers then
+      pcall(core_groundMarkers.setPath, target)
+      routeDrawn = true
+    end
   end
   local veh = ownVehicle()
   if veh then
@@ -474,6 +478,7 @@ local function endRound()
   evolving = false
   buildBaselineAt, buildBaseline, lastChangeKey, lastChanges = nil, nil, "", {}
   geo.clearRoute()
+  routeDrawn = false
   ai.remove()
   penaltyActive = false
   timerEnd = nil

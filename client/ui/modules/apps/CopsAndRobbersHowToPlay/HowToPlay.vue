@@ -155,7 +155,7 @@
         <div class="li">
           <span class="swatch"></span>
           <span>
-            <b>Your settings:</b> use the Settings button for your car colour, auto headlights at night and in bad weather<span v-if="r.sirensAllowed !== false">, a siren as a cop</span>, and, as a cop, how the route to the runner is shown (always, only out of sight, or never).
+            <b>Your settings:</b> use the Settings button for your car colour, auto headlights at night and in bad weather, and as a cop, <span v-if="r.sirensAllowed !== false">a siren and </span>how the route to the runner is shown (always, only out of sight, or never).
             A colour set in prep repaints your car straight away; otherwise it applies from the next round.
           </span>
         </div>
