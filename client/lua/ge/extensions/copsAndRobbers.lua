@@ -156,10 +156,20 @@ local function playerName(id)
   return type(p) == "table" and type(p.name) == "string" and p.name or nil
 end
 
+local function setHeli(h)
+  if type(h) ~= "table" or type(h.phase) ~= "string" then
+    hudfeed.heli(nil)
+    return
+  end
+  local seconds = tonumber(h.seconds)
+  hudfeed.heli({ phase = h.phase, reason = h.reason, endsAt = seconds and clock + seconds or nil })
+end
+
 local function onRoundSetup(data)
   local d = jsonDecode(data) or {}
   hudfeed.clearRound()
   hudfeed.clearResult()
+  setHeli(d.heli)
   routeDrawn = false
   active = true
   role = d.role
@@ -821,6 +831,7 @@ local function onExtensionLoaded()
   AddEventHandler("cnr_pickVehicle", onPickVehicle)
   AddEventHandler("cnr_roundSetup", onRoundSetup)
   AddEventHandler("cnr_release", onRelease)
+  AddEventHandler("cnr_heli", function(data) setHeli(jsonDecode(data)) end)
   AddEventHandler("cnr_countdown", onCountdown)
   AddEventHandler("cnr_runnerGo", onRunnerGo)
   AddEventHandler("cnr_paint", onPaint)

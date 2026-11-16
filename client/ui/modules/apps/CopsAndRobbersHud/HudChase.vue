@@ -15,6 +15,11 @@
         <BngIcon :type="status.tag === 'HIDDEN' ? icons.eyeSolidClosed : icons.eyeSolidOpened" />
         <span>{{ status.tag }}</span>
       </span>
+      <span v-if="status.heli" class="item">
+        <BngIcon :type="icons.mapPoint" />
+        <span>{{ status.heli.text }}</span>
+        <span v-if="status.heli.time" class="mono">{{ status.heli.time }}</span>
+      </span>
       <span v-if="status.info" class="item info">
         <BngIcon :type="role === 'runner' ? icons.carChase01 : icons.mapPoint" />
         <span class="info-text"><span v-if="status.info.before">{{ status.info.before }}</span><span v-if="status.info.dist" class="mono">{{ status.info.before ? ' ' : '' }}{{ status.info.dist }}</span><span v-if="status.info.after">{{ status.info.before || status.info.dist ? ' ' : '' }}{{ status.info.after }}</span></span>
