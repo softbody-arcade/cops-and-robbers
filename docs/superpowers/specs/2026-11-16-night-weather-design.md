@@ -151,13 +151,13 @@ The two string keys go in `CHOICES`; the percentages and `clockSpeed` in `MAXIMA
 | Already wet: GRAVEL_WET, MUD | as is | as is | becomes SNOW |
 | Everything else: sand, rock, leaves, branches, metal, wood, plastic, a mod map's own surfaces | as is | as is | as is |
 
-- **Wind** (only with `sky.driving`), new pure module `copsAndRobbers/wind.lua`. Starting values, tuned in game:
+- **Wind** (only with `sky.driving`), new pure module `copsAndRobbers/wind.lua`. Realistic values (set after the in-game check at the host's request): gusts about 1.5 times the steady wind, as measured in storms over land; the wind direction wanders about 12° (one standard deviation) in steady air and more in gusty air; a gale (17 to 21 m/s) is where cars veer on the road:
 
 | Weather | Steady wind | Gusts |
 |---|---|---|
-| rain | 4 m/s | to about 10 m/s, one every 10 to 25 s, 2 to 5 s long |
-| storm | 12 m/s | to about 25 m/s, one every 5 to 15 s, 2 to 6 s long, turning up to 30° off the wind |
-| snow | 3 m/s | to about 8 m/s, one every 10 to 25 s, 2 to 5 s long |
+| rain | 5 m/s | to about 8 m/s, one every 10 to 25 s, 2 to 5 s long, turning up to 15° off the wind |
+| storm | 17 m/s (gale) | to about 26 m/s, one every 5 to 15 s, 2 to 6 s long, turning up to 30° off the wind |
+| snow | 4 m/s | to about 6 m/s, one every 10 to 25 s, 2 to 5 s long, turning up to 15° off the wind |
 | clear, cloudy, fog | none | none |
 
   - `wind.at(weather, seed, dirDeg, t)` returns the wind vector `x, y, z` (z = 0) at `t` seconds since GO. It is deterministic: the gust times, lengths, peaks and turns come from its own small random generator seeded with `windSeed` (Park–Miller, `seed = seed * 16807 % 2147483647`, exact in Lua numbers), never from `math.random`, so every game gets the same gusts. A gust rises and falls smoothly (for example a sine over its length). Before GO, `t` is 0: steady wind only.

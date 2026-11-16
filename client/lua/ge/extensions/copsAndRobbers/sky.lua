@@ -1,5 +1,6 @@
 local wind = require("copsAndRobbers/wind")
 local surfaces = require("copsAndRobbers/surfaces")
+local shelter = require("copsAndRobbers/shelter")
 
 local M = {}
 
@@ -23,15 +24,18 @@ M.WEATHER = {
 
 local PRECIPITATION_NAME = "cnr_precipitation"
 local WIND_INTERVAL = 0.25
+local COVER_INTERVAL = 0.25
 local SECONDS_PER_DAY = 86400
 
 local saved, wasLocked, round, clockStart
 local roundTime, started, sinceWind = 0, false, 0
+local cover, sinceCover = shelter.new(), 0
 
 local function forget()
   wind.reset()
   saved, wasLocked, round, clockStart = nil, false, nil, nil
   roundTime, started, sinceWind = 0, false, 0
+  cover, sinceCover = shelter.new(), 0
 end
 
 local function capitalise(key)
@@ -44,6 +48,30 @@ end
 
 local function windy(p)
   return p.driving and wind.WEATHER[p.weather] ~= nil
+end
+
+local function precipitates(p)
+  local weather = M.WEATHER[p.weather]
+  return weather ~= nil and weather.precipitation ~= nil
+end
+
+local function castUp(pos, range)
+  return castRayStatic(pos, vec3(0, 0, 1), range)
+end
+
+local function setHidden(obj, hide)
+  if obj.setHidden then obj:setHidden(hide) else obj:setField("hidden", 0, hide and "1" or "0") end
+end
+
+local function updateCover(dt)
+  sinceCover = sinceCover + dt
+  if sinceCover < COVER_INTERVAL then return end
+  sinceCover = 0
+  local cam = core_camera and core_camera.getPosition and core_camera.getPosition()
+  if not cam or not castRayStatic then return end
+  if not shelter.step(cover, shelter.roofed(cam, castUp)) then return end
+  local obj = scenetree.findObject(PRECIPITATION_NAME)
+  if obj then setHidden(obj, cover.covered) end
 end
 
 local function removePrecipitation()
@@ -116,6 +144,7 @@ function M.apply(p)
       env.setTemperatureProfile({ averageC = weather.temperatureC })
     end
     removePrecipitation()
+    cover, sinceCover = shelter.new(), 0
     if weather and weather.precipitation then createPrecipitation(weather.precipitation) end
     surfaces.apply(p.driving and p.weather or nil)
   end)
@@ -141,6 +170,7 @@ end
 function M.update(dt)
   if not core_environment or not round then return end
   if started then roundTime = roundTime + dt end
+  if precipitates(round) then updateCover(dt) end
   if not windy(round) then return end
   sinceWind = sinceWind + dt
   if sinceWind < WIND_INTERVAL then return end
