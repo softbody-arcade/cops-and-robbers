@@ -1,9 +1,9 @@
 local M = {}
 
 M.WEATHER = {
-  rain = { steady = 4, peak = 10, every = { 10, 25 }, length = { 2, 5 }, turn = 0 },
-  storm = { steady = 12, peak = 25, every = { 5, 15 }, length = { 2, 6 }, turn = 30 },
-  snow = { steady = 3, peak = 8, every = { 10, 25 }, length = { 2, 5 }, turn = 0 },
+  rain = { steady = 5, peak = 8, every = { 10, 25 }, length = { 2, 5 }, turn = 15 },
+  storm = { steady = 17, peak = 26, every = { 5, 15 }, length = { 2, 6 }, turn = 30 },
+  snow = { steady = 4, peak = 6, every = { 10, 25 }, length = { 2, 5 }, turn = 15 },
 }
 
 local MODULUS = 2147483647
