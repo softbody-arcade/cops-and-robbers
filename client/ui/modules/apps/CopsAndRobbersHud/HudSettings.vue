@@ -45,7 +45,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from "vue"
+import { ref, computed } from "vue"
 import { BngButton, BngColorPicker, BngSwitch, ACCENTS } from "@/common/components/base"
 import { vBngTextInput } from "@/common/directives"
 import CnrCard from "../../copsAndRobbers/CnrCard.vue"
@@ -64,19 +64,14 @@ const hsl = ref(HEX.test(props.draft) ? hexToHsl(props.draft.replace("#", "")) :
 const valid = computed(() => HEX.test(props.draft.trim()))
 const normalized = computed(() => (valid.value ? `#${props.draft.trim().replace("#", "").toLowerCase()}` : ""))
 
-watch(
-  () => props.draft,
-  () => {
-    if (valid.value) hsl.value = hexToHsl(normalized.value)
-  },
-)
-
 function fromPicker() {
   emit("update:draft", hslToHex(hsl.value).toUpperCase())
 }
 
 function fromText(e) {
-  emit("update:draft", e.target.value)
+  const text = e.target.value
+  emit("update:draft", text)
+  if (HEX.test(text.trim())) hsl.value = hexToHsl(text.trim().replace("#", ""))
 }
 
 function done() {
