@@ -528,6 +528,7 @@ local function applyEffects(effects)
         runnerPos = not geoMode and runnerCar and runnerCar.pos or nil,
         copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
         sightMaxMeters = cfg.sightMaxMeters,
+        runnerShown = e.runnerShown, heli = e.heli,
         evolving = current.evolving or nil, rebuild = current.rebuildId,
         sky = sky.payload(current.sky, cfg, current.countdownStartedAt and math.max(0, now() - current.countdownStartedAt) or nil),
       })
@@ -622,6 +623,18 @@ local function applyEffects(effects)
       end
       if not round.isAI(current.runnerId) and e.nearestCop then
         send(current.runnerId, "cnr_nearestCop", { dist = e.nearestCop })
+      end
+    elseif e.kind == "heli" then
+      send(e.to or -1, "cnr_heli", { phase = e.phase, seconds = e.seconds, reason = e.reason })
+    elseif e.kind == "runnerShown" then
+      for pid in pairs(current.players) do
+        if pid ~= current.runnerId and not round.isAI(pid) then
+          send(pid, "cnr_runnerShown", { shown = e.shown })
+        end
+      end
+    elseif e.kind == "nearestCop" then
+      if not round.isAI(current.runnerId) then
+        send(current.runnerId, "cnr_nearestCop", { dist = e.dist })
       end
     elseif e.kind == "record" then
       local run = e.run
@@ -1339,6 +1352,12 @@ function cnrOnSight(pid, data)
   current:sightReport(now(), pid, d.seen == true)
 end
 
+function cnrOnCover(pid, data)
+  local ok, d = pcall(Util.JsonDecode, data)
+  if not ok or type(d) ~= "table" then return end
+  current:coverReport(now(), pid, d.covered == true)
+end
+
 function cnrOnRelocated(pid, data)
   if not current:isActive() then return end
   local ok, decoded = pcall(Util.JsonDecode, data)
@@ -1441,6 +1460,7 @@ MP.RegisterEvent("cnr_relocated", "cnrOnRelocated")
 MP.RegisterEvent("cnr_panel", "cnrOnPanel")
 MP.RegisterEvent("cnr_color", "cnrOnColor")
 MP.RegisterEvent("cnr_sight", "cnrOnSight")
+MP.RegisterEvent("cnr_cover", "cnrOnCover")
 MP.RegisterEvent("cnr_board", "cnrOnBoard")
 MP.RegisterEvent("cnr_setup", "cnrOnSetup")
 MP.RegisterEvent("cnr_change", "cnrOnChange")
