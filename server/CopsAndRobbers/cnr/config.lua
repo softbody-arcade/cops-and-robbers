@@ -28,10 +28,10 @@ M.DEFAULTS = {
   sightNoRouteMinMeters = 50,
   assistMinSightPercent = 20,
   carMode = "random",
-  timeOfDay = "map",
+  timeOfDay = "random",
   nightChancePercent = 25,
-  clockSpeed = 0,
-  weather = "map",
+  dayLength = "moderate",
+  weather = "random",
   badWeatherChancePercent = 25,
   weatherDriving = true,
   trafficPerPlayer = 5,
@@ -39,8 +39,9 @@ M.DEFAULTS = {
 
 M.CHOICES = {
   carMode = { random = true, evolving = true },
-  timeOfDay = { map = true, sunrise = true, morning = true, noon = true, afternoon = true, sunset = true, night = true, random = true },
-  weather = { map = true, clear = true, cloudy = true, rain = true, storm = true, fog = true, snow = true, random = true },
+  timeOfDay = { sunrise = true, morning = true, noon = true, afternoon = true, sunset = true, night = true, random = true },
+  weather = { clear = true, cloudy = true, rain = true, storm = true, fog = true, snow = true, random = true },
+  dayLength = { off = true, fast = true, moderate = true, slow = true, realtime = true },
 }
 
 local strictlyPositive = {
@@ -65,8 +66,8 @@ local function validList(v)
   return true
 end
 
-local MAXIMA = { assistMinSightPercent = 100, nightChancePercent = 100, badWeatherChancePercent = 100, clockSpeed = 120 }
-local WHOLE = { clockSpeed = true, trafficPerPlayer = true }
+local MAXIMA = { assistMinSightPercent = 100, nightChancePercent = 100, badWeatherChancePercent = 100 }
+local WHOLE = { trafficPerPlayer = true }
 
 local function validNumber(key, v)
   if type(v) ~= "number" or v ~= v or v == math.huge or v == -math.huge then return false end

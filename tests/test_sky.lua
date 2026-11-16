@@ -10,9 +10,52 @@ local function rng(roll, index)
 end
 local function cfg(o) return (config.merge(o)) end
 
-test("map choices pick no time or weather but still pick wind", function()
-  local s = sky.pick(cfg(nil), rng(0.5, 1))
-  assertEq(s.time, nil); assertEq(s.weather, nil); assertEq(s.windDir, 0); assertEq(s.windSeed, 1)
+test("random choices are the default and still pick wind", function()
+  local s = sky.pick(cfg(nil), rng(0.5, 1), false, 2026)
+  assertEq(s.time, "sunrise"); assertEq(s.weather, "clear"); assertEq(s.windDir, 0); assertEq(s.windSeed, 1)
+  assertEq(s.year, 2026); assertEq(s.month, 1); assertEq(s.day, 1)
+end)
+
+test("the date follows the weather", function()
+  local s = sky.pick(cfg({ weather = "snow" }), rng(0.5, 1), false, 2026)
+  assertEq(s.month, 12); assertEq(s.day, 1)
+  assertEq(sky.pick(cfg({ weather = "fog" }), rng(0.5, 1), false, 2026).month, 10)
+  assertEq(sky.pick(cfg({ weather = "rain" }), rng(0.5, 1), false, 2026).month, 3)
+end)
+
+local DAYS = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
+local WINDOWS = {
+  snow = { 62, { [12] = true, [1] = true }, { 12, 1 }, { 1, 31 } },
+  fog = { 61, { [10] = true, [11] = true }, { 10, 1 }, { 11, 30 } },
+  rain = { 122, { [3] = true, [4] = true, [10] = true, [11] = true }, { 3, 1 }, { 11, 30 } },
+  storm = { 122, { [3] = true, [4] = true, [10] = true, [11] = true }, { 3, 1 }, { 11, 30 } },
+  clear = { 365, nil, { 1, 1 }, { 12, 31 } },
+  cloudy = { 365, nil, { 1, 1 }, { 12, 31 } },
+}
+
+test("every date in a window exists and each day comes up once", function()
+  for weather, w in pairs(WINDOWS) do
+    local total, months, first, last = w[1], w[2], w[3], w[4]
+    local seen, count = {}, 0
+    for n = 1, total do
+      local month, day = sky.date(weather, function(a, b) assertEq(a, 1); assertEq(b, total); return n end)
+      assertEq(months == nil or months[month] == true, true)
+      assertEq(day >= 1 and day <= DAYS[month], true)
+      local key = month * 100 + day
+      if not seen[key] then seen[key], count = true, count + 1 end
+    end
+    assertEq(count, total)
+    local m1, d1 = sky.date(weather, function() return 1 end)
+    assertEq(m1, first[1]); assertEq(d1, first[2])
+    local m2, d2 = sky.date(weather, function() return total end)
+    assertEq(m2, last[1]); assertEq(d2, last[2])
+  end
+  local m, d = sky.date("clear", function() return 60 end)
+  assertEq(m, 3); assertEq(d, 1)
+end)
+
+test("the year defaults to the server's current year", function()
+  assertEq(sky.pick(cfg(nil), rng(0.5, 1), false).year, tonumber(os.date("%Y")))
 end)
 
 test("fixed choices are kept", function()
@@ -37,18 +80,20 @@ test("nothing is picked on BeamNG.Earth", function()
 end)
 
 test("hasRandom sees a random time or weather", function()
-  assertEq(sky.hasRandom(cfg(nil)), false)
-  assertEq(sky.hasRandom(cfg({ timeOfDay = "random" })), true)
-  assertEq(sky.hasRandom(cfg({ weather = "random" })), true)
+  assertEq(sky.hasRandom(cfg({ timeOfDay = "noon", weather = "clear" })), false)
+  assertEq(sky.hasRandom(cfg(nil)), true)
+  assertEq(sky.hasRandom(cfg({ timeOfDay = "noon" })), true)
+  assertEq(sky.hasRandom(cfg({ weather = "clear" })), true)
 end)
 
-test("payload is nil when the round sets nothing", function()
-  assertEq(sky.payload({ windDir = 10, windSeed = 5 }, cfg(nil), nil), nil)
-end)
-
-test("payload carries a clock speed even with the map's own sky", function()
-  local p = sky.payload({ windDir = 10, windSeed = 5 }, cfg({ clockSpeed = 30 }), nil)
-  assertEq(p.clockSpeed, 30); assertEq(p.time, nil); assertEq(p.driving, nil); assertEq(p.windSeed, 5)
+test("payload carries the date and the day length in seconds", function()
+  local s = { time = "noon", weather = "snow", year = 2026, month = 12, day = 14, windDir = 1, windSeed = 2 }
+  local p = sky.payload(s, cfg(nil), nil)
+  assertEq(p.year, 2026); assertEq(p.month, 12); assertEq(p.day, 14); assertEq(p.daySeconds, 1800)
+  assertEq(sky.payload(s, cfg({ dayLength = "fast" }), nil).daySeconds, 900)
+  assertEq(sky.payload(s, cfg({ dayLength = "slow" }), nil).daySeconds, 7200)
+  assertEq(sky.payload(s, cfg({ dayLength = "realtime" }), nil).daySeconds, 86400)
+  assertEq(sky.payload(s, cfg({ dayLength = "off" }), nil).daySeconds, nil)
 end)
 
 test("payload sends driving only with a weather and the switch on", function()
@@ -56,11 +101,11 @@ test("payload sends driving only with a weather and the switch on", function()
   assertEq(sky.payload(s, cfg({ weather = "rain" }), nil).driving, true)
   assertEq(sky.payload(s, cfg({ weather = "rain", weatherDriving = false }), nil).driving, nil)
   assertEq(sky.payload({ time = "night", windDir = 1, windSeed = 1 }, cfg(nil), nil).driving, nil)
-  assertEq(sky.payload(s, cfg(nil), nil).clockSpeed, nil)
+  assertEq(sky.payload(s, cfg({ dayLength = "off" }), nil).daySeconds, nil)
 end)
 
-test("nothing is sent on BeamNG.Earth, also with a clock speed", function()
-  local c = cfg({ clockSpeed = 30, weather = "rain" })
+test("nothing is sent on BeamNG.Earth", function()
+  local c = cfg({ dayLength = "fast", weather = "rain" })
   assertEq(sky.payload(sky.pick(c, rng(0, 1), true), c, nil), nil)
   assertEq(sky.payload(nil, c, nil), nil)
 end)
@@ -70,9 +115,10 @@ test("payload passes clockSeconds", function()
 end)
 
 test("record keeps the conditions without the wind", function()
-  local r = sky.record({ time = "night", weather = "rain", windDir = 3, windSeed = 9 }, cfg({ weather = "rain", clockSpeed = 60 }))
-  assertEq(r.time, "night"); assertEq(r.weather, "rain"); assertEq(r.clockSpeed, 60); assertEq(r.driving, true)
-  assertEq(r.windSeed, nil); assertEq(r.windDir, nil)
-  assertEq(sky.record({ windDir = 1, windSeed = 1 }, cfg(nil)), nil)
-  assertEq(sky.record({}, cfg({ clockSpeed = 30 })), nil)
+  local s = { time = "night", weather = "rain", year = 2026, month = 3, day = 9, windDir = 3, windSeed = 9 }
+  local r = sky.record(s, cfg({ weather = "rain", dayLength = "fast" }))
+  assertEq(r.time, "night"); assertEq(r.weather, "rain"); assertEq(r.dayLength, "fast"); assertEq(r.driving, true)
+  assertEq(r.year, 2026); assertEq(r.month, 3); assertEq(r.day, 9)
+  assertEq(r.windSeed, nil); assertEq(r.windDir, nil); assertEq(r.daySeconds, nil)
+  assertEq(sky.record({}, cfg(nil)), nil)
 end)
