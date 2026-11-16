@@ -103,7 +103,13 @@ function bootClient(opts)
     a = { pos = v3(0, 60, 0), links = { b = true } },
     b = { pos = v3(0, 200, 0), links = { a = true } },
   }
-  _G.map = { getMap = function() return { nodes = nodes } end, findClosestRoad = function() return "a", "b" end }
+  local link = { inNode = "a", outNode = "b", oneWay = false, gated = 0, len = 1 }
+  local graph = { a = { b = link }, b = { a = link } }
+  _G.map = {
+    getMap = function() return { nodes = nodes } end,
+    getGraphpath = function() return { graph = graph } end,
+    findClosestRoad = function() return "a", "b" end,
+  }
   _G.spawn = {
     safeTeleport = function(veh, pos) veh.pos = pos; env.teleported = (env.teleported or 0) + 1 end,
     teleportToLastRoad = function() end,
