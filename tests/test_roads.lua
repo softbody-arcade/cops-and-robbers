@@ -91,3 +91,158 @@ test("nearest road backup finds a node whose links are stored elsewhere", functi
   local pos = roads.nearestRoad(vec3(0, 0, 0))
   assertEq(pos.x, 10)
 end)
+
+local function road(nodes, links, prefix, points, oneWay, flip)
+  local ids = {}
+  for i, p in ipairs(points) do
+    ids[i] = prefix .. i
+    nodes[ids[i]] = p
+  end
+  for i = 2, #ids do
+    local from, to = ids[i - 1], ids[i]
+    if flip and not oneWay and i % 2 == 0 then from, to = to, from end
+    links[#links + 1] = { from, to, oneWay = oneWay }
+  end
+  return ids
+end
+
+local function line(x1, x2, y)
+  local points = {}
+  local step = x2 >= x1 and 100 or -100
+  for x = x1, x2, step do points[#points + 1] = { x, y or 0 } end
+  return points
+end
+
+test("hairpin: the other leg is close in a straight line but not by road", function()
+  useMap({ a = { 0, -100 }, b = { 0, 0 }, c = { 0, 150 }, d = { 30, 150 }, e = { 30, 0 }, f = { 30, -100 } },
+    { { "a", "b" }, { "b", "c" }, { "c", "d" }, { "d", "e" }, { "e", "f" } })
+  for i = 1, 4 do
+    local pos = roads.findCopSpot(vec3(0, 10, 0), 50, 150, i)
+    assertEq(pos.x, 0, "spot " .. i)
+  end
+end)
+
+test("divided highway: cops start behind the runner on its own carriageway, facing it", function()
+  local nodes, links = {}, {}
+  local north, south = {}, {}
+  for y = -500, 500, 100 do north[#north + 1] = { 0, y } end
+  for y = 500, -500, -100 do south[#south + 1] = { 20, y } end
+  local n = road(nodes, links, "n", north, true)
+  local s = road(nodes, links, "s", south, true)
+  links[#links + 1] = { n[#n], s[1], oneWay = true }
+  links[#links + 1] = { s[#s], n[1], oneWay = true }
+  useMap(nodes, links)
+  for i = 1, 3 do
+    local pos, rot = roads.findCopSpot(vec3(0, 10, 0), 50, 150, i)
+    assertEq(pos.x, 0, "spot " .. i)
+    assertEq(pos.y < 10, true, "spot " .. i)
+    assertNear(rot.dir.y, 1, 1e-6, "spot " .. i)
+  end
+end)
+
+test("two-way: spots on both sides face toward the runner", function()
+  local nodes, links = {}, {}
+  road(nodes, links, "n", line(-1000, 1000), false, true)
+  useMap(nodes, links)
+  local p1, r1 = roads.findCopSpot(vec3(0, 0, 0), 50, 150, 1)
+  local p2, r2 = roads.findCopSpot(vec3(0, 0, 0), 50, 150, 2)
+  assertNear(math.abs(p1.x), 50, 0.01)
+  assertNear(p2.x, -p1.x, 0.01)
+  assertEq(r1.dir.x * p1.x < 0, true)
+  assertEq(r2.dir.x * p2.x < 0, true)
+end)
+
+test("ties sort the same whatever order the graph was built in", function()
+  local results = {}
+  for run, points in ipairs({ line(-1000, 1000), line(1000, -1000) }) do
+    local nodes, links = {}, {}
+    road(nodes, links, run == 1 and "n" or "m", points, false, run == 2)
+    useMap(nodes, links)
+    local p1 = roads.findCopSpot(vec3(0, 0, 0), 50, 150, 1)
+    local p2 = roads.findCopSpot(vec3(0, 0, 0), 50, 150, 2)
+    results[run] = { p1, p2 }
+  end
+  assertNear(results[1][1].x, results[2][1].x, 1e-6)
+  assertNear(results[1][2].x, results[2][2].x, 1e-6)
+  assertEq(math.abs(results[1][1].x - results[1][2].x) > 8, true)
+end)
+
+test("cops stay 8 m apart and later indexes are not closer", function()
+  local nodes, links = {}, {}
+  road(nodes, links, "n", line(-1000, 1000))
+  useMap(nodes, links)
+  local spots = {}
+  for i = 1, 6 do spots[i] = roads.findCopSpot(vec3(0, 0, 0), 50, 150, i) end
+  for i = 1, 6 do
+    for j = i + 1, 6 do assertEq(spots[i]:distance(spots[j]) >= 8, true, i .. "-" .. j) end
+    if i > 1 then assertEq(math.abs(spots[i].x) >= math.abs(spots[i - 1].x) - 1e-6, true, "order " .. i) end
+  end
+end)
+
+test("too few spots widens by road but keeps the minimum", function()
+  local nodes, links = {}, {}
+  road(nodes, links, "n", line(0, 1000))
+  useMap(nodes, links)
+  local pos = roads.findCopSpot(vec3(0, 0, 0), 50, 150, 8)
+  assertEq(pos.x > 150 and pos.x <= 300, true, "x " .. tostring(pos.x))
+end)
+
+test("runner on a node at a dead end still gets spots", function()
+  local nodes, links = {}, {}
+  road(nodes, links, "n", line(0, 400))
+  useMap(nodes, links)
+  local pos = roads.findCopSpot(vec3(0, 0, 0), 50, 150, 1)
+  assertNear(pos.x, 50, 0.01)
+end)
+
+test("a dead-end island falls back to the straight-line search", function()
+  useMap({ a = { 0, 0 }, b = { 20, 0 }, c = { -500, 100 }, d = { 500, 100 } }, { { "a", "b" }, { "c", "d" } })
+  local pos = roads.findCopSpot(vec3(10, 0, 0), 50, 150, 1)
+  assertEq(pos.y, 100)
+end)
+
+test("closest road ids missing from the graph fall back without an error", function()
+  local nodes, links = {}, {}
+  road(nodes, links, "n", line(-1000, 1000))
+  useMap(nodes, links, { closest = { "x", "y" } })
+  local pos = roads.findCopSpot(vec3(0, 0, 0), 50, 150, 1)
+  assertEq(pos.y, 0)
+  assertNear(math.abs(pos.x), 50, 0.01)
+end)
+
+test("a gated link is neither walked nor used for spots", function()
+  local nodes, links = {}, {}
+  road(nodes, links, "m", line(-500, 500))
+  local branch = road(nodes, links, "g", { { 0, 30 }, { 0, 100 }, { 0, 200 }, { 0, 300 }, { 0, 400 }, { 0, 500 } })
+  links[#links + 1] = { "m6", branch[1], gated = 10000 }
+  useMap(nodes, links)
+  for i = 1, 6 do
+    local pos = roads.findCopSpot(vec3(0, 0, 0), 50, 150, i)
+    assertEq(pos.y, 0, "spot " .. i)
+  end
+end)
+
+test("a zero-length link gives no NaN", function()
+  local nodes, links = {}, {}
+  links[1] = { "m6", "z" }
+  road(nodes, links, "m", line(-500, 500))
+  nodes.z = { 0, 0 }
+  links[#links + 1] = { "z", "m7" }
+  useMap(nodes, links)
+  for i = 1, 4 do
+    local pos, rot = roads.findCopSpot(vec3(0, 0, 0), 50, 150, i)
+    assertEq(pos ~= nil, true, "spot " .. i)
+    assertEq(rot.dir.x == rot.dir.x and rot.dir.y == rot.dir.y, true, "spot " .. i)
+  end
+end)
+
+test("a max above 2 km is still searched by road", function()
+  local points = line(0, 1500)
+  for y = 100, 1500, 100 do points[#points + 1] = { 1500, y } end
+  local nodes, links = {}, {}
+  road(nodes, links, "n", points)
+  useMap(nodes, links)
+  local pos = roads.findCopSpot(vec3(0, 0, 0), 2400, 3000, 1)
+  assertEq(pos.x, 1500)
+  assertNear(pos.y, 900, 0.01)
+end)

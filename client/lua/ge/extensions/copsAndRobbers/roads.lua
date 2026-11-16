@@ -20,6 +20,18 @@ local function dot(a, b)
   return a.x * b.x + a.y * b.y + a.z * b.z
 end
 
+local function before(a, b)
+  local da, db = math.floor(a.d * 100 + 0.5), math.floor(b.d * 100 + 0.5)
+  if da ~= db then return da < db end
+  if a.pos.x ~= b.pos.x then return a.pos.x < b.pos.x end
+  return a.pos.y < b.pos.y
+end
+
+local function sortSpots(list)
+  table.sort(list, before)
+  return list
+end
+
 local function lineSpots(center, minD, maxD)
   local links, nodes = graph()
   local candidates = {}
@@ -50,33 +62,156 @@ local function lineSpots(center, minD, maxD)
       end
     end
   end
-  table.sort(candidates, function(a, b) return a.d < b.d end)
-  return candidates
+  return sortSpots(candidates)
 end
 
-local function pickSpot(candidates, index)
+local function heapPush(heap, d, id)
+  local i = #heap + 1
+  heap[i] = { d, id }
+  while i > 1 do
+    local parent = math.floor(i / 2)
+    if heap[parent][1] <= heap[i][1] then break end
+    heap[parent], heap[i] = heap[i], heap[parent]
+    i = parent
+  end
+end
+
+local function heapPop(heap)
+  local top = heap[1]
+  local last = table.remove(heap)
+  if #heap > 0 then
+    heap[1] = last
+    local i = 1
+    while true do
+      local l, r, small = i * 2, i * 2 + 1, i
+      if heap[l] and heap[l][1] < heap[small][1] then small = l end
+      if heap[r] and heap[r][1] < heap[small][1] then small = r end
+      if small == i then break end
+      heap[small], heap[i] = heap[i], heap[small]
+      i = small
+    end
+  end
+  return top[1], top[2]
+end
+
+local function gated(link)
+  return (link.gated or 0) > 0
+end
+
+local function walk(links, nodes, seeds, limit)
+  local dist, heap = {}, {}
+  for _, s in ipairs(seeds) do heapPush(heap, s[1], s[2]) end
+  while #heap > 0 do
+    local d, u = heapPop(heap)
+    if d > limit then break end
+    if not dist[u] then
+      dist[u] = d
+      for v, link in pairs(links[u] or {}) do
+        if not dist[v] and nodes[v] and not gated(link) and canDrive(link, v) then
+          heapPush(heap, d + nodes[u].pos:distance(nodes[v].pos), v)
+        end
+      end
+    end
+  end
+  return dist
+end
+
+local function roadSpots(center, limit)
+  local links, nodes = graph()
+  if not links then return nil end
+  local n1, n2 = map.findClosestRoad(center, ROAD_SEARCH_MAX)
+  local own = n1 and links[n1] and links[n1][n2]
+  if not own or not nodes[n1] or not nodes[n2] then return nil end
+  local a, b = nodes[n1].pos, nodes[n2].pos
+  local ab = b - a
+  local len2 = dot(ab, ab)
+  local t = len2 > 0 and math.max(0, math.min(1, dot(center - a, ab) / len2)) or 0
+  local runnerPoint = a + ab * t
+  local seeds = {}
+  if canDrive(own, n1) then seeds[#seeds + 1] = { runnerPoint:distance(a), n1 } end
+  if canDrive(own, n2) then seeds[#seeds + 1] = { runnerPoint:distance(b), n2 } end
+  local dist = walk(links, nodes, seeds, limit)
+  local spots = {}
+  for u, neighbours in pairs(links) do
+    for v, link in pairs(neighbours) do
+      local isOwn = link == own
+      if tostring(u) < tostring(v) and nodes[u] and nodes[v] and not gated(link) and (dist[u] or dist[v] or isOwn) then
+        local pu = nodes[u].pos
+        local delta = nodes[v].pos - pu
+        local len = delta:length()
+        if len > 1e-3 then
+          local dir = delta / len
+          local runnerAt = isOwn and runnerPoint:distance(pu)
+          local steps = math.max(1, math.floor(len / LINK_STEP))
+          for i = 0, steps do
+            local along = len * i / steps
+            local best, facing
+            if dist[u] and canDrive(link, v) then best, facing = dist[u] + along, dir * -1 end
+            if dist[v] and canDrive(link, u) and (not best or dist[v] + len - along < best) then
+              best, facing = dist[v] + len - along, dir
+            end
+            if runnerAt then
+              if along <= runnerAt and canDrive(link, u) and (not best or runnerAt - along < best) then
+                best, facing = runnerAt - along, dir
+              elseif along > runnerAt and canDrive(link, v) and (not best or along - runnerAt < best) then
+                best, facing = along - runnerAt, dir * -1
+              end
+            end
+            if best and best <= limit then
+              spots[#spots + 1] = { pos = pu + dir * along, d = best, dir = facing }
+            end
+          end
+        end
+      end
+    end
+  end
+  return sortSpots(spots)
+end
+
+local function pickSpot(candidates, lo, hi, index)
   local chosen = {}
   for _, c in ipairs(candidates) do
-    local free = true
-    for _, prev in ipairs(chosen) do
-      if prev.pos:distance(c.pos) < COP_SPACING then free = false break end
-    end
-    if free then
-      chosen[#chosen + 1] = c
-      if #chosen == index then return c end
+    if c.d >= lo and c.d <= hi then
+      local free = true
+      for _, prev in ipairs(chosen) do
+        if prev.pos:distance(c.pos) < COP_SPACING then free = false break end
+      end
+      if free then
+        chosen[#chosen + 1] = c
+        if #chosen == index then return c end
+      end
     end
   end
   return nil
 end
 
-function M.findCopSpot(center, minD, maxD, index)
-  local lo, hi = minD, maxD
-  while true do
-    local spot = pickSpot(lineSpots(center, lo, hi), index)
-    if spot then return spot.pos, quatFromDir(spot.dir, vec3(0, 0, 1)) end
-    if hi >= MAX_SPAWN_RING then return nil end
-    lo, hi = 0, hi * 2
+local function rings(minD, maxD, keepMin)
+  local list = { { minD, maxD } }
+  local hi = math.max(maxD, 1)
+  while hi < MAX_SPAWN_RING do
+    hi = hi * 2
+    list[#list + 1] = { keepMin and minD or 0, hi }
   end
+  return list
+end
+
+local function pickFrom(candidates, ringList, index)
+  for _, ring in ipairs(ringList) do
+    local spot = pickSpot(candidates, ring[1], ring[2], index)
+    if spot then return spot.pos, quatFromDir(spot.dir, vec3(0, 0, 1)) end
+  end
+  return nil
+end
+
+function M.findCopSpot(center, minD, maxD, index)
+  local byRoad = rings(minD, maxD, true)
+  local spots = roadSpots(center, byRoad[#byRoad][2])
+  if spots then
+    local pos, rot = pickFrom(spots, byRoad, index)
+    if pos then return pos, rot end
+  end
+  local straight = rings(minD, maxD, false)
+  return pickFrom(lineSpots(center, 0, straight[#straight][2]), straight, index)
 end
 
 local function closestNodeFallback(pos)
