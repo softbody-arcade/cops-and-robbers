@@ -5,10 +5,7 @@ The shared ledger for every agent and worktree. Edit this file only on main (in 
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
-- [ ] Player settings card on the HUD: one card for a player's own options: car colour (today's colour card), auto headlights (night and bad weather) and a siren for cops (with a host switch that forbids sirens), plus distances and speeds that follow the game's metric/imperial setting. Design approved (`docs/superpowers/specs/2026-11-16-player-settings-design.md`); plan `docs/superpowers/plans/2026-11-16-player-settings.md` written, in review; no branch yet. Folded-in issues:
-  - [ ] Colour picker: the lobby card and the prep line each have their own `HudColor`, so a hex typed in the lobby is lost when prep starts (Hud `app.vue`)
-  - [ ] HUD styles: `.hud-btn` and `.swatch` repeated in HudLobby, HudPrep and HudColor; move them into the shared kit
-  - [ ] Chase line distances ("Runner 640 m NE") use the display font, not the mono font, because they arrive inside one text (`HudChase.vue` `info-text`; hud.lua would have to send the distance on its own)
+- [ ] Player settings card on the HUD: one card for a player's own options: car colour (today's colour card), auto headlights (night and bad weather) and a siren for cops (with a host switch that forbids sirens), plus distances and speeds that follow the game's metric/imperial setting. Merged into main as 2.5.0 (spec `docs/superpowers/specs/2026-11-16-player-settings-design.md`, plan `docs/superpowers/plans/2026-11-16-player-settings.md`) and installed on the local test server; waiting for the user's in-game check (the spec's In-game check list), branch `worktree-player-settings` kept for fixes. Still open from the folded-in issues:
   - [ ] README says "Everything is clickable with the mouse cursor shown" without saying how a player shows the cursor. Check the game's control and say it
 
 ## Ideas
@@ -34,7 +31,7 @@ One entry per piece of work that has started: what it is, its branch (or "design
 - [ ] How to play forgets its size and position when reopened (`apps.lua` resets its placement). Decide whether to remember it
 - [ ] Leaderboard: the gold badge gradient may be paler than the mockup (Leaderboard `app.vue`). Check in game
 - [ ] `useFit` (`fit.js`) only shrinks text and never grows it in a large app. Decide whether it should
-- [ ] HUD styles repeated across components: `.title`, `.tone-*` and `.mono` (HudCenter, HudResult, HudChase) and the root container (Hud, Announcements and How to play `app.vue`). Move them into the shared kit; needs a visual check in game. The `.hud-btn` and `.swatch` part is folded into the player settings card (In progress)
+- [ ] HUD styles repeated across components: `.title`, `.tone-*` and `.mono` (HudCenter, HudResult, HudChase) and the root container (Hud, Announcements and How to play `app.vue`). Move them into the shared kit; needs a visual check in game. (`.hud-btn` and `.swatch` are already shared: `.cnr-btn`, `.cnr-swatch` in `CnrRoot.vue`)
 - [ ] Leaderboard `PLAYERS_TAB` / `ROUNDS_TAB` depend on the tab order (Leaderboard `app.vue`)
 - [ ] App preview images (`tools/previews/*.svg`) are drawn approximations; replace them with in-game screenshots
 - [ ] The HUD's settings card clears the colour draft in its not-allowed watch (`app.vue`). That is safe only while no HUD push lands between the lobby and prep payloads; the spec asks for the draft to survive such a gap
