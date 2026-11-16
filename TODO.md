@@ -7,7 +7,7 @@ One entry per piece of work that has started: what it is, its branch (or "design
 
 - [ ] Sky polish: time and weather changes blend over up to 3 s (round start, New sky, round end), rain and storm drops tuned against the stock maps' rain (faster rain, heavier storm), the game's rain sound during rain and storm, and an outside temperature that fits the weather and the round's date. No thunder (the game has no lightning or thunder). Design: `docs/superpowers/specs/2026-11-16-sky-transitions-design.md` approved, plan `docs/superpowers/plans/2026-11-16-sky-transitions.md`; building on branch `worktree-sky-transitions` (subagent-driven)
 
-- [ ] Route to the runner as a cop setting: Always (the route also stays while you see the runner yourself), Out of sight (today's behaviour, the default) or Never (no route line or GPS destination). Design: `docs/superpowers/specs/2026-11-16-route-setting-design.md`, in review; built after the sky polish merges; no branch yet
+- [ ] Route to the runner as a cop setting: Always (the route also stays while you see the runner yourself), Out of sight (today's behaviour, the default) or Never (no route line or GPS destination). Design approved (`docs/superpowers/specs/2026-11-16-route-setting-design.md`), plan approved (`docs/superpowers/plans/2026-11-16-route-setting.md`); built after the sky polish merges; no branch yet
 
 ## Ideas
 - [ ] Hard mode vs normal mode (a round setting): hard mode gives cops a route/position only while someone has sight (no 30 s last-seen pings), hides the name plates above cars, and whatever else fits when planning it (for example no "Nearest cop" for the runner, no minimap markers for other cars). Hard mode also raises the night and bad weather chances of night and weather rounds
