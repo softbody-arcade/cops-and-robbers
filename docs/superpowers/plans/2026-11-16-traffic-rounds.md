@@ -13,12 +13,14 @@
   - Tells each game when and how much traffic to spawn, after its round car is placed and the extra cars are cleaned up.
   - Lets traffic through the vehicle rule, takes the game's traffic report, reads traffic positions for the round tick, and shares every player's round car with all games.
 - **Client:**
-  - The new `copsAndRobbers/traffic.lua` drives the game's `gameplay_traffic`: spawn, hold still, release, delete, report, name tags.
+  - The new `copsAndRobbers/traffic.lua` drives the game's `gameplay_traffic`: spawn, hold still, release, delete, report, name tags, and headlights in bad-weather rounds.
   - The main client file wires it to the round events.
 
 **Tech Stack:** Lua 5.3 (server), LuaJIT / Lua 5.1 (client), Vue 3 apps, `make test`, `make vuecheck`.
 
 **Spec:** `docs/superpowers/specs/2026-11-16-traffic-rounds-design.md`
+
+**Starting point:** branch `traffic-rounds` with `main` (night and weather rounds, 2.2.0) merged in. `make test` gives 609 passed, 0 failed, and `make vuecheck` is clean. The night and weather design is `docs/superpowers/specs/2026-11-16-night-weather-design.md`.
 
 ## Global Constraints
 - **The setting:** `trafficPerPlayer`, default 5, a whole number ≥ 0, 0 = off. It is locked during a round like every setting.
@@ -31,17 +33,18 @@
   - Server → games: `cnr_roundCars {keys = ["1-0", "2-3"]}`. Sent to everyone, also in practice. An empty list goes to everyone at every round end.
 - **Exact copy:**
   - Notices: "Bob: crash penalty 10s (traffic)", "Traffic could not spawn", "Only 2 of 3 traffic cars spawned".
-  - Panel notes: "5 each · 30 cars with 6 players", "5 each · 5 cars with 1 player", "MaxCars is 4 on this server: 3 per player", "MaxCars is 1 on this server: no room for traffic", "Traffic isn't available on BeamNG.Earth yet".
+  - Panel notes: "5 each · 30 cars with 6 players", "5 each · 5 cars with 1 player", "MaxCars is 4 on this server: 3 per player", "MaxCars is 1 on this server: no room for traffic". On BeamNG.Earth the Traffic group shows the Sky group's existing "Not available on BeamNG.Earth yet".
   - Leaderboard filter: "All traffic" / "With traffic" / "No traffic".
-  - Round detail: "Traffic: 5 per player".
+  - Rounds list row: "Traffic", after the sky label. Round detail: "Traffic: 5 per player", after the sky label.
   - Timeline: "Bob: crash penalty 10 s (traffic)".
 - **Traffic vehicles:** official vehicles only. No police, no emergency vehicles, no taxis or other special vehicles, no random traffic events. All spawned cars are active.
+- **Traffic headlights:** in a round whose weather is `rain`, `storm`, `fog` or `snow`, every traffic car gets `electrics.setLightsState(1)` once a second (held cars too). Otherwise the game's own rule decides (night window, tunnels). Grip and wind need no traffic code.
 - **Project rules:**
   - No chat messages and no pop-ups: everything goes through the apps.
   - No code comments.
   - Client code stays LuaJIT-compatible.
   - The `cnr/*.lua` modules stay pure (no `MP` API).
-- **Version:** 2.2.0.
+- **Version:** 2.3.0 (night and weather rounds took 2.2.0).
 - **Hands off:** do not deploy without asking. Do not touch branch `night-weather-rounds` or the main checkout.
 
 ## Review Focus
@@ -65,13 +68,12 @@
 
 **Interfaces:**
 - Produces:
-  - `config.DEFAULTS.trafficPerPlayer = 5`. Validated as a whole number ≥ 0: add an `integers = { trafficPerPlayer = true }` set checked in `validNumber` with `v == math.floor(v)`.
+  - `config.DEFAULTS.trafficPerPlayer = 5`. Validated as a whole number ≥ 0: add it to the existing `WHOLE` set (today `{ clockSpeed = true }`).
   - `traffic.perPlayer(setting, maxCars, geo, practice) -> integer`.
     - 0 when `geo`.
     - Otherwise `floor(setting)` (at least 0), capped at `floor(maxCars) − (practice and 3 or 1)` (at least 0) when `tonumber(maxCars)` is a number.
   - `traffic.note(setting, maxCars, geo, players) -> string|nil`, in this order:
-    - nil when the setting is ≤ 0.
-    - The BeamNG.Earth line when `geo`.
+    - nil when the setting is ≤ 0, and nil when `geo` (the panel's Traffic group shows its own BeamNG.Earth note).
     - When capped below the setting: the MaxCars line, or "no room for traffic" at 0.
     - Otherwise "N each · N×players cars with P player(s)".
   - `rules.payload(cfg, trafficPerPlayer) -> table`. `KEYS` gains `"trafficPerPlayer"`. The second argument, when given, replaces `cfg.trafficPerPlayer`.
@@ -114,7 +116,7 @@ test("the panel note names the cost, the cap or BeamNG.Earth", function()
   assertEq(traffic.note(5, 32, false, 1), "5 each · 5 cars with 1 player")
   assertEq(traffic.note(5, 4, false, 6), "MaxCars is 4 on this server: 3 per player")
   assertEq(traffic.note(5, 1, false, 2), "MaxCars is 1 on this server: no room for traffic")
-  assertEq(traffic.note(5, 32, true, 6), "Traffic isn't available on BeamNG.Earth yet")
+  assertEq(traffic.note(5, 32, true, 6), nil)
   assertEq(traffic.note(0, 32, false, 6), nil)
 end)
 
@@ -134,7 +136,7 @@ end)
 
 **Files:**
 - Modify: `server/CopsAndRobbers/cnr/crash.lua` (`atFault`)
-- Modify: `server/CopsAndRobbers/cnr/round.lua` (`tick`, `otherCars`, `note`, `clear`)
+- Modify: `server/CopsAndRobbers/cnr/round.lua` (`tick`, `otherCars`, `note`, `clear`, `start`, `finish`)
 - Modify: `tests/test_crash.lua`
 - Modify: `tests/test_round.lua`
 
@@ -148,6 +150,9 @@ end)
     - `otherCars(pid)` appends `self.prevTraffic`.
   - The penalty effect becomes `{ kind = "penalty", pid, seconds, name, cause = "traffic" | nil }`. `cause` is `"traffic"` when the nearest car returned by `atFault` has `traffic == true`.
   - `Round:note(now, kind, name, seconds, cause)`: the timeline entry gets `cause` when it is given.
+  - **Recorded traffic, the way `sky` is recorded:**
+    - `Round:start` keeps `self.traffic = opts and opts.traffic or nil`, next to `self.sky`. `clear` resets it.
+    - `finish`'s `record` run gains `traffic = (self.traffic or 0) > 0 and self.traffic or nil`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -203,6 +208,19 @@ end)
 ```
 The players stay within the teleport allowance of where `running()` left them (cop 2 moves from 5 to 60 m) and outside the catch radius. The parked traffic car would hold the runner after 7 s if it counted as a cop, and the jumping one would be announced as a teleport if it counted as a player.
 
+```lua
+test("a run records the traffic it was played with", function()
+  local r = round.new((config.merge(nil)))
+  r:start(0, 1, 2, players, { traffic = 5 })
+  r:vehiclePicked(1, 2, "pickup", "cfg", players)
+  r:go(1, 3)
+  r:tick(4, stillCars(), {}); r:tick(11, stillCars(), {})
+  assertEq(find(r:endCalled(20, 2), "record").run.traffic, 5)
+  local quiet = started()
+  quiet:tick(4, stillCars(), {}); quiet:tick(11, stillCars(), {})
+  assertEq(find(quiet:endCalled(20, 2), "record").run.traffic, nil)
+end)
+```
 The "no cause" test is a guard: it already passes before this task, and must still pass after it.
 
 - [ ] **Step 2: Run `make test`.** Expected: the crash test and the "labelled traffic" and "hit by traffic" round tests FAIL (`cause` is nil, or the fourth `tick` argument is ignored). The "no cause" and "never holds" tests may already pass; they are guards.
@@ -308,9 +326,7 @@ The "no cause" test is a guard: it already passes before this task, and must sti
   - **`cnrTick`:** builds `trafficCars` from `trafficVids` with `MP.GetPositionRaw(pid, vid)`, each `{pos, vel, traffic = true}` through `vec.toVec`. It skips errors and passes the list as `current:tick`'s fourth argument. Not in geo mode.
   - **Penalty notice:** `string.format("%s: crash penalty %gs%s", name, seconds, e.cause == "traffic" and " (traffic)" or "")`.
   - **`pushRules`:** sends `rules.payload(cfg, traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), geoMode, false))`.
-  - **`roundTraffic`:**
-    - Set in `handlers.start` to `traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), geoMode, false)`.
-    - The `record` effect sets `run.traffic = roundTraffic` when it is > 0. Otherwise the field is left out.
+  - **`handlers.start`:** its `current:start` options (today `{ build = ..., sky = ... }`) gain `traffic = traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), geoMode, false)`. The round records it (Task 2). Practice runs are never recorded, so `handlers.test` passes none.
   - **`panelState`:** passes `trafficNote = traffic.note(cfg.trafficPerPlayer, maxCars(), geoMode, <online count>)`, and `panel.snapshot` copies `info.trafficNote` to `trafficNote`.
 
 - [ ] **Step 1: Write the failing tests:**
@@ -398,14 +414,16 @@ The "no cause" test is a guard: it already passes before this task, and must sti
     4. `gameplay_traffic.spawnTraffic(#group, group)`. This skips the special-vehicle providers: no police, no reserved taxi.
     - Remembers `count`, `held`, `startedAt = clock`, and `running = true`.
     - With no `gameplay_traffic`, or an empty group, it notifies "Traffic could not spawn" at once and stays stopped.
-  - **Holding by freezing** (`controller.setFreeze`) keeps the game's traffic AI ticking, so its own headlight rule still runs for held cars (the spec's night-prep requirement). Task 9 checks this in game. If it turns out not to hold, the fallback is to set `electrics.setLightsState(1)` on held cars at night, using the same night window: `core_environment.getTimeOfDay()` and `core_solarTimeOfDay.getSolarNightWindow`.
+  - **Holding by freezing** (`controller.setFreeze`) keeps the game's traffic AI ticking, so its own night headlight rule still runs for held cars (the spec's night-prep requirement). Task 9 checks this in game. If it turns out not to hold, the fallback is to send `electrics.setLightsState(1)` to held cars while `sky.isNight()` is true, the same check the practice AI cars use (`ai.lightsOn(sky.isNight())`).
+  - **`M.setWeather(weather)`:** stores the round's weather key (a string or nil). `rain`, `storm`, `fog` and `snow` count as bad weather.
   - **`M.release()`:** sets `held = false` and sends `controller.setFreeze(0)` once to each traffic car.
   - **`M.stop(clock)`:**
     - Only acts if `running`: calls `deleteVehicles()`, sets `running = false` and `cleanupUntil = clock + 15`.
-    - Clears the `hideNametag` it set, and the round cars list.
+    - Clears the `hideNametag` it set, the round cars list and the weather.
   - **`M.tick(clock) -> vids|nil`. Traffic cars** are the `getTrafficData()` entries with `isAi == true` whose object exists and `MPVehicleGE.isOwn(id)`.
     - While running and held: send `controller.setFreeze(1)` to each traffic car every 0.5 s.
     - While running, every 1 s: the sorted server vids (`game.serverVid`) of the traffic cars. Return them only when they differ from the last returned list.
+    - While running in bad weather, every 1 s: send `electrics.setLightsState(1)` to each traffic car, held or not. (The game switches a car's lights off when it moves it to a new spot; the next second puts them back.)
     - At `startedAt + 15`, once: notify "Traffic could not spawn" (0 cars) or `string.format("Only %d of %d traffic cars spawned", n, count)` (fewer than `count`), with tone `"warn"`.
     - Not running and `clock < cleanupUntil`: if any traffic cars exist, `deleteVehicles()`.
     - Whenever the round car list is not empty (not only while `active`, so lobby players hide the tags on someone's practice traffic too): hide BeamMP name tags. For every key in `MPVehicleGE.getVehicles()` whose owner pid (`^(%d+)%-`) has a round car and which is not a round car, set `v.hideNametag = true` and remember it.
@@ -417,6 +435,7 @@ The "no cause" test is a guard: it already passes before this task, and must sti
   - A local `runnerOut`: true from `onRunnerGo`, or from a setup whose phase is `"headstart"` or `"running"`. Reset in `endRound`.
   - `cnr_trafficStart` → `traffic.start(d.count, not runnerOut, clock)`.
   - `cnr_roundCars` → `traffic.setRoundCars(d.keys)`.
+  - `onRoundSetup` → `traffic.setWeather(d.sky and d.sky.weather)`. `onSky` (New sky in prep) → `traffic.setWeather(d.weather)`.
   - `onRunnerGo` → `traffic.release()`.
   - `endRound` → `traffic.stop(clock)`.
   - `onUpdate`: `local vids = traffic.tick(clock)`. If any, `sendServer("cnr_trafficCars", { vids = vids })`.
@@ -471,6 +490,11 @@ The "no cause" test is a guard: it already passes before this task, and must sti
   - **Replace** `"sight follows the car the runner is driving, not a parked one"` with `"sight follows the runner's round car, never one of his traffic cars"`:
     - With round cars `{"2-0"}`, the runner's `activeVehicleID = "2-1"` (a far traffic object 301 at y=900) still gives `seen == true`.
     - Then, with `traffic.setRoundCars({})` via `cnr_roundCars {keys={}}` and `activeVehicleID = "2-1"`, `seen == false`.
+  - `"in bad weather traffic gets headlights and keeps them, in a clear round none from us"`:
+    - Setup with `sky = { weather = "fog" }` (prep), the go-ahead, then `env.tick(1.2)`: each traffic object's commands contain `"electrics.setLightsState(1)"` (held).
+    - Clear the commands, `env.tick(1.1)`: sent again.
+    - A setup with `sky = { weather = "clear" }` and the go-ahead: after `env.tick(2)`, no traffic object has `"electrics.setLightsState(1)"`.
+    - From that clear round, `cnr_sky {weather = "rain"}`, then `env.tick(1.2)`: the commands contain it.
   - `"a failed traffic spawn tells the player once"`:
     - With `env.deferTraffic = true` and never finished, `env.tick(16)` gives a HUD event "Traffic could not spawn" exactly once.
     - Spawning 2 of 3 (a stub override) gives "Only 2 of 3 traffic cars spawned".
@@ -482,22 +506,26 @@ The "no cause" test is a guard: it already passes before this task, and must sti
 ### Task 7: Panel, How to play and leaderboard UI
 
 **Files:**
-- Modify: `client/ui/modules/apps/CopsAndRobbersPanel/settings.js` (`GROUPS`, Round group)
-- Modify: `client/ui/modules/apps/CopsAndRobbersPanel/PanelSettings.vue`
+- Modify: `client/ui/modules/apps/CopsAndRobbersPanel/settings.js` (`GROUPS`: a new Traffic group, and the Sky group's flag)
+- Modify: `client/ui/modules/apps/CopsAndRobbersPanel/PanelSettings.vue` (the not-on-Earth flag, the traffic note)
 - Modify: `client/lua/ge/extensions/copsAndRobbers/hud.lua` (`helpBlock`)
 - Modify: `client/ui/modules/apps/CopsAndRobbersHowToPlay/HowToPlay.vue`
 - Modify: `client/ui/modules/apps/CopsAndRobbersLeaderboard/app.vue`
 - Modify: `client/ui/modules/apps/CopsAndRobbersLeaderboard/board.js` (`eventText`)
 - Modify: `client/ui/modules/apps/CopsAndRobbersLeaderboard/BoardRounds.vue` (`detailSub`)
+- Modify: `client/ui/modules/apps/CopsAndRobbersLeaderboard/RoundRow.vue` (`sub`)
 - Modify: `tests/test_hud.lua`
 
 **Interfaces:**
 - Consumes: `trafficNote` in the panel state (Task 4), `trafficPerPlayer` in the rules (Task 4), `traffic` on the board state and on each round, `cause` on timeline entries (Tasks 4 and 5).
 - Produces:
-  - **The settings item**, in the Round group after Time limit:
+  - **The not-on-Earth flag:** the Sky group's `sky: true` becomes `noEarth: true`, and `PanelSettings.vue` reads `g.noEarth` where it reads `g.sky` today (both the common and the More lists). The Sky group behaves exactly as before.
+  - **A Traffic group**, right after the Sky group:
     ```js
-    { key: "trafficPerPlayer", label: "Traffic", unit: "per player", step: 1, min: 0, common: true, offAtZero: true,
-      help: "AI traffic cars around each player during a round" }
+    { title: "Traffic", noEarth: true, items: [
+      { key: "trafficPerPlayer", label: "Traffic", unit: "per player", step: 1, min: 0, common: true, offAtZero: true,
+        help: "AI traffic cars around each player during a round" },
+    ] },
     ```
   - **`PanelSettings.vue`:** under that item's `set-help`, a second `set-help` line with `state.trafficNote` when `item.key === 'trafficPerPlayer'` and the note is set.
   - **`hud.lua` `helpBlock`:** `r.trafficOn = (tonumber(rules.trafficPerPlayer) or 0) > 0`.
@@ -510,7 +538,8 @@ The "no cause" test is a guard: it already passes before this task, and must sti
     - A third `BngDropdown v-model="trafficFilter"`.
     - `filter(map, mode, traffic)` sends `{action:"filter", map, mode, traffic}`. The map and mode setters pass `state.value.traffic` along.
   - **`board.js` penalty text:** appends `" (traffic)"` when `e.cause === "traffic"`.
-  - **`BoardRounds.vue` `detailSub`:** adds `Traffic: ${n} per player` when `Number(r.traffic) > 0`.
+  - **`BoardRounds.vue` `detailSub`:** the car part becomes `[car, r.skyLabel, trafficText].filter(Boolean).join(" · ")`, where `trafficText` is `Traffic: ${n} per player` when `n = Number(r.traffic)` is > 0.
+  - **`RoundRow.vue` `sub`:** pushes `"Traffic"` right after `r.skyLabel` when `Number(r.traffic) > 0`.
 
 - [ ] **Step 1: Write the failing test** (`tests/test_hud.lua`, using its `rules()` helper), `"How to play knows whether traffic is on"`:
   - `hud.payload(hud.new(), 0, { helpOpen = true, rules = rules({ trafficPerPlayer = 5 }) }).help.rules.trafficOn == true`.
@@ -529,9 +558,9 @@ The "no cause" test is a guard: it already passes before this task, and must sti
 - Modify: `server/CopsAndRobbers/main.lua` (`VERSION`)
 - Modify: `client/lua/ge/extensions/copsAndRobbers.lua` (`CLIENT_VERSION`)
 - Modify: `client/mod_info/CopsAndRobbers/info.json`
-- Modify: the `"2.1.0"` strings in `tests/test_client.lua`, and `tests/test_main.lua` (the "version is shown in the log and the mode event" test asserts "Cops and Robbers 2.1.0 loaded" and `"version":"2.1.0"`)
+- Modify: the `"2.2.0"` strings in `tests/test_client.lua`, and `tests/test_main.lua` (the "version is shown in the log and the mode event" test asserts "Cops and Robbers 2.2.0 loaded" and `"version":"2.2.0"`)
 
-- [ ] **Step 1: Version 2.2.0** in the three code places, both test files and the heading of `docs/FEATURES.md`. Check with `grep -rn '2\.1\.0' client server tests docs/FEATURES.md README.md`: no output.
+- [ ] **Step 1: Version 2.3.0** in the three code places, both test files and the heading of `docs/FEATURES.md`. Check with `grep -rn '2\.2\.0' client server tests docs/FEATURES.md README.md`: no output.
 - [ ] **Step 2: README:**
   - The settings row: `trafficPerPlayer` | 5 | "AI traffic cars around each player (0 = off; normal maps only, not on BeamNG.Earth yet)".
   - The install line: `MaxCars` must be at least 1 + traffic per player (3 + traffic for practice).
@@ -545,7 +574,8 @@ The "no cause" test is a guard: it already passes before this task, and must sti
   - "AI traffic" stays in the locked list.
   - Update the test count.
 - [ ] **Step 4: DEPENDENCIES:**
-  - A `gameplay_traffic` subsection under the GE section: `deleteVehicles`, `setTrafficVars({activeAmount, enableRandomEvents})`, `trafficUtils.createTrafficGroup`, `spawnTraffic(amount, group)` (it skips the police and taxi providers that `setupTraffic` would add), `getTrafficData()[id].isAi`, and the game's own headlight rule.
+  - A `gameplay_traffic` subsection under the GE section, next to the Sky section: `deleteVehicles`, `setTrafficVars({activeAmount, enableRandomEvents})`, `trafficUtils.createTrafficGroup`, `spawnTraffic(amount, group)` (it skips the police and taxi providers that `setupTraffic` would add), `getTrafficData()[id].isAi`, and the game's own headlight rule (`gameplay/traffic/vehicle.lua`: night window and tunnels, lights off when a car is moved to a new spot), which is why bad-weather headlights are re-sent every second.
+  - In the Sky section: the gusts (`be:queueAllObjectLua`) and the grip swap act on traffic too, and the vehicle AI reads grip from the ground model (`obj:getStaticFrictionCoef()` in `lua/vehicle/ai.lua`), so traffic slows on wet roads and snow by itself.
   - Config list fields `Source`, `Config Type`, `key`, `Name` for the civilian filter.
   - The BeamMP server: `MP.Get(MP.Settings.MaxCars)`, and BeamMP syncing traffic as normal cars.
   - The BeamMP client: `MPVehicleGE.getVehicles()[key].hideNametag`.
@@ -553,13 +583,16 @@ The "no cause" test is a guard: it already passes before this task, and must sti
     - cars spawn and stand still until GO, with headlights on when it's night;
     - they have no name tags and no police or emergency vehicles;
     - a cop driving into one gets "(traffic)";
-    - all are gone after the round.
+    - all are gone after the round;
+    - with Time of day Night and Weather Fog, traffic is lit while held and while driving;
+    - with Weather Rain, traffic slows on the wet roads and gusts push it.
+  - Also add a line for the traffic round to the quick check's Sky bullet (step 4 of "After any update").
   - Note under BeamNG.Earth why traffic is off there.
 - [ ] **Step 5: Verify:**
   - `make test`: all pass, with the count noted.
   - `make vuecheck`: clean.
   - `for f in client/lua/ge/extensions/copsAndRobbers.lua client/lua/ge/extensions/copsAndRobbers/*.lua; do luajit -bl "$f" >/dev/null || echo "$f"; done`: no output.
-- [ ] **Step 6: Commit** `feat: 2.2.0 - traffic during rounds`
+- [ ] **Step 6: Commit** `feat: 2.3.0 - traffic during rounds`
 
 ### Task 9: Final review and in-game check
 - [ ] A fresh reviewer reads the whole branch against the spec. Fix what it finds and re-run Task 8's verification.
