@@ -265,6 +265,7 @@ test("full round over main wiring", function()
   assertEq(env.lastSent("cnr_runnerGo") ~= nil, true)
   assertEq(env.lastSent("cnr_release") ~= nil, true)
   assertEq(env.caught(), true)
+  assertEq(Util.JsonDecode(env.lastSent("cnr_roundEnd").data).catchers[1], "Bob")
   local f = io.open(env.dir .. "data/leaderboard.json")
   assertEq(f ~= nil, true)
   if f then f:close() end
@@ -445,9 +446,8 @@ test("test round events reach only the issuer", function()
   for _ = 1, 50 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
   env.panel(1, "stop")
   for _, m in ipairs(env.sent) do
-    if not (m.ev == "cnr_lobby" and m.pid == -1) and (m.ev ~= "cnr_roundEnd" or not m.data:find("cancelled")) then assertEq(m.pid, 1, m.ev) end
+    if not (m.ev == "cnr_lobby" and m.pid == -1) then assertEq(m.pid, 1, m.ev) end
   end
-  assertEq(#env.chats, 0)
   env.cleanup()
 end)
 
@@ -463,6 +463,7 @@ test("/cnr end records the run", function()
   local env = boot()
   runToChase(env)
   env.panel(2, "end")
+  assertEq(Util.JsonDecode(env.lastSent("cnr_roundEnd").data).reason, "called")
   local f = io.open(env.dir .. "data/leaderboard.json")
   assertEq(f ~= nil, true)
   if f then f:close() end
@@ -919,19 +920,11 @@ test("a mid-chase join gets clockSeconds", function()
   env.cleanup()
 end)
 
-local function chatLine(env, line)
-  for _, c in ipairs(env.chats) do if c[2] == "[CnR] " .. line then return true end end
-  return false
-end
-
-local function showConfig(env)
-  env.chats = {}
+local function shownSetting(env, key)
   env.call("cnr_panel", 1, '{"action":"open"}')
-  local st = decodeJson(env.lastSent("cnr_panelState").data)
-  for k, v in pairs(st.settings) do
-    if type(v) == "table" then v = table.concat(v, ", ") end
-    env.chats[#env.chats + 1] = { 1, "[CnR] " .. k .. " = " .. tostring(v) }
-  end
+  local v = decodeJson(env.lastSent("cnr_panelState").data).settings[key]
+  if type(v) == "table" then v = table.concat(v, ", ") end
+  return tostring(v)
 end
 
 test("panel open sends state to the opener", function()
@@ -985,8 +978,7 @@ end)
 test("panel command outside the allowlist does nothing", function()
   local env = boot()
   env.call("cnr_panel", 1, '{"action":"command","text":"set headStartSeconds 1"}')
-  showConfig(env)
-  assertEq(chatLine(env, "headStartSeconds = 7"), true)
+  assertEq(shownSetting(env, "headStartSeconds"), "7")
   env.cleanup()
 end)
 
@@ -996,11 +988,9 @@ test("panel settings save several values in one write", function()
   local r = env.lastSent("cnr_panelReply")
   assertEq(r.pid, 1)
   assertEq(r.data:find('"ok":true', 1, true) ~= nil, true)
-  assertEq(#env.chats, 0)
-  showConfig(env)
-  assertEq(chatLine(env, "headStartSeconds = 9"), true)
-  assertEq(chatLine(env, "explodeOnCatch = true"), true)
-  assertEq(chatLine(env, "excludedModels = citybus"), true)
+  assertEq(shownSetting(env, "headStartSeconds"), "9")
+  assertEq(shownSetting(env, "explodeOnCatch"), "true")
+  assertEq(shownSetting(env, "excludedModels"), "citybus")
   env.cleanup()
 end)
 
@@ -1008,8 +998,7 @@ test("empty excluded list saves", function()
   local env = boot()
   env.call("cnr_panel", 1, '{"action":"settings","values":{"excludedModels":[]}}')
   assertEq(env.lastSent("cnr_panelReply").data:find('"ok":true', 1, true) ~= nil, true)
-  showConfig(env)
-  assertEq(chatLine(env, "excludedModels = "), true)
+  assertEq(shownSetting(env, "excludedModels"), "")
   env.cleanup()
 end)
 
@@ -1019,8 +1008,7 @@ test("panel settings with one invalid value save nothing", function()
   local r = env.lastSent("cnr_panelReply")
   assertEq(r.data:find('"ok":false', 1, true) ~= nil, true)
   assertEq(r.data:find("catchHoldSeconds", 1, true) ~= nil, true)
-  showConfig(env)
-  assertEq(chatLine(env, "headStartSeconds = 7"), true)
+  assertEq(shownSetting(env, "headStartSeconds"), "7")
   env.cleanup()
 end)
 
@@ -1030,8 +1018,7 @@ test("panel settings are refused during a round", function()
   env.call("cnr_panel", 1, '{"action":"settings","values":{"headStartSeconds":9}}')
   assertEq(env.lastSent("cnr_panelReply").data:find("Stop the round first", 1, true) ~= nil, true)
   env.panel(1, "stop")
-  showConfig(env)
-  assertEq(chatLine(env, "headStartSeconds = 7"), true)
+  assertEq(shownSetting(env, "headStartSeconds"), "7")
   env.cleanup()
 end)
 
@@ -1184,8 +1171,8 @@ end
 test("an old leaderboard is moved aside and the board starts fresh", function()
   local env = boot({ leaderboard = '{"runs":[{"player":"Old","survivedSeconds":999,"map":"west_coast_usa","endedAt":1}]}' })
   assertEq(readFileAt(env.dir .. "data/leaderboard-1.6.json"):find("Old", 1, true) ~= nil, true)
-  env.call("onChatMessage", 1, "Reinder", "/cnr top")
-  assertEq(env.noticeHas("Old"), false)
+  env.call("cnr_board", 1, '{"action":"open"}')
+  assertEq(env.lastSent("cnr_boardState").data:find("Old", 1, true), nil)
   env.cleanup()
 end)
 
@@ -1282,14 +1269,15 @@ test("panel replies go to the panel only", function()
   env.cleanup()
 end)
 
-test("rule breaks are warn notices", function()
-  local env = boot({ vehicles = { [1] = { [0] = "x", [1] = "y" }, [2] = { [0] = "x" } } })
+test("a teleport in the chase is a warn notice for everyone", function()
+  local env = boot()
   env.startRound()
-  env.call("cnr_myVehicle", 1, '{"vid":1}')
   env.go()
   for _ = 1, 34 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
-  env.call("onVehicleReset", 1, 1, "")
-  assertEq(env.noticeHas("Reinder reset illegally", "warn"), true)
+  assertEq(env.noticeHas("teleported"), false)
+  env.positions[1] = 5000
+  env.clock = env.clock + 0.25; env.call("cnr_tick")
+  assertEq(env.noticeHas("Reinder teleported", "warn"), true)
   env.cleanup()
 end)
 
@@ -1639,7 +1627,6 @@ test("the leaderboard app never receives account ids", function()
   env.startRound(); env.go()
   for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
   env.call("cnr_board", 2, '{"action":"open"}')
-  env.call("onChatMessage", 1, "Reinder", "/cnr help")
   env.panel(1, "end")
   env.call("cnr_board", 2, '{"action":"open"}')
   assertEq(env.lastSent("cnr_boardState").data:find("12345", 1, true), nil)
@@ -1875,6 +1862,12 @@ test("lobby is only re-sent when it changes", function()
   local n = #env.sent
   env.call("cnr_tick")
   for i = n + 1, #env.sent do assertEq(env.sent[i].ev == "cnr_lobby", false) end
+  env.names = { "Reinder" }
+  n = #env.sent
+  env.call("cnr_tick")
+  local resent = false
+  for i = n + 1, #env.sent do if env.sent[i].ev == "cnr_lobby" then resent = true end end
+  assertEq(resent, true)
   env.cleanup()
 end)
 
@@ -1883,14 +1876,17 @@ test("a lobby change still goes out when the panel push errors", function()
   env.call("cnr_panel", 1, '{"action":"open"}')
   env.call("cnr_tick")
   env.names = { "Reinder" }
-  local realGet, calls = MP.GetPlayers, 0
+  local realGet, failed = MP.GetPlayers, 0
   MP.GetPlayers = function()
-    calls = calls + 1
-    if calls == 1 then error("boom") end
+    if debug.getinfo(2, "n").name == "panelState" then
+      failed = failed + 1
+      error("boom")
+    end
     return realGet()
   end
   capturingLogs(function() env.call("cnr_tick") end)
   MP.GetPlayers = realGet
+  assertEq(failed > 0, true)
   assertEq(env.lastSent("cnr_lobby").data:find('"online":1', 1, true) ~= nil, true)
   env.cleanup()
 end)

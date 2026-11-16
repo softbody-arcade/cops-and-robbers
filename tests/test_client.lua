@@ -1700,6 +1700,55 @@ test("a lobby player hides the tags on someone's practice traffic until it ends"
   assertEq(env.mpVehicles["2-5"].hideNametag, nil)
 end)
 
+local function noticeShown(env, text)
+  for _, n in ipairs(env.hud().notices or {}) do
+    if n.text:find(text, 1, true) then return true end
+  end
+  return false
+end
+
+test("an AI car that can't spawn gets a notice", function()
+  local env = bootClient()
+  env.fire("cnr_roundSetup", { role = "runner", runnerId = 1, model = "pickup", config = "vehicles/pickup/base.pc", phase = "prep" })
+  core_vehicles.spawnNewVehicle = function() return nil end
+  env.fire("cnr_setupAI", { model = "pickup", config = "vehicles/pickup/base.pc", runnerId = 1, ai = { { id = -10, role = "cop", name = "AI cop 1", index = 1 } } })
+  env.tick(0.2)
+  assertEq(noticeShown(env, "Could not spawn AI cop 1, is MaxCars high enough?"), true)
+end)
+
+test("a cop with no road near the runner is told they start where they are", function()
+  local env = bootClient()
+  _G.map = {
+    getMap = function() return { nodes = {} } end,
+    getGraphpath = function() return { graph = {} } end,
+    findClosestRoad = function() return nil end,
+  }
+  startCop(env)
+  assertEq(noticeShown(env, "No road found near the runner, you start where you are"), true)
+end)
+
+test("a car pick with no vehicles available gets a notice", function()
+  local env = bootClient({ configs = {} })
+  env.fire("cnr_roundSetup", copy(SETUP))
+  env.fire("cnr_pickVehicle", { includeMods = false, excludedModels = {} })
+  env.tick(0.2)
+  assertEq(noticeShown(env, "No vehicles available to pick"), true)
+  assertEq(env.lastSent("cnr_vehiclePicked"), nil)
+end)
+
+test("warnings keep their order: a new one goes last, an update keeps its place", function()
+  bootClient()
+  local hudfeed = require("copsAndRobbers/hudfeed")
+  hudfeed.warning("binding", "bind reset")
+  hudfeed.warning("version", "old copy")
+  assertEq(hudfeed.warnings()[1], "bind reset"); assertEq(hudfeed.warnings()[2], "old copy")
+  hudfeed.warning("binding", "bind reset now")
+  assertEq(hudfeed.warnings()[1], "bind reset now")
+  hudfeed.warning("binding", nil)
+  hudfeed.warning("binding", "bind reset")
+  assertEq(hudfeed.warnings()[1], "old copy"); assertEq(hudfeed.warnings()[2], "bind reset")
+end)
+
 test("traffic name tags are checked a few times a second, not every frame", function()
   local env = bootClient()
   env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
