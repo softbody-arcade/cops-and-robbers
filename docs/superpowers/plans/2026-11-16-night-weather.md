@@ -793,10 +793,91 @@ If the AI setup event or fields differ from what `copsAndRobbers.lua` registers 
 
 ---
 
+### Task 10: Runs remember their conditions; the Rounds tab shows them
+
+Runs after Task 8, before Task 9 (the host asked for it during the build: option A, record and show; a conditions filter is a later TODO).
+
+**Files:**
+- Modify: `server/CopsAndRobbers/cnr/sky.lua` (new `M.record`)
+- Modify: `server/CopsAndRobbers/cnr/round.lua` (the `record` effect's `run` in `Round:finish`)
+- Modify: `server/CopsAndRobbers/cnr/leaderboard.lua` (`M.rounds` row)
+- Modify: `client/lua/ge/extensions/copsAndRobbers.lua` (`onBoardState`)
+- Modify: `client/ui/modules/apps/CopsAndRobbersLeaderboard/RoundRow.vue` (`sub`), `BoardRounds.vue` (`detailSub`)
+- Test: `tests/test_sky.lua`, `tests/test_round.lua`, `tests/test_leaderboard.lua`, `tests/test_client.lua`
+
+**Interfaces:**
+- Consumes: `round.sky` (Task 3), `sky.label(p)` in the client sky module (Task 6), `copsAndRobbers.lua` already requiring `copsAndRobbers/sky` (Task 7).
+- Produces:
+  - `sky.record(s, cfg) -> table|nil` in `cnr/sky.lua`: `{ time, weather, clockSpeed (only > 0), driving (true only with a weather and cfg.weatherDriving) }`, nil when `sky.payload(s, cfg, nil)` is nil. No wind fields.
+  - Recorded runs get `run.sky = sky.record(self.sky, self.cfg)` (absent for old runs and rounds with nothing set).
+  - `leaderboard.rounds` rows pass `sky = r.sky`.
+  - The client adds `row.skyLabel = sky.label(row.sky)` to each round row in `onBoardState` (nil when no sky).
+  - The Rounds list line and the round detail line show the label after the car, joined with `" · "`: `Gavril D-Series · Night · Rain`.
+
+- [ ] **Step 1: Write the failing tests**
+
+`tests/test_sky.lua`:
+```lua
+test("record keeps the conditions without the wind", function()
+  local r = sky.record({ time = "night", weather = "rain", windDir = 3, windSeed = 9 }, cfg({ weather = "rain", clockSpeed = 60 }))
+  assertEq(r.time, "night"); assertEq(r.weather, "rain"); assertEq(r.clockSpeed, 60); assertEq(r.driving, true)
+  assertEq(r.windSeed, nil); assertEq(r.windDir, nil)
+  assertEq(sky.record({ windDir = 1, windSeed = 1 }, cfg(nil)), nil)
+  assertEq(sky.record({}, cfg({ clockSpeed = 30 })), nil)
+end)
+```
+
+`tests/test_round.lua`:
+```lua
+test("a recorded run keeps the round's conditions", function()
+  local r = round.new((config.merge({ weather = "rain" })))
+  r:start(0, 1, 2, players, { sky = { weather = "rain", time = "night", windDir = 0, windSeed = 1 } })
+  r:vehiclePicked(1, 2, "pickup", "cfg", players)
+  r:go(1, 2)
+  local fx = r:endCalled(100, 2)
+  if not find(fx, "record") then
+    for i = 1, 40 do fx = r:tick(1 + i * 0.25, stillCars(), {}) end
+    fx = r:endCalled(20, 2)
+  end
+  local run = find(fx, "record").run
+  assertEq(run.sky.weather, "rain"); assertEq(run.sky.time, "night"); assertEq(run.sky.driving, true)
+end)
+```
+(The round must be in `running` for `endCalled` to record; if `go` alone doesn't get there, tick it to `running` the way the existing "catch after release" tests do and keep the assertions.)
+
+`tests/test_leaderboard.lua`:
+```lua
+test("rounds pass the run's conditions on", function()
+  local b = leaderboard.load(nil)
+  leaderboard.add(b, { player = "A", survivedSeconds = 60, map = "italy", endedAt = 5, endReason = "caught", sky = { time = "night", weather = "snow" } })
+  leaderboard.add(b, { player = "B", survivedSeconds = 60, map = "italy", endedAt = 6, endReason = "caught" })
+  local list = leaderboard.rounds(b, nil, 10)
+  assertEq(list[2].sky.weather, "snow"); assertEq(list[1].sky, nil)
+end)
+```
+
+`tests/test_client.lua`:
+```lua
+test("leaderboard round rows get a sky label", function()
+  local env = bootClient()
+  env.fire("cnr_boardState", { rounds = { { id = 1, model = "pickup", sky = { time = "night", weather = "rain" } }, { id = 2, model = "pickup" } } })
+  local d = env.lastTrigger("CnRBoard")
+  assertEq(d.rounds[1].skyLabel, "Night · Rain"); assertEq(d.rounds[2].skyLabel, nil)
+end)
+```
+(Use the board event name `copsAndRobbers.lua` registers for `onBoardState`.)
+
+- [ ] **Step 2: Run** `make test` — expected: the new tests FAIL.
+- [ ] **Step 3: Implement** the Interfaces above; in `RoundRow.vue` push `r.skyLabel` after the car in `sub`, in `BoardRounds.vue` append it to `car` in `detailSub` with `" · "`.
+- [ ] **Step 4: Run** `make test` and `make vuecheck`; `luajit -bl client/lua/ge/extensions/copsAndRobbers.lua >/dev/null` — expected: all pass.
+- [ ] **Step 5: Commit** — `feat: rounds remember their weather and time, and the Rounds tab shows them`
+
+---
+
 ### Task 9: Docs, version, and the in-game check with the host
 
 **Files:**
-- Modify: `README.md` (Settings table rows for the six keys), `docs/FEATURES.md` (a "Night and weather" section: settings, random chances, New sky, clock, grip table summary, wind, temperature, restore after the round, not on BeamNG.Earth), version `2.2.0` in `server/CopsAndRobbers/main.lua` (`VERSION`), `client/lua/ge/extensions/copsAndRobbers.lua` (`CLIENT_VERSION`, line 16; the client warns "rejoin to update" when it differs from the server), `client/mod_info/CopsAndRobbers/info.json` (`version_string`), the `docs/FEATURES.md` title and `tools/previews/panel.svg` (cosmetic); tests expecting `2.1.0` (`tests/test_main.lua:758-759`, the `version = "2.1.0"` lines and the warning text in `tests/test_client.lua`) move to `2.2.0`.
+- Modify: `README.md` (Settings table rows for the six keys), `docs/FEATURES.md` (a "Night and weather" section: settings, random chances, New sky, clock, grip table summary, wind, temperature, restore after the round, not on BeamNG.Earth; and in the leaderboard sections: runs record their conditions and the Rounds tab shows them), version `2.2.0` in `server/CopsAndRobbers/main.lua` (`VERSION`), `client/lua/ge/extensions/copsAndRobbers.lua` (`CLIENT_VERSION`, line 16; the client warns "rejoin to update" when it differs from the server), `client/mod_info/CopsAndRobbers/info.json` (`version_string`), the `docs/FEATURES.md` title and `tools/previews/panel.svg` (cosmetic); tests expecting `2.1.0` (`tests/test_main.lua:758-759`, the `version = "2.1.0"` lines and the warning text in `tests/test_client.lua`) move to `2.2.0`.
 - Modify: `TODO.md` (tick "Night and weather rounds").
 - Modify: `docs/DEPENDENCIES.md` (what the sky, weather and grip code relies on in the game and the maps, and what to check when they update).
 - Values tuned in game go into `client/lua/ge/extensions/copsAndRobbers/sky.lua` (`WEATHER`), `wind.lua` (`WEATHER`) and `surfaces.lua` (grass factors) with their tests updated.

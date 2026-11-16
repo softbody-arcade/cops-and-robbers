@@ -7,6 +7,7 @@
 - [ ] Dynamic roadblocks: parked cop cars that block part of the road ahead of the runner. Same goal as spike strips (stop the runner ahead), so plan them together
 - [ ] Infection mode: game starts with 1 cop and caught runners become cops
 - [ ] Night and weather rounds: the server sets the same time of day and weather for everyone per round (a panel switch)
+- [ ] Leaderboard filter by conditions (All / Normal / Night / Bad weather), next to the car-mode filter, so storm records don't compete with clear-day runs unless wanted. Runs already record their conditions (night and weather rounds)
 - [ ] Player settings card on the HUD: one place for a player's own options, such as their car colour (today's colour card) and a headlight toggle (lights on automatically at night)
 - [ ] Cop sight that follows visibility: the sight range is worked out from what the game knows (fog thickness, how dark it is, street lights near the runner, whether the runner's lights are on, rain). Comes after night and weather rounds
 - [ ] Night and weather rounds on beamng_earth: go through Earth's server hooks (`beamngEarth_sky.setServerClock`, `beamngEarth_weather.setPreset`), not `core_environment`, which flips players to Manual and saves it in their Earth settings. Earth ignores the date, has six weather presets that take about 60 s to fade in, and leaves players on Manual alone. Research notes in `docs/superpowers/specs/2026-11-16-night-weather-design.md`

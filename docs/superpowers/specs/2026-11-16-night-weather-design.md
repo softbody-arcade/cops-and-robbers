@@ -17,6 +17,7 @@ Some rounds should feel and play differently: night, rain, snow, fog. That adds 
 - Everyone in the round gets the same conditions, including a player who rejoins mid-round. Nobody can change the sky from the game's environment menu during the round.
 - After the round, each player gets back the sky and the grip they had before.
 - The prep card shows the round's conditions.
+- Each recorded run stores its conditions (time of day, weather, clock speed, whether weather affected driving), and the leaderboard's Rounds tab shows them next to the car ("Gavril D-Series · Night · Rain"). Added during the build at the host's request (option A).
 
 ## Non-goals
 - **BeamNG.Earth.** Separate TODO item. On `beamng_earth` the server sends no sky and the panel says the sky settings don't work there yet.
@@ -24,7 +25,7 @@ Some rounds should feel and play differently: night, rain, snow, fog. That adds 
 - **Ice.** Tested: too much for a chase.
 - **Snow or water building up on the ground.** The game has no build-up; its rain and snow are falling particles only (tested).
 - **Hard mode.** Not built yet. When it is, it raises both chances (noted on its TODO item).
-- **Recording conditions in the leaderboard.** Could come later.
+- **Filtering the leaderboard by conditions.** Later (TODO). The runs already record their conditions, see Goals.
 - **Player headlights.** The mod does not switch them on at night; driving with or without lights is the player's choice (the host's decision). Practice AI cars are the exception, see Design. A per-player headlight toggle belongs to the player settings card (TODO item).
 - **Cop sight.** This design leaves sight as it is. Sight that follows visibility (fog thickness, darkness, street lights, whether the runner's lights are on) is the next design, built after this one.
 
