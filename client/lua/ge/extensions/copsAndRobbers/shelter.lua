@@ -2,8 +2,7 @@ local M = {}
 
 M.RANGE = 12
 M.SPREAD = 3
-M.SIDES_NEEDED = 2
-M.CHECKS_TO_SWITCH = 2
+M.CHECKS_TO_SWITCH = 4
 
 local OFFSETS = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
 
@@ -13,11 +12,12 @@ function M.roofed(pos, castUp)
     return d ~= nil and d < M.RANGE
   end
   if not hit(pos) then return false end
-  local sides = 0
-  for _, o in ipairs(OFFSETS) do
-    if hit(vec3(pos.x + o[1] * M.SPREAD, pos.y + o[2] * M.SPREAD, pos.z)) then sides = sides + 1 end
+  local function side(o)
+    return hit(vec3(pos.x + o[1] * M.SPREAD, pos.y + o[2] * M.SPREAD, pos.z))
   end
-  return sides >= M.SIDES_NEEDED
+  local across = side(OFFSETS[1]) or side(OFFSETS[2])
+  local along = side(OFFSETS[3]) or side(OFFSETS[4])
+  return across and along
 end
 
 function M.new()
