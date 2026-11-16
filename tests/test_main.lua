@@ -824,6 +824,81 @@ local function countSent(env, ev, pid)
   return n
 end
 
+test("round setup has no sky by default", function()
+  local env = boot()
+  env.startRound()
+  assertEq(env.lastSent("cnr_roundSetup").data:find('"sky"', 1, true), nil)
+  env.cleanup()
+end)
+
+test("round setup carries a fixed sky", function()
+  local env = boot({ config = '{"timeOfDay":"night","weather":"rain"}' })
+  env.startRound()
+  local s = decodeJson(env.lastSent("cnr_roundSetup").data).sky
+  assertEq(s.time, "night"); assertEq(s.weather, "rain"); assertEq(s.driving, true); assertEq(s.clockSeconds, nil)
+  env.cleanup()
+end)
+
+test("New car keeps the sky", function()
+  local env = boot({ config = '{"weather":"random"}' })
+  env.startRound()
+  local seed = decodeJson(env.lastSent("cnr_roundSetup").data).sky.windSeed
+  env.panel(2, "reroll")
+  env.call("cnr_vehiclePicked", 2, '{"model":"etk800","config":"vehicles/etk800/base.pc"}')
+  assertEq(decodeJson(env.lastSent("cnr_roundSetup").data).sky.windSeed, seed)
+  env.cleanup()
+end)
+
+test("New sky goes to the round's players before GO only", function()
+  local env = boot({ config = '{"weather":"random"}' })
+  env.startRound()
+  env.sent = {}
+  env.panel(1, "sky")
+  assertEq(countSent(env, "cnr_sky", 1), 1); assertEq(countSent(env, "cnr_sky", 2), 1)
+  env.go()
+  env.panel(1, "sky")
+  assertEq(env.replyHas("before GO"), true)
+  env.cleanup()
+end)
+
+test("New sky needs a random setting", function()
+  local env = boot()
+  env.startRound()
+  env.panel(1, "sky")
+  assertEq(env.replyHas("to random first"), true)
+  env.cleanup()
+end)
+
+test("Earth rounds get no sky", function()
+  local env = boot({ map = EARTH, config = '{"clockSpeed":30,"weather":"rain"}' })
+  env.startRound()
+  local setup = env.lastSent("cnr_roundSetup")
+  if setup then assertEq(setup.data:find('"sky"', 1, true), nil) end
+  env.panel(1, "sky")
+  assertEq(env.replyHas("BeamNG.Earth"), true)
+  env.cleanup()
+end)
+
+test("a practice round gets a sky too", function()
+  local env = boot({ vehicles = { [1] = { [0] = "x" } }, config = '{"weather":"snow"}' })
+  env.panel(1, "test runner")
+  env.positions[1] = 0
+  env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  assertEq(decodeJson(env.lastSent("cnr_roundSetup").data).sky.weather, "snow")
+  env.cleanup()
+end)
+
+test("a mid-chase join gets clockSeconds", function()
+  local env = boot({ config = '{"clockSpeed":30}' })
+  env.startRound(); env.go()
+  env.positions[1], env.positions[2] = 0, 900
+  for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.names = { "Reinder", "Bob", "Cid" }
+  env.call("onPlayerJoin", 3)
+  assertNear(decodeJson(env.lastSent("cnr_roundSetup").data).sky.clockSeconds, 15, 0.01)
+  env.cleanup()
+end)
+
 local function chatLine(env, line)
   for _, c in ipairs(env.chats) do if c[2] == "[CnR] " .. line then return true end end
   return false

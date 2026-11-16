@@ -4,7 +4,7 @@ local M = {}
 
 M.COMMANDS = {
   ["go"] = true, ["reroll"] = true, ["end"] = true, ["stop"] = true, ["auto on"] = true, ["auto off"] = true,
-  ["test runner"] = true, ["test cop"] = true, ["reload"] = true, ["next"] = true,
+  ["test runner"] = true, ["test cop"] = true, ["reload"] = true, ["next"] = true, ["sky"] = true,
 }
 
 local MAX_COMMAND_LENGTH = 64
@@ -19,10 +19,11 @@ function M.allow(text)
   return nil
 end
 
-function M.can(state, test, evolving)
+function M.can(state, test, evolving, skyRandom)
   return {
     start = state == "idle" or test == true,
     reroll = state == "prep" and not evolving,
+    sky = (state == "prep" or state == "ready") and skyRandom == true,
     go = (state == "prep" and not evolving) or state == "ready",
     apply = state == "prep" and evolving == true,
     build = state == "idle",
@@ -80,7 +81,7 @@ function M.snapshot(info)
     settings = copy(cfg),
     defaults = copy(info.defaults or {}),
     auto = cfg.autoNextRound == true,
-    can = M.can(info.phase, info.test, info.evolving),
+    can = M.can(info.phase, info.test, info.evolving, info.skyRandom),
     evolving = info.evolving == true,
     build = info.build,
     nextRunner = info.nextRunner,

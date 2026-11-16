@@ -12,6 +12,7 @@ local tables = require("cnr.tables")
 local geo = require("cnr.geo")
 local build = require("cnr.build")
 local panel = require("cnr.panel")
+local sky = require("cnr.sky")
 
 local VERSION = "2.1.0"
 local PREFIX = "[CnR] "
@@ -448,6 +449,7 @@ local function applyEffects(effects)
         copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
         sightMaxMeters = cfg.sightMaxMeters,
         evolving = current.evolving or nil, rebuild = current.rebuildId,
+        sky = sky.payload(current.sky, cfg, current.countdownStartedAt and math.max(0, now() - current.countdownStartedAt) or nil),
       })
     elseif e.kind == "setupAI" then
       local list = {}
@@ -605,7 +607,7 @@ function handlers.start(pid, cmd)
   partsBaseline = {}
   missingCount = {}
   lastResult = nil
-  applyEffects(current:start(now(), runnerId, pid, players, cfg.carMode == "evolving" and { build = buildOpts() } or nil))
+  applyEffects(current:start(now(), runnerId, pid, players, { build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random, geoMode) }))
 end
 
 function handlers.test(pid, cmd)
@@ -617,7 +619,7 @@ function handlers.test(pid, cmd)
   aiVid = {}
   local role = cmd.args[1] and cmd.args[1]:lower()
   if cfg.carMode == "evolving" and not currentBuild then return reply(pid, "Start a new build first") end
-  local opts = { test = true, role = role, build = cfg.carMode == "evolving" and buildOpts() or nil }
+  local opts = { test = true, role = role, build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random, geoMode) }
   applyEffects(current:start(now(), nil, pid, MP.GetPlayers() or {}, opts))
 end
 
@@ -681,6 +683,17 @@ end
 
 function handlers.reroll(pid)
   applyEffects(current:reroll(now(), pid))
+end
+
+function handlers.sky(pid)
+  if geoMode then return reply(pid, "Not available on BeamNG.Earth yet") end
+  if current.state ~= "prep" and current.state ~= "ready" then return reply(pid, "You can only change the sky before GO") end
+  if not sky.hasRandom(cfg) then return reply(pid, "Set time of day or weather to random first") end
+  current.sky = sky.pick(cfg, math.random, geoMode)
+  local data = sky.payload(current.sky, cfg, nil)
+  for p in pairs(current.players) do
+    if not round.isAI(p) then send(p, "cnr_sky", data) end
+  end
 end
 
 
@@ -804,6 +817,7 @@ local function panelState()
     nextRunner = nextName, lastRunner = lastPid and players[lastPid] or nil,
     loading = loading, autoNext = autoNext, lastResult = lastResult,
     stationCount = #(geoMode and geoStations or stations), geo = geoMode,
+    skyRandom = not geoMode and sky.hasRandom(cfg),
   })
 end
 

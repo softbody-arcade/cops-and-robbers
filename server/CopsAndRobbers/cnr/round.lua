@@ -55,6 +55,7 @@ function Round:clear()
   self.vehicle = nil
   self.evolving = false
   self.buildStep, self.buildName = nil, nil
+  self.sky = nil
   self.applyStartedAt, self.setupDone, self.readyPids, self.rebuildId = nil, false, {}, nil
   self.startedAt = nil
   self.countdownStartedAt = nil
@@ -191,6 +192,7 @@ function Round:start(now, runnerId, issuerId, players, opts)
   self.state = "picking"
   self.issuerId = issuerId
   self.pickStartedAt = now
+  self.sky = opts and opts.sky or nil
   local b = opts and opts.build
   if b then
     self.evolving = true
