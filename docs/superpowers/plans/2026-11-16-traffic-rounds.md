@@ -20,7 +20,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-16-traffic-rounds-design.md`
 
-**Starting point:** branch `traffic-rounds` with `main` (night and weather rounds, 2.2.0) merged in. `make test` gives 609 passed, 0 failed, and `make vuecheck` is clean. The night and weather design is `docs/superpowers/specs/2026-11-16-night-weather-design.md`.
+**Starting point:** branch `traffic-rounds` with `main` (night and weather rounds, 2.2.0) merged in. `make test` gives 618 passed, 0 failed, and `make vuecheck` is clean (main merged again: shelter from rain and snow, realistic wind). The night and weather design is `docs/superpowers/specs/2026-11-16-night-weather-design.md`.
 
 ## Global Constraints
 - **The setting:** `trafficPerPlayer`, default 5, a whole number ≥ 0, 0 = off. It is locked during a round like every setting.
