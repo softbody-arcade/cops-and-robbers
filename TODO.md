@@ -1,5 +1,12 @@
 # TODO
 
+The shared ledger for every agent and worktree. Edit this file only on main (in the main checkout), so everyone reads the same state; from a worktree, read it with `git show main:TODO.md`. One exception: an issue found on a branch about that branch's own unmerged code goes under Issues in the branch's TODO.md and reaches main with the merge. Delete finished lines, never tick them.
+
+## In progress
+One line per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add the line on main when the work starts (move it out of Ideas), keep it current, and delete it once the work is merged and checked.
+
+- [ ] Player settings card on the HUD: one place for a player's own options, such as their car colour (today's colour card) and a headlight toggle (lights on automatically at night). Design: brainstorming, no branch yet
+
 ## Ideas
 - [ ] Hard mode vs normal mode (a round setting): hard mode gives cops a route/position only while someone has sight (no 30 s last-seen pings), hides the name plates above cars, and whatever else fits when planning it (for example no "Nearest cop" for the runner, no minimap markers for other cars). Hard mode also raises the night and bad weather chances of night and weather rounds
 - [ ] Police helicopter instead of the 30 s last-seen ping (`lastSeenIntervalSeconds`): a helicopter tracks the runner and gives the cops the runner's position, in place of the fixed ping every 30 s. Ties in with hard mode, which drops the 30 s pings
@@ -7,7 +14,6 @@
 - [ ] Dynamic roadblocks: parked cop cars that block part of the road ahead of the runner. Same goal as spike strips (stop the runner ahead), so plan them together
 - [ ] Infection mode: game starts with 1 cop and caught runners become cops
 - [ ] Leaderboard filter by conditions (All / Normal / Night / Bad weather), next to the car-mode filter, so storm records don't compete with clear-day runs unless wanted. Runs already record their conditions (night and weather rounds)
-- [ ] Player settings card on the HUD: one place for a player's own options, such as their car colour (today's colour card) and a headlight toggle (lights on automatically at night)
 - [ ] Cop sight that follows visibility: the sight range is worked out from what the game knows (fog thickness, how dark it is, street lights near the runner, whether the runner's lights are on, rain). Comes after night and weather rounds
 
 ## Issues
