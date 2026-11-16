@@ -115,3 +115,64 @@ test("the roof lowers the sound to half and hides the rain", function()
     assertNear(fake.objects.cnr_rain_sound.volume, 0.5, 1e-6)
   end)
 end)
+
+local function countWrites()
+  local obj = fake.objects.cnr_precipitation
+  local snd = fake.objects.cnr_rain_sound
+  local drops, vols = 0, 0
+  setmetatable(obj, { __newindex = function(t, k, v) if k == "numDrops" then drops = drops + 1 end rawset(t, k, v) end })
+  if snd then
+    local old = snd.setVolumePitchCT
+    snd.setVolumePitchCT = function(...) vols = vols + 1; return old(...) end
+  end
+  for _ = 1, 60 do rain.update(1 / 60) end
+  return drops, vols
+end
+
+test("at rest rain writes nothing", function()
+  load()
+  full(RAIN)
+  local drops, vols = countWrites()
+  assertEq(drops, 0); assertEq(vols, 0)
+end)
+
+test("at rest snow writes nothing", function()
+  load()
+  full(SNOW)
+  local drops = countWrites()
+  assertEq(drops, 0)
+end)
+
+local function sampleVolume(spec, from)
+  load()
+  full(from)
+  rain.target(spec, 3)
+  local lo, hi = math.huge, -math.huge
+  for _ = 1, 190 do
+    rain.update(1 / 60)
+    local v = fake.objects.cnr_rain_sound.volume
+    lo, hi = math.min(lo, v), math.max(hi, v)
+  end
+  return lo, hi, fake.objects.cnr_rain_sound.volume
+end
+
+test("rain to storm never dips below 1.0 and ends at 2.0", function()
+  local lo, _, last = sampleVolume(STORM, RAIN)
+  assertEq(lo >= 1.0 - 1e-6, true); assertNear(last, 2.0, 1e-6)
+end)
+
+test("storm to rain never rises above 2.0 and ends at 1.0", function()
+  local _, hi, last = sampleVolume(RAIN, STORM)
+  assertEq(hi <= 2.0 + 1e-6, true); assertNear(last, 1.0, 1e-6)
+end)
+
+test("the roof halves the volume after a rain to storm change", function()
+  withRoof(3, function()
+    load()
+    full(RAIN)
+    rain.target(STORM, 3)
+    run(3.1)
+    rain.update(0.25); rain.update(0.25)
+    assertNear(fake.objects.cnr_rain_sound.volume, 1.0, 1e-6)
+  end)
+end)

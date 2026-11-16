@@ -39,19 +39,32 @@ local function removeAll()
   cur = nil
 end
 
+local function baseVolume()
+  local spec, ramp = cur.spec, cur.ramp
+  if ramp then
+    local share = 1
+    if ramp.d1 ~= ramp.d0 then share = math.max(0, math.min(1, (cur.drops - ramp.d0) / (ramp.d1 - ramp.d0))) end
+    return ramp.v0 + (spec.volume - ramp.v0) * share
+  end
+  return spec.volume * cur.drops / spec.numDrops
+end
+
 local function volumeOf()
-  local spec = cur.spec
-  local volume = spec.volume * cur.drops / spec.numDrops
+  local volume = baseVolume()
   if cover.covered then volume = volume / 2 end
   return volume
 end
 
 local function writeDrops()
-  local obj = scenetree.findObject(M.NAME)
-  if obj then obj.numDrops = math.floor(cur.drops + EPSILON) end
-  local snd = scenetree.findObject(M.SOUND)
-  if snd and cur.spec.volume then snd:setVolumePitchCT(volumeOf(), 1, 0, 0) end
   sinceWrite = 0
+  local count = math.floor(cur.drops + EPSILON)
+  local volume = cur.spec.volume and volumeOf() or nil
+  if count == cur.wroteDrops and volume == cur.wroteVolume then return end
+  cur.wroteDrops, cur.wroteVolume = count, volume
+  local obj = scenetree.findObject(M.NAME)
+  if obj then obj.numDrops = count end
+  local snd = scenetree.findObject(M.SOUND)
+  if snd and volume then snd:setVolumePitchCT(volume, 1, 0, 0) end
 end
 
 local function createSound()
@@ -111,7 +124,7 @@ function M.target(spec, seconds)
     if spec then
       if not cur then create(spec) end
       if cur then
-        cur.spec = spec
+        cur.spec, cur.ramp = spec, nil
         cur.drops = spec.numDrops
         local obj = scenetree.findObject(M.NAME)
         if obj then setSpecFields(obj, spec) end
@@ -125,6 +138,7 @@ function M.target(spec, seconds)
   elseif sameKind() then
     local obj = scenetree.findObject(M.NAME)
     if obj then setSpecFields(obj, spec) end
+    if spec.volume then cur.ramp = { v0 = baseVolume(), d0 = cur.drops, d1 = spec.numDrops } end
     cur.spec = spec
     rateIn = math.max(1, math.abs(spec.numDrops - cur.drops)) / seconds
   elseif cur then
@@ -158,11 +172,11 @@ function M.update(dt)
     end
   end
   if goal and not cur then create(goal) end
-  if sameKind() then
+  if sameKind() and cur.drops ~= goal.numDrops then
     local diff = goal.numDrops - cur.drops
     local step = rateIn * dt
     if math.abs(diff) <= step + EPSILON then
-      cur.drops = goal.numDrops
+      cur.drops, cur.ramp = goal.numDrops, nil
       reached = true
     else
       cur.drops = cur.drops + (diff > 0 and step or -step)
