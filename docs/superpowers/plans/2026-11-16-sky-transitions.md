@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Sky changes blend over up to 3 s. Rain and snow fade, and rain falls at the stock maps' speed with a storm heavier. The game's rain sound plays in rain and storm. The outside temperature follows the weather and the round's date.
+**Goal:** Sky changes blend over up to 3 s. Rain and snow fade, and rain falls at the stock maps' speed with a storm heavier. The game's rain sound plays in rain and storm. The outside temperature follows the weather and the round's date, and the prep bar shows the day's range.
 
 **Architecture:**
 - Two new pure-ish client modules:
@@ -324,7 +324,58 @@ git add client/lua/ge/extensions/copsAndRobbers/rain.lua client/lua/ge/extension
 git commit -m "feat: rain and snow fade with the sky, faster rain, heavier storms, rain sound"
 ```
 
-### Task 4: Docs
+### Task 4: Temperature range on the prep bar
+
+**Files:**
+- Modify: `client/lua/ge/extensions/copsAndRobbers/units.lua` (add `temperatureUnit()` and `temperature(c, unit)`)
+- Modify: `client/lua/ge/extensions/copsAndRobbers/sky.lua` (`M.label`)
+- Modify: `tests/test_units.lua`, `tests/test_sky_client.lua` (label tests), `tests/test_client.lua` (the prep label test around "Gavril Pickup · Night · Rain · 14 Dec")
+
+**Interfaces:**
+- Consumes: `climate.range(weather, month)` (Task 1).
+- Produces:
+  - `units.temperatureUnit() -> "c"|"f"`: from `settings.getValue("uiUnitTemperature")`; only `"f"` means Fahrenheit, anything else, nil or an error means Celsius
+  - `units.temperature(c, unit) -> number`: whole degrees, `math.floor(x + 0.5)`; Fahrenheit is `c * 9 / 5 + 32`
+  - `sky.label(p, withDate)`: with the date, it ends with ` · <low> to <high> °C` (or `°F`) when `climate.range(p.weather, p.month)` gives a range
+
+- [ ] **Step 1: Write the failing tests**
+
+`tests/test_units.lua`:
+- `units.temperature(-4, "c") == -4` and `units.temperature(0, "f") == 32`
+- `units.temperature(-4, "f") == 25`: -4 °C is 24.8 °F, which rounds to 25
+- `units.temperatureUnit()` is `"f"` only when the stubbed setting is `"f"`, and `"c"` for `"c"`, `"k"`, nil and a throwing `getValue`
+
+`tests/test_sky_client.lua`:
+- `sky.label(WINTER, true) == "Sunrise · Snow · 14 Dec · -4 to 0 °C"`; without the date, unchanged
+- with `_G.settings` stubbed to return `"f"` for `uiUnitTemperature`: `"Sunrise · Snow · 14 Dec · 25 to 32 °F"`; restore `_G.settings` afterwards
+- a label without a month, or with an unknown weather, has no temperature
+- the southern-hemisphere label (latitude -44.57) still shows the December range: `"Sunrise · Snow · 14 Jun · -4 to 0 °C"`
+
+`tests/test_client.lua`: the prep label for a night rain round on 14 December becomes `"Gavril Pickup · Night · Rain · 14 Dec · 3 to 5 °C"`. Rain in December: low 1 + 2 = 3, high 9 − 5 = 4, raised to low + 2 = 5.
+
+- [ ] **Step 2: Run the tests to make sure they fail**
+
+Run: `lua tests/run.lua tests/test_units.lua tests/test_sky_client.lua tests/test_client.lua`
+Expected: FAIL on the new label asserts and the missing `units` functions.
+
+- [ ] **Step 3: Implement**
+
+- `units.lua`: the two functions above, read the same defensive way as `units.read()`.
+- `sky.lua` `M.label`: when `withDate` and the range exists, append `string.format("%d to %d %s", lo, hi, unit == "f" and "°F" or "°C")` with converted values. The hyphen-minus in negative numbers is plain ASCII.
+
+- [ ] **Step 4: Run the tests to make sure they pass**
+
+Run: `make test`
+Expected: `0 failed`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add client/lua/ge/extensions/copsAndRobbers/units.lua client/lua/ge/extensions/copsAndRobbers/sky.lua tests/test_units.lua tests/test_sky_client.lua tests/test_client.lua
+git commit -m "feat: the prep bar shows the day's temperature range"
+```
+
+### Task 5: Docs
 
 **Files:**
 - Modify: `docs/FEATURES.md` (the Night and weather section: blends, rain speeds, rain sound, temperature)
@@ -338,7 +389,7 @@ git commit -m "feat: rain and snow fade with the sky, faster rain, heavier storm
   - rain and snow fade in and out
   - rain falls like the stock maps' rain; storms have faster, bigger and more drops
   - the game's rain sound plays in rain and storm, louder in a storm and quieter under cover
-  - the outside temperature follows the weather and the round's date (a December snow round −4 to 0 °C, a clear July day 20 to 31 °C)
+  - the outside temperature follows the weather and the round's date (a December snow round −4 to 0 °C, a clear July day 20 to 31 °C), and the prep bar and New sky notice show the day's range in the game's temperature unit
   - no thunder
 - **DEPENDENCIES:**
   - `core_environment.setState(state, lerpSeconds)`: blends clouds, fog, fog height and time; only advances while changes are enabled; a new state mid-blend shortens it to 0.3 s
@@ -356,7 +407,7 @@ git add docs/FEATURES.md README.md docs/DEPENDENCIES.md
 git commit -m "docs: sky blends, rain, rain sound and temperature"
 ```
 
-### Task 5: In-game check with the user
+### Task 6: In-game check with the user
 
 **Files:** `client/lua/ge/extensions/copsAndRobbers/sky.lua` / `rain.lua` / `climate.lua` (for any value the user's screenshots or the check change)
 

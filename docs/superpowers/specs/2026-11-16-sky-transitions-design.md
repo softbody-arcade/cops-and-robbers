@@ -109,6 +109,7 @@ Status: short design for review, 2026-11-16. Builds on night and weather rounds 
 - **No date or no weather** (the map's own sky, BeamNG.Earth): the temperature is left alone, as today for clear and cloudy rounds.
 - **The temperature does not blend.** It changes at once, like wind; nobody drives during prep or after the round.
 - **Round end** restores the player's own temperature with the rest of the saved sky, as today.
+- **Shown on the prep bar** (added 2026-11-16): where the date already shows (the prep bar and the New sky notice), the label ends with the day's range, for example `Night · Snow · 14 Dec · -4 to 0 °C`. It uses the game's temperature unit (`uiUnitTemperature`; Fahrenheit when set to `f`, Celsius otherwise) and whole degrees. The leaderboard's Rounds tab is unchanged.
 
 ### Rain sound
 - **What plays:** the game's `amb_rain_medium` profile (`art/sound/environment/amb_rain_medium.ogg`, a 2D loop). It plays while a rain or storm round has its rain object, through one unsaved sound emitter, created the way the game's own `core/audioForest.lua` creates its emitters.
