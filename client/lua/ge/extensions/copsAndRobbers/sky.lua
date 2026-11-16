@@ -102,8 +102,9 @@ local function roundState(env, p)
   local state = { play = false, temperatureCurveOverrideC = false }
   local solar = env.getState() or {}
   if p.month and p.day then
-    state.year, state.month, state.day = p.year, p.month, p.day
-    solar.year, solar.month, solar.day = p.year, p.month, p.day
+    local year = p.year or solar.year
+    state.year, state.month, state.day = year, p.month, p.day
+    solar.year, solar.month, solar.day = year, p.month, p.day
   end
   if p.time then
     state.time = env.getSolarTimeOfDayValue(p.time, solar) or env.timeOfDayKeyToTime[p.time]

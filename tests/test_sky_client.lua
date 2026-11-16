@@ -42,6 +42,13 @@ test("the named time is worked out against the round's date", function()
   assertEq(fake.solarState.latitude, 37.77)
 end)
 
+test("a sky without a year keeps the player's year for the sunrise lookup", function()
+  local sky, fake = load()
+  sky.apply({ time = "sunrise", weather = "snow", month = 12, day = 14, windDir = 0, windSeed = 1 })
+  assertEq(fake.solarState.year, 2025); assertEq(fake.solarState.month, 12); assertEq(fake.solarState.day, 14)
+  assertEq(fake.state.year, 2025); assertEq(fake.state.month, 12)
+end)
+
 test("restore gives the player's own date back", function()
   local sky, fake = load()
   sky.apply(WINTER)
