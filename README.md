@@ -112,11 +112,13 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `badWeatherChancePercent` | 25 | Chance of rain, storm, fog or snow when Weather is random |
 | `weatherDriving` | true | Weather changes grip and adds wind (not on BeamNG.Earth) |
 | `trafficPerPlayer` | 5 | AI traffic cars around each player during a round (0 = off, at most 20; normal maps only, not on BeamNG.Earth yet) |
+| `trafficRunnerOnly` | false | Only the runner's game spawns traffic (the same `trafficPerPlayer` count); cops spawn none. Fewer AI cars for better performance |
 
 ## Traffic
 
 During a round every player's game runs a few AI traffic cars around itself (`trafficPerPlayer`, 5 by default, 0 turns it
-off). They spawn in prep, stand still until GO, and are removed when the round ends. There are no police or emergency
+off). With `trafficRunnerOnly` (panel: Traffic for the runner only) only the runner's game does, with the same count, for
+better performance; practice rounds keep their traffic either way. They spawn in prep, stand still until GO, and are removed when the round ends. There are no police or emergency
 vehicles among them, and they have no name tags, so every car with lights is a cop and every name tag is a player. A
 cop who drives into a traffic car gets the crash penalty ("crash penalty 10s (traffic)"); one who gets hit by traffic
 doesn't. In rain, storm, fog and snow rounds traffic drives with its headlights on; at night it follows the game's own

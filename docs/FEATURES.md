@@ -135,7 +135,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 
 ## Traffic
 
-- **Around every player:** during a round each player's game runs `trafficPerPlayer` AI traffic cars (5 by default, 0 = off) around itself with the game's own traffic system, so there is traffic wherever anyone drives.
+- **Around every player:** during a round each player's game runs `trafficPerPlayer` AI traffic cars (5 by default, 0 = off) around itself with the game's own traffic system, so there is traffic wherever anyone drives. With Traffic for the runner only (`trafficRunnerOnly`), only the runner's game spawns it, with the same count, and cops spawn none, for better performance; practice rounds keep their traffic.
 - **Capped by `MaxCars`:** the server leaves room for the round car (and the two AI cars in practice), so with `MaxCars` 4 a player gets 3 traffic cars. The panel says when the cap applies.
 - **In the round:** traffic spawns once a player's car is placed in prep and stands still until the runner's GO, so it can't drive into the frozen cars. A player who joins mid-round gets traffic that drives at once. Everyone's traffic is removed at the end of the round, on Cancel and on leaving. If a game can't spawn its traffic, that player gets one notice ("Traffic could not spawn") and the round goes on.
 - **Which cars:** official vehicles only, never police, emergency vehicles, taxis or other service vehicles (security cars, prison buses, tow trucks), and no random traffic events. Traffic cars have no name tags, so every car with lights is a cop and every name tag is a player, also for players in the lobby watching someone's practice round.
@@ -269,6 +269,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | `weatherDriving` | true | Weather changes grip and adds wind (not on BeamNG.Earth) |
 | `sirensAllowed` | true | Cops may use a siren (each cop turns it on in their settings) |
 | `trafficPerPlayer` | 5 | AI traffic cars around each player during a round (0 = off, at most 20; normal maps only) |
+| `trafficRunnerOnly` | false | Only the runner's game spawns traffic, with the same count |
 
 ## Host and robustness
 

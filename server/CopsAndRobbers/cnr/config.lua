@@ -36,6 +36,7 @@ M.DEFAULTS = {
   badWeatherChancePercent = 25,
   weatherDriving = true,
   trafficPerPlayer = 5,
+  trafficRunnerOnly = false,
 }
 
 M.CHOICES = {

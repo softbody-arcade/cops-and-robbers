@@ -318,6 +318,7 @@ local function maxCars()
 end
 
 local function trafficFor(pid)
+  if cfg.trafficRunnerOnly and not current.test and pid ~= current.runnerId then return 0 end
   return traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), geoMode, current.test and pid == current.issuerId)
 end
 

@@ -32,6 +32,8 @@ export const GROUPS = [
   { title: "Traffic", noEarth: true, items: [
     { key: "trafficPerPlayer", label: "Traffic", unit: "per player", step: 1, min: 0, max: 20, common: true, offAtZero: true,
       help: "AI traffic cars around each player during a round" },
+    { key: "trafficRunnerOnly", label: "Traffic for the runner only", kind: "bool",
+      help: "Only the runner's game spawns traffic, with the same count; cops see it as the chase gets close. Fewer AI cars, better performance" },
   ] },
   { title: "Catching", items: [
     { key: "catchHoldSeconds", label: "Hold time", unit: "s", step: 1, min: 1, common: true,

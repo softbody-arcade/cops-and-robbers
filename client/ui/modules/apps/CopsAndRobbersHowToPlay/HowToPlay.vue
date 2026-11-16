@@ -6,7 +6,7 @@
           One player is the <b class="runner">runner</b>, everyone else is a <b class="cop">cop</b>. Everyone drives the same car.
           The runner's score is how long they survive.
         </p>
-        <p v-if="trafficOn">There's traffic: <span class="v">{{ value("trafficPerPlayer") }}</span> cars around each player.</p>
+        <p v-if="trafficOn">There's traffic: <span class="v">{{ value("trafficPerPlayer") }}</span> cars around {{ r.trafficRunnerOnly === true ? "the runner" : "each player" }}.</p>
         <div class="flow">
           <div class="step">
             <div class="step-name"><BngIcon :type="icons.cogSolid" />Prep</div>

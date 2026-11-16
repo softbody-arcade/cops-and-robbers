@@ -2204,6 +2204,18 @@ test("after the round car is placed, the game is told how much traffic to spawn"
   small.cleanup()
 end)
 
+test("with traffic for the runner only, only the runner's game spawns traffic, with the same count", function()
+  local env = trafficBoot({ config = '{"trafficRunnerOnly":true}' })
+  env.startRound()
+  env.call("cnr_myVehicle", 2, '{"vid":0}')
+  assertEq(env.lastSent("cnr_trafficStart"), nil)
+  env.call("cnr_myVehicle", 1, '{"vid":0}')
+  local m = env.lastSent("cnr_trafficStart")
+  assertEq(m.pid, 1)
+  assertEq(m.data:find('"count":5', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
 test("no go-ahead without room", function()
   local cases = {
     { maxCars = 1 },

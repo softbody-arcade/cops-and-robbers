@@ -3,7 +3,7 @@ local M = {}
 M.KEYS = {
   "runnerCountdownSeconds", "headStartSeconds", "catchHoldSeconds", "catchRadiusMeters", "catchMaxSpeedKmh",
   "resetWaitSeconds", "copResetMinDistanceMeters", "crashSpeedLossKmh", "crashPenaltySeconds",
-  "sightMaxMeters", "lastSeenIntervalSeconds", "roundTimeLimitSeconds", "carMode", "trafficPerPlayer",
+  "sightMaxMeters", "lastSeenIntervalSeconds", "roundTimeLimitSeconds", "carMode", "trafficPerPlayer", "trafficRunnerOnly",
   "sirensAllowed",
 }
 
