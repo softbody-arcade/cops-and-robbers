@@ -95,7 +95,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
   - When all cops lose sight (after a 1.5 s grace), one "last seen" ping goes out at that spot, then the normal pings resume.
   - The client log notes each change ("runner in sight (120 m)"), handy to check what blocks sight on BeamNG.Earth.
 - **Runner:** sees "SPOTTED" or "HIDDEN" plus "Nearest cop 1.2 km".
-- **Cop placement:** cops start a short drive from the runner (by road, following one-way roads), facing toward the runner, and spread out so they do not overlap. The search widens up to 2 km by road. A runner on a piece of road that isn't connected to the rest gets cops placed by straight-line distance. If no road is found at all, the cop gets a notice and starts where they are.
+- **Cop placement:** cops start a short drive from the runner (by road, following one-way roads), facing toward the runner, and spread out so they do not overlap. The search widens until it covers at least 2 km by road. A runner on a piece of road that isn't connected to the rest gets cops placed by straight-line distance. If no road is found at all, the cop gets a notice and starts where they are.
 - **Late joiners and reconnects:**
   - Someone who joins mid-round becomes a cop.
   - A cop who reconnects comes back near the road where they left.

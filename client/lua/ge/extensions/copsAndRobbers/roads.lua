@@ -24,7 +24,8 @@ local function before(a, b)
   local da, db = math.floor(a.d * 100 + 0.5), math.floor(b.d * 100 + 0.5)
   if da ~= db then return da < db end
   if a.pos.x ~= b.pos.x then return a.pos.x < b.pos.x end
-  return a.pos.y < b.pos.y
+  if a.pos.y ~= b.pos.y then return a.pos.y < b.pos.y end
+  return a.pos.z < b.pos.z
 end
 
 local function sortSpots(list)
@@ -145,7 +146,7 @@ local function roadSpots(center, limit)
   for u, neighbours in pairs(links) do
     for v, link in pairs(neighbours) do
       local isOwn = link == own
-      if tostring(u) < tostring(v) and nodes[u] and nodes[v] and not gated(link) and (dist[u] or dist[v] or isOwn) then
+      if (dist[u] or dist[v] or isOwn) and tostring(u) < tostring(v) and nodes[u] and nodes[v] and not gated(link) then
         local pu = nodes[u].pos
         local delta = nodes[v].pos - pu
         local len = delta:length()
@@ -181,6 +182,7 @@ end
 local function pickSpot(candidates, lo, hi, index)
   local chosen = {}
   for _, c in ipairs(candidates) do
+    if c.d > hi + 0.01 then break end
     if c.d >= lo and c.d <= hi then
       local free = true
       for _, prev in ipairs(chosen) do

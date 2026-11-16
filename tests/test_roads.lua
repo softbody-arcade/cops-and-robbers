@@ -34,7 +34,7 @@ function useMap(nodeList, links, opts)
   _G.quatFromDir = function(dir) return { dir = dir } end
   local nodes, graph = {}, {}
   for id, p in pairs(nodeList) do
-    nodes[id] = { pos = v3(p[1], p[2], 0), links = {} }
+    nodes[id] = { pos = v3(p[1], p[2], p[3] or 0), links = {} }
     graph[id] = {}
   end
   for _, l in ipairs(links) do
@@ -213,7 +213,7 @@ end)
 test("a gated link is neither walked nor used for spots", function()
   local nodes, links = {}, {}
   road(nodes, links, "m", line(-500, 500))
-  local branch = road(nodes, links, "g", { { 0, 30 }, { 0, 100 }, { 0, 200 }, { 0, 300 }, { 0, 400 }, { 0, 500 } })
+  local branch = road(nodes, links, "g", { { 0, 130 }, { 0, 200 }, { 0, 300 }, { 0, 400 }, { 0, 500 } })
   links[#links + 1] = { "m6", branch[1], gated = 10000 }
   useMap(nodes, links)
   for i = 1, 6 do
@@ -296,6 +296,19 @@ test("at a one-way merge node cops come from every road leading in", function()
     if pos.x == 0 and pos.y < 0 then fromSouth = true end
   end
   assertEq(fromSouth, true)
+end)
+
+test("spots stacked above each other sort the same whatever order the graph was built in", function()
+  for _, ids in ipairs({ { "a", "b", "c", "d" }, { "d", "c", "b", "a" } }) do
+    local nodes = { r = { 0, 0, 0 } }
+    nodes[ids[1]] = { 0, 0, -10 }
+    nodes[ids[2]] = { 0, 60, -10 }
+    nodes[ids[3]] = { 0, 0, 10 }
+    nodes[ids[4]] = { 0, 60, 10 }
+    useMap(nodes, { { "r", ids[1] }, { ids[1], ids[2] }, { "r", ids[3] }, { ids[3], ids[4] } }, { closest = { "r", ids[1] } })
+    local pos = roads.findCopSpot(vec3(0, 0, 0), 70, 70, 1)
+    assertEq(pos.z, -10, table.concat(ids))
+  end
 end)
 
 test("a max above 2 km is still searched by road", function()
