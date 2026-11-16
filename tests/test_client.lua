@@ -392,6 +392,15 @@ test("a live update without route shows IN SIGHT, with route the live distance",
   assertEq(env.hud().status.tag, nil); assertEq(env.hud().status.info, "Runner seen 640 m N")
 end)
 
+test("a last-seen ping past 1 km shows in km", function()
+  local env = bootClient()
+  copInChase(env)
+  env.veh.pos = vec3(0, 0, 0)
+  env.fire("cnr_lastSeen", { pos = { x = 0, y = 1500, z = 0 } })
+  env.tick(0.2)
+  assertEq(env.hud().status.info, "Runner seen 1.5 km N")
+end)
+
 test("the runner sees SPOTTED or HIDDEN with the nearest cop", function()
   local env = bootClient()
   env.fire("cnr_roundSetup", { role = "runner", runnerId = 1, model = "pickup", config = "vehicles/pickup/base.pc", phase = "prep" })

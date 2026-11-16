@@ -718,7 +718,7 @@ local function lobbyState()
   local online = 0
   for _ in pairs(players) do online = online + 1 end
   local practice
-  if current:isActive() and current.test then practice = MP.GetPlayerName(current.issuerId) or "someone" end
+  if current:isActive() and current.test then practice = current.players[current.issuerId] or "someone" end
   return { online = online, practice = practice, active = current:isActive() and not current.test or false }
 end
 

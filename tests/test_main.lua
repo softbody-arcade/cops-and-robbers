@@ -438,7 +438,6 @@ end
 test("test round events reach only the issuer", function()
   local env = boot({ vehicles = { [1] = { [0] = "x" } } })
   env.sent = {}
-  env.chats = {}
   env.panel(1, "test cop")
   env.positions[1] = 0
   env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
@@ -1311,6 +1310,11 @@ test("a teleport in the chase is a warn notice for everyone", function()
   env.positions[1] = 5000
   env.clock = env.clock + 0.25; env.call("cnr_tick")
   assertEq(env.noticeHas("Reinder teleported", "warn"), true)
+  local to
+  for _, m in ipairs(env.sent) do
+    if m.ev == "cnr_notice" and m.data:find("Reinder teleported", 1, true) then to = m.pid end
+  end
+  assertEq(to, -1)
   env.cleanup()
 end)
 
@@ -2076,6 +2080,7 @@ test("rounds carry the same anonymous keys as players, so a renamed player keeps
   local s = Util.JsonDecode(d)
   local keyOf = {}
   for _, p in ipairs(s.players) do keyOf[p.name] = p.key end
+  assertEq(keyOf["New"] ~= nil, true); assertEq(keyOf["Bob"] ~= nil, true)
   assertEq(s.rounds[1].playerKey, keyOf["New"])
   assertEq(s.rounds[2].playerKey, keyOf["New"])
   assertEq(s.rounds[2].cops[1].key, keyOf["Bob"])

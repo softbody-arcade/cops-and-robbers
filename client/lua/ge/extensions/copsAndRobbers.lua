@@ -364,7 +364,7 @@ local function onLastSeen(data)
     if d.live then
       infoText = string.format("Runner %s %s", geo.formatDistance(meters), geo.compass(here, target))
     else
-      infoText = string.format("Runner seen %d m %s", meters, geo.compass(here, target))
+      infoText = string.format("Runner seen %s %s", geo.formatDistance(meters), geo.compass(here, target))
     end
   end
 end

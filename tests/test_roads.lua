@@ -216,7 +216,7 @@ test("a gated link is neither walked nor used for spots", function()
   local branch = road(nodes, links, "g", { { 0, 130 }, { 0, 200 }, { 0, 300 }, { 0, 400 }, { 0, 500 } })
   links[#links + 1] = { "m6", branch[1], gated = 10000 }
   useMap(nodes, links)
-  for i = 1, 6 do
+  for i = 1, 14 do
     local pos = roads.findCopSpot(vec3(0, 0, 0), 50, 150, i)
     assertEq(pos.y, 0, "spot " .. i)
   end
@@ -298,8 +298,23 @@ test("at a one-way merge node cops come from every road leading in", function()
   assertEq(fromSouth, true)
 end)
 
+local function permutations(items)
+  if #items <= 1 then return { items } end
+  local all = {}
+  for i, first in ipairs(items) do
+    local rest = {}
+    for j, item in ipairs(items) do if j ~= i then rest[#rest + 1] = item end end
+    for _, p in ipairs(permutations(rest)) do
+      local full = { first }
+      for _, item in ipairs(p) do full[#full + 1] = item end
+      all[#all + 1] = full
+    end
+  end
+  return all
+end
+
 test("spots stacked above each other sort the same whatever order the graph was built in", function()
-  for _, ids in ipairs({ { "a", "b", "c", "d" }, { "d", "c", "b", "a" } }) do
+  for _, ids in ipairs(permutations({ "a", "b", "c", "d" })) do
     local nodes = { r = { 0, 0, 0 } }
     nodes[ids[1]] = { 0, 0, -10 }
     nodes[ids[2]] = { 0, 60, -10 }
