@@ -92,7 +92,7 @@ Status: short design for review, 2026-11-16. Builds on night and weather rounds 
 | Snow | at most high − 4 | at most 0 °C (normal high − 9, capped at 0) |
 
   With the date windows that gives, for example:
-  - snow in December or January: −4 to 0 °C
+  - snow in December: −4 to 0 °C, and in January: −5 to −1 °C
   - fog in October or November: 5 to 14 °C
   - rain in April: 10 to 13 °C
   - clear in July: 20 to 31 °C
