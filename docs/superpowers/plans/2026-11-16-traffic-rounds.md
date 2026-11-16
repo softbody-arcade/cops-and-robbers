@@ -249,9 +249,15 @@ The "no cause" test is a guard: it already passes before this task, and must sti
     - The clean-up (`MP.RemoveVehicle` of the other cars) still runs, but only when `not current.test and not trafficOpen[pid]`. Once the go-ahead is out it doesn't run for that player again. Lobby leftovers were already removed before the go-ahead, and the vehicle rule caps extra cars at the traffic count, so every extra car is traffic, reported or not (spec updated to say so).
     - Then `openTraffic(pid)` and `pushRoundCars()` run. Both run in practice too, and also when `MP.GetPlayerVehicles(pid)` isn't a table: today's early `return`s for practice and for a non-table must move below them, or apply only to the clean-up.
   - **`vehicleAllowed(pid, vid, data, isSpawn)`:** gains `vid`. With `trafficOpen[pid]` set and `vid ~= activeVid[pid]` (a car that isn't the player's own):
-    - **During any active round**, including a New car re-pick (`picking`, where `roundCarActive()` is false and today's rule lets everything through), this check comes first, before the "not in a round" early return. A spawn by anyone but the practice issuer is allowed only while the number of the player's cars other than `activeVid[pid]` is below `trafficOpen[pid]`. Without this, extra cars spawned during a re-pick would slip past the cap, and the clean-up no longer removes them.
+    - **During any active round**, including a New car re-pick (`picking`, where `roundCarActive()` is false and today's rule lets everything through), this check comes first, before the "not in a round" early return. Without it, extra cars spawned during a re-pick would slip past the cap, and the clean-up no longer removes them.
     - The practice issuer → allowed, whatever the spawn or edit. BeamMP's own `MaxCars` still limits it. Its AI cars, which are respawned in place on an evolving Apply, need this.
-    - Anyone else: an edit → allowed, even when `activeVid[pid]` is nil (an edit refused here would delete a traffic car). A spawn → the count above, but only while `activeVid[pid]` is set. With the round car gone (`activeVid[pid]` nil), a spawn goes through today's model and config rule without the `firstVid` clause, so the game can put back a round car while traffic fills the cap.
+    - Anyone else, an edit → allowed, even when `activeVid[pid]` is nil (an edit refused here would delete a traffic car).
+    - Anyone else, a spawn → counted, in every case. `n` is the number of the player's cars other than `activeVid[pid]`:
+      ```lua
+      if n >= trafficOpen[pid] + (activeVid[pid] and 0 or 1) then return false end
+      if activeVid[pid] then return true end
+      ```
+      With the round car gone (`activeVid[pid]` nil), the extra slot is for a replacement round car, and the spawn then falls through to today's model and config rule without the `firstVid` clause. So the game can put a round car back while traffic fills the cap, but never more than one car beyond it.
     - The player's own car (`vid == activeVid[pid]`) always goes through today's rule, with `decoded` returned, so its model and parts checks stay on, in practice too.
   - **`cnrOnVehicleReset`:** its first line becomes `if (activeVid[pid] or trafficOpen[pid]) and activeVid[pid] ~= vid then return end`. The game counts moving a traffic car to a new spot as a reset (`gameplay/traffic.lua` → `spawn.lua`), and BeamMP reports a reset for every car the player owns. Without this, once the round car is gone, every traffic respawn would read "Bob reset illegally".
   - **`vidFor(pid)`:** with `trafficOpen[pid]` set, no fallback to `firstVid`. A missing `activeVid` gives nil, never a traffic car.
@@ -310,11 +316,13 @@ The "no cause" test is a guard: it already passes before this task, and must sti
     - `onVehicleReset(2, 3, "")` gives no notice.
     - An edit of vid 3 to `etk800` returns 0.
     - A spawn `'USER:Bob:2-9:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc"}}'` returns 0, and one of `etk800` with vid 10 returns 1.
+    - Add vid 9 to `env.vehicles[2]`: a second round-model spawn (vid 11) now returns 1, because the one extra slot is used.
   - `"a New car re-pick lets no extra car past the cap"`:
     - After the go-ahead for pid 2, with `env.vehicles[2]` holding the round car (vid 0) and 5 traffic cars, `env.panel(1, "reroll")`.
     - A spawn of `etk800` with vid 9 from pid 2 returns 1.
   - `"a mid-round joiner gets the round cars and its own go-ahead"`:
     - Set `env.names = {"Reinder","Bob","Kim"}`, extend `GetPlayers` for pid 3, and set `env.vehicles[3] = {[0]="x"}`.
+    - Call `placed(env, 1); placed(env, 2)` before the chase, so a round car list has already been broadcast and the join's send to pid 3 proves the targeted send ignores the "only on change" rule.
     - In the chase, `onPlayerJoin(3)` sends `cnr_roundCars` to pid 3.
     - After `cnr_myVehicle` from pid 3, `cnr_trafficStart` goes to pid 3.
 - [ ] **Step 2: Run `make test`.** Expected: the new tests FAIL (no `cnr_trafficStart`, spawns refused, `cnr_roundCars` missing).
