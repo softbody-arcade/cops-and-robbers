@@ -27,3 +27,20 @@ test("an unknown or missing game unit means metric", function()
   assertEq(units.read(), "imperial")
   _G.settings = nil
 end)
+
+test("temperature is whole degrees, converted for Fahrenheit", function()
+  assertEq(units.temperature(-4, "c"), -4)
+  assertEq(units.temperature(0, "f"), 32)
+  assertEq(units.temperature(-4, "f"), 25)
+end)
+test("only an f setting means Fahrenheit", function()
+  local function with(v) _G.settings = { getValue = function(k) return k == "uiUnitTemperature" and v or nil end } end
+  with("f"); assertEq(units.temperatureUnit(), "f")
+  with("c"); assertEq(units.temperatureUnit(), "c")
+  with("k"); assertEq(units.temperatureUnit(), "c")
+  with(nil); assertEq(units.temperatureUnit(), "c")
+  _G.settings = { getValue = function() error("boom") end }
+  assertEq(units.temperatureUnit(), "c")
+  _G.settings = nil
+  assertEq(units.temperatureUnit(), "c")
+end)

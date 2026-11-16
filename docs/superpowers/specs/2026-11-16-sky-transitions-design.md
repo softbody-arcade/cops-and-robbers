@@ -64,7 +64,9 @@ Status: short design for review, 2026-11-16. Builds on night and weather rounds 
   - **Same kind** (rain to storm): move `numDrops` from the current count to the new one.
   - **Different kind** (rain to snow): fade the old one out, then the new one in. Each half takes half the blend.
 - The stepping runs from `sky.update`, about 10 times a second.
-- The roof check (`shelter`) still hides the rain under cover, as today.
+- **The roof check (`shelter`) hides the rain under cover, with two changes** (added 2026-11-16, after the user saw rain stop under street lights):
+  - **A roof must cover both directions.** At least one side ray hits front or back, and at least one hits left or right. A street-light arm or traffic-light gantry covers only one direction, so it no longer counts. Tunnels, bridge decks and gas-station canopies still do.
+  - **It switches after 1 s** (four checks in a row) instead of half a second, so a short pass under anything overhead never interrupts the rain.
 
 ### Drop values
 - **Rain:** speed 0.4–0.5, the stock maps' own range. Drop size 1, about 3000 drops.
@@ -109,6 +111,7 @@ Status: short design for review, 2026-11-16. Builds on night and weather rounds 
 - **No date or no weather** (the map's own sky, BeamNG.Earth): the temperature is left alone, as today for clear and cloudy rounds.
 - **The temperature does not blend.** It changes at once, like wind; nobody drives during prep or after the round.
 - **Round end** restores the player's own temperature with the rest of the saved sky, as today.
+- **Shown on the prep bar** (added 2026-11-16): where the date already shows (the prep bar and the New sky notice), the label ends with the day's range, for example `Night · Snow · 14 Dec · -4 to 0 °C`. It uses the game's temperature unit (`uiUnitTemperature`; Fahrenheit when set to `f`, Celsius otherwise) and whole degrees. The leaderboard's Rounds tab is unchanged.
 
 ### Rain sound
 - **What plays:** the game's `amb_rain_medium` profile (`art/sound/environment/amb_rain_medium.ogg`, a 2D loop). It plays while a rain or storm round has its rain object, through one unsaved sound emitter, created the way the game's own `core/audioForest.lua` creates its emitters.

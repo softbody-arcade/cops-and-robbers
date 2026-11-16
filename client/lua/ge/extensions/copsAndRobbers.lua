@@ -440,10 +440,10 @@ local function onState(data)
   hudfeed.catchSample(clock, p)
 end
 
-local function endRound()
+local function endRound(leaving)
   hudfeed.clearRound()
   lightsState = nil
-  sky.restore()
+  sky.restore(leaving)
   traffic.stop(clock)
   runnerOut = false
   local own = ownVehicle()
@@ -761,7 +761,7 @@ local function onBeamNGEarthRebased(info)
 end
 
 local function leaveServer()
-  endRound()
+  endRound(true)
   sirensAllowed = true
   hudfeed.clearResult()
   hudfeed.leave()

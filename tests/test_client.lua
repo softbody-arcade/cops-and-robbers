@@ -1480,7 +1480,7 @@ end)
 test("a round sky is applied at setup and shown on the role card", function()
   local env = bootClient()
   local d = copy(SETUP); d.sky = { time = "night", weather = "rain", driving = true, windDir = 0, windSeed = 7 }
-  env.fire("cnr_roundSetup", d); env.tick(1)
+  env.fire("cnr_roundSetup", d); env.tick(5)
   assertEq(env.sky.locked, true)
   assertEq(env.hud().center.car, "Gavril Pickup · Night · Rain")
 end)
@@ -1489,7 +1489,7 @@ test("the role card shows the round's date", function()
   local env = bootClient()
   local d = copy(SETUP); d.sky = { time = "night", weather = "rain", year = 2026, month = 12, day = 14, windDir = 0, windSeed = 7 }
   env.fire("cnr_roundSetup", d); env.tick(1)
-  assertEq(env.hud().center.car, "Gavril Pickup · Night · Rain · 14 Dec")
+  assertEq(env.hud().center.car, "Gavril Pickup · Night · Rain · 14 Dec · 3 to 5 °C")
 end)
 
 test("New sky updates the card and says so", function()
@@ -1498,10 +1498,11 @@ test("New sky updates the card and says so", function()
   env.fire("cnr_roundSetup", d); env.tick(1)
   env.fire("cnr_sky", { time = "noon", weather = "snow", year = 2026, month = 1, day = 3, windDir = 0, windSeed = 9 })
   env.tick(0.2)
-  assertEq(env.hud().center.car, "Gavril Pickup · Noon · Snow · 3 Jan")
+  assertEq(env.hud().center.car, "Gavril Pickup · Noon · Snow · 3 Jan · -5 to -1 °C")
+  env.tick(3.5)
   assertEq(env.sky.objects.cnr_precipitation:getField("dataBlock"), "Snow_menu")
   local found = false
-  for _, n in ipairs(env.hud().notices) do if n.text == "New sky: Noon · Snow · 3 Jan" then found = true end end
+  for _, n in ipairs(env.hud().notices) do if n.text == "New sky: Noon · Snow · 3 Jan · -5 to -1 °C" then found = true end end
   assertEq(found, true)
 end)
 
@@ -1532,16 +1533,28 @@ end)
 test("the round end gives the player's sky back, a map change only forgets it", function()
   local env = bootClient()
   local d = copy(SETUP); d.sky = { weather = "storm", driving = true, windDir = 0, windSeed = 7 }
-  env.fire("cnr_roundSetup", d); env.tick(1)
+  env.fire("cnr_roundSetup", d); env.tick(5)
   assertEq(env.sky.locked, true)
   env.fire("cnr_roundEnd", { reason = "cancelled" })
   assertEq(env.sky.locked, false); assertEq(env.sky.state.cloudCover, 0.3)
-  env.fire("cnr_roundSetup", d); env.tick(1)
+  env.tick(5)
+  env.fire("cnr_roundSetup", d); env.tick(5)
   local n = #env.sky.setStates
   assertEq(env.sky.locked, true)
   env.M.onClientEndMission()
   assertEq(#env.sky.setStates, n)
   assertEq(env.sky.locked, false)
+end)
+
+test("leaving the server mid-rain removes the rain at once", function()
+  local env = bootClient()
+  local d = copy(SETUP); d.sky = { weather = "rain", driving = true, windDir = 0, windSeed = 7 }
+  env.fire("cnr_roundSetup", d); env.tick(1)
+  assertEq(env.sky.objects.cnr_precipitation ~= nil, true)
+  assertEq(env.sky.objects.cnr_rain_sound ~= nil, true)
+  env.M.onBeamMPServerLeave()
+  assertEq(env.sky.objects.cnr_precipitation, nil)
+  assertEq(env.sky.objects.cnr_rain_sound, nil)
 end)
 
 test("practice AI cars turn their headlights on at night", function()

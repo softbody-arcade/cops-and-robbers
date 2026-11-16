@@ -1,7 +1,7 @@
 dofile("tests/env_stubs.lua")
 local function load(opts)
   local fake = fakeEnvironment(opts)
-  for _, n in ipairs({ "copsAndRobbers/sky", "copsAndRobbers/surfaces", "copsAndRobbers/wind", "copsAndRobbers/shelter" }) do package.loaded[n] = nil end
+  for _, n in ipairs({ "copsAndRobbers/sky", "copsAndRobbers/rain", "copsAndRobbers/surfaces", "copsAndRobbers/wind", "copsAndRobbers/shelter" }) do package.loaded[n] = nil end
   return require("copsAndRobbers/sky"), fake
 end
 local RAIN_NIGHT = { time = "night", weather = "rain", driving = true, windDir = 90, windSeed = 7 }
@@ -17,10 +17,25 @@ local WINTER = { time = "sunrise", weather = "snow", year = 2026, month = 12, da
 
 test("labels end with the date only when asked", function()
   local sky = load()
-  assertEq(sky.label(WINTER, true), "Sunrise · Snow · 14 Dec")
+  assertEq(sky.label(WINTER, true), "Sunrise · Snow · 14 Dec · -4 to 0 °C")
   assertEq(sky.label(WINTER), "Sunrise · Snow")
-  assertEq(sky.label({ time = "noon", weather = "clear", month = 1, day = 3 }, true), "Noon · Clear · 3 Jan")
+  assertEq(sky.label({ time = "noon", weather = "clear", month = 1, day = 3 }, true), "Noon · Clear · 3 Jan · 0 to 8 °C")
   assertEq(sky.label({ time = "noon", weather = "clear", month = 13, day = 3 }, true), "Noon · Clear")
+end)
+
+test("the label shows the range in Fahrenheit when the game does", function()
+  local sky = load()
+  local saved = _G.settings
+  _G.settings = { getValue = function(k) return k == "uiUnitTemperature" and "f" or nil end }
+  local label = sky.label(WINTER, true)
+  _G.settings = saved
+  assertEq(label, "Sunrise · Snow · 14 Dec · 25 to 32 °F")
+end)
+
+test("a label without a month or with an unknown weather has no temperature", function()
+  local sky = load()
+  assertEq(sky.label({ time = "noon", weather = "clear", day = 3 }, true), "Noon · Clear")
+  assertEq(sky.label({ time = "noon", weather = "hail", month = 1, day = 3 }, true), "Noon · Hail · 3 Jan")
 end)
 
 test("old runs without a date still get a label", function()
@@ -56,7 +71,7 @@ test("a map south of the equator gets the same season six months on", function()
   local s = fake.setStates[1]
   assertEq(s.year, 2026); assertEq(s.month, 6); assertEq(s.day, 14)
   assertEq(fake.solarState.month, 6); assertEq(fake.solarState.day, 14)
-  assertEq(sky.label(WINTER, true), "Sunrise · Snow · 14 Jun")
+  assertEq(sky.label(WINTER, true), "Sunrise · Snow · 14 Jun · -4 to 0 °C")
 end)
 
 test("the shifted date stays a real day", function()
@@ -64,8 +79,8 @@ test("the shifted date stays a real day", function()
   fake.state.latitude = -44.57
   sky.apply({ time = "noon", weather = "clear", year = 2026, month = 12, day = 31, windDir = 0, windSeed = 1 })
   assertEq(fake.setStates[1].month, 6); assertEq(fake.setStates[1].day, 30)
-  assertEq(sky.label({ time = "noon", weather = "clear", month = 8, day = 31 }, true), "Noon · Clear · 28 Feb")
-  assertEq(sky.label({ time = "noon", weather = "clear", month = 1, day = 31 }, true), "Noon · Clear · 31 Jul")
+  assertEq(sky.label({ time = "noon", weather = "clear", month = 8, day = 31 }, true), "Noon · Clear · 28 Feb · 19 to 30 °C")
+  assertEq(sky.label({ time = "noon", weather = "clear", month = 1, day = 31 }, true), "Noon · Clear · 31 Jul · 0 to 8 °C")
 end)
 
 test("restore gives the player's own date back", function()
@@ -88,9 +103,11 @@ test("a round sky is applied and locked", function()
   local s = fake.setStates[#fake.setStates]
   assertEq(s.time, 0.5); assertEq(s.play, false); assertEq(s.cloudCover, 2.2); assertEq(s.numOfDrops, nil)
   assertNear(s.groundWind.x, 5, 1e-6)
-  assertEq(fake.profiles[1].averageC, 8)
+  assertEq(s.temperatureCurveOverrideC, false); assertEq(#fake.profiles, 0)
+  sky.update(0.1)
   assertEq(fake.objects.cnr_precipitation:getField("dataBlock"), "rain_medium")
   assertEq(fake.models.ASPHALT.cdata.staticFrictionCoefficient, 0.92)
+  sky.update(4)
   assertEq(fake.locked, true)
 end)
 
@@ -100,7 +117,25 @@ test("a part on the map's own comes from the map's start values", function()
   sky.apply({ weather = "fog", windDir = 0, windSeed = 1 })
   assertEq(fake.setStates[1].time, 0.1); assertEq(fake.setStates[1].play, false)
   assertEq(fake.setStates[1].temperatureCurveOverrideC, false)
-  assertEq(fake.profiles[1].averageC, 5)
+  assertEq(#fake.profiles, 0)
+end)
+
+test("the temperature follows the weather and the server's month", function()
+  local sky, fake = load()
+  sky.apply(WINTER)
+  local c = fake.setStates[#fake.setStates].temperatureCurveOverrideC
+  assertEq(#c, 2)
+  assertNear(c[1][1], 2 / 24, 1e-9); assertEq(c[1][2], 0)
+  assertNear(c[2][1], 0.775, 1e-9); assertEq(c[2][2], -4)
+  assertEq(#fake.profiles, 0)
+  sky, fake = load()
+  fake.state.latitude = -44.57
+  sky.apply(WINTER)
+  c = fake.setStates[#fake.setStates].temperatureCurveOverrideC
+  assertEq(#c, 2)
+  assertNear(c[1][1], 2 / 24, 1e-9); assertEq(c[1][2], 0)
+  assertNear(c[2][1], 0.775, 1e-9); assertEq(c[2][2], -4)
+  assertEq(#fake.profiles, 0)
 end)
 
 test("restore gives the player's own wind back", function()
@@ -137,18 +172,64 @@ end)
 test("a calm sky removes our precipitation object", function()
   local sky, fake = load()
   sky.apply(RAIN_NIGHT)
+  sky.update(0.1)
+  assertEq(fake.objects.cnr_precipitation ~= nil, true)
   sky.apply({ time = "night", weather = "clear", windDir = 0, windSeed = 1 })
+  sky.update(3.1)
   assertEq(fake.objects.cnr_precipitation, nil)
+end)
+
+local function withLog(fn)
+  local old, lines = _G.log, {}
+  _G.log = function(level, tag, msg) lines[#lines + 1] = level .. " " .. tag .. " " .. tostring(msg) end
+  local ok, err = pcall(fn, lines)
+  _G.log = old
+  if not ok then error(err, 0) end
+end
+
+test("a throw from the rain engine calls is contained and leaves no rain", function()
+  local sky, fake = load()
+  withLog(function(lines)
+    local make = _G.createObject
+    _G.createObject = function() error("engine boom") end
+    sky.apply(RAIN_NIGHT)
+    local ok = pcall(sky.update, 0.5)
+    _G.createObject = make
+    assertEq(ok, true)
+    assertEq(fake.objects.cnr_precipitation, nil)
+    assertEq(fake.objects.cnr_rain_sound, nil)
+    assertEq(#lines >= 1, true)
+    assertEq(pcall(sky.update, 0.1), true)
+    assertEq(fake.objects.cnr_precipitation, nil)
+  end)
+end)
+
+test("a failed registration logs once over two seconds of updates", function()
+  local sky, fake = load()
+  withLog(function(lines)
+    local make = _G.createObject
+    _G.createObject = function(kind)
+      local obj = make(kind)
+      if kind == "Precipitation" then function obj:registerObject() end end
+      return obj
+    end
+    sky.apply(RAIN_NIGHT)
+    for _ = 1, 20 do sky.update(0.1) end
+    _G.createObject = make
+    assertEq(#lines, 1)
+    assertEq(fake.objects.cnr_precipitation, nil)
+  end)
 end)
 
 test("restore puts the earlier lock back", function()
   local sky, fake = load({ locked = true })
   sky.apply(RAIN_NIGHT)
   assertEq(#fake.setStates > 0, true)
-  sky.restore()
+  sky.update(4)
+  sky.restore(); sky.update(4)
   assertEq(fake.locked, true)
   local sky2, fake2 = load()
-  sky2.apply(RAIN_NIGHT); sky2.restore()
+  sky2.apply(RAIN_NIGHT); sky2.update(4); sky2.restore(); sky2.update(4)
   assertEq(fake2.locked, false)
 end)
 
@@ -158,7 +239,7 @@ test("restore stops the wind updates and removes everything", function()
   for _ = 1, 4 do sky.update(0.25) end
   local before = #fake.queued
   assertEq(before >= 3, true)
-  sky.restore(); sky.update(1)
+  sky.restore(); sky.update(4)
   assertEq(#fake.queued, before)
   assertEq(fake.objects.cnr_precipitation, nil)
   assertEq(fake.models.ASPHALT.cdata.staticFrictionCoefficient, 0.98)
@@ -167,6 +248,7 @@ end)
 test("wind updates don't touch the lock", function()
   local sky, fake = load()
   sky.apply(RAIN_NIGHT); sky.startClock(0)
+  sky.update(4)
   local states = #fake.setStates
   sky.update(2)
   assertEq(#fake.setStates, states); assertEq(fake.locked, true)
@@ -207,18 +289,20 @@ end)
 test("a failing apply still relocks and restore still works", function()
   local sky, fake = load()
   fake.state.cloudCover = 0.05
-  local make = _G.createObject
-  _G.createObject = function() error("boom") end
+  local make = _G.be.setGroundModel
+  _G.be.setGroundModel = function() error("boom") end
   sky.apply(RAIN_NIGHT)
-  _G.createObject = make
+  _G.be.setGroundModel = make
+  assertEq(fake.objects.cnr_precipitation, nil)
   assertEq(fake.locked, true)
-  sky.restore()
+  assertEq(fake.lerps[#fake.setStates], nil); assertEq(fake.state.cloudCover, 2.2)
+  sky.restore(); sky.update(4)
   assertEq(fake.locked, false); assertEq(fake.state.cloudCover, 0.05)
 end)
 
 test("precipitation is not saved with the level", function()
   local sky, fake = load()
-  sky.apply(RAIN_NIGHT)
+  sky.apply(RAIN_NIGHT); sky.update(0.1)
   assertEq(fake.objects.cnr_precipitation.canSave, false)
 end)
 
@@ -252,10 +336,10 @@ test("rain stops under a close roof and comes back in the open", function()
   withRoof(3, function(roof)
     local sky, fake = load()
     sky.apply(RAIN_NIGHT)
-    sky.update(0.25); sky.update(0.25)
+    sky.update(0.25); sky.update(0.25); sky.update(0.25); sky.update(0.25)
     assertEq(hidden(fake), true)
     roof.height = nil
-    sky.update(0.25); sky.update(0.25)
+    sky.update(0.25); sky.update(0.25); sky.update(0.25); sky.update(0.25)
     assertEq(hidden(fake), false)
   end)
 end)
@@ -273,7 +357,148 @@ test("the roof check runs before GO and without driving effects", function()
   withRoof(3, function()
     local sky, fake = load()
     sky.apply({ weather = "snow", windDir = 0, windSeed = 1 })
-    sky.update(0.25); sky.update(0.25)
+    sky.update(0.25); sky.update(0.25); sky.update(0.25); sky.update(0.25)
     assertEq(hidden(fake), true)
   end)
+end)
+
+test("a round sky blends in over 3 s and locks after the blend", function()
+  local sky, fake = load()
+  sky.apply(RAIN_NIGHT)
+  assertEq(fake.lerps[#fake.setStates], 3)
+  assertEq(fake.locked, false)
+  sky.update(3.4); assertEq(fake.locked, false)
+  sky.update(0.2); assertEq(fake.locked, true)
+end)
+
+test("a second sky during a blend restarts the lock timer", function()
+  local sky, fake = load()
+  sky.apply(RAIN_NIGHT); sky.update(3)
+  sky.apply(RAIN_NIGHT); sky.update(1)
+  assertEq(fake.locked, false)
+  sky.update(2.6); assertEq(fake.locked, true)
+end)
+
+test("GO during a blend lands the full sky and locks", function()
+  local sky, fake = load()
+  sky.apply({ time = "sunset", weather = "rain", daySeconds = 1440, month = 4, day = 2, windDir = 0, windSeed = 1 })
+  local n = #fake.setStates
+  sky.startClock(0)
+  local landed
+  for i = n + 1, #fake.setStates do
+    local s = fake.setStates[i]
+    if s.cloudCover == 2.2 and fake.lerps[i] == nil and landed == nil then landed = i end
+    if s.play == true then assertEq(landed ~= nil and landed < i, true) end
+  end
+  assertEq(landed ~= nil, true)
+  assertEq(fake.setStates[#fake.setStates].play, true)
+  assertEq(fake.locked, true)
+end)
+
+test("GO after the blend only starts the clock", function()
+  local sky, fake = load()
+  sky.apply({ time = "sunset", weather = "rain", daySeconds = 1440, month = 4, day = 2, windDir = 0, windSeed = 1 })
+  sky.update(4)
+  local n = #fake.setStates
+  sky.startClock(0)
+  assertEq(#fake.setStates, n + 1)
+  local s = fake.setStates[n + 1]
+  assertEq(s.play, true); assertEq(s.cloudCover, nil)
+  assertEq(fake.locked, true)
+end)
+
+test("restore blends back over 3 s and then puts the earlier lock back", function()
+  local sky, fake = load({ locked = true })
+  sky.apply(RAIN_NIGHT); sky.update(4)
+  sky.restore()
+  assertEq(fake.lerps[#fake.setStates], 3)
+  assertEq(fake.locked, false)
+  sky.update(4)
+  assertEq(fake.locked, true)
+  local sky2, fake2 = load()
+  sky2.apply(RAIN_NIGHT); sky2.update(4); sky2.restore()
+  assertEq(fake2.locked, false)
+  sky2.update(4)
+  assertEq(fake2.locked, false)
+end)
+
+test("every blend clears a running one first", function()
+  local sky, fake = load()
+  sky.apply(RAIN_NIGHT)
+  sky.apply(RAIN_NIGHT)
+  sky.restore()
+  assertEq(fake.resets, 3)
+  for i = 1, 3 do
+    assertEq(fake.resetAt[i], i - 1)
+    assertEq(fake.lerps[i], 3)
+  end
+end)
+
+test("an immediate restore lands at once and locks back", function()
+  local sky, fake = load({ locked = true })
+  sky.apply(RAIN_NIGHT); sky.update(1)
+  sky.restore(true)
+  assertEq(fake.lerps[#fake.setStates], nil)
+  assertEq(fake.locked, true)
+  assertEq(fake.objects.cnr_precipitation, nil)
+  local n = #fake.setStates
+  sky.update(5)
+  assertEq(#fake.setStates, n); assertEq(fake.locked, true)
+  local sky2, fake2 = load()
+  sky2.apply(RAIN_NIGHT); sky2.update(1); sky2.restore(true)
+  assertEq(fake2.locked, false)
+  sky2.update(5)
+  assertEq(fake2.locked, false)
+end)
+
+test("a round starting during the restore blend saves the player's own sky", function()
+  local sky, fake = load()
+  fake.state.cloudCover = 0.05
+  sky.apply(RAIN_NIGHT); sky.update(4); sky.restore()
+  fake.state.cloudCover = 1.1
+  sky.apply(RAIN_NIGHT); sky.update(4); sky.restore(); sky.update(4)
+  assertEq(fake.state.cloudCover, 0.05)
+end)
+
+test("drop cancels a pending lock timer", function()
+  local sky, fake = load()
+  sky.apply(RAIN_NIGHT)
+  sky.drop()
+  assertEq(fake.locked, false)
+  sky.update(5)
+  assertEq(fake.locked, false)
+end)
+
+test("an immediate restore during the round-end blend lands the sky and lock", function()
+  local sky, fake = load({ locked = true })
+  fake.state.cloudCover = 0.05
+  sky.apply(RAIN_NIGHT); sky.update(4); sky.restore()
+  fake.state.cloudCover = 1.1
+  sky.restore(true)
+  assertEq(fake.lerps[#fake.setStates], nil)
+  assertEq(fake.state.cloudCover, 0.05)
+  assertEq(fake.locked, true)
+  local n = #fake.setStates
+  sky.update(5)
+  assertEq(#fake.setStates, n); assertEq(fake.locked, true)
+end)
+
+test("drop removes rain and sound at once and cancels the lock timer", function()
+  local sky, fake = load()
+  sky.apply(RAIN_NIGHT); sky.update(1)
+  assertEq(fake.objects.cnr_rain_sound ~= nil, true)
+  sky.drop()
+  assertEq(fake.objects.cnr_precipitation, nil); assertEq(fake.objects.cnr_rain_sound, nil)
+  local n, locked = #fake.setStates, fake.locked
+  sky.update(5)
+  assertEq(#fake.setStates, n); assertEq(fake.locked, locked)
+end)
+
+test("round end fades the rain out", function()
+  local sky, fake = load()
+  sky.apply(RAIN_NIGHT); sky.update(4)
+  sky.restore()
+  assertEq(fake.objects.cnr_precipitation ~= nil, true)
+  sky.update(3.2)
+  assertEq(fake.objects.cnr_precipitation, nil); assertEq(fake.objects.cnr_rain_sound, nil)
 end)

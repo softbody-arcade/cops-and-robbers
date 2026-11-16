@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Sky changes blend over up to 3 s. Rain and snow fade, and rain falls at the stock maps' speed with a storm heavier. The game's rain sound plays in rain and storm. The outside temperature follows the weather and the round's date.
+**Goal:** Sky changes blend over up to 3 s. Rain and snow fade, and rain falls at the stock maps' speed with a storm heavier. The game's rain sound plays in rain and storm. The outside temperature follows the weather and the round's date, and the prep bar shows the day's range.
 
 **Architecture:**
 - Two new pure-ish client modules:
@@ -324,7 +324,107 @@ git add client/lua/ge/extensions/copsAndRobbers/rain.lua client/lua/ge/extension
 git commit -m "feat: rain and snow fade with the sky, faster rain, heavier storms, rain sound"
 ```
 
-### Task 4: Docs
+### Task 4: Temperature range on the prep bar
+
+**Files:**
+- Modify: `client/lua/ge/extensions/copsAndRobbers/units.lua` (add `temperatureUnit()` and `temperature(c, unit)`)
+- Modify: `client/lua/ge/extensions/copsAndRobbers/sky.lua` (`M.label`)
+- Modify: `tests/test_units.lua`, `tests/test_sky_client.lua` (label tests), `tests/test_client.lua` (the prep label test around "Gavril Pickup · Night · Rain · 14 Dec")
+
+**Interfaces:**
+- Consumes: `climate.range(weather, month)` (Task 1).
+- Produces:
+  - `units.temperatureUnit() -> "c"|"f"`: from `settings.getValue("uiUnitTemperature")`; only `"f"` means Fahrenheit, anything else, nil or an error means Celsius
+  - `units.temperature(c, unit) -> number`: whole degrees, `math.floor(x + 0.5)`; Fahrenheit is `c * 9 / 5 + 32`
+  - `sky.label(p, withDate)`: with the date, it ends with ` · <low> to <high> °C` (or `°F`) when `climate.range(p.weather, p.month)` gives a range
+
+- [ ] **Step 1: Write the failing tests**
+
+`tests/test_units.lua`:
+- `units.temperature(-4, "c") == -4` and `units.temperature(0, "f") == 32`
+- `units.temperature(-4, "f") == 25`: -4 °C is 24.8 °F, which rounds to 25
+- `units.temperatureUnit()` is `"f"` only when the stubbed setting is `"f"`, and `"c"` for `"c"`, `"k"`, nil and a throwing `getValue`
+
+`tests/test_sky_client.lua`:
+- `sky.label(WINTER, true) == "Sunrise · Snow · 14 Dec · -4 to 0 °C"`; without the date, unchanged
+- with `_G.settings` stubbed to return `"f"` for `uiUnitTemperature`: `"Sunrise · Snow · 14 Dec · 25 to 32 °F"`; restore `_G.settings` afterwards
+- a label without a month, or with an unknown weather, has no temperature
+- the southern-hemisphere label (latitude -44.57) still shows the December range: `"Sunrise · Snow · 14 Jun · -4 to 0 °C"`
+
+`tests/test_client.lua`: the prep label for a night rain round on 14 December becomes `"Gavril Pickup · Night · Rain · 14 Dec · 3 to 5 °C"`. Rain in December: low 1 + 2 = 3, high 9 − 5 = 4, raised to low + 2 = 5.
+
+- [ ] **Step 2: Run the tests to make sure they fail**
+
+Run: `lua tests/run.lua tests/test_units.lua tests/test_sky_client.lua tests/test_client.lua`
+Expected: FAIL on the new label asserts and the missing `units` functions.
+
+- [ ] **Step 3: Implement**
+
+- `units.lua`: the two functions above, read the same defensive way as `units.read()`.
+- `sky.lua` `M.label`: when `withDate` and the range exists, append `string.format("%d to %d %s", lo, hi, unit == "f" and "°F" or "°C")` with converted values. The hyphen-minus in negative numbers is plain ASCII.
+
+- [ ] **Step 4: Run the tests to make sure they pass**
+
+Run: `make test`
+Expected: `0 failed`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add client/lua/ge/extensions/copsAndRobbers/units.lua client/lua/ge/extensions/copsAndRobbers/sky.lua tests/test_units.lua tests/test_sky_client.lua tests/test_client.lua
+git commit -m "feat: the prep bar shows the day's temperature range"
+```
+
+### Task 5: The roof check ignores beams and short passes
+
+**Files:**
+- Modify: `client/lua/ge/extensions/copsAndRobbers/shelter.lua` (`M.roofed`, `M.CHECKS_TO_SWITCH`)
+- Modify: `tests/test_shelter.lua`
+- Modify: the roof tests in `tests/test_sky_client.lua` and `tests/test_rain.lua` that switch after two 0.25 s checks
+
+**Interfaces:**
+- Unchanged: `shelter.roofed(pos, castUp) -> bool`, `shelter.new()`, `shelter.step(state, now) -> bool`.
+
+Why: a street-light arm or a traffic-light gantry is a long, thin beam. Under it, the middle ray hits, and so do the two side rays along the beam. That is "two of four", so it counted as a roof, and two checks (half a second) hid the rain for a moment without any visible reason (user report, 2026-11-16).
+
+- [ ] **Step 1: Write the failing tests**
+
+`tests/test_shelter.lua`:
+- `"a roof close above with cover around counts as shelter"` uses one side on each axis: `{ ["3,0"] = true, ["0,3"] = true }`.
+- New `test("a beam overhead, like a street-light arm, is not shelter")`:
+  - `roofAt(3, { ["3,0"] = true, ["-3,0"] = true })` gives false
+  - so does `roofAt(3, { ["0,3"] = true, ["0,-3"] = true })`
+- New `test("cover on both axes is shelter")`: `roofAt(3, { ["-3,0"] = true, ["0,-3"] = true })` and all four sides both give true.
+- `"cover switches only after two checks in a row"` becomes `"cover switches only after four checks in a row"`:
+  - three `step(state, true)` calls return false and leave `covered == false`
+  - the fourth returns true
+  - the same holds on the way back out
+
+In `tests/test_sky_client.lua` and `tests/test_rain.lua`, the roof tests that advance two 0.25 s checks advance four.
+
+- [ ] **Step 2: Run the tests to make sure they fail**
+
+Run: `lua tests/run.lua tests/test_shelter.lua`
+Expected: FAIL (the beam counts as shelter; the cover switches after two checks).
+
+- [ ] **Step 3: Implement**
+
+- `shelter.lua` `M.roofed`: the middle ray must hit, then at least one hit among `{ 1, 0 }` / `{ -1, 0 }` and at least one among `{ 0, 1 }` / `{ 0, -1 }`. `M.SIDES_NEEDED` goes.
+- `M.CHECKS_TO_SWITCH = 4`, which is 1 s at the 0.25 s check interval.
+
+- [ ] **Step 4: Run the tests to make sure they pass**
+
+Run: `make test`
+Expected: `0 failed`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add client/lua/ge/extensions/copsAndRobbers/shelter.lua tests/test_shelter.lua tests/test_sky_client.lua tests/test_rain.lua
+git commit -m "fix: street-light arms and short passes no longer stop the rain"
+```
+
+### Task 6: Docs
 
 **Files:**
 - Modify: `docs/FEATURES.md` (the Night and weather section: blends, rain speeds, rain sound, temperature)
@@ -338,7 +438,8 @@ git commit -m "feat: rain and snow fade with the sky, faster rain, heavier storm
   - rain and snow fade in and out
   - rain falls like the stock maps' rain; storms have faster, bigger and more drops
   - the game's rain sound plays in rain and storm, louder in a storm and quieter under cover
-  - the outside temperature follows the weather and the round's date (a December snow round −4 to 0 °C, a clear July day 20 to 31 °C)
+  - the rain stops under a roof (tunnels, bridge decks, canopies) after about a second, but not under street-light arms or traffic-light gantries
+  - the outside temperature follows the weather and the round's date (a December snow round −4 to 0 °C, a clear July day 20 to 31 °C), and the prep bar and New sky notice show the day's range in the game's temperature unit
   - no thunder
 - **DEPENDENCIES:**
   - `core_environment.setState(state, lerpSeconds)`: blends clouds, fog, fog height and time; only advances while changes are enabled; a new state mid-blend shortens it to 0.3 s
@@ -356,7 +457,7 @@ git add docs/FEATURES.md README.md docs/DEPENDENCIES.md
 git commit -m "docs: sky blends, rain, rain sound and temperature"
 ```
 
-### Task 5: In-game check with the user
+### Task 7: In-game check with the user
 
 **Files:** `client/lua/ge/extensions/copsAndRobbers/sky.lua` / `rain.lua` / `climate.lua` (for any value the user's screenshots or the check change)
 
