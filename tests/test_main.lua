@@ -2296,3 +2296,84 @@ test("a mid-round joiner gets the round cars and its own go-ahead", function()
   assertEq(env.lastSent("cnr_trafficStart").pid, 3)
   env.cleanup()
 end)
+
+local function trafficCrash(env)
+  env.startRound()
+  placed(env, 1); placed(env, 2)
+  env.call("cnr_trafficCars", 1, '{"vids":[5]}')
+  env.vidPositions["1-5"] = { pos = { 208, 0, 0 }, vel = { 0, 0, 0 } }
+  chase(env)
+  local raw = MP.GetPositionRaw
+  MP.GetPositionRaw = function(pid, vid)
+    if pid == 2 and vid == 0 then return { pos = { 200, 0, 0 }, vel = { 120 / 3.6, 0, 0 } }, "" end
+    return raw(pid, vid)
+  end
+  env.clock = env.clock + 0.25; env.call("cnr_tick")
+  MP.GetPositionRaw = function(pid, vid)
+    if pid == 2 and vid == 0 then return { pos = { 201, 0, 0 }, vel = { 0, 0, 0 } }, "" end
+    return raw(pid, vid)
+  end
+  env.clock = env.clock + 0.25; env.call("cnr_tick")
+  MP.GetPositionRaw = raw
+end
+
+test("a cop who drives into reported traffic gets (traffic) in the notice", function()
+  local env = trafficBoot()
+  trafficCrash(env)
+  assertEq(env.noticeHas("Bob: crash penalty 10s (traffic)", "warn"), true)
+  env.cleanup()
+end)
+
+test("How to play gets the effective traffic", function()
+  local env = trafficBoot({ maxCars = 4 })
+  assertEq(env.lastSent("cnr_rules").data:find('"trafficPerPlayer":3', 1, true) ~= nil, true)
+  env.cleanup()
+  local earth = trafficBoot({ map = "/levels/beamng_earth/info.json" })
+  assertEq(earth.lastSent("cnr_rules").data:find('"trafficPerPlayer":0', 1, true) ~= nil, true)
+  earth.cleanup()
+end)
+
+test("the panel shows the traffic note", function()
+  local env = trafficBoot({ maxCars = 4 })
+  env.call("cnr_panel", 1, '{"action":"open"}')
+  assertEq(env.lastSent("cnr_panelState").data:find('"trafficNote":"MaxCars is 4 on this server: 3 per player"', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("a recorded run keeps its traffic, and a traffic crash's cause survives the save", function()
+  local env = trafficBoot()
+  trafficCrash(env)
+  env.panel(2, "end")
+  local saved = assert(io.open(env.dir .. "data/leaderboard.json")):read("*a")
+  assertEq(saved:find('"traffic":5', 1, true) ~= nil, true)
+  assertEq(saved:find('"cause":"traffic"', 1, true) ~= nil, true)
+  env.cleanup()
+  local plain = boot({ maxCars = 1 })
+  plain.startRound()
+  chase(plain)
+  plain.panel(2, "end")
+  local text = assert(io.open(plain.dir .. "data/leaderboard.json")):read("*a")
+  assertEq(text:find('"traffic"', 1, true), nil)
+  plain.cleanup()
+end)
+
+test("reported traffic keeps out the player's own car and stops at the count", function()
+  local env = trafficBoot()
+  env.startRound()
+  placed(env, 1); placed(env, 2)
+  env.call("cnr_trafficCars", 2, '{"vids":[0,1,2,3,4,5,6,7]}')
+  chase(env)
+  local asked = {}
+  local raw = MP.GetPositionRaw
+  MP.GetPositionRaw = function(pid, vid)
+    if pid == 2 then asked[vid] = true end
+    return raw(pid, vid)
+  end
+  env.clock = env.clock + 0.25; env.call("cnr_tick")
+  MP.GetPositionRaw = raw
+  local others = 0
+  for vid in pairs(asked) do if vid ~= 0 then others = others + 1 end end
+  assertEq(asked[0], true)
+  assertEq(others, 5)
+  env.cleanup()
+end)

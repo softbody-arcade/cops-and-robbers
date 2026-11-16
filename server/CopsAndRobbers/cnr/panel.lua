@@ -91,6 +91,7 @@ function M.snapshot(info)
     lastResult = info.lastResult,
     stationCount = info.stationCount or 0,
     geo = info.geo == true,
+    trafficNote = info.trafficNote,
   }
 end
 

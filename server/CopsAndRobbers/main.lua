@@ -416,6 +416,21 @@ local function carFor(pid)
   return { pos = pos, vel = vel }
 end
 
+local function trafficCars()
+  if geoMode then return nil end
+  local list = {}
+  for pid, set in pairs(trafficVids) do
+    for vid in pairs(set) do
+      local raw, err = MP.GetPositionRaw(pid, vid)
+      if not (err and err ~= "") and type(raw) == "table" then
+        local pos, vel = vec.toVec(raw.pos), vec.toVec(raw.vel)
+        if pos and vel then list[#list + 1] = { pos = pos, vel = vel, traffic = true } end
+      end
+    end
+  end
+  return list
+end
+
 local function normalizeConfig(path)
   if type(path) ~= "string" then return nil end
   return (path:gsub("\\", "/"):gsub("^/", ""):lower())
@@ -522,7 +537,7 @@ local function applyEffects(effects)
     elseif e.kind == "runnerGo" then
       send(e.to or -1, "cnr_runnerGo", { headStartSeconds = e.headStartSeconds })
     elseif e.kind == "penalty" then
-      send(current.test and current.issuerId or -1, "cnr_notice", { msg = string.format("%s: crash penalty %gs", tostring(e.name), e.seconds), tone = "warn", about = e.pid })
+      send(current.test and current.issuerId or -1, "cnr_notice", { msg = string.format("%s: crash penalty %gs%s", tostring(e.name), e.seconds, e.cause == "traffic" and " (traffic)" or ""), tone = "warn", about = e.pid })
       if round.isAI(e.pid) then
         send(current.issuerId, "cnr_penalty", { seconds = e.seconds, aiId = e.pid })
       else
@@ -669,7 +684,7 @@ function handlers.start(pid, cmd)
   partsBaseline = {}
   missingCount = {}
   lastResult = nil
-  applyEffects(current:start(now(), runnerId, pid, players, { build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random, geoMode) }))
+  applyEffects(current:start(now(), runnerId, pid, players, { build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random, geoMode), traffic = traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), geoMode, false) }))
 end
 
 function handlers.test(pid, cmd)
@@ -688,7 +703,7 @@ function handlers.test(pid, cmd)
 end
 
 local function pushRules(pid)
-  send(pid or -1, "cnr_rules", rules.payload(cfg))
+  send(pid or -1, "cnr_rules", rules.payload(cfg, traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), geoMode, false)))
 end
 
 local function lobbyState()
@@ -863,6 +878,8 @@ end
 local function panelState()
   local running = current.state == "running"
   local players = MP.GetPlayers() or {}
+  local online = 0
+  for _ in pairs(players) do online = online + 1 end
   local realRound = current:isActive() and not current.test
   local entries, loading = playerEntries(players, realRound)
   local nextName = not realRound and nextRunnerName(players) or nil
@@ -888,6 +905,7 @@ local function panelState()
     loading = loading, autoNext = autoNext, lastResult = lastResult,
     stationCount = #(geoMode and geoStations or stations), geo = geoMode,
     skyRandom = not geoMode and sky.hasRandom(cfg),
+    trafficNote = traffic.note(cfg.trafficPerPlayer, maxCars(), geoMode, online),
   })
 end
 
@@ -1380,7 +1398,7 @@ function cnrTick()
   if not current:isActive() then return end
   local cars = {}
   for pid in pairs(current.players) do cars[pid] = carFor(pid) end
-  applyEffects(current:tick(now(), cars, roundStations()))
+  applyEffects(current:tick(now(), cars, roundStations(), trafficCars()))
 end
 
 FS.CreateDirectory(stationsDir)

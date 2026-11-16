@@ -147,3 +147,7 @@ test("New sky is offered before GO with a random setting", function()
   assertEq(panel.can("countdown", false, false, true).sky, false)
   assertEq(panel.snapshot({ phase = "prep", skyRandom = true }).can.sky, true)
 end)
+
+test("snapshot passes the traffic note", function()
+  assertEq(panel.snapshot({ trafficNote = "x" }).trafficNote, "x")
+end)
