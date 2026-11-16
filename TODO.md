@@ -5,10 +5,10 @@ The shared ledger for every agent and worktree. Edit this file only on main (in 
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
-- [ ] Police helicopter instead of the 30 s last-seen ping: a tracking rule, not a flying model (the game ships no helicopter), giving cops the runner's position while the runner is in the open and losing them under cover (the roof check), with a searchlight on the runner at night and a helicopter icon on the minimap. Design: brainstorming; no branch yet
+- [ ] Police helicopter instead of the 30 s last-seen ping: a tracking rule, not a flying model (the game ships no helicopter), giving cops the runner's position while the runner is in the open and losing them under cover (the roof check), limited (arrival, time up, refuel), grounded in storm, fog and snow, with a searchlight on the runner at night and a ring on the minimap. Also hides the runner's name tag and minimap marker from cops unless spotted. Design: in review (`docs/superpowers/specs/2026-11-16-police-helicopter-design.md`); no branch yet
 
 ## Ideas
-- [ ] Hard mode vs normal mode (a round setting): hard mode gives cops a route/position only while someone has sight (no 30 s last-seen pings), hides the name plates above cars, and whatever else fits when planning it (for example no "Nearest cop" for the runner, no minimap markers for other cars). Hard mode also raises the night and bad weather chances of night and weather rounds
+- [ ] Hard mode vs normal mode (a round setting): the police helicopter already removes the 30 s pings and hides the runner unless spotted; hard mode adds whatever else fits when planning it (for example no "Nearest cop" for the runner, no name plates or minimap markers for other cars, a shorter helicopter time up). Hard mode also raises the night and bad weather chances of night and weather rounds
 - [ ] Spike strips for cops: a few per round on a button (keybind), placed behind or ahead of the cop and visible to everyone (the game has spike strip props)
 - [ ] Dynamic roadblocks: parked cop cars that block part of the road ahead of the runner. Same goal as spike strips (stop the runner ahead), so plan them together
 - [ ] Infection mode: game starts with 1 cop and caught runners become cops
