@@ -86,7 +86,7 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `stillMaxSpeedKmh` | 1 | "Standing still" threshold |
 | `gasStationRadiusMeters` | 25 | Gas station reset area |
 | `copResetMinDistanceMeters` | 1000 | Cops this far from the runner may reset any time |
-| `copSpawnMinMeters` / `copSpawnMaxMeters` | 50 / 150 | Cop placement around the runner |
+| `copSpawnMinMeters` / `copSpawnMaxMeters` | 50 / 150 | Cop start distance from the runner, by road |
 | `crashSpeedLossKmh` | 50 | Speed lost within 0.5 s that counts as a crash (~2.8 G) |
 | `crashPenaltySeconds` | 10 | Freeze for the cop at fault |
 | `lastSeenIntervalSeconds` | 30 | Runner location ping for cops (0 = off) |

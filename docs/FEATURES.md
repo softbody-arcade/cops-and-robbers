@@ -1,4 +1,4 @@
-# Cops and Robbers 2.3.0: features
+# Cops and Robbers 2.3.1: features
 
 A BeamMP server plugin with a client mod that BeamMP downloads automatically. The mod enforces the group's cops-and-robbers rules. It is one mod for every map, and it switches to geo mode on BeamNG.Earth by itself.
 
@@ -8,7 +8,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 
 | Step | What happens |
 |---|---|
-| Start round | Picks a random car and config (or the evolving build). Everyone gets the same one. Cops are placed on a road 50–150 m from the runner. Everyone is frozen. |
+| Start round | Picks a random car and config (or the evolving build). Everyone gets the same one. Cops are placed on a road 50–150 m by road from the runner, facing toward the runner. Everyone is frozen. |
 | Prep | No time limit. Everyone sees only their role (and cops the runner's name) and "Waiting for the host to press GO". Colors come from the Colour button only: the game's parts and paint menu is closed for everyone (except the runner in evolving mode, for their one change). A parts change the mod didn't make is shown to everyone as a notice (with the slots that changed), but not undone. New car picks another car (random mode). Once a player's car is placed, their game spawns its traffic (see Traffic), which stands still until GO. |
 | Apply change (evolving only, the runner's HUD button) | Locks in the runner's change and rebuilds every car; the screen shows APPLYING CHANGES until everyone has loaded (at most 20 s). |
 | GO | "Runner starts in 3", then the runner is released. |
@@ -95,7 +95,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
   - When all cops lose sight (after a 1.5 s grace), one "last seen" ping goes out at that spot, then the normal pings resume.
   - The client log notes each change ("runner in sight (120 m)"), handy to check what blocks sight on BeamNG.Earth.
 - **Runner:** sees "SPOTTED" or "HIDDEN" plus "Nearest cop 1.2 km".
-- **Cop placement:** cops are spread out so they do not overlap. The search widens up to 2 km when no road is near. If no road is found at all, the cop gets a notice and starts where they are.
+- **Cop placement:** cops start a short drive from the runner (by road, following one-way roads), facing toward the runner, and spread out so they do not overlap. The search widens up to 2 km by road. A runner on a piece of road that isn't connected to the rest gets cops placed by straight-line distance. If no road is found at all, the cop gets a notice and starts where they are.
 - **Late joiners and reconnects:**
   - Someone who joins mid-round becomes a cop.
   - A cop who reconnects comes back near the road where they left.
@@ -237,7 +237,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | `stillMaxSpeedKmh` | 1 | "Standing still" threshold |
 | `gasStationRadiusMeters` | 25 | Gas station reset area |
 | `copResetMinDistanceMeters` | 1000 | Cops this far from the runner may always reset |
-| `copSpawnMinMeters` / `copSpawnMaxMeters` | 50 / 150 | Cop placement around the runner |
+| `copSpawnMinMeters` / `copSpawnMaxMeters` | 50 / 150 | Cop start distance from the runner, by road |
 | `crashSpeedLossKmh` | 50 | Speed lost within 0.5 s that counts as a crash |
 | `crashPenaltySeconds` | 10 | Freeze for the cop at fault |
 | `lastSeenIntervalSeconds` | 30 | Runner location ping for cops (0 = off) |
