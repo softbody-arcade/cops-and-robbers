@@ -19,6 +19,7 @@ Versions in use on 2026-11-15:
    - **Lights:** the light bar or beacon flashes on your car and on the AI cop.
    - **Reset rules:** pressing your reset button gets refused and highlighted, and after waiting the reset is allowed.
    - **Catching:** the catch bar fills when you hold the AI runner.
+   - **Sky:** with Time of day Night and Weather Rain (panel), rain shows, the AI cars have headlights, and everything is back after End chase. Set Time of day and Weather back to Map default afterwards: the panel writes the live server's `config.json`.
    - **End:** End chase shows the result card. Leaving the server removes our apps from the layout.
 5. Open the control panel (Host panel button on the lobby card) and check:
    - The status line is filled in.
@@ -109,6 +110,20 @@ Then do the checks for whatever actually updated.
   - `castRayStatic(origin, dirNormalized, length)` returns the distance to the first static hit (terrain, buildings), and `>= length` means clear. Vehicles don't block it.
   - We cast both ways, as the game's own `isVisible` does, because single-sided faces only block from one side.
   - Also used: `veh:getDirectionVector()` and the global `log`.
+- **Sky, weather and grip** (`copsAndRobbers/sky.lua`, `surfaces.lua`, `wind.lua`):
+  - `core_environment`: `getState` / `setState` (fields `time`, `play`, `dayLength`, `cloudCover`, `fogDensity` in thousandths, `windSpeed`, `groundWind`, `temperatureCurveOverrideC`), `getInitState`, `enableChanges` / `canChange` (the lock: every setter, `setState` and its fade do nothing while locked), `getSolarTimeOfDayValue(key)` and `timeOfDayKeyToTime` (keys sunrise, morning, noon, afternoon, sunset, night), `setTemperatureProfile({ averageC })`, `getLightState().isNight`, `groundModels[name].{cdata, isAlias, parent}`.
+  - `be:setGroundModel(name, cdata)`, `be:queueAllObjectLua(cmd)`, `be:setGroundWind(vec3)`.
+  - `createObject("Precipitation")` with the fields `dataBlock`, `numDrops`, `dropSize`, `minSpeed`, `maxSpeed`, `boxWidth`, `boxHeight`, `useWind`; `registerObject`, `delete`, `scenetree.findObject`, `scenetree.MissionGroup:addObject`.
+  - **Game data:** the precipitation datablocks `rain_medium` and `Snow_menu` (`art/datablocks/managedDatablocks.datablocks.json` in `gameengine.zip`); the ground models and their alias lists in `art/groundmodels.json` (targets ASPHALT, ASPHALT_OLD, ASPHALT_PREPPED, COBBLESTONE, RUMBLE_STRIP, GRAVEL, DIRT, DIRT_DUSTY, DIRT_DUSTY_LOOSE, GRASS, GRAVEL_WET, MUD; sources ASPHALT_WET, GRAVEL_WET, MUD, SNOW).
+  - **Map materials:** maps say which surface a road or terrain layer is by naming one of those ground models or an alias (`groundmodelName` / `groundType` in their material files). Checked on 0.40.5 for west_coast_usa, Utah, italy, east_coast_usa, johnson_valley and jungle_rock_island. A surface name we don't list, or a map with its own `groundModels/` folder (a mod map), stays dry in rain and snow.
+  - `getState().groundWind` and `getInitState().groundWind` are the game's live wind vector, not copies; we copy it when saving.
+  - While the sky is locked the game skips its own `onVehicleSpawned = applyGroundWind` (the lock check in `applyGroundWind`), so cars spawned during a round get wind only from our 0.25 s updates.
+  - On a map change the game's `onClientEndMission` reloads ground models, clears the temperature override and zeroes the wind, but never undoes `enableChanges(false)`; that's why our `drop()` puts the lock back. Check after an update: leave mid-round or change map, and on the next map the environment menu works and grip is normal.
+  - On update, check: the functions above still exist (grep the game's `lua/ge/extensions/core/environment.lua`); `groundmodels.json` still has the listed names and aliases with similar values; the two datablocks still exist; the map scan below shows no new road, dirt or grass surface names (add any to `surfaces.lua` `RULES`); in game, a practice round with Night and Rain shows rain and night lights, wet roads slide, gusts push the car, the environment menu is greyed out, and after End chase the sky, grip, wind and menu are back.
+  - The map scan (prints each map's surface names with counts):
+    ```bash
+    for z in ~/.local/share/Steam/steamapps/common/BeamNG.drive/content/levels/*.zip; do echo "== $(basename "$z" .zip): $(unzip -p "$z" '*.json' 2>/dev/null | grep -oi '"groundmodelName" *: *"[^"]*"\|"groundType" *: *"[^"]*"' | sed 's/.*: *"//;s/"//' | tr a-z A-Z | sort | uniq -c | sort -rn | awk '{printf "%s(%s) ", $2, $1}')"; done
+    ```
 - **Other:**
   - `core_groundMarkers.setPath`, `guihooks.trigger`, `extensions.hook` / `load`. We no longer call `ui_message`.
   - `core_levels.getLevelTitle(id)` gives the map's real name for the panel and leaderboard (`game.lua`, `mapTitle`). If it goes missing we fall back to a prettified id.
@@ -133,6 +148,7 @@ Then do the checks for whatever actually updated.
 **What we use:**
 - **Vehicle commands:**
   - `electrics.set_lightbar_signal(1|0)`: light bar on with no siren. `1` means lights only.
+  - `obj:setWind(x, y, z)`, sent to every car through `be:queueAllObjectLua` (the gusts of the sky code), and `electrics.setLightsState(1)` (headlights on practice AI cars at night).
   - `controller.setFreeze(1|0)`, `fire.explodeVehicle()`, `ai.setMode(...)`, `ai.setTargetObjectID(id)`.
   - We patch `recovery.startRecovering` / `stopRecovering` / `loadHome` (`VEHICLE_PATCH`) so that recovery buttons go through our rules.
   - The `beaconSpin` controller spins while `electrics.values.lightbar > 0` (`lua/vehicle/controller/beaconSpin.lua`).
@@ -225,6 +241,7 @@ Then do the checks for whatever actually updated.
 - `places(lat, lon, {radius, categories={"gas_station"}}, callback)`. The callback gets `{places={{lat, lon, name, open}}}`, and we skip places where `open == "permanently_closed"`.
 - `gpsSet(lat, lon, label)`, `gps()`, which returns `.remaining` (metres) and `.planning`, and `gpsClear()`.
 - The hook `onBeamNGEarthRebased(info)`, where `info.purpose` is `"teleport"` or something else.
+- We send no sky on `beamng_earth`: a change through `core_environment` flips the player's Earth sky to Manual and saves it in their Earth settings.
 - Each player has their own floating origin. That's why positions travel as lat/lon, and why the server converts with WGS84 → ENU (`cnr/geo.lua`).
 
 **On update, check:**
