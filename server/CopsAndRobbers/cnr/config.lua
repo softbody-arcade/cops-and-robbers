@@ -34,6 +34,7 @@ M.DEFAULTS = {
   weather = "map",
   badWeatherChancePercent = 25,
   weatherDriving = true,
+  trafficPerPlayer = 5,
 }
 
 M.CHOICES = {
@@ -65,7 +66,7 @@ local function validList(v)
 end
 
 local MAXIMA = { assistMinSightPercent = 100, nightChancePercent = 100, badWeatherChancePercent = 100, clockSpeed = 120 }
-local WHOLE = { clockSpeed = true }
+local WHOLE = { clockSpeed = true, trafficPerPlayer = true }
 
 local function validNumber(key, v)
   if type(v) ~= "number" or v ~= v or v == math.huge or v == -math.huge then return false end
