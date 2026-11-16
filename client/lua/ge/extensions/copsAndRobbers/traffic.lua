@@ -13,7 +13,6 @@ local FREEZE_ON = "controller.setFreeze(1)"
 local FREEZE_OFF = "controller.setFreeze(0)"
 local HEADLIGHTS_ON = "electrics.setLightsState(1)"
 local OFFICIAL = "BeamNG - Official"
-local BAD_WEATHER = { rain = true, storm = true, fog = true, snow = true }
 local SPECIAL_WORDS = { "police", "sheriff", "interceptor", "ambulance", "fire", "rescue", "emergency", "taxi" }
 
 local notify = function() end
@@ -218,7 +217,7 @@ function M.tick(clock)
   end
   if clock - lastLights >= LIGHTS_INTERVAL then
     lastLights = clock
-    if BAD_WEATHER[weather] or (held and sky.isNight()) then sendAll(list(), HEADLIGHTS_ON) end
+    if sky.isBadWeather(weather) or (held and sky.isNight()) then sendAll(list(), HEADLIGHTS_ON) end
   end
   if not checked and clock >= startedAt + SPAWN_CHECK_SECONDS then
     checked = true

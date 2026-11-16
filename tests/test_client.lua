@@ -1920,3 +1920,143 @@ test("the host's siren rule reaches the card", function()
   env.tick(0.2)
   assertEq(env.hud().settings.sirensAllowed, false)
 end)
+
+local ownLights = require("copsAndRobbers/ownLights")
+local SIREN2, SIREN1, SIREN0 = "electrics.set_lightbar_signal(2)", "electrics.set_lightbar_signal(1)", "electrics.set_lightbar_signal(0)"
+
+local function count(veh, cmd)
+  local n = 0
+  for _, c in ipairs(veh.commands) do if c == cmd then n = n + 1 end end
+  return n
+end
+
+local function lightbarCommands(veh)
+  local out = {}
+  for _, c in ipairs(veh.commands) do if c:find("set_lightbar_signal", 1, true) then out[#out + 1] = c end end
+  return out
+end
+
+local function skyRound(env, sky, role)
+  local d = copy(SETUP)
+  d.sky = sky
+  if role then d.role = role end
+  env.fire("cnr_roundSetup", d)
+  env.tick(1)
+end
+
+local NIGHT = { time = "night", windDir = 0, windSeed = 1 }
+local HEAD_ON = { files = { ["settings/cnr_settings.json"] = { headlights = true } } }
+local SIREN_ON = { files = { ["settings/cnr_settings.json"] = { siren = true } } }
+
+test("own headlights come on when the car is placed at night", function()
+  local env = bootClient(HEAD_ON)
+  skyRound(env, NIGHT)
+  assertEq(count(env.veh, ownLights.HEADLIGHTS_ON), 1)
+end)
+
+test("own headlights are not re-sent while nothing changes", function()
+  local env = bootClient(HEAD_ON)
+  skyRound(env, NIGHT)
+  env.tick(10)
+  assertEq(count(env.veh, ownLights.HEADLIGHTS_ON), 1)
+  assertEq(count(env.veh, ownLights.HEADLIGHTS_OFF), 0)
+end)
+
+test("a day round in rain lights the car, a clear day does not", function()
+  local env = bootClient(HEAD_ON)
+  skyRound(env, { time = "noon", weather = "rain", windDir = 0, windSeed = 1 })
+  assertEq(count(env.veh, ownLights.HEADLIGHTS_ON), 1)
+  env = bootClient(HEAD_ON)
+  skyRound(env, { time = "noon", weather = "clear", windDir = 0, windSeed = 1 })
+  assertEq(count(env.veh, ownLights.HEADLIGHTS_ON), 0)
+end)
+
+test("sunrise turns own headlights off once", function()
+  local env = bootClient(HEAD_ON)
+  skyRound(env, NIGHT)
+  env.sky.state.time = 0
+  env.tick(3)
+  assertEq(count(env.veh, ownLights.HEADLIGHTS_OFF), 1)
+end)
+
+test("New sky to rain by day turns own headlights on", function()
+  local env = bootClient(HEAD_ON)
+  skyRound(env, { time = "noon", windDir = 0, windSeed = 1 })
+  assertEq(count(env.veh, ownLights.HEADLIGHTS_ON), 0)
+  env.fire("cnr_sky", { time = "noon", weather = "rain", windDir = 0, windSeed = 1 })
+  env.tick(2)
+  assertEq(count(env.veh, ownLights.HEADLIGHTS_ON), 1)
+end)
+
+test("a repaint at night lights the new car again", function()
+  local env = bootClient(HEAD_ON)
+  skyRound(env, NIGHT)
+  assertEq(count(env.veh, ownLights.HEADLIGHTS_ON), 1)
+  env.fire("cnr_paint", { color = { r = 1, g = 0, b = 0 } })
+  env.tick(1)
+  assertEq(count(env.veh, ownLights.HEADLIGHTS_ON), 2)
+end)
+
+test("the headlights switch off never touches the lights", function()
+  local env = bootClient()
+  skyRound(env, NIGHT)
+  env.tick(5)
+  assertEq(count(env.veh, ownLights.HEADLIGHTS_ON), 0)
+  assertEq(count(env.veh, ownLights.HEADLIGHTS_OFF), 0)
+end)
+
+test("switching headlights off in prep and round end send nothing", function()
+  local env = bootClient(HEAD_ON)
+  skyRound(env, NIGHT)
+  assertEq(count(env.veh, ownLights.HEADLIGHTS_ON), 1)
+  env.M.ui({ action = "setting", key = "headlights", value = false })
+  env.tick(2)
+  env.fire("cnr_roundEnd", { reason = "cancelled", message = "Round cancelled" })
+  env.tick(1)
+  assertEq(count(env.veh, ownLights.HEADLIGHTS_OFF), 0)
+end)
+
+test("a cop's siren runs only after release", function()
+  local env = bootClient(SIREN_ON)
+  skyRound(env, nil)
+  env.tick(3)
+  assertEq(count(env.veh, SIREN2), 0)
+  env.fire("cnr_release", {})
+  env.tick(3)
+  assertEq(count(env.veh, SIREN2) > 0, true)
+  env.fire("cnr_roundEnd", { reason = "cancelled", message = "Round cancelled" })
+  local bars = lightbarCommands(env.veh)
+  assertEq(bars[#bars], SIREN0)
+end)
+
+test("the host's switch silences a cop and never touches the saved switch", function()
+  local env = bootClient(SIREN_ON)
+  env.fire("cnr_rules", { sirensAllowed = false })
+  skyRound(env, nil)
+  env.fire("cnr_release", {})
+  env.tick(3)
+  assertEq(count(env.veh, SIREN2), 0)
+  assertEq(count(env.veh, SIREN1) > 0, true)
+  assertEq(env.written["settings/cnr_settings.json"], nil)
+  env.fire("cnr_rules", { sirensAllowed = true })
+  env.tick(3)
+  assertEq(count(env.veh, SIREN2) > 0, true)
+end)
+
+test("leaving a server forgets its siren ban", function()
+  local env = bootClient(SIREN_ON)
+  env.fire("cnr_rules", { sirensAllowed = false })
+  env.M.onBeamMPServerLeave()
+  skyRound(env, nil)
+  env.fire("cnr_release", {})
+  env.tick(3)
+  assertEq(count(env.veh, SIREN2) > 0, true)
+end)
+
+test("a runner never gets light bar commands", function()
+  local env = bootClient(SIREN_ON)
+  skyRound(env, nil, "runner")
+  env.fire("cnr_release", {})
+  env.tick(3)
+  assertEq(#lightbarCommands(env.veh), 0)
+end)

@@ -15,9 +15,9 @@ local nearby = require("copsAndRobbers/nearby")
 local sky = require("copsAndRobbers/sky")
 local traffic = require("copsAndRobbers/traffic")
 local playerSettings = require("copsAndRobbers/playerSettings")
+local ownLights = require("copsAndRobbers/ownLights")
 
 local CLIENT_VERSION = "2.4.1"
-local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
 local LIGHTS_OFF = "electrics.set_lightbar_signal(0)"
 local SETUP_DELAY = 0.5
 local PLACEMENT_TIMEOUT = 5
@@ -70,6 +70,7 @@ local requestReset
 local helpSeen = false
 local prefs = playerSettings.load(nil)
 local sirensAllowed = true
+local roundWeather, lightsState, lightsPlaced, lastLightsCheck = nil, nil, false, 0
 
 local function setFreeze(on)
   frozen = on
@@ -186,6 +187,9 @@ local function onRoundSetup(data)
   local phase = d.phase or "running"
   runnerOut = phase == "headstart" or phase == "running"
   traffic.setWeather(d.sky and d.sky.weather)
+  roundWeather = d.sky and d.sky.weather
+  lightsState = ownLights.new(prefs.headlights)
+  lightsPlaced = false
   if phase == "countdown" or phase == "headstart" or phase == "running" then
     sky.startClock(d.sky and d.sky.clockSeconds or 0)
   end
@@ -215,6 +219,7 @@ local function onSky(data)
   local d = jsonDecode(data) or {}
   sky.apply(d)
   traffic.setWeather(d.weather)
+  roundWeather = d.weather
   local label = sky.label(d, true)
   hudfeed.prepSky(label)
   if label then hudfeed.event("New sky: " .. label, clock, "info") end
@@ -439,6 +444,7 @@ end
 
 local function endRound()
   hudfeed.clearRound()
+  lightsState, roundWeather = nil, nil
   sky.restore()
   traffic.stop(clock)
   runnerOut = false
@@ -580,6 +586,7 @@ local function updatePendingPlacement()
     modesHoldUntil = clock + MODES_SETTLE
     if frozen then setFreeze(true) end
     sendServer("cnr_myVehicle", { vid = vid, rebuild = p.rebuild })
+    lightsPlaced = true
   elseif clock >= p.deadline then
     pendingPlacement = nil
   end
@@ -611,9 +618,21 @@ local function updateLightsAndPatch()
   local veh = ownVehicle()
   if veh then
     veh:queueLuaCommand(inputs.VEHICLE_PATCH)
-    if role == "cop" then veh:queueLuaCommand(LIGHTS_ON) end
+    local n = ownLights.lightbarSignal(role, statusActive, prefs.siren, sirensAllowed)
+    if n then veh:queueLuaCommand("electrics.set_lightbar_signal(" .. n .. ")") end
   end
   ai.lightsOn(sky.isNight())
+end
+
+local function updateOwnLights()
+  if not (active and lightsState) or pendingPlacement then return end
+  if not lightsPlaced and clock - lastLightsCheck < 1 then return end
+  lastLightsCheck = clock
+  local dark = sky.isNight() or sky.isBadWeather(roundWeather)
+  local cmd = ownLights.step(lightsState, prefs.headlights, dark, lightsPlaced)
+  lightsPlaced = false
+  local veh = ownVehicle()
+  if cmd and veh then veh:queueLuaCommand(cmd == "on" and ownLights.HEADLIGHTS_ON or ownLights.HEADLIGHTS_OFF) end
 end
 
 local function updateGeo()
@@ -680,6 +699,7 @@ local function onUpdate(dtReal)
   local trafficVids = traffic.tick(clock)
   if trafficVids then sendServer("cnr_trafficCars", { vids = trafficVids }) end
   updateLightsAndPatch()
+  updateOwnLights()
   updateGeo()
   updateSight()
   updateBuild()
@@ -743,6 +763,7 @@ end
 
 local function leaveServer()
   endRound()
+  sirensAllowed = true
   hudfeed.clearResult()
   hudfeed.leave()
   hudfeed.connect(false)

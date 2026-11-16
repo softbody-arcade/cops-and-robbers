@@ -221,6 +221,12 @@ function M.drop()
   forget()
 end
 
+M.BAD_WEATHER = { rain = true, storm = true, fog = true, snow = true }
+
+function M.isBadWeather(key)
+  return M.BAD_WEATHER[key] == true
+end
+
 function M.isNight()
   local env = core_environment
   if not env or not env.getLightState then return false end
