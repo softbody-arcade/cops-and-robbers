@@ -260,7 +260,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | `weather` | map | `map` (the map's own), `clear`, `cloudy`, `rain`, `storm`, `fog`, `snow` or `random` |
 | `badWeatherChancePercent` | 25 | Chance of rain, storm, fog or snow when Weather is random |
 | `weatherDriving` | true | Weather changes grip and adds wind (not on BeamNG.Earth) |
-| `trafficPerPlayer` | 5 | AI traffic cars around each player during a round (0 = off; normal maps only) |
+| `trafficPerPlayer` | 5 | AI traffic cars around each player during a round (0 = off, at most 20; normal maps only) |
 
 ## Host and robustness
 

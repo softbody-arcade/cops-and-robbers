@@ -255,10 +255,10 @@ function M.rounds(board, filter, limit)
     for _, c in ipairs(copList(r)) do
       local sightPct
       if type(r.hiddenSeconds) == "number" and chase > 0 then sightPct = math.floor(c.sight / chase * 100 + 0.5) end
-      cops[#cops + 1] = { name = c.name, sightPct = sightPct, catcher = catcherKeys[c.key] == true }
+      cops[#cops + 1] = { key = c.key, name = c.name, sightPct = sightPct, catcher = catcherKeys[c.key] == true }
     end
     list[#list + 1] = {
-      id = id, endedAt = r.endedAt, map = r.map, player = r.player, survivedSeconds = r.survivedSeconds,
+      id = id, endedAt = r.endedAt, map = r.map, player = r.player, playerKey = runnerKey(r), survivedSeconds = r.survivedSeconds,
       endReason = r.endReason, catchers = r.catchers, model = r.model, mode = r.mode, buildStep = r.buildStep,
       timeline = type(r.timeline) == "table" and #r.timeline > 0 and r.timeline or nil, cops = cops,
       tracked = type(r.timeline) == "table" or nil, sky = r.sky, traffic = r.traffic,

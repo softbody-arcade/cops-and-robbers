@@ -121,6 +121,12 @@ test("sky settings reject unknown choices and out-of-range numbers", function()
   assertEq(#w, 5)
 end)
 
+test("trafficPerPlayer can't go above 20", function()
+  local cfg, warnings = config.merge({ trafficPerPlayer = 50 })
+  assertEq(cfg.trafficPerPlayer, 5); assertEq(#warnings, 1)
+  assertEq(config.merge({ trafficPerPlayer = 20 }).trafficPerPlayer, 20)
+end)
+
 test("clock speed must be a whole number", function()
   local c, w = config.merge({ clockSpeed = 2.5 })
   assertEq(c.clockSpeed, 0); assertEq(#w, 1)

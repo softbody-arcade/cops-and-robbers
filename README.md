@@ -109,7 +109,7 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `weather` | map | `map` (the map's own), `clear`, `cloudy`, `rain`, `storm`, `fog`, `snow` or `random` |
 | `badWeatherChancePercent` | 25 | Chance of rain, storm, fog or snow when Weather is random |
 | `weatherDriving` | true | Weather changes grip and adds wind (not on BeamNG.Earth) |
-| `trafficPerPlayer` | 5 | AI traffic cars around each player during a round (0 = off; normal maps only, not on BeamNG.Earth yet) |
+| `trafficPerPlayer` | 5 | AI traffic cars around each player during a round (0 = off, at most 20; normal maps only, not on BeamNG.Earth yet) |
 
 ## Traffic
 

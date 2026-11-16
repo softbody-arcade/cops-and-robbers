@@ -1761,3 +1761,11 @@ test("starting or stopping traffic never deletes the player's own car", function
   env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 30, runnerId = 2 })
   assertEq(env.objects[env.veh.id] ~= nil, true)
 end)
+
+test("a distance that rounds to 1000 m shows in km", function()
+  bootClient()
+  local geo = require("copsAndRobbers/geo")
+  assertEq(geo.formatDistance(999.5), "1.0 km")
+  assertEq(geo.formatDistance(999.4), "999 m")
+  assertEq(geo.formatDistance(1000), "1.0 km")
+end)

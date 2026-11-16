@@ -11,7 +11,7 @@
       </div>
       <template v-if="recent.length">
         <div class="b-sec">Last rounds</div>
-        <RoundRow v-for="r in recent" :key="r.id" :round="r" :own="r.player === player.name" />
+        <RoundRow v-for="r in recent" :key="r.id" :round="r" :own="r.playerKey === player.key" />
       </template>
     </template>
     <div v-else-if="!players.length" class="b-empty">No players yet</div>
@@ -73,6 +73,6 @@ const tiles = computed(() => {
 const recent = computed(() => {
   const p = player.value
   if (!p) return []
-  return props.rounds.filter(r => r.player === p.name || list(r.cops).some(c => c.name === p.name)).slice(0, RECENT)
+  return props.rounds.filter(r => r.playerKey === p.key || list(r.cops).some(c => c.key === p.key)).slice(0, RECENT)
 })
 </script>

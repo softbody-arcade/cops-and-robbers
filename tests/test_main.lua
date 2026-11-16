@@ -1990,6 +1990,21 @@ test("after a round with auto on the panel shows the next round", function()
   env.cleanup()
 end)
 
+test("a practice round keeps the last real result on the panel", function()
+  local env = boot()
+  env.startRound(); env.go()
+  for _ = 1, 90 do
+    env.clock = env.clock + 0.25; env.call("cnr_tick")
+    if env.caught() then break end
+  end
+  assertEq(panelOf(env).lastResult.runner, "Reinder")
+  env.panel(1, "test runner")
+  assertEq(panelOf(env).lastResult.runner, "Reinder")
+  env.panel(1, "stop")
+  assertEq(panelOf(env).lastResult.runner, "Reinder")
+  env.cleanup()
+end)
+
 test("station count", function()
   local env = boot()
   assertEq(panelOf(env).stationCount, 0)
@@ -2013,6 +2028,20 @@ test("the board marks the viewer's own rows and never leaks keys", function()
   local runners = Util.JsonDecode(d).runners
   assertEq(runners[1].me, true); assertEq(runners[2].me, nil)
   assertEq(Util.JsonDecode(d).mine, nil)
+  assertEq(d:find("beammp:", 1, true), nil)
+  env.cleanup()
+end)
+
+test("rounds carry the same anonymous keys as players, so a renamed player keeps their rounds", function()
+  local env = boot({ leaderboard = '{"format":2,"runs":[{"player":"Old","key":"beammp:11","survivedSeconds":50,"map":"west_coast_usa","endedAt":1,"cops":["beammp:22"],"copNames":["Bob"]},{"player":"New","key":"beammp:11","survivedSeconds":40,"map":"west_coast_usa","endedAt":2}]}' })
+  env.call("cnr_board", 1, '{"action":"open"}')
+  local d = sentTo(env, "cnr_boardState", 1)
+  local s = Util.JsonDecode(d)
+  local keyOf = {}
+  for _, p in ipairs(s.players) do keyOf[p.name] = p.key end
+  assertEq(s.rounds[1].playerKey, keyOf["New"])
+  assertEq(s.rounds[2].playerKey, keyOf["New"])
+  assertEq(s.rounds[2].cops[1].key, keyOf["Bob"])
   assertEq(d:find("beammp:", 1, true), nil)
   env.cleanup()
 end)

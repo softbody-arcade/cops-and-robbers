@@ -6,8 +6,9 @@ export function formatTime(seconds) {
 
 export function formatDistance(meters) {
   const m = Math.max(0, Number(meters) || 0)
-  if (m >= 1000) return `${(m / 1000).toFixed(1)} km`
-  return `${Math.round(m)} m`
+  const rounded = Math.round(m)
+  if (rounded >= 1000) return `${(m / 1000).toFixed(1)} km`
+  return `${rounded} m`
 }
 
 export function hexToHsl(hex) {

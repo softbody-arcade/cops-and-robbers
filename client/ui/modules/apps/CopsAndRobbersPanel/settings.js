@@ -29,7 +29,7 @@ export const GROUPS = [
       help: "Rain, storm and snow change grip and bring gusty wind" },
   ] },
   { title: "Traffic", noEarth: true, items: [
-    { key: "trafficPerPlayer", label: "Traffic", unit: "per player", step: 1, min: 0, common: true, offAtZero: true,
+    { key: "trafficPerPlayer", label: "Traffic", unit: "per player", step: 1, min: 0, max: 20, common: true, offAtZero: true,
       help: "AI traffic cars around each player during a round" },
   ] },
   { title: "Catching", items: [

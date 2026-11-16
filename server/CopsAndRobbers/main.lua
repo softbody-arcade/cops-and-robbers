@@ -474,6 +474,10 @@ local function boardState(sub, viewerKey)
   end
   local limit = sub.rounds or ROUNDS_DEFAULT
   local rounds, total = leaderboard.rounds(board, f, limit)
+  for _, r in ipairs(rounds) do
+    r.playerKey = anonymous(tostring(r.playerKey))
+    for _, c in ipairs(r.cops) do c.key = anonymous(tostring(c.key)) end
+  end
   return {
     map = mapName, maps = leaderboard.maps(board), filter = sub.map or mapName, mode = f.mode or "all", traffic = f.traffic or "all",
     runners = runners, cops = cops, players = players, mine = mine,
@@ -695,7 +699,6 @@ function handlers.test(pid, cmd)
   trafficVids = {}
   partsBaseline = {}
   missingCount = {}
-  lastResult = nil
   aiVid = {}
   local role = cmd.args[1] and cmd.args[1]:lower()
   if cfg.carMode == "evolving" and not currentBuild then return reply(pid, "Start a new build first") end

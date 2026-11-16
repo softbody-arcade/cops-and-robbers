@@ -38,8 +38,9 @@ function M.compass(from, to)
 end
 
 function M.formatDistance(m)
-  if m >= 1000 then return string.format("%.1f km", m / 1000) end
-  return string.format("%d m", math.floor(m + 0.5))
+  local rounded = math.floor(m + 0.5)
+  if rounded >= 1000 then return string.format("%.1f km", m / 1000) end
+  return string.format("%d m", rounded)
 end
 
 function M.clearRoute()

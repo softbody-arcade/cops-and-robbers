@@ -65,7 +65,7 @@ local function validList(v)
   return true
 end
 
-local MAXIMA = { assistMinSightPercent = 100, nightChancePercent = 100, badWeatherChancePercent = 100, clockSpeed = 120 }
+local MAXIMA = { assistMinSightPercent = 100, nightChancePercent = 100, badWeatherChancePercent = 100, clockSpeed = 120, trafficPerPlayer = 20 }
 local WHOLE = { clockSpeed = true, trafficPerPlayer = true }
 
 local function validNumber(key, v)
