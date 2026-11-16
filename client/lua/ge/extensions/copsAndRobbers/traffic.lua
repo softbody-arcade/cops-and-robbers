@@ -129,6 +129,11 @@ local function hideTags()
   end
 end
 
+function M.objects()
+  if not running then return {} end
+  return trafficCars()
+end
+
 function M.setRoundCars(keys)
   roundCars, ownerCar = {}, {}
   lastTags = -math.huge

@@ -74,6 +74,7 @@ Then do the checks for whatever actually updated.
 - **Line of sight:** `MPVehicleGE.getVehicles()`, keyed by `"pid-vid"` with `gameVehicleID`, `isSpawned` and `isDeleted`. Also `MPVehicleGE.getPlayers()[pid].activeVehicleID`, a `"pid-vid"` key for the car that player is driving or viewing. The server's round car list (`cnr_roundCars`) comes first; these are used to find the runner's car on a cop's game.
 - **Name tags:** setting `MPVehicleGE.getVehicles()[key].hideNametag = true` hides BeamMP's name tag over that car (the check is in BeamMP's name tag drawing, `MPVehicleGE.lua`). We set it on every traffic car and clear it after the round. On update, check that traffic cars still show no name tag in a round.
 - The GE hook `onBeamMPServerLeave`.
+- **Lights for other players:** BeamMP sends a car's electrics only when a value changes (`MPElectricsVE.check()`, 15 times a second). It also sends a replaced car (`core_vehicles.replaceVehicle`, same model) to the others only after a 15 s delay (`MPVehicleGE.lua` `editSyncTimer`), and that rebuilds their copy with every light off. So lights the mod set at placement never reached the others. During a round, every 5 s (`ownLights.SYNC_INTERVAL`) the client sends the light state of the cars it owns (round car, practice AI cars, traffic) through `MPElectricsGE.sendElectrics(json, gameVehicleID)`. The payload is `lights_state`, `lightbar` and a changing `cnrLightSync` counter that gets past BeamMP's duplicate check; the other games apply it in `MPElectricsVE.applyElectrics` (`setLightsState`, `set_lightbar_signal`).
 - **Mod mounting:** the mod is mounted when you join. Our UI apps then need an `onFilesChanged` refresh.
 - **Launcher on Arch:** the wrapper in `~/.local/bin/beammp-launcher` sets argv[0] and the working directory. The AUR binary name broke `CheckName()` before.
 
@@ -82,6 +83,7 @@ Then do the checks for whatever actually updated.
 - `cnr_myVehicle` reaches the server: your own car counts in catch and reset checks. If the vid parse breaks, the server never learns which car is yours.
 - The five apps appear in Esc > UI Apps (or are placed automatically, for Announcements and the HUD).
 - Rejoin within the same game session. If notices or panel replies now show twice, `AddEventHandler` re-registration has changed.
+- With a second player in a round: about 20 s after the round starts, they see your headlights at night and, as a cop, your light bar (and siren, if on).
 
 ## BeamNG.drive: game engine Lua (GE)
 

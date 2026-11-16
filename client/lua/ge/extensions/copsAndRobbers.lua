@@ -71,7 +71,8 @@ local helpSeen = false
 local prefs = playerSettings.load(nil)
 local sirensAllowed = true
 local routeDrawn = false
-local lightsState, lightsPlaced, lastLightsCheck = nil, nil, false, 0
+local lightsState, lightsPlaced, lastLightsCheck = nil, false, 0
+local lastLightSync, lightSyncCount = 0, 0
 
 local function setFreeze(on)
   frozen = on
@@ -655,6 +656,17 @@ local function updateOwnLights()
   if cmd then veh:queueLuaCommand(cmd == "on" and ownLights.HEADLIGHTS_ON or ownLights.HEADLIGHTS_OFF) end
 end
 
+local function updateLightSync()
+  if not active or clock - lastLightSync < ownLights.SYNC_INTERVAL then return end
+  lastLightSync = clock
+  lightSyncCount = lightSyncCount + 1
+  local cmd = ownLights.syncCommand(lightSyncCount)
+  local veh = ownVehicle()
+  if veh then veh:queueLuaCommand(cmd) end
+  for _, car in ipairs(ai.objects()) do car.obj:queueLuaCommand(cmd) end
+  for _, obj in ipairs(traffic.objects()) do obj:queueLuaCommand(cmd) end
+end
+
 local function updateGeo()
   if not geoMode then return end
   if clock - lastGeoSent >= GEO_SEND_INTERVAL then
@@ -720,6 +732,7 @@ local function onUpdate(dtReal)
   if trafficVids then sendServer("cnr_trafficCars", { vids = trafficVids }) end
   updateLightsAndPatch()
   updateOwnLights()
+  updateLightSync()
   updateGeo()
   updateSight()
   updateBuild()

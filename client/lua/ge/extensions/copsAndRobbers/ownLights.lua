@@ -24,4 +24,10 @@ function M.lightbarSignal(role, released, sirenOn, allowed)
   return 1
 end
 
+M.SYNC_INTERVAL = 5
+
+function M.syncCommand(n)
+  return string.format("if MPElectricsVE and electrics then local e = electrics.values obj:queueGameEngineLua('if MPElectricsGE then MPElectricsGE.sendElectrics(' .. string.format('%%q', jsonEncode({ lights_state = e.lights_state, lightbar = e.lightbar, cnrLightSync = %d })) .. ', ' .. obj:getID() .. ') end') end", n)
+end
+
 return M

@@ -2315,3 +2315,45 @@ test("geo.gpsInfo falls back to the straight line while the route is planning", 
   assertEq(planned.meters, 100); assertEq(planned.after, "E")
   assertEq(noRemaining.meters, 100); assertEq(noRemaining.after, "E")
 end)
+
+local function syncCommands(veh)
+  local out = {}
+  for _, c in ipairs(veh.commands) do if c:find("MPElectricsGE.sendElectrics", 1, true) then out[#out + 1] = c end end
+  return out
+end
+
+test("during a round the car's lights are sent to the other players again every 5 s", function()
+  local env = bootClient()
+  skyRound(env, NIGHT)
+  local first = #syncCommands(env.veh)
+  env.tick(10)
+  local list = syncCommands(env.veh)
+  assertEq(#list >= first + 2, true)
+  assertEq(list[#list] ~= list[#list - 1], true)
+  assertEq(load(list[#list]) ~= nil, true)
+  env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 30, runnerId = 2 })
+  local after = #syncCommands(env.veh)
+  env.tick(10)
+  assertEq(#syncCommands(env.veh), after)
+end)
+
+test("practice AI cars get their lights sent to the other players too", function()
+  local env = bootClient()
+  local d = copy(SETUP); d.role = "runner"; d.runnerId = 1; d.inPlace = true
+  d.sky = NIGHT
+  env.fire("cnr_roundSetup", d)
+  env.fire("cnr_setupAI", { model = "pickup", config = "vehicles/pickup/base.pc", runnerId = 1, ai = { { id = -1, role = "cop", index = 1, name = "AI cop 1" } } })
+  env.tick(12)
+  assertEq(#syncCommands(env.spawned[1].veh) >= 1, true)
+end)
+
+test("a car that never appears doesn't break the client's update", function()
+  local env = bootClient()
+  local car = env.veh
+  env.veh = nil
+  env.fire("cnr_roundSetup", copy(SETUP))
+  env.tick(6)
+  env.veh = car
+  local ok, err = pcall(env.tick, 3)
+  assertEq(ok, true, tostring(err))
+end)
