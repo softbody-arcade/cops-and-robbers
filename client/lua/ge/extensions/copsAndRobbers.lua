@@ -154,10 +154,13 @@ local function playerName(id)
   return type(p) == "table" and type(p.name) == "string" and p.name or nil
 end
 
+local routeCleared = false
+
 local function onRoundSetup(data)
   local d = jsonDecode(data) or {}
   hudfeed.clearRound()
   hudfeed.clearResult()
+  routeCleared = false
   active = true
   role = d.role
   runnerId = d.runnerId
@@ -349,20 +352,33 @@ end
 
 local function onLastSeen(data)
   local d = jsonDecode(data) or {}
+  local never, always = prefs.route == "never", prefs.route == "always"
   infoTag = d.live and "LIVE" or nil
-  if d.live and d.route == false then
-    geo.clearRoute()
+  if never then
+    if not routeCleared then
+      geo.clearRoute()
+      routeCleared = true
+    end
+  else
+    routeCleared = false
+  end
+  local inSight = d.live and d.route == false
+  if inSight and not always then
+    if not never then geo.clearRoute() end
     infoTag, infoParts = "IN SIGHT", nil
     return
   end
+  if inSight then infoTag = "IN SIGHT" end
   local target = d.geo and geo.toGame(d.geo) or (d.pos and vec3(d.pos.x, d.pos.y, d.pos.z))
   if not target then return end
-  if geoMode and d.geo and geo.setGpsTarget(d.geo) then
-    local info = geo.gpsInfo()
-    infoParts = info or infoParts
-    return
+  if not never then
+    if geoMode and d.geo and geo.setGpsTarget(d.geo) then
+      local info = geo.gpsInfo()
+      infoParts = info or infoParts
+      return
+    end
+    if core_groundMarkers then pcall(core_groundMarkers.setPath, target) end
   end
-  if core_groundMarkers then pcall(core_groundMarkers.setPath, target) end
   local veh = ownVehicle()
   if veh then
     local here = veh:getPosition()
