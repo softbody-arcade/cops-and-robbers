@@ -1551,8 +1551,10 @@ test("leaving the server mid-rain removes the rain at once", function()
   local d = copy(SETUP); d.sky = { weather = "rain", driving = true, windDir = 0, windSeed = 7 }
   env.fire("cnr_roundSetup", d); env.tick(1)
   assertEq(env.sky.objects.cnr_precipitation ~= nil, true)
+  assertEq(env.sky.objects.cnr_rain_sound ~= nil, true)
   env.M.onBeamMPServerLeave()
   assertEq(env.sky.objects.cnr_precipitation, nil)
+  assertEq(env.sky.objects.cnr_rain_sound, nil)
 end)
 
 test("practice AI cars turn their headlights on at night", function()

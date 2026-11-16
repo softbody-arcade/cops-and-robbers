@@ -44,9 +44,13 @@ local function baseVolume()
   if ramp then
     local share = 1
     if ramp.d1 ~= ramp.d0 then share = math.max(0, math.min(1, (cur.drops - ramp.d0) / (ramp.d1 - ramp.d0))) end
-    return ramp.v0 + (spec.volume - ramp.v0) * share
+    return ramp.v0 + ((ramp.v1 or spec.volume) - ramp.v0) * share
   end
   return spec.volume * cur.drops / spec.numDrops
+end
+
+local function fadeRamp()
+  if cur.spec.volume then cur.ramp = { v0 = baseVolume(), d0 = cur.drops, d1 = 0, v1 = 0 } end
 end
 
 local function volumeOf()
@@ -134,15 +138,21 @@ function M.target(spec, seconds)
     return
   end
   if not spec then
-    if cur then rateOut = cur.drops / seconds end
+    if cur then
+      rateOut = cur.drops / seconds
+      fadeRamp()
+    end
   elseif sameKind() then
     local obj = scenetree.findObject(M.NAME)
     if obj then setSpecFields(obj, spec) end
-    if spec.volume then cur.ramp = { v0 = baseVolume(), d0 = cur.drops, d1 = spec.numDrops } end
+    local ramp = nil
+    if spec.volume and spec.numDrops ~= cur.drops then ramp = { v0 = baseVolume(), d0 = cur.drops, d1 = spec.numDrops } end
+    cur.ramp = ramp
     cur.spec = spec
     rateIn = math.max(1, math.abs(spec.numDrops - cur.drops)) / seconds
   elseif cur then
     rateOut = cur.drops / (seconds / 2)
+    fadeRamp()
     rateIn = spec.numDrops / (seconds / 2)
   else
     rateIn = spec.numDrops / seconds
@@ -171,7 +181,7 @@ function M.update(dt)
       reached = true
     end
   end
-  if goal and not cur then create(goal) end
+  if goal and not cur and not create(goal) then goal = nil end
   if sameKind() and cur.drops ~= goal.numDrops then
     local diff = goal.numDrops - cur.drops
     local step = rateIn * dt

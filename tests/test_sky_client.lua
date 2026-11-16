@@ -172,8 +172,53 @@ end)
 test("a calm sky removes our precipitation object", function()
   local sky, fake = load()
   sky.apply(RAIN_NIGHT)
+  sky.update(0.1)
+  assertEq(fake.objects.cnr_precipitation ~= nil, true)
   sky.apply({ time = "night", weather = "clear", windDir = 0, windSeed = 1 })
+  sky.update(3.1)
   assertEq(fake.objects.cnr_precipitation, nil)
+end)
+
+local function withLog(fn)
+  local old, lines = _G.log, {}
+  _G.log = function(level, tag, msg) lines[#lines + 1] = level .. " " .. tag .. " " .. tostring(msg) end
+  local ok, err = pcall(fn, lines)
+  _G.log = old
+  if not ok then error(err, 0) end
+end
+
+test("a throw from the rain engine calls is contained and leaves no rain", function()
+  local sky, fake = load()
+  withLog(function(lines)
+    local make = _G.createObject
+    _G.createObject = function() error("engine boom") end
+    sky.apply(RAIN_NIGHT)
+    local ok = pcall(sky.update, 0.5)
+    _G.createObject = make
+    assertEq(ok, true)
+    assertEq(fake.objects.cnr_precipitation, nil)
+    assertEq(fake.objects.cnr_rain_sound, nil)
+    assertEq(#lines >= 1, true)
+    assertEq(pcall(sky.update, 0.1), true)
+    assertEq(fake.objects.cnr_precipitation, nil)
+  end)
+end)
+
+test("a failed registration logs once over two seconds of updates", function()
+  local sky, fake = load()
+  withLog(function(lines)
+    local make = _G.createObject
+    _G.createObject = function(kind)
+      local obj = make(kind)
+      if kind == "Precipitation" then function obj:registerObject() end end
+      return obj
+    end
+    sky.apply(RAIN_NIGHT)
+    for _ = 1, 20 do sky.update(0.1) end
+    _G.createObject = make
+    assertEq(#lines, 1)
+    assertEq(fake.objects.cnr_precipitation, nil)
+  end)
 end)
 
 test("restore puts the earlier lock back", function()

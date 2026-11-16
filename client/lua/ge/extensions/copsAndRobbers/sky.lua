@@ -183,7 +183,13 @@ function M.startClock(clockSeconds)
 end
 
 function M.update(dt)
-  if rain.active() then rain.update(dt) end
+  if rain.active() then
+    local ok, err = pcall(rain.update, dt)
+    if not ok then
+      rain.clear()
+      log("E", "cnr_sky", tostring(err))
+    end
+  end
   if not core_environment then return end
   if lockTimer then
     lockTimer = lockTimer - dt

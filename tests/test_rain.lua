@@ -75,6 +75,11 @@ end)
 
 test("a second target mid-fade heads for the newest one and never makes two objects", function()
   load()
+  local made, make = 0, _G.createObject
+  _G.createObject = function(kind)
+    if kind == "Precipitation" then made = made + 1 end
+    return make(kind)
+  end
   rain.target(RAIN, 3); run(1)
   rain.target(STORM, 3); run(1)
   rain.target(nil, 3); run(3.1)
@@ -82,6 +87,45 @@ test("a second target mid-fade heads for the newest one and never makes two obje
   local n = 0
   for _, name in ipairs(fake.deleted) do if name == "cnr_precipitation" then n = n + 1 end end
   assertEq(n, 1)
+  assertEq(made, 1)
+  _G.createObject = make
+end)
+
+local function volumes(seconds, snd)
+  local list = {}
+  for _ = 1, math.floor(seconds * 10 + 0.5) do
+    rain.update(0.1)
+    local s = fake.objects.cnr_rain_sound
+    list[#list + 1] = s and s.volume or 0
+  end
+  return list
+end
+
+local function assertFalling(list)
+  for i = 2, #list do assertEq(list[i] <= list[i - 1] + 1e-6, true) end
+  assertNear(list[#list], 0, 1e-6)
+end
+
+test("a same-weather re-apply leaves no ramp, so the round end fades the sound", function()
+  load()
+  full(RAIN); rain.target(RAIN, 3); run(0.5)
+  rain.target(nil, 3); run(1.5)
+  assertNear(fake.objects.cnr_rain_sound.volume, 0.5, 0.1)
+end)
+
+test("rain to storm then clear: the volume falls steadily to nothing", function()
+  load()
+  full(RAIN); rain.target(STORM, 3); run(1)
+  rain.target(nil, 3)
+  assertFalling(volumes(3.2))
+end)
+
+test("rain to snow: the rain sound falls steadily to nothing before the rain goes", function()
+  load()
+  full(RAIN); rain.target(SNOW, 3)
+  local list = volumes(1.5)
+  assertFalling(list)
+  assertEq(fake.objects.cnr_precipitation ~= nil, true)
 end)
 
 test("a zero length target lands at once", function()
