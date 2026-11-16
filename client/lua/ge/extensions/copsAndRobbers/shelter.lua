@@ -2,7 +2,7 @@ local M = {}
 
 M.RANGE = 12
 M.SPREAD = 3
-M.CHECKS_TO_SWITCH = 4
+M.CHECKS_TO_SWITCH = 2
 
 local OFFSETS = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
 
