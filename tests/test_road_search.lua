@@ -223,3 +223,17 @@ test("shift moves the routes", function()
   near(pos.y, 20)
   near(pos.z, 35)
 end)
+
+test("a first step of 0 s from an origin on a node gives finite numbers", function()
+  local g = lineGraph(5, 100)
+  local routes = roadSearch.routes(v(100, 0, 0), -1, 0, roadsOf(g, 2, 3, 0), 0)
+  assertEq(routes[1].dist[2], 0)
+  local run = roadSearch.newRun(routes)
+  local pos, vel = roadSearch.step(run, v(0, 0, 100), 0)
+  for _, n in ipairs({ pos.x, pos.y, pos.z, vel.x, vel.y, vel.z }) do
+    assertEq(n == n and n ~= math.huge and n ~= -math.huge, true, tostring(n))
+  end
+  near(pos.x, 100)
+  pos = roadSearch.step(run, v(0, 0, 100), 1)
+  near(pos.x, 55)
+end)

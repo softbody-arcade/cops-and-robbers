@@ -16,7 +16,6 @@ local sky = require("copsAndRobbers/sky")
 local heli = require("copsAndRobbers/heli")
 local heliSound = require("copsAndRobbers/heliSound")
 local shelter = require("copsAndRobbers/shelter")
-local tunnels = require("copsAndRobbers/tunnels")
 local traffic = require("copsAndRobbers/traffic")
 local hiding = require("copsAndRobbers/hiding")
 local playerSettings = require("copsAndRobbers/playerSettings")
@@ -835,21 +834,13 @@ local function roofedAt(p)
   return shelter.roofed(p, castUp)
 end
 
-local tunnelRoofs = {}
-local tunnelRoofGraph = nil
-
-local function tunnelExit(carPos, dirX, dirY, seed)
-  local gp = map and map.getGraphpath and map.getGraphpath()
-  local m = map and map.getMap and map.getMap()
-  local graph = gp and gp.graph
-  if graph ~= tunnelRoofGraph then
-    tunnelRoofGraph = graph
-    tunnelRoofs = {}
-  end
-  local roadData = { closest = closestRoad, links = graph, nodes = m and m.nodes }
-  local list = tunnels.watch(carPos, dirX, dirY, roadData, roofedAt, seed, tunnelRoofs)
-  local first = list and list[1]
-  return first and first.pos
+local function roadData()
+  if not map then return nil end
+  local gp = map.getGraphpath and map.getGraphpath()
+  local m = map.getMap and map.getMap()
+  local graph, nodes = gp and gp.graph, m and m.nodes
+  if graph == nil or nodes == nil then return nil end
+  return { closest = closestRoad, links = graph, nodes = nodes }
 end
 
 local coverFailed = false
@@ -871,8 +862,8 @@ local function updateHeli(runnerObj)
   end
   if active then
     local target = role == "runner" and ownVehicle() or runnerObj
-    local opts = { weather = traffic.weather(), beam = prefs.beam ~= false }
-    if castRayStatic then opts.tunnelExit = tunnelExit end
+    local opts = { weather = traffic.weather(), beam = prefs.beam ~= false, roads = roadData }
+    if castRayStatic then opts.roofedAt = roofedAt end
     heli.lightTick(heliState, target, heli.wantsNight(heliState) and sky.isNight(), clock, opts)
     local camPos = core_camera and core_camera.getPosition and core_camera.getPosition() or nil
     local level = prefs.sound ~= false and heli.soundLevel(heliState, clock) or 0

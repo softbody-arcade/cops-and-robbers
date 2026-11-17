@@ -423,7 +423,7 @@ local function tickLight(state, target, phase, last, night, clock, opts)
       if desired then startApproach(state, clock) end
     elseif state.light then
       if phase == "refuelling" and isUp(last) and f and state.fx.mode ~= "fade" then
-        startDepart(state, f.spot or car, clock)
+        startDepart(state, f.spot or f.lead or car, clock)
       elseif not (state.fx.mode == "depart" and phase == "refuelling") then
         removeLight(state)
       end

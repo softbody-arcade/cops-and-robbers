@@ -12,7 +12,7 @@ local function load()
     function obj:setPosition(p) self.pos = { x = p.x, y = p.y, z = p.z } end
     return obj
   end
-  for _, n in ipairs({ "copsAndRobbers/heli", "copsAndRobbers/shelter", "copsAndRobbers/heliFlight", "copsAndRobbers/heliSearch", "copsAndRobbers/beam" }) do package.loaded[n] = nil end
+  for _, n in ipairs({ "copsAndRobbers/heli", "copsAndRobbers/shelter", "copsAndRobbers/heliFlight", "copsAndRobbers/heliSearch", "copsAndRobbers/beam", "copsAndRobbers/tunnels", "copsAndRobbers/roadSearch" }) do package.loaded[n] = nil end
   heli = require("copsAndRobbers/heli")
   state = heli.new()
   pos = vec3(10, 20, 5)
@@ -1349,14 +1349,92 @@ local function samePos(a, b, eps, msg)
   assertNear(a.x, b.x, eps, msg); assertNear(a.y, b.y, eps, msg); assertNear(a.z, b.z, eps, msg)
 end
 
-local function exitStub(result)
-  local calls = {}
-  local opts = { tunnelExit = function(car, dirX, dirY, seed)
-    calls[#calls + 1] = { car = copyPos(car), dirX = dirX, dirY = dirY, seed = seed }
-    if type(result) == "function" then return result(car) end
-    return result
-  end }
-  return opts, calls
+local function roads(points, edges)
+  local nodes, links = {}, {}
+  for id, p in pairs(points) do
+    nodes[id] = { pos = vec3(p[1], p[2], p[3]) }
+    links[id] = {}
+  end
+  for _, e in ipairs(edges) do
+    links[e[1]][e[2]] = { len = 1 }
+    links[e[2]][e[1]] = { len = 1 }
+  end
+  local function closest(p)
+    local best, a, b
+    for _, e in ipairs(edges) do
+      local u, w = nodes[e[1]].pos, nodes[e[2]].pos
+      local ex, ey = w.x - u.x, w.y - u.y
+      local l2 = ex * ex + ey * ey
+      local t = l2 > 0 and math.max(0, math.min(1, ((p.x - u.x) * ex + (p.y - u.y) * ey) / l2)) or 0
+      local d = math.sqrt((u.x + ex * t - p.x) ^ 2 + (u.y + ey * t - p.y) ^ 2)
+      if not best or d < best then best, a, b = d, e[1], e[2] end
+    end
+    return a, b, best
+  end
+  return { nodes = nodes, links = links, closest = closest }
+end
+
+local function straight(from, to)
+  local points, edges = {}, {}
+  for i = from, to do points[i] = { (i - 1) * 100, 0, 0 } end
+  for i = from, to - 1 do edges[#edges + 1] = { i, i + 1 } end
+  return roads(points, edges)
+end
+
+local function roofOver(list)
+  return function(p)
+    for _, q in ipairs(list) do
+      if math.abs(p.x - q.x) < 1 and math.abs(p.y - q.y) < 1 then return true end
+    end
+    return false
+  end
+end
+
+local function tunnelTo(car, exit, via)
+  local points = {
+    [1] = { car.x + 5, car.y, car.z },
+    [2] = { car.x - 40, car.y, car.z },
+    [3] = { exit.x, exit.y, exit.z },
+  }
+  local edges = { { 1, 2 }, { 1, 3 } }
+  local roofs = { vec3(car.x, car.y, car.z), vec3(car.x + 5, car.y, car.z) }
+  if via then
+    points[4] = { via.x, via.y, via.z }
+    edges = { { 1, 2 }, { 1, 4 }, { 4, 3 } }
+    roofs[3] = via
+  end
+  local g = roads(points, edges)
+  return { roads = function() return g end, roofedAt = roofOver(roofs) }
+end
+
+local function inTunnel(p) return p.x > 50 and p.x < 350 and math.abs(p.y) < 1 end
+
+local function tunnelOpts()
+  local g = straight(-9, 20)
+  return { roads = function() return g end, roofedAt = inTunnel }
+end
+
+local function nudge(vel)
+  pos = vec3(pos.x + vel.x * 0.05, pos.y + vel.y * 0.05, pos.z + vel.z * 0.05)
+end
+
+local function drive(c, to, vel, opts, each, isNight)
+  while c < to - 1e-9 do
+    c = c + 0.05
+    nudge(vel)
+    heli.lightTick(state, target, isNight or false, c, opts)
+    if each then each(c) end
+  end
+  return c
+end
+
+local function loseDriving(c, vel, opts, extra, isNight)
+  status(c, "tracking", extra, opts, nil, isNight)
+  c = drive(c, c + 1, vel, opts, nil, isNight)
+  c = c + 0.05
+  nudge(vel)
+  status(c, "searching", extra, opts, nil, isNight)
+  return c
 end
 
 local function countLogs(fn)
@@ -1483,18 +1561,24 @@ test("losing the runner in a tunnel searches the exit", function()
   load()
   state.random = seeded(6)
   local e = vec3(pos.x + 300, pos.y, pos.z)
-  local opts, calls = exitStub(e)
-  local c = lose(0, opts, { seed = 42 })
+  local c = lose(0, tunnelTo(pos, e), { seed = 42 })
   samePos(state.flight.spot, e, 1e-9)
-  assertEq(#calls, 1)
-  samePos(calls[1].car, pos, 1e-9)
-  assertEq(calls[1].seed, 42)
-  assertEq(calls[1].seed, state.seed)
-  opts, calls = exitStub(nil)
-  c = lose(c + 0.05, opts, { seed = 42 })
-  assertEq(#calls, 1)
+  assertEq(state.search.mode, "tunnel")
+  local g = roads({
+    [1] = { pos.x + 5, pos.y, pos.z },
+    [2] = { pos.x - 40, pos.y, pos.z },
+    a = { pos.x + 300, pos.y + 100, pos.z },
+    b = { pos.x + 300, pos.y - 100, pos.z },
+  }, { { 1, 2 }, { 1, "a" }, { 1, "b" } })
+  local fork = { roads = function() return g end, roofedAt = roofOver({ copyPos(pos), vec3(pos.x + 5, pos.y, pos.z) }) }
+  c = lose(c + 0.05, fork, { seed = 42 })
+  samePos(state.flight.spot, g.nodes.a.pos, 1e-9)
+  c = lose(c + 0.05, fork, { seed = 43 })
+  samePos(state.flight.spot, g.nodes.b.pos, 1e-9)
+  c = lose(c + 0.05, { roads = fork.roads, roofedAt = function() return false end }, { seed = 42 })
   samePos(state.flight.spot, pos, 1e-9)
-  local failing = { tunnelExit = function() error("walk failed") end }
+  assertEq(state.search.mode, "contain")
+  local failing = { roads = function() error("walk failed") end, roofedAt = fork.roofedAt }
   local lines = countLogs(function()
     c = lose(c + 0.05, failing, { seed = 42 })
     samePos(state.flight.spot, pos, 1e-9)
@@ -1507,9 +1591,13 @@ test("losing the runner in a tunnel searches the exit", function()
 end)
 
 test("the tunnel direction is the car's velocity above 1 m/s, otherwise its facing", function()
-  for _, case in ipairs({ { speed = 10, x = 1, y = 0 }, { speed = 0.5, x = 0, y = 1 } }) do
+  for _, case in ipairs({ { speed = 10, x = 50, y = -50 }, { speed = 0.5, x = -50, y = 50 } }) do
     load()
-    local opts, calls = exitStub(nil)
+    local g = roads({
+      [1] = { pos.x - 50, pos.y + 50, pos.z },
+      [2] = { pos.x + 50, pos.y - 50, pos.z },
+    }, { { 1, 2 } })
+    local opts = { roads = function() return g end, roofedAt = roofOver({ copyPos(pos) }) }
     local car = {
       getPosition = function() return pos end,
       getVelocity = function() return vec3(case.speed, 0, 0) end,
@@ -1517,10 +1605,8 @@ test("the tunnel direction is the car's velocity above 1 m/s, otherwise its faci
     }
     status(0, "tracking", nil, opts, car)
     status(0.05, "searching", nil, opts, car)
-    assertEq(#calls, 1)
-    local dx, dy = calls[1].dirX, calls[1].dirY
-    assertNear(dx * case.y - dy * case.x, 0, 1e-9, tostring(case.speed))
-    assertEq(dx * case.x + dy * case.y > 0, true, tostring(case.speed))
+    assertEq(state.search.mode, "tunnel", tostring(case.speed))
+    samePos(state.flight.spot, vec3(pos.x + case.x, pos.y + case.y, pos.z), 1e-9, tostring(case.speed))
   end
 end)
 
@@ -1533,15 +1619,14 @@ test("guided follows the runner and recomputes when guidance ends", function()
     getVelocity = function() return vel end,
     getDirectionVector = function() return vec3(1, 0, 0) end,
   }
-  local e
-  local opts, calls = exitStub(function(p)
-    e = vec3(p.x + 250, p.y, p.z)
-    return e
-  end)
   local s = copyPos(pos)
+  local inside = vec3(s.x + 201, s.y, s.z)
+  local e = vec3(inside.x + 250, s.y, s.z)
+  local opts = tunnelTo(inside, e)
   status(0, "searching", nil, opts, car)
   local f = state.flight
   samePos(f.spot, s, 1e-9)
+  assertEq(state.search.mode, "contain")
   local c = 0
   for _ = 1, 10 do
     c = c + 0.05
@@ -1555,26 +1640,26 @@ test("guided follows the runner and recomputes when guidance ends", function()
     heli.lightTick(state, car, false, c, opts)
     samePos(f.spot, pos, 1e-9, tostring(c))
     samePos(f.spotVel, vel, 1e-9, tostring(c))
+    assertEq(state.search, nil)
   end
-  assertEq(#calls, 0)
   c = c + 0.05
   pos = vec3(pos.x + 1, pos.y, pos.z)
+  samePos(pos, inside, 1e-9)
   status(c, "searching", nil, opts, car)
-  assertEq(#calls, 1)
+  assertEq(state.search.mode, "tunnel")
   samePos(f.spot, e, 1e-9)
   samePos(f.spotVel, vec3(0, 0, 0), 0)
   for _ = 1, 20 do
     c = c + 0.05
     heli.lightTick(state, car, false, c, opts)
   end
-  assertEq(#calls, 1)
   samePos(f.spot, e, 1e-9)
 end)
 
 test("guidance starting restarts the circle and the sweep from the runner", function()
   load()
   state.random = seeded(8)
-  local opts = exitStub(function(p) return vec3(p.x + 500, p.y, p.z) end)
+  local opts = tunnelTo(pos, vec3(pos.x + 500, pos.y, pos.z))
   local c = lose(0, opts)
   local f = state.flight
   assertNear(horiz(f.spot, pos), 500, 1e-9)
@@ -1590,16 +1675,16 @@ end)
 
 test("guided and lost in the same tick search the runner", function()
   load()
-  local opts, calls = exitStub(function(p) return vec3(p.x + 300, p.y, p.z) end)
+  local opts = tunnelTo(pos, vec3(pos.x + 300, pos.y, pos.z))
   lose(0, opts, { guided = true })
   samePos(state.flight.spot, pos, 1e-9)
-  assertEq(#calls, 0)
+  assertEq(state.search, nil)
 end)
 
 test("a refuel while searching far away flies away from the spot", function()
   load()
   local e = vec3(pos.x + 1000, pos.y, pos.z)
-  local opts = exitStub(e)
+  local opts = tunnelTo(pos, e)
   local lostAt = lose(0, opts, { seed = 9 })
   local f = state.flight
   samePos(f.spot, e, 1e-9)
@@ -1647,7 +1732,7 @@ end)
 test("the car coming back 200 m away after a gap moves nothing", function()
   load()
   state.random = seeded(5)
-  local opts = exitStub(function(p) return vec3(p.x + 500, p.y, p.z) end)
+  local opts = tunnelTo(pos, vec3(pos.x + 500, pos.y, pos.z))
   local c = lose(0, opts)
   local f = state.flight
   local s, k = copyPos(f.spot), copyPos(state.lastKnown)
@@ -1677,9 +1762,11 @@ test("clear forgets the last known spot and guidance", function()
   assertEq(state.sweepAt ~= nil, true)
   assertEq(state.retargetAt ~= nil, true)
   assertEq(state.missingSince, 0.1)
+  samePos(state.lastKnownVel, vec3(0, 0, 0), 0)
   state.flightFailed, state.flightLogged, state.tunnelLogged = true, true, true
+  state.search, state.roofCache = { mode = "contain" }, { [1] = true }
   heli.clear(state)
-  for _, k in ipairs({ "lastKnown", "guided", "wasGuided", "sweepAt", "retargetAt", "flightFailed", "flightLogged", "missingSince", "tunnelLogged" }) do
+  for _, k in ipairs({ "lastKnown", "lastKnownVel", "guided", "wasGuided", "sweepAt", "retargetAt", "flightFailed", "flightLogged", "missingSince", "tunnelLogged", "search", "roofCache" }) do
     assertEq(not state[k], true, k)
   end
   pos = vec3(a.x + 700, a.y + 300, a.z)
@@ -1986,7 +2073,7 @@ end)
 test("the aim never jumps when the target changes", function()
   load()
   state.random = seeded(14)
-  local opts = exitStub(function(p) return vec3(p.x + 120, p.y, p.z) end)
+  local opts = tunnelTo(pos, vec3(pos.x + 120, pos.y, pos.z), vec3(pos.x + 60, pos.y + 80, pos.z))
   nightStatus(0, "tracking", nil, opts)
   local g = aimGuard(0)
   local c = nightRun(0, 5, opts, g.check)
@@ -2007,7 +2094,7 @@ end)
 test("a refuel while searching flies away with the light", function()
   load()
   state.random = seeded(15)
-  local opts = exitStub(function(p) return vec3(p.x + 300, p.y, p.z) end)
+  local opts = tunnelTo(pos, vec3(pos.x + 300, pos.y, pos.z))
   nightStatus(0, "tracking", nil, opts)
   local c = nightRun(0, 2, opts)
   c = c + 0.05
@@ -2301,7 +2388,7 @@ end)
 test("a light made again soon after does not keep the old switch offset", function()
   load()
   state.random = seeded(17)
-  local opts = exitStub(function(p) return vec3(p.x + 120, p.y, p.z) end)
+  local opts = tunnelTo(pos, vec3(pos.x + 120, pos.y, pos.z))
   nightStatus(0, "tracking", nil, opts)
   local c = nightRun(0, 3, opts)
   c = c + 0.05
@@ -2411,4 +2498,381 @@ test("dropping the flight leaves the light to the light part", function()
   heli.set(state, { phase = "arriving" }, 2.1)
   heli.lightTick(state, target, true, 2.1)
   assertEq(fake.objects[LIGHT], nil)
+end)
+
+local function roadOpts() local g = straight(-9, 40) return { roads = function() return g end } end
+
+local function finiteLead(f)
+  for _, n in ipairs({ f.lead.x, f.lead.y, f.lead.z, f.leadVel.x, f.leadVel.y, f.leadVel.z }) do
+    assertEq(n == n and n ~= math.huge and n ~= -math.huge, true, tostring(n))
+  end
+end
+
+test("a moving runner lost on a road gets a road search ahead", function()
+  load()
+  state.random = seeded(40)
+  pos = vec3(0, 0, 0)
+  local opts = roadOpts()
+  local c = loseDriving(0, vec3(10, 0, 0), opts)
+  local f = state.flight
+  assertEq(state.search.mode, "road")
+  assertEq(f.spot, nil)
+  finiteLead(f)
+  local x0, c0 = f.lead.x, c
+  c = drive(c, c + 10, vec3(10, 0, 0), opts, function()
+    assertEq(f.spot, nil)
+    assertNear(f.lead.y, 0, 1e-9)
+  end)
+  assertNear((f.lead.x - x0) / (c - c0), 45, 0.5)
+end)
+
+test("a runner under 5 m/s gets containment at the car", function()
+  load()
+  state.random = seeded(41)
+  pos = vec3(0, 0, 0)
+  local c = loseDriving(0, vec3(4, 0, 0), roadOpts())
+  assertEq(state.search.mode, "contain")
+  assertEq(state.flight.lead, nil)
+  samePos(state.flight.spot, pos, 1e-9)
+  assertEq(state.sweepAt, c)
+  assertEq(state.retargetAt, c)
+  for _, case in ipairs({ { speed = 4.9, mode = "contain" }, { speed = 5, mode = "road" } }) do
+    load()
+    pos = vec3(0, 0, 0)
+    local car = { getPosition = function() return pos end, getVelocity = function() return vec3(case.speed, 0, 0) end }
+    status(0, "tracking", nil, roadOpts(), car)
+    status(0.05, "searching", nil, roadOpts(), car)
+    assertEq(state.search.mode, case.mode, tostring(case.speed))
+  end
+end)
+
+test("under a roof with a way out gives a tunnel watch at the first candidate", function()
+  load()
+  state.random = seeded(42)
+  pos = vec3(129, 0, 0)
+  loseDriving(0, vec3(20, 0, 0), tunnelOpts())
+  samePos(pos, vec3(150, 0, 0), 1e-9)
+  local s = state.search
+  assertEq(s.mode, "tunnel")
+  assertEq(s.i, 1)
+  assertEq(s.list[1].id, 5)
+  assertEq(state.flight.lead, nil)
+  samePos(state.flight.spot, vec3(400, 0, 0), 1e-9)
+end)
+
+test("watchSeconds", function()
+  local hs = require("copsAndRobbers/heliSearch")
+  assertNear(hs.watchSeconds(100, 0), 15, 1e-9)
+  assertNear(hs.watchSeconds(1000, 20), 75, 1e-9)
+  assertNear(hs.watchSeconds(3000, 10), 90, 1e-9)
+  assertNear(hs.watchSeconds(50, 30), 15, 1e-9)
+  assertNear(hs.watchSeconds(250, 20), 18.75, 1e-9)
+  assertNear(hs.watchSeconds(150, 20), 15, 1e-9)
+end)
+
+test("the watch moves on after its time, then searches the road out of the last candidate", function()
+  load()
+  state.random = seeded(43)
+  pos = vec3(129, 0, 0)
+  local opts = tunnelOpts()
+  local c0 = loseDriving(0, vec3(20, 0, 0), opts)
+  local f = state.flight
+  local first, second = c0 + 18.75, c0 + 18.75 + 15
+  local roadAt
+  local c = flyTo(c0, c0 + 40, opts, nil, nil, function(t)
+    local s = state.search
+    if t < first - 0.051 then
+      assertEq(s.mode, "tunnel", tostring(t))
+      samePos(f.spot, vec3(400, 0, 0), 1e-9, tostring(t))
+    elseif t > first + 0.051 and t < second - 0.051 then
+      assertEq(s.mode, "tunnel", tostring(t))
+      assertEq(s.i, 2, tostring(t))
+      samePos(f.spot, vec3(0, 0, 0), 1e-9, tostring(t))
+    elseif t > second + 0.051 then
+      assertEq(s.mode, "road", tostring(t))
+      assertEq(f.spot, nil, tostring(t))
+      finiteLead(f)
+    end
+    if s.mode == "road" and not roadAt then roadAt = t end
+  end)
+  assertNear(roadAt, second, 0.051)
+  local s = state.search
+  samePos(s.origin, vec3(0, 0, 0), 1e-9)
+  samePos(s.run.routes[1].points[1], vec3(0, 0, 0), 1e-9)
+  assertEq(s.run.routes[1].points[2].x < 0, true)
+  assertNear(f.lead.x, -45 * (c - roadAt), 3)
+  assertNear(f.lead.y, 0, 1e-9)
+end)
+
+test("the first arrival chooses from the runner's car when it goes up", function()
+  load()
+  state.random = seeded(44)
+  pos = vec3(0, 0, 0)
+  local opts = roadOpts()
+  status(0, "arriving", nil, opts)
+  local c = drive(0, 5, vec3(20, 0, 0), opts)
+  c = c + 0.05
+  nudge(vec3(20, 0, 0))
+  status(c, "searching", nil, opts)
+  local f = state.flight
+  assertEq(state.search.mode, "road")
+  samePos(state.search.origin, pos, 1e-9)
+  samePos(state.search.run.routes[1].points[1], pos, 1e-9)
+  assertNear(horiz(f.pos, pos), heli.APPROACH_DISTANCE, 1e-6)
+  finiteLead(f)
+end)
+
+test("a refuel chooses from the last known state", function()
+  load()
+  state.random = seeded(45)
+  pos = vec3(0, 0, 0)
+  local opts = roadOpts()
+  local c = loseDriving(0, vec3(20, 0, 0), opts)
+  c = c + 0.05
+  nudge(vec3(20, 0, 0))
+  status(c, "tracking", nil, opts)
+  local a = copyPos(pos)
+  samePos(state.lastKnown, a, 1e-9)
+  samePos(state.lastKnownVel, vec3(20, 0, 0), 1e-6)
+  c = c + 0.05
+  status(c, "refuelling", nil, opts)
+  local left = c
+  c = drive(c, left + 5, vec3(20, 0, 0), opts)
+  c = flyTo(c, left + 10, opts)
+  assertEq(state.flight, nil)
+  assertNear(pos.x - a.x, 100, 1e-6)
+  c = c + 0.05
+  status(c, "searching", nil, opts)
+  local s = state.search
+  assertEq(s.mode, "road")
+  samePos(s.origin, a, 1e-9)
+  samePos(s.run.routes[1].points[1], a, 1e-9)
+  assertEq(s.run.routes[1].points[2].x > a.x, true)
+  assertNear(horiz(state.flight.pos, a), heli.APPROACH_DISTANCE, 1e-6)
+end)
+
+test("guidance overrides every mode", function()
+  load()
+  state.random = seeded(46)
+  pos = vec3(0, 0, 0)
+  local opts = roadOpts()
+  local vel = vec3(10, 0, 0)
+  local c = loseDriving(0, vel, opts)
+  c = drive(c, c + 3, vel, opts)
+  local f = state.flight
+  assertEq(state.search.mode, "road")
+  assertEq(f.lead ~= nil, true)
+  c = c + 0.05
+  nudge(vel)
+  status(c, "searching", { guided = true }, opts)
+  assertEq(state.sweepAt, c)
+  c = drive(c, c + 3, vel, opts, function()
+    assertEq(f.lead, nil)
+    assertEq(f.leadVel, nil)
+    assertEq(state.search, nil)
+    samePos(f.spot, pos, 1e-9)
+  end)
+  c = c + 0.05
+  nudge(vel)
+  status(c, "searching", nil, opts)
+  assertEq(state.search.mode, "road")
+  samePos(state.search.origin, pos, 1e-9)
+  assertEq(f.spot, nil)
+  finiteLead(f)
+end)
+
+test("no road data gives containment", function()
+  load()
+  state.random = seeded(47)
+  pos = vec3(150, 0, 0)
+  loseDriving(0, vec3(10, 0, 0), { roads = function() return nil end, roofedAt = inTunnel })
+  assertEq(state.search.mode, "contain")
+  samePos(state.flight.spot, pos, 1e-9)
+  load()
+  pos = vec3(150, 0, 0)
+  loseDriving(0, vec3(10, 0, 0), { roofedAt = inTunnel })
+  assertEq(state.search.mode, "contain")
+  samePos(state.flight.spot, pos, 1e-9)
+end)
+
+test("a failing roads() logs once over two losses and gives containment", function()
+  load()
+  state.random = seeded(48)
+  pos = vec3(0, 0, 0)
+  local opts = { roads = function() error("no graph") end, roofedAt = inTunnel }
+  local lines = countLogs(function()
+    local c = loseDriving(0, vec3(10, 0, 0), opts)
+    assertEq(state.search.mode, "contain")
+    samePos(state.flight.spot, pos, 1e-9)
+    c = loseDriving(c + 0.05, vec3(10, 0, 0), opts)
+    assertEq(state.search.mode, "contain")
+    samePos(state.flight.spot, pos, 1e-9)
+  end)
+  assertEq(lines, 1)
+  assertEq(state.flightFailed, nil)
+  assertEq(state.tunnelLogged, true)
+end)
+
+test("after the last route it contains at the origin", function()
+  load()
+  state.random = seeded(49)
+  pos = vec3(0, 0, 0)
+  local g = roads({ [1] = { 0, 0, 0 }, [2] = { 100, 0, 0 } }, { { 1, 2 } })
+  local opts = { roads = function() return g end }
+  local c = loseDriving(0, vec3(10, 0, 0), opts)
+  local f = state.flight
+  local origin = copyPos(pos)
+  assertEq(state.search.mode, "road")
+  assertEq(#state.search.run.routes, 2)
+  local containAt
+  flyTo(c, c + 60, opts, nil, nil, function(t)
+    if state.search.mode == "contain" then
+      containAt = containAt or t
+      assertEq(f.lead, nil)
+      samePos(f.spot, origin, 1e-9)
+    else
+      assertEq(containAt, nil)
+      finiteLead(f)
+    end
+  end)
+  assertEq(containAt ~= nil, true)
+  assertEq(state.retargetAt, containAt)
+end)
+
+test("a 2 km car jump shifts the road search with the car", function()
+  local function chase(jumpAt)
+    load()
+    state.random = seeded(50)
+    pos = vec3(0, 0, 0)
+    local opts = roadOpts()
+    local c = loseDriving(0, vec3(10, 0, 0), opts)
+    local x0, out, shift = pos.x, {}, 0
+    for i = 1, 120 do
+      c = c + 0.05
+      if i == jumpAt then shift = 2000 end
+      pos = vec3(x0 + shift, 0, 0)
+      heli.lightTick(state, target, false, c, opts)
+      local f, s = state.flight, state.search
+      out[i] = { lead = f.lead.x - shift, pos = f.pos.x - shift, origin = s.origin.x - shift, y = f.lead.y }
+    end
+    return out
+  end
+  local plain = chase(nil)
+  local jumped = chase(40)
+  for i = 1, 120 do
+    assertNear(jumped[i].lead, plain[i].lead, 1e-6, tostring(i))
+    assertNear(jumped[i].pos, plain[i].pos, 1e-6, tostring(i))
+    assertNear(jumped[i].origin, plain[i].origin, 1e-6, tostring(i))
+    assertNear(jumped[i].y, plain[i].y, 1e-9, tostring(i))
+  end
+end)
+
+test("a 2 km car jump shifts the tunnel candidates with the car", function()
+  load()
+  state.random = seeded(51)
+  pos = vec3(129, 0, 0)
+  local opts = tunnelOpts()
+  local c0 = loseDriving(0, vec3(20, 0, 0), opts)
+  local c = flyTo(c0, c0 + 5, opts)
+  pos = vec3(pos.x + 2000, pos.y, pos.z)
+  c = flyTo(c, c0 + 25, opts)
+  local s = state.search
+  assertEq(s.i, 2)
+  samePos(s.origin, vec3(2150, 0, 0), 1e-9)
+  samePos(s.list[1].pos, vec3(2400, 0, 0), 1e-9)
+  samePos(state.flight.spot, vec3(2000, 0, 0), 1e-9)
+end)
+
+test("a refuel on a road search flies away from the search point, the light with it", function()
+  load()
+  state.random = seeded(52)
+  pos = vec3(0, 0, 0)
+  local opts = roadOpts()
+  local c = loseDriving(0, vec3(10, 0, 0), opts, nil, true)
+  c = nightRun(c, c + 20, opts)
+  local f = state.flight
+  local lead = copyPos(f.lead)
+  assertEq(horiz(lead, pos) > 500, true)
+  c = c + 0.05
+  nightStatus(c, "refuelling", nil, opts)
+  assertNear(horiz(f.leaving, lead), 600, 1e-6)
+  assertEq(state.fx.mode, "depart")
+  local dx, dy = f.leaving.x - lead.x, f.leaving.y - lead.y
+  local len = math.sqrt(dx * dx + dy * dy)
+  assertNear(state.fx.dir.x, dx / len, 1e-9)
+  assertNear(state.fx.dir.y, dy / len, 1e-9)
+end)
+
+test("a long refuel during a tunnel watch watches again from the last known state", function()
+  load()
+  state.random = seeded(53)
+  pos = vec3(129, 0, 0)
+  local opts = tunnelOpts()
+  local c = loseDriving(0, vec3(20, 0, 0), opts)
+  local a = copyPos(state.lastKnown)
+  samePos(a, vec3(149, 0, 0), 1e-9)
+  samePos(state.flight.spot, vec3(400, 0, 0), 1e-9)
+  c = flyTo(c, c + 5, opts)
+  c = c + 0.05
+  status(c, "refuelling", nil, opts)
+  c = flyTo(c, c + 10, opts)
+  assertEq(state.flight, nil)
+  assertEq(state.search, nil)
+  c = c + 0.05
+  status(c, "searching", nil, opts)
+  local s = state.search
+  assertEq(s.mode, "tunnel")
+  assertEq(s.since, c)
+  samePos(s.origin, a, 1e-9)
+  samePos(state.flight.spot, vec3(400, 0, 0), 1e-9)
+end)
+
+test("a flight made while the cops guide it circles the runner", function()
+  load()
+  state.random = seeded(54)
+  local opts = roadOpts()
+  status(0, "tracking", nil, opts)
+  local c = flyTo(0, 1, opts)
+  c = c + 0.05
+  status(c, "refuelling", { guided = true }, opts)
+  c = flyTo(c, c + 10, opts)
+  assertEq(state.flight, nil)
+  pos = vec3(pos.x + 500, pos.y, pos.z)
+  c = flyTo(c, c + 1, opts)
+  c = c + 0.05
+  status(c, "searching", { guided = true }, opts)
+  local f = state.flight
+  assertEq(state.flightFailed, nil)
+  samePos(f.spot, pos, 1e-9)
+  assertNear(f.searchAngle, math.atan2(f.pos.y - pos.y, f.pos.x - pos.x), 1e-9)
+  c = flyTo(c, c + 2, opts)
+  assertEq(state.flight, f)
+  assertEq(state.flightFailed, nil)
+end)
+
+test("the road out of the last candidate heads along its last edge, or away from the tunnel without one", function()
+  local function roadOut(g, roofed, start)
+    load()
+    state.random = seeded(55)
+    pos = start
+    local opts = { roads = function() return g end, roofedAt = roofed }
+    local c0 = loseDriving(0, vec3(20, 0, 0), opts)
+    local s = state.search
+    assertEq(#s.list, 2)
+    local wait = 0
+    for _, cand in ipairs(s.list) do wait = wait + require("copsAndRobbers/heliSearch").watchSeconds(cand.length, 20) end
+    flyTo(c0, c0 + wait + 1, opts)
+    assertEq(state.search.mode, "road")
+    local points = state.search.run.routes[1].points
+    return points[#points]
+  end
+  local g = roads({
+    [2] = { 100, 0, 0 }, [3] = { 200, 0, 0 }, [4] = { 300, 0, 0 }, [5] = { 400, 0, 0 },
+    b = { 100, -100, 0 }, c = { 100, -200, 0 }, d = { 0, -100, 0 },
+  }, { { 2, 3 }, { 3, 4 }, { 4, 5 }, { 2, "b" }, { "b", "c" }, { "b", "d" } })
+  local last = roadOut(g, inTunnel, vec3(129, 0, 0))
+  samePos(last, vec3(100, -200, 0), 1e-9)
+  local function entrance(p) return p.x > 90 and p.x < 350 and math.abs(p.y) < 1 end
+  last = roadOut(straight(-9, 20), entrance, vec3(74, 0, 0))
+  samePos(last, vec3(-1000, 0, 0), 1e-9)
 end)

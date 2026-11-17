@@ -186,8 +186,8 @@ local function pointAt(route, s)
   if s <= 0 then
     local a, b = points[1], points[2]
     local len = dist[2] - dist[1]
-    local ux, uy = (b.x - a.x) / len, (b.y - a.y) / len
-    return a.x, a.y, a.z, ux, uy, (b.z - a.z) / len
+    if len > 0 then return a.x, a.y, a.z, (b.x - a.x) / len, (b.y - a.y) / len, (b.z - a.z) / len end
+    return a.x, a.y, a.z, 0, 0, 0
   end
   local n = #points
   for i = 2, n do
