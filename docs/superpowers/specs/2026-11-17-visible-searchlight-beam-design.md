@@ -29,7 +29,7 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - The circle starts at the helicopter's current bearing from the car, so switching modes doesn't make it turn back.
   - The angle advances in the step, not in the target calculation.
   - It enters the circle below `SLOW_SPEED` 5 m/s and leaves above `FAST_SPEED` 7 m/s, so jitter doesn't flip the modes.
-- **Starting mode** (on arrival or when joining): follow when the car's horizontal speed is 6 m/s or more, otherwise circle, starting at the current bearing.
+- **Starting mode** (on arrival or when joining): follow when the car's horizontal speed is 6 m/s or more, otherwise circle, starting at the current bearing (a random bearing for a helicopter placed on joining).
 - **Jumps:** a car jump over `JUMP_METERS` 30 m in one frame shifts the helicopter's position (and its leaving point) by the same jump.
   - This covers a reset, a teleport, and BeamNG.Earth moving its origin.
   - The car's velocity counts as unchanged for that frame, so the helicopter keeps its place relative to the car. This also holds when the velocity comes from position deltas: the jump frame keeps the last velocity.
@@ -48,7 +48,7 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - **Lag kick:** now from the change in the car's velocity relative to the helicopter, not the car alone. When the car brakes or the helicopter swings round, the spot slips and is brought back. When both brake together, it doesn't slip.
   - **Fly-in sweep:** the aim starts 15 m off the car (`AIM_SWEEP_OFFSET`) and is pulled in.
   - **Fly-away drift:** the aim drifts off the car towards the direction of travel (`DEPART_AIM_DRIFT`), up to 60 m by 8 s.
-    - When a fly-away ends early (a short refuel, or night returning), the current drift is added to the aim's offset. The spring then pulls the spot back over a few seconds instead of snapping 40+ m in one frame. The offset cap is max(6, the current offset), as in 2.9.0.
+    - When a fly-away ends early (a short refuel, night ending into a fade, or night returning), the current drift is added to the aim's offset. The spring then pulls the spot back over a few seconds instead of snapping 40+ m in one frame. The offset cap is max(6, the current offset), as in 2.9.0.
   - **Refound:** the aim starts 8 m off the car (`REFOUND_AIM_OFFSET`).
   - **Hover drift removed:** `HOVER_DRIFT` and the sine waves on the light's position go; the real flight replaces them.
 - **Brightness effects**, on the light's brightness factor `fx.bright`:
@@ -77,6 +77,7 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - A hit means the returned distance d < the axis length. Something is in the way, like a bridge deck, a building or a tunnel roof, so D = d and every side line ends at most d from the light.
   - Hits within 2 m of the aim point count as no hit: that's the road itself, or an aim point just under it.
   - When `castRayStatic` doesn't exist, the ray is skipped.
+  - When D is 1 m or less (the light sits at or inside something), there's no beam.
 - **Strength by the round's weather** (the client's round weather, `traffic.weather()`):
   - clear, cloudy and rain: 0.06, 0.12 and 0.2
   - any other value, nil (the map's own weather) and BeamNG.Earth: 0.06
@@ -89,7 +90,7 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - `flareScale` follows `fx.bright`, rewritten when it changes by more than 0.05.
   - The glare belongs to the light, so the beam setting doesn't touch it.
 - **Cost:**
-  - Each ring's vertices are built once per frame. The colour objects are cached per alpha value. The quad list is kept between frames and reused, so drawing allocates nothing new each frame.
+  - Each ring's vertices are built once per frame. The colour objects are cached per alpha value. The quad list is kept between frames and reused, so no new quad entries are made each frame.
   - Each quad is one `debugDrawer:drawQuadSolid` call, drawn only in the winding that faces the camera (one dot product per quad).
     - That's at most 5 layers × 10 lengths × 24 sides = 1,200 calls a frame, or 2,400 (both windings) when the camera position is unknown.
     - The game's own editor code draws both windings for the same reason (`editor/api/gui.lua`: "keep backface cull off").
@@ -156,6 +157,7 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - no drawn quad has a vertex within 6 m of the camera
   - an occlusion hit at half the axis leaves no vertex further than the hit + 1e-6 from the light, also for 30° and 11° beams
   - a hit within 2 m of the aim point is ignored
+  - a hit 0.1 m from the light gives no beam (no NaN)
   - a low (11°) beam has no vertex further than 2 × the axis length + 1e-6 from the light
   - nothing is drawn without a light, by day, with the setting off, or at a slant over 400 m
   - an error in the drawer, or in working out the quads, stops the beam and keeps the light

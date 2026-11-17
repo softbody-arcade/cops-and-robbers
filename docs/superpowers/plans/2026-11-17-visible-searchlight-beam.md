@@ -74,7 +74,7 @@
   - `APPROACH_DISTANCE` out in a random heading, `APPROACH_HEIGHT` above the car
   - velocity 0, `side` ±1 at random
 - **`M.at(carPos, carVel, random) -> f`:** placed on its target point, velocity = `carVel`, `side` at random.
-- **Starting mode** for `arrive` and `at`: follow when the car's horizontal speed is ≥ 6 m/s, otherwise circle with `f.orbit` at the current bearing.
+- **Starting mode** for `arrive` and `at`: follow when the car's horizontal speed is ≥ 6 m/s, otherwise circle with `f.orbit` at the current bearing (a random bearing for `at`).
 - **`M.leave(f, carPos, random)`:** sets `f.leaving` to a world point `DEPART_DISTANCE` from the car, `DEPART_HEIGHT` above it, with the heading = the helicopter's bearing from the car ± up to `DEPART_HEADING_SPREAD`.
 - **`M.resume(f)`:** clears `f.leaving`; position and velocity are kept.
 - **`M.step(f, carPos, carVel, dt)`:**
@@ -132,7 +132,7 @@
   - at `state.flight.pos`, aiming at the aim point
   - `lightPose`, `HOVER_DRIFT`, `glide` and the position parts of approach and depart go
   - kept: the brightness effects (approach up to 1 over `APPROACH_SECONDS`, from 0 for a new light or from the current `fx.bright` when the light exists; depart; fade; fadein; refound), `AIM_SWEEP_OFFSET` on a fresh fly-in, `REFOUND_AIM_OFFSET`, and the `DEPART_AIM_DRIFT` `extra` along the leave direction
-  - when a depart ends early (`resume`, or night returning), the current `extra` is added to `aim.offset`, so the aim point doesn't jump; the existing cap max(6, current offset) lets the spring pull it back
+  - when a depart ends early (`resume`, night ending into a fade, or night returning), the current `extra` is added to `aim.offset`, so the aim point doesn't jump; the existing cap max(6, current offset) lets the spring pull it back
 - **`M.aimStep(aim, carPos, dt, clock, random, heliVel)`:** the lag kick uses the change in (car velocity − `heliVel`); `heliVel` nil means zero.
 - **Range:** written on creation and by the 5 m rule, as in Global Constraints.
 - **For Task 2:** expose `state.aimPos` and `state.lightPos`.
@@ -184,6 +184,7 @@
     - each ends at the first of the plane `z = aimPos.z` and the straight-line distance D from the light, with D = min(`MAX_LENGTH_FACTOR` × the axis length, `hitDist` or ∞)
     - `LAYERS` × `SEGMENTS` × `SIDES` quads
     - the x helper basis when the axis is nearly vertical
+    - D ≤ 1 m gives count 0 (the light at or inside something)
   - Alpha per quad: round(255 × strength × (1 − (1 − `GROUND`) × u) × near / `LAYERS`), where:
     - u is the quad's mid position along its side line, 0 to 1
     - near = clamp((the smallest |vertex − camPos| of its 4 vertices − `NEAR`) / (`FAR` − `NEAR`), 0, 1), or 1 without a camera
@@ -199,6 +200,7 @@
   - The occlusion ray: every `RAY_INTERVAL`, when `castRayStatic` exists, `castRayStatic(lightPos, the normalized direction to the aim point, axisLen)`.
     - A returned d < axisLen − 2 sets `state.beamHit = d`.
     - Otherwise, including hits within 2 m of the aim point, `state.beamHit` is nil.
+  - `state.beamQuads = state.beamQuads or {}` before the beam step (or create it in `M.new()`).
   - After the light is placed, when `opts.beam ~= false` and `state.light`, `debugDrawer`, `color` and `core_camera` exist, the slant is ≤ 400 and `state.beamFailed` isn't set, it runs `pcall(function() local n = beam.quads(lightPos, state.aimPos, strength, state.beamHit, camPos, state.beamQuads) beam.draw(state.beamQuads, n, drawQuad, color) end)`, with `drawQuad = function(a, b, c, d, clr) debugDrawer:drawQuadSolid(a, b, c, d, clr) end`.
     - Any error in working out the quads or drawing them sets `state.beamFailed`.
     - The light and its glare stay.
@@ -218,6 +220,7 @@
     - **nothing:** strength 0 gives an empty list; light == aim gives an empty list without error
     - **colours:** at most 11 distinct `colorFn` calls in one `draw`
     - **reuse:** a second `quads` call with the same `out` list returns the same count, and adds no new entry tables
+    - **hit at the light:** `hitDist` 0.1 gives count 0 and no NaN
   - **`tests/test_heli_client.lua`**, with `_G.debugDrawer` (counting `drawQuadSolid`), `_G.color`, `_G.core_camera` and `_G.castRayStatic` stubbed and restored:
     - **on:** at night while tracking, quads are drawn and `fields.flareType == "BNG_LightFlare_1"`
     - **setting off:** `opts.beam` false draws no quads, and the flare stays `BNG_LightFlare_1`; toggling back draws again on the next tick
