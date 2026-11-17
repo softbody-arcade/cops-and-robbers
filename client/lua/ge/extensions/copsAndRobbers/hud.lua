@@ -236,6 +236,7 @@ function M.payload(state, now, info)
     color = info.color,
     headlights = prefs.headlights == true,
     siren = prefs.siren == true,
+    beam = prefs.beam ~= false,
     route = (prefs.route == "always" or prefs.route == "never") and prefs.route or "sight",
     sirensAllowed = not (type(info.rules) == "table" and info.rules.sirensAllowed == false),
   }

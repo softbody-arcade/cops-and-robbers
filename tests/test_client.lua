@@ -2543,6 +2543,34 @@ test("at night the searchlight hangs from the helicopter circling the runner's c
   assertEq(near(light.pos.z, own.z + 50, 1e-6), true, tostring(light.pos.z))
 end)
 
+test("turning the beam off stops the quads while the light and its glare stay", function()
+  local saved = { _G.debugDrawer, _G.color, _G.core_camera, _G.castRayStatic }
+  local quads = 0
+  _G.debugDrawer = { drawQuadSolid = function() quads = quads + 1 end }
+  _G.color = function(r, g, b, a) return { r = r, g = g, b = b, a = a } end
+  _G.core_camera = { getPosition = function() return vec3(1100, 1100, 10) end }
+  _G.castRayStatic = nil
+  local ok, err = pcall(function()
+    local env = nightTracking("cop")
+    env.tick(0.5)
+    assertEq(quads > 0, true, tostring(quads))
+    env.M.ui({ action = "setting", key = "beam", value = false })
+    env.tick(0.2)
+    assertEq(env.written["settings/cnr_settings.json"].beam, false)
+    quads = 0
+    env.tick(1)
+    assertEq(quads, 0)
+    local light = env.sky.objects[HELI_LIGHT]
+    assertEq(light ~= nil, true)
+    assertEq(light.fields.flareType, "BNG_LightFlare_1")
+    env.M.ui({ action = "setting", key = "beam", value = true })
+    env.tick(1)
+    assertEq(quads > 0, true, tostring(quads))
+  end)
+  _G.debugDrawer, _G.color, _G.core_camera, _G.castRayStatic = saved[1], saved[2], saved[3], saved[4]
+  if not ok then error(err, 0) end
+end)
+
 test("no searchlight by day or while the helicopter searches", function()
   local env = bootClient()
   local d = copy(SETUP)

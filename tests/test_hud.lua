@@ -368,6 +368,12 @@ test("payload settings carry the route choice, out of sight by default", functio
   assertEq(hud.payload(hud.new(), 0, { active = true, settings = { route = "never" } }).settings.route, "never")
 end)
 
+test("payload settings carry the searchlight beam, on by default", function()
+  assertEq(hud.payload(hud.new(), 0, { active = false, settings = {} }).settings.beam, true)
+  assertEq(hud.payload(hud.new(), 0, { active = false, settings = { beam = true } }).settings.beam, true)
+  assertEq(hud.payload(hud.new(), 0, { active = true, settings = { beam = false } }).settings.beam, false)
+end)
+
 test("a result payload has no settings", function()
   local p = hud.payload(hud.new(), 0, { settings = { headlights = true, siren = true },
     result = { title = "X", untilT = 10, shownAt = 0 } })

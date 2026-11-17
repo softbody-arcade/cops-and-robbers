@@ -27,6 +27,13 @@
       </div>
       <BngSwitch :model-value="settings.headlights === true" @update:modelValue="v => emit('setting', 'headlights', v)" />
     </div>
+    <div class="row">
+      <div class="label">
+        <div class="name">Searchlight beam</div>
+        <div class="desc">The helicopter's beam in the air; off helps the frame rate</div>
+      </div>
+      <BngSwitch :model-value="settings.beam !== false" @update:modelValue="v => emit('setting', 'beam', v)" />
+    </div>
     <div class="row" :class="{ off: !settings.sirensAllowed }">
       <div class="label">
         <div class="name">Siren</div>

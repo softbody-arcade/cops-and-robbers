@@ -67,6 +67,7 @@
             It tracks you in the open. It loses you after 2 s under cover: tunnels, garages, or stopping under a bridge;
             driving under a bridge doesn't. The moment you're back in the open, the cops know where you are again.
             It stays grounded in storm, fog and snow.
+            You can turn the beam in the air off in your settings.
             <template v-if="sightOff">While it tracks you, cops see you live.</template>
           </span>
         </div>
@@ -124,6 +125,7 @@
             While it tracks the runner in the open, every cop sees where they are. It loses them after 2 s under cover
             (tunnels, garages, or stopping under a bridge) and finds them again the moment they're back in the open.
             It stays grounded in storm, fog and snow.
+            You can turn the beam in the air off in your settings.
           </span>
         </div>
         <div class="li">
