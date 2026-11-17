@@ -46,17 +46,21 @@ end
 function M.pick(cfg, random, geo, year)
   if geo then return {} end
   local time = pickTime(cfg, random)
-  local weather = pickWeather(cfg, random)
-  local month, day = M.date(weather, random)
-  return {
+  local kind = pickWeather(cfg, random)
+  local month, day = M.date(kind, random)
+  local s = {
     time = time,
-    weather = weather,
+    weather = kind,
     year = year or tonumber(os.date("%Y")),
     month = month,
     day = day,
     windDir = random(0, 359),
     windSeed = random(1, 2147483646),
   }
+  s.weatherSeed = random(1, 2147483646)
+  local plan = weather.build(s, cfg)
+  s.changes, s.temps, s.gameStart, s.releaseAt = plan.changes, plan.temps, plan.gameStart, plan.releaseAt
+  return s
 end
 
 function M.hasRandom(cfg)
@@ -75,6 +79,10 @@ function M.payload(s, cfg, clockSeconds)
     windSeed = s.windSeed,
     clockSeconds = clockSeconds,
     daySeconds = M.DAY_SECONDS[cfg.dayLength],
+    changes = s.changes,
+    temps = s.temps,
+    gameStart = s.gameStart,
+    releaseAt = s.releaseAt,
   }
   if s.weather and cfg.weatherDriving then p.driving = true end
   return p
