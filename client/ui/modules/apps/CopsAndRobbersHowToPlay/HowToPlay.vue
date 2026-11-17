@@ -65,9 +65,11 @@
             <template v-if="refuelNever">Then it stays up.</template>
             <template v-else>Then it refuels for <span class="v">{{ duration("helicopterRefuelSeconds") }}</span>.</template>
             It starts by searching: it circles where it last knew you were. In a tunnel it waits at the exit ahead; turn around to dodge it.
-            When a cop sees you, it flies to you.
+            When a cop sees you, it flies to you; AI cops in practice don't guide it.
             It finds you only by seeing you itself, within <span class="v">{{ meters(400) }}</span>. Then it tracks you, and the cops know where you are.
             Buildings, hills, tunnels and garages hide you: it loses you after 2 s out of its sight.
+            <template v-if="refuelNever">Before it arrives, it can't see you.</template>
+            <template v-else>Before it arrives and while it refuels, it can't see you.</template>
             It stays grounded in storm, fog and snow.
             At night its searchlight shines on you while it tracks you and keeps sweeping while it searches; you can turn its beam in the air off in your settings.
             <template v-if="sightOff">While it tracks you, cops see you live.</template>
@@ -128,6 +130,8 @@
             While any cop sees the runner, it flies to them.
             It finds them only by seeing them itself, within <span class="v">{{ meters(400) }}</span>. While it tracks the runner, every cop sees where they are.
             Buildings, hills, tunnels and garages hide them: it loses them after 2 s out of its sight.
+            <template v-if="refuelNever">Before it arrives, it can't see the runner.</template>
+            <template v-else>Before it arrives and while it refuels, it can't see the runner.</template>
             It stays grounded in storm, fog and snow.
             At night its searchlight shines on the runner while it tracks them and keeps sweeping while it searches; you can turn its beam in the air off in your settings.
           </span>

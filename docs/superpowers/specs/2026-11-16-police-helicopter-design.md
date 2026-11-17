@@ -11,7 +11,7 @@ Status: design for review, 2026-11-16. Replaces the periodic last-seen ping (`la
 - **A police helicopter, on by default.** It's a tracking rule, not a flying model: the game ships no helicopter.
   - **Host settings:** arrival time, time up, refuel time.
   - **While up and the runner is in the open:** cops get the runner's live position, like cop sight.
-  - **Under cover** (tunnels, bridges, garages, canopies): after 2 s under cover in a row it loses the runner and searches, so driving under a bridge doesn't lose them. If no cop sees the runner either, cops get one last-seen ping where the runner went under.
+  - **Under cover** (tunnels, bridges, garages, canopies): after 2 s under cover in a row it loses the runner and searches, so driving under a bridge doesn't lose them. If no cop sees the runner either, cops get one last-seen ping where the runner is when it gives up, about 2.5 s after they went under cover.
   - **Back in the open:** it tracks the runner again at once. It knows where the cover ends, so there is no wait.
   - **Weather:** it stays grounded in storm, fog and snow.
 - **Everyone sees the helicopter's state on the HUD.**
@@ -199,7 +199,7 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
 
 ## In-game check
 1. **Arrival:** in a clear round, the HUD counts down "HELICOPTER IN", then "HELICOPTER 2:00". Cops get live routes while the runner drives in the open.
-2. **Cover:** drive into a tunnel. After 2 s you get "HELICOPTER SEARCHING", and cops get one last-seen route to the tunnel mouth. Come out, and it's tracking again at once. Drive under a bridge without stopping: it keeps tracking, and at night the deck blocks the beam.
+2. **Cover:** drive into a tunnel. After about 2.5 s you get "HELICOPTER SEARCHING", and cops get one last-seen route to where you are then, a little way into the tunnel. Come out, and it's tracking again at once. Drive under a bridge without stopping: it keeps tracking, and at night the deck blocks the beam.
 3. **Refuel:** after the time up, "HELICOPTER REFUELLING" counts down. If no cop sees the runner, cops get one last-seen route to where the runner was when it left; after that they have only their own sight until it is back.
 4. **Weather:** a fog round shows "HELICOPTER GROUNDED (FOG)" all round, and no pings arrive.
 5. **Hiding:** as a cop, the runner shows in prep and disappears from your minimap at the head start. After that they have no name tag and aren't on your minimap until you see them or the helicopter tracks them. With the sight range Off, they show all round.
