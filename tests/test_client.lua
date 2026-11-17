@@ -2527,18 +2527,20 @@ end
 
 local function near(a, b, eps) return math.abs(a - b) <= eps end
 
-test("at night the searchlight shines over the runner's car: the runner's own, a cop's runnerObject", function()
+local function horizontal(a, b) return math.sqrt((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) end
+
+test("at night the searchlight hangs from the helicopter circling the runner's car: the runner's own, a cop's runnerObject", function()
   local cop = nightTracking("cop")
   local light = cop.sky.objects[HELI_LIGHT]
   assertEq(light ~= nil, true)
-  assertEq(near(light.pos.x, 1000, 3) and near(light.pos.y, 1000, 3), true)
-  assertEq(near(light.pos.z, 50, 1e-6), true)
+  assertEq(near(horizontal(light.pos, vec3(1000, 1000, 10)), 30, 3), true, tostring(horizontal(light.pos, vec3(1000, 1000, 10))))
+  assertEq(near(light.pos.z, 60, 1e-6), true, tostring(light.pos.z))
   local runner = nightTracking("runner")
   light = runner.sky.objects[HELI_LIGHT]
   assertEq(light ~= nil, true)
   local own = runner.veh:getPosition()
-  assertEq(near(light.pos.x, own.x, 3) and near(light.pos.y, own.y, 3), true)
-  assertEq(near(light.pos.z, own.z + 40, 1e-6), true)
+  assertEq(near(horizontal(light.pos, own), 30, 3), true, tostring(horizontal(light.pos, own)))
+  assertEq(near(light.pos.z, own.z + 50, 1e-6), true, tostring(light.pos.z))
 end)
 
 test("no searchlight by day or while the helicopter searches", function()
