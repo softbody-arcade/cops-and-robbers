@@ -169,7 +169,7 @@ test("the searchlight hangs from the helicopter, which follows the target", func
     pos = vec3(pos.x + 1, pos.y, pos.z)
     heli.lightTick(state, target, true, c)
     atFlight(obj)
-    assertEq(dist3(obj.pos, pos) < 100, true, tostring(dist3(obj.pos, pos)))
+    assertEq(dist3(obj.pos, pos) < 200, true, tostring(dist3(obj.pos, pos)))
   end
   assertEq(pos.x - obj.pos.x > 0, true)
 end)
@@ -749,7 +749,7 @@ test("joining mid-round puts the helicopter on its target point, not 300 m out",
   local f = state.flight
   assertEq(f ~= nil, true)
   assertNear(dist3(f.pos, flight.target(f, pos, vec3(0, 0, 0))), 0, 1e-9)
-  assertEq(dist3(f.pos, pos) < 70, true, tostring(dist3(f.pos, pos)))
+  assertEq(dist3(f.pos, pos) < 140, true, tostring(dist3(f.pos, pos)))
   local obj = fake.objects[LIGHT]
   assertEq(tonumber(obj.fields.brightness), heli.BRIGHTNESS)
   atFlight(obj)
@@ -901,9 +901,9 @@ test("a 2 km jump on the refuel's first tick leaves the leaving point 400 m out 
     local lx, ly = f.leaving.x - pos.x, f.leaving.y - pos.y
     local hx, hy = f.pos.x - pos.x, f.pos.y - pos.y
     local ll, hl = math.sqrt(lx * lx + ly * ly), math.sqrt(hx * hx + hy * hy)
-    assertNear(ll, 400, 1e-6, tostring(gap))
-    assertNear(f.leaving.z - pos.z, 80, 1e-6, tostring(gap))
-    assertEq(hl < 60, true, tostring(hl))
+    assertNear(ll, 600, 1e-6, tostring(gap))
+    assertNear(f.leaving.z - pos.z, 150, 1e-6, tostring(gap))
+    assertEq(hl < 120, true, tostring(hl))
     assertEq((lx * hx + ly * hy) / (ll * hl) >= 0.5 - 1e-9, true, tostring(gap))
     if gap == 0 then
       assertEq(state.fx.mode, "depart")
@@ -1386,11 +1386,11 @@ test("arrival searches where the runner was", function()
   assertEq(f ~= nil, true)
   local b = vec3(a.x + 200, a.y, a.z)
   flyTo(1, 61, nil, b, 10, function(c)
-    if c >= 51 then assertNear(horiz(f.pos, a), 60, 3, tostring(c)) end
+    if c >= 51 then assertNear(horiz(f.pos, a), 120, 3, tostring(c)) end
   end)
   assertNear(horiz(pos, b), 0, 1e-6)
   assertEq(state.flight, f)
-  assertNear(horiz(f.pos, a), 60, 3)
+  assertNear(horiz(f.pos, a), 120, 3)
   samePos(f.spot, a, 1e-9)
 end)
 
@@ -1414,7 +1414,7 @@ test("a refuel returns to the last known spot", function()
   assertNear(horiz(f.pos, a), heli.APPROACH_DISTANCE, 1)
   flyTo(c, c + 60)
   assertEq(state.flight, f)
-  assertNear(horiz(f.pos, a), 60, 3)
+  assertNear(horiz(f.pos, a), 120, 3)
 end)
 
 test("a short refuel from tracking searches the last known spot", function()
@@ -1455,7 +1455,7 @@ test("a short refuel from searching back to tracking follows the car", function(
   assertEq(f.mode, "circle")
   flyTo(c, c + 30)
   assertEq(state.flight, f)
-  assertEq(dist3(f.pos, pos) < 70, true, tostring(dist3(f.pos, pos)))
+  assertEq(dist3(f.pos, pos) < 140, true, tostring(dist3(f.pos, pos)))
 end)
 
 test("a flight created in tracking has no spot", function()
@@ -1615,7 +1615,7 @@ test("a refuel while searching far away flies away from the spot", function()
     end
   end
   assertEq(f.leaving ~= nil, true)
-  assertNear(horiz(f.leaving, e), 400, 1e-6)
+  assertNear(horiz(f.leaving, e), 600, 1e-6)
   local closest = horiz(f.pos, pos)
   while state.flight do
     c = c + 0.05
@@ -2127,7 +2127,7 @@ test("a flight made again after a flight error mid-search searches the last know
   local f = state.flight
   assertEq(f ~= nil, true)
   samePos(f.spot, a, 1e-9)
-  assertNear(horiz(f.pos, a), 60, 1e-6)
+  assertNear(horiz(f.pos, a), 120, 1e-6)
   assertEq(horiz(f.pos, pos) > 100, true, tostring(horiz(f.pos, pos)))
 end)
 

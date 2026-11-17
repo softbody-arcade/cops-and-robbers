@@ -6,22 +6,22 @@ M.FOLLOW_GAIN = 0.4
 M.SLOW_SPEED = 5
 M.FAST_SPEED = 7
 M.START_FOLLOW_SPEED = 6
-M.FOLLOW_BACK = 25
-M.FOLLOW_SIDE = 15
-M.HELI_HEIGHT = 50
-M.ORBIT_RADIUS = 30
+M.FOLLOW_BACK = 40
+M.FOLLOW_SIDE = 60
+M.HELI_HEIGHT = 100
+M.ORBIT_RADIUS = 80
 M.ORBIT_PERIOD = 40
 M.APPROACH_DISTANCE = 300
-M.APPROACH_HEIGHT = 60
-M.DEPART_DISTANCE = 400
-M.DEPART_HEIGHT = 80
+M.APPROACH_HEIGHT = 120
+M.DEPART_DISTANCE = 600
+M.DEPART_HEIGHT = 150
 M.DEPART_HEADING_SPREAD = 60
 M.APPROACH_SECONDS = 8
 M.DEPART_SECONDS = 8
 M.DEPART_FADE_SECONDS = 3
 M.JUMP_METERS = 30
 M.MAX_STEP = 0.1
-M.SEARCH_RADIUS = 60
+M.SEARCH_RADIUS = 120
 M.SEARCH_PERIOD = 40
 
 local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
@@ -62,6 +62,13 @@ function M.target(f, carPos, carVel)
       f.spot.y + M.SEARCH_RADIUS * math.sin(f.searchAngle),
       f.spot.z + M.HELI_HEIGHT)
   end
+  if f.lead then
+    local dx, dy = headingOf(f.leadVel, f.headingX, f.headingY)
+    return vec3(
+      f.lead.x - M.FOLLOW_BACK * dx + M.FOLLOW_SIDE * f.side * -dy,
+      f.lead.y - M.FOLLOW_BACK * dy + M.FOLLOW_SIDE * f.side * dx,
+      f.lead.z + M.HELI_HEIGHT)
+  end
   if f.mode == "circle" then
     return vec3(
       carPos.x + M.ORBIT_RADIUS * math.cos(f.orbit),
@@ -87,12 +94,23 @@ end
 function M.search(f, spot)
   f.spot = vec3(spot.x, spot.y, spot.z)
   f.spotVel = vec3(0, 0, 0)
+  f.lead = nil
+  f.leadVel = nil
   f.searchAngle = atan2(f.pos.y - spot.y, f.pos.x - spot.x)
+end
+
+function M.lead(f, pos, vel)
+  f.lead = vec3(pos.x, pos.y, pos.z)
+  f.leadVel = vec3(vel.x, vel.y, vel.z)
+  f.spot = nil
+  f.spotVel = nil
 end
 
 function M.follow(f, carPos, carVel)
   f.spot = nil
   f.spotVel = nil
+  f.lead = nil
+  f.leadVel = nil
   startMode(f, carVel, atan2(f.pos.y - carPos.y, f.pos.x - carPos.x))
 end
 
@@ -180,12 +198,18 @@ function M.step(f, carPos, carVel, dt)
     if f.spot then
       f.spot = vec3(f.spot.x + jx, f.spot.y + jy, f.spot.z + jz)
     end
+    if f.lead then
+      f.lead = vec3(f.lead.x + jx, f.lead.y + jy, f.lead.z + jz)
+    end
   end
   f.lastCar = vec3(carPos.x, carPos.y, carPos.z)
 
+  local leading = f.lead ~= nil and not f.leaving
   local searching = f.spot ~= nil
   local omega
-  if searching then
+  if leading then
+    f.headingX, f.headingY = headingOf(f.leadVel, f.headingX, f.headingY)
+  elseif searching then
     omega = 2 * math.pi / M.SEARCH_PERIOD * f.side
     if not f.leaving then f.searchAngle = f.searchAngle + omega * dt end
   else
@@ -205,7 +229,9 @@ function M.step(f, carPos, carVel, dt)
   local wx = M.FOLLOW_GAIN * (t.x - f.pos.x)
   local wy = M.FOLLOW_GAIN * (t.y - f.pos.y)
   local wz = M.FOLLOW_GAIN * (t.z - f.pos.z)
-  if not f.leaving and searching then
+  if leading then
+    wx, wy, wz = wx + f.leadVel.x, wy + f.leadVel.y, wz + f.leadVel.z
+  elseif not f.leaving and searching then
     local sv = f.spotVel
     if sv then wx, wy, wz = wx + sv.x, wy + sv.y, wz + sv.z end
     wx = wx - M.SEARCH_RADIUS * omega * math.sin(f.searchAngle)

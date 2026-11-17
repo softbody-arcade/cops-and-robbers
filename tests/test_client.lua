@@ -2714,14 +2714,14 @@ test("at night the searchlight hangs from the helicopter circling the runner's c
   local cop = nightTracking("cop")
   local light = cop.sky.objects[HELI_LIGHT]
   assertEq(light ~= nil, true)
-  assertEq(near(horizontal(light.pos, vec3(1000, 1000, 10)), 30, 3), true, tostring(horizontal(light.pos, vec3(1000, 1000, 10))))
-  assertEq(near(light.pos.z, 60, 1e-6), true, tostring(light.pos.z))
+  assertEq(near(horizontal(light.pos, vec3(1000, 1000, 10)), 80, 3), true, tostring(horizontal(light.pos, vec3(1000, 1000, 10))))
+  assertEq(near(light.pos.z, 110, 1e-6), true, tostring(light.pos.z))
   local runner = nightTracking("runner")
   light = runner.sky.objects[HELI_LIGHT]
   assertEq(light ~= nil, true)
   local own = runner.veh:getPosition()
-  assertEq(near(horizontal(light.pos, own), 30, 3), true, tostring(horizontal(light.pos, own)))
-  assertEq(near(light.pos.z, own.z + 50, 1e-6), true, tostring(light.pos.z))
+  assertEq(near(horizontal(light.pos, own), 80, 3), true, tostring(horizontal(light.pos, own)))
+  assertEq(near(light.pos.z, own.z + 100, 1e-6), true, tostring(light.pos.z))
 end)
 
 test("turning the beam off stops the quads while the light and its glare stay", function()
@@ -2814,7 +2814,7 @@ test("a tunnel loss sends the helicopter to the exit ahead", function()
     for _ = 1, 10 do
       assertEq(env.sky.objects[HELI_LIGHT], light)
       local d = horizontal(light.pos, exit)
-      assertEq(near(d, 60, 3), true, tostring(d))
+      assertEq(near(d, 120, 3), true, tostring(d))
       env.tick(1)
     end
   end)

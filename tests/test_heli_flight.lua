@@ -54,9 +54,9 @@ test("behind a steady car it settles on the follow point", function()
     f.mode = "follow"
     assertEq(f.side, side)
     car = runSteady(f, car, vec3(30, 0, 0), 60)
-    assertNear(f.pos.x - car.x, -25, 3)
-    assertNear(f.pos.y - car.y, 15 * side, 3)
-    assertNear(f.pos.z - car.z, 50, 3)
+    assertNear(f.pos.x - car.x, -40, 3)
+    assertNear(f.pos.y - car.y, 60 * side, 3)
+    assertNear(f.pos.z - car.z, 100, 3)
   end
 end)
 
@@ -75,8 +75,8 @@ test("a stopping car is overshot, then circled", function()
       local h = horiz(f.pos, car)
       if h < minHoriz then minHoriz = h end
       if i * DT >= 40 then
-        assertNear(h, 30, 2, "radius")
-        assertNear(f.pos.z - car.z, 50, 2, "height")
+        assertNear(h, 80, 2, "radius")
+        assertNear(f.pos.z - car.z, 100, 2, "height")
         local b = math.atan2(f.pos.y - car.y, f.pos.x - car.x)
         if prev then
           local d = b - prev
@@ -100,7 +100,7 @@ test("the fly-in reaches its target point", function()
   local car = vec3(100, 200, 10)
   local f = flight.arrive(car, seeded(3))
   assertNear(horiz(f.pos, car), 300, 1e-6)
-  assertNear(f.pos.z - car.z, 60, 1e-6)
+  assertNear(f.pos.z - car.z, 120, 1e-6)
   assertEq(len(f.vel), 0)
   for _ = 1, 400 do flight.step(f, car, vec3(0, 0, 0), DT) end
   assertEq(dist(f.pos, flight.target(f, car, vec3(0, 0, 0))) <= 5, true)
@@ -119,8 +119,8 @@ test("the fly-away leaves a still car and grows every second", function()
     while d > math.pi do d = d - 2 * math.pi end
     while d < -math.pi do d = d + 2 * math.pi end
     assertEq(math.abs(d) <= math.rad(60) + 1e-9, true, "heading")
-    assertNear(horiz(f.leaving, car), 400, 1e-6)
-    assertNear(f.leaving.z, 80, 1e-6)
+    assertNear(horiz(f.leaving, car), 600, 1e-6)
+    assertNear(f.leaving.z, 150, 1e-6)
     local last = dist(f.pos, car)
     for second = 1, 8 do
       for _ = 1, 20 do flight.step(f, car, vec3(0, 0, 0), DT) end
@@ -168,7 +168,7 @@ test("at starts on the target point with the car's velocity", function()
   assertEq(f.vel.z, 0)
   local slow = flight.at(car, vec3(1, 0, 0), seeded(2))
   assertEq(slow.mode, "circle")
-  assertNear(horiz(slow.pos, car), 30, 1e-9)
+  assertNear(horiz(slow.pos, car), 80, 1e-9)
 end)
 
 test("arrive circles without a velocity and follows from 6 m/s", function()
@@ -348,8 +348,8 @@ test("search circles the spot", function()
     for i = 1, 2400 do
       flight.step(f, car, vec3(0, 0, 0), DT)
       if i * DT >= 60 then
-        assertNear(horiz(f.pos, spot), 60, 3, "radius")
-        assertNear(f.pos.z - spot.z, 50, 2, "height")
+        assertNear(horiz(f.pos, spot), 120, 3, "radius")
+        assertNear(f.pos.z - spot.z, 100, 2, "height")
         local b = bearingOf(f.pos, spot)
         if prev then
           local r = wrap(b - prev) / DT
@@ -410,7 +410,7 @@ test("a guided spot is circled while it moves", function()
       car = vec3(spot.x, spot.y, spot.z)
       flight.step(f, car, vec3(30, 0, 0), DT)
       if i * DT >= 60 then
-        assertNear(horiz(f.pos, spot), 60, 3, "radius")
+        assertNear(horiz(f.pos, spot), 120, 3, "radius")
         local b = bearingOf(f.pos, spot)
         if prev then assertEq(wrap(b - prev) * side > 0, true, "direction") end
         prev = b
@@ -460,7 +460,7 @@ test("arrive with a spot starts 300 m out from it", function()
   local f = flight.arrive(car, flight.seeded(7), vec3(0, 0, 0), spot)
   local g = flight.arrive(car, flight.seeded(7))
   assertNear(horiz(f.pos, spot), 300, 1e-6)
-  assertNear(f.pos.z - spot.z, 60, 1e-6)
+  assertNear(f.pos.z - spot.z, 120, 1e-6)
   assertEq(len(f.vel), 0)
   assertEq(f.side, g.side)
 end)
@@ -521,8 +521,8 @@ test("at with a spot starts on its circle", function()
   for s = 1, 10 do
     local f = flight.at(car, vec3(0, 0, 0), flight.seeded(s), spot)
     local g = flight.at(car, vec3(0, 0, 0), flight.seeded(s))
-    assertNear(horiz(f.pos, spot), 60, 1e-6)
-    assertNear(f.pos.z - spot.z, 50, 1e-6)
+    assertNear(horiz(f.pos, spot), 120, 1e-6)
+    assertNear(f.pos.z - spot.z, 100, 1e-6)
     assertEq(len(f.vel), 0)
     assertEq(f.side, g.side)
     assertEq(f.lastCar.x, 10)
@@ -537,4 +537,109 @@ test("jumpOf reports a jump over 30 m in 3D", function()
   x, y, z = flight.jumpOf(vec3(0, 0, 0), vec3(0, 0, 31))
   assertEq(x, 0); assertEq(y, 0); assertEq(z, 31)
   assertEq(flight.jumpOf(vec3(0, 0, 0), vec3(20, 20, 10)), nil)
+end)
+
+test("tracking settles 40 m back, 60 m to the side, 100 m up", function()
+  for _, side in ipairs({ -1, 1 }) do
+    local random = function() return side == 1 and 0.9 or 0.1 end
+    local car = vec3(0, 0, 0)
+    local f = flight.at(car, vec3(30, 0, 0), random)
+    car = runSteady(f, car, vec3(30, 0, 0), 60)
+    assertNear(f.pos.x - car.x, -40, 3)
+    assertNear(f.pos.y - car.y, 60 * side, 3)
+    assertNear(f.pos.z - car.z, 100, 3)
+  end
+end)
+
+test("a stopped car is circled at 80 m and a search spot at 120 m", function()
+  local car = vec3(0, 0, 0)
+  local f = flight.at(car, vec3(0, 0, 0), seeded(3))
+  assertNear(horiz(f.pos, car), 80, 1e-9)
+  assertNear(f.pos.z - car.z, 100, 2)
+  local spot = vec3(500, 0, 0)
+  local g = flight.at(car, vec3(0, 0, 0), seeded(3), spot)
+  assertNear(horiz(g.pos, spot), 120, 1e-9)
+  assertNear(g.pos.z - spot.z, 100, 2)
+end)
+
+test("arrive starts 300 m out and 120 m up; leave aims 600 m out and 150 m up", function()
+  local car = vec3(100, 200, 10)
+  local f = flight.arrive(car, seeded(3))
+  assertNear(horiz(f.pos, car), 300, 1e-6)
+  assertNear(f.pos.z - car.z, 120, 1e-6)
+  flight.leave(f, car, seeded(4))
+  assertNear(horiz(f.leaving, car), 600, 1e-6)
+  assertNear(f.leaving.z - car.z, 150, 1e-6)
+end)
+
+test("the new heights keep the limits", function()
+  local car = vec3(0, 0, 0)
+  local f = flight.at(car, vec3(30, 0, 0), seeded(5))
+  local vel = vec3(30, 0, 0)
+  for i = 1, 2400 do
+    local a = i * DT < 20 and 0 or math.min(math.pi / 2, (i * DT - 20) * 0.3)
+    vel = vec3(30 * math.cos(a), 30 * math.sin(a), 0)
+    car = vec3(car.x + vel.x * DT, car.y + vel.y * DT, 0)
+    local before = f.vel
+    flight.step(f, car, vel, DT)
+    assertEq(len(f.vel) <= 70 + 1e-6, true, "speed")
+    assertEq(dist(f.vel, before) <= 8 * DT + 1e-6, true, "accel")
+  end
+end)
+
+test("a lead is followed like a car", function()
+  for _, side in ipairs({ -1, 1 }) do
+    local random = function() return side == 1 and 0.9 or 0.1 end
+    local lead = vec3(0, 0, 0)
+    local f = flight.at(lead, vec3(0, 0, 0), random)
+    local car = vec3(0, 0, 0)
+    local vel = vec3(45, 0, 0)
+    for _ = 1, 1200 do
+      lead = vec3(lead.x + vel.x * DT, lead.y, lead.z)
+      flight.lead(f, lead, vel)
+      flight.step(f, car, vec3(0, 0, 0), DT)
+    end
+    assertNear(f.pos.x - lead.x, -40, 3)
+    assertNear(f.pos.y - lead.y, 60 * side, 3)
+    assertNear(f.pos.z - lead.z, 100, 3)
+    assertEq(f.spot, nil)
+  end
+end)
+
+test("a lead that jumps 1 km keeps the limits", function()
+  local car = vec3(0, 0, 0)
+  local f = flight.at(car, vec3(0, 0, 0), seeded(6))
+  local lead = vec3(0, 0, 0)
+  local vel = vec3(30, 0, 0)
+  for i = 1, 1200 do
+    lead = vec3(lead.x + vel.x * DT + (i == 600 and 1000 or 0), lead.y, lead.z)
+    flight.lead(f, lead, vel)
+    local before = f.vel
+    flight.step(f, car, vec3(0, 0, 0), DT)
+    assertEq(len(f.vel) <= 70 + 1e-6, true, "speed")
+    assertEq(dist(f.vel, before) <= 8 * DT + 1e-6, true, "accel")
+  end
+end)
+
+test("a car jump shifts the lead", function()
+  local car = vec3(0, 0, 0)
+  local f = flight.at(car, vec3(0, 0, 0), seeded(6))
+  flight.lead(f, vec3(10, 20, 0), vec3(30, 0, 0))
+  flight.step(f, vec3(5000, 0, 0), vec3(0, 0, 0), DT)
+  assertNear(f.lead.x, 5010, 1e-9)
+  assertNear(f.lead.y, 20, 1e-9)
+end)
+
+test("search and follow clear the lead", function()
+  local car = vec3(0, 0, 0)
+  local f = flight.at(car, vec3(0, 0, 0), seeded(6))
+  flight.lead(f, vec3(10, 20, 0), vec3(30, 0, 0))
+  flight.search(f, vec3(50, 50, 0))
+  assertEq(f.lead, nil)
+  assertEq(f.leadVel, nil)
+  flight.lead(f, vec3(10, 20, 0), vec3(30, 0, 0))
+  assertEq(f.spot, nil)
+  flight.follow(f, car, vec3(0, 0, 0))
+  assertEq(f.lead, nil)
+  assertEq(f.leadVel, nil)
 end)
