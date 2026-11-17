@@ -12,7 +12,7 @@ local function load()
     function obj:setPosition(p) self.pos = { x = p.x, y = p.y, z = p.z } end
     return obj
   end
-  for _, n in ipairs({ "copsAndRobbers/heli", "copsAndRobbers/shelter", "copsAndRobbers/heliFlight" }) do package.loaded[n] = nil end
+  for _, n in ipairs({ "copsAndRobbers/heli", "copsAndRobbers/shelter", "copsAndRobbers/heliFlight", "copsAndRobbers/beam" }) do package.loaded[n] = nil end
   heli = require("copsAndRobbers/heli")
   state = heli.new()
   pos = vec3(10, 20, 5)
@@ -834,4 +834,160 @@ test("arrive, at and resume on the same tick as a 2 km jump place the helicopter
   assertEq(state.flight, f)
   assertEq(f.leaving, nil)
   assertNear(horiz(f.pos, pos), before, 70 * 0.05 + 1e-6)
+end)
+
+local drawn
+
+local function stubBeam(cast)
+  drawn = { calls = 0, far = 0 }
+  _G.debugDrawer = { drawQuadSolid = function(_, a, b, c, d)
+    drawn.calls = drawn.calls + 1
+    for _, v in ipairs({ a, b, c, d }) do drawn.far = math.max(drawn.far, dist3(v, state.lightPos)) end
+  end }
+  _G.color = function(r, g, b, a) return { r = r, g = g, b = b, a = a } end
+  _G.core_camera = { getPosition = function() return vec3(pos.x + 100, pos.y + 100, pos.z) end }
+  _G.castRayStatic = cast
+end
+
+local function beamTest(name, fn)
+  test(name, function()
+    local saved = { _G.debugDrawer, _G.color, _G.core_camera, _G.castRayStatic }
+    local ok, err = pcall(fn)
+    _G.debugDrawer, _G.color, _G.core_camera, _G.castRayStatic = saved[1], saved[2], saved[3], saved[4]
+    if not ok then error(err, 0) end
+  end)
+end
+
+local function drawsAt(c, isNight, opts)
+  drawn.calls, drawn.far = 0, 0
+  heli.lightTick(state, target, isNight, c, opts)
+  return drawn.calls
+end
+
+beamTest("at night while tracking the beam is drawn and the light has a glare", function()
+  load()
+  stubBeam()
+  heli.set(state, { phase = "tracking" }, 0)
+  assertEq(drawsAt(0, true, { weather = "rain", beam = true }), 1200)
+  assertEq(fake.objects[LIGHT].fields.flareType, "BNG_LightFlare_1")
+  assertEq(drawsAt(0.05, true), 1200)
+end)
+
+beamTest("the beam setting off draws no beam and keeps the glare; on again draws on the next tick", function()
+  load()
+  stubBeam()
+  heli.set(state, { phase = "tracking" }, 0)
+  assertEq(drawsAt(0, true, { beam = false }), 0)
+  local obj = fake.objects[LIGHT]
+  assertEq(obj ~= nil, true)
+  assertEq(obj.fields.flareType, "BNG_LightFlare_1")
+  assertEq(drawsAt(0.05, true, { beam = true }) > 0, true)
+  assertEq(drawsAt(0.1, true, { beam = false }), 0)
+  assertEq(fake.objects[LIGHT], obj)
+  assertEq(obj.fields.flareType, "BNG_LightFlare_1")
+  assertEq(tonumber(obj.fields.flareScale), 1)
+  assertEq(drawsAt(0.15, true, { beam = true }) > 0, true)
+end)
+
+beamTest("no beam by day, without a light, or at a slant over 400 m", function()
+  load()
+  stubBeam()
+  heli.set(state, { phase = "tracking" }, 0)
+  assertEq(drawsAt(0, false), 0)
+  assertEq(fake.objects[LIGHT], nil)
+  heli.set(state, { phase = "searching" }, 1)
+  assertEq(drawsAt(1, true), 0)
+  assertEq(fake.objects[LIGHT], nil)
+  drawn.calls = 0
+  heli.lightTick(state, nil, true, 1.5)
+  assertEq(drawn.calls, 0)
+  heli.set(state, { phase = "tracking" }, 2)
+  assertEq(drawsAt(2, true) > 0, true)
+  state.flight.pos = vec3(pos.x + 300, pos.y, pos.z + 280)
+  assertEq(drawsAt(2, true), 0)
+  assertEq(fake.objects[LIGHT] ~= nil, true)
+  state.flight.pos = vec3(pos.x + 300, pos.y, pos.z + 250)
+  assertEq(drawsAt(2, true) > 0, true)
+end)
+
+beamTest("a drawer error stops the beam for the round and keeps the light and its glare", function()
+  load()
+  stubBeam()
+  heli.set(state, { phase = "tracking" }, 0)
+  assertEq(drawsAt(0, true) > 0, true)
+  local obj = fake.objects[LIGHT]
+  debugDrawer.drawQuadSolid = function() error("draw failed") end
+  heli.lightTick(state, target, true, 0.05)
+  assertEq(state.beamFailed, true)
+  assertEq(state.failed, nil)
+  assertEq(fake.objects[LIGHT], obj)
+  stubBeam()
+  assertEq(drawsAt(0.1, true), 0)
+  assertEq(fake.objects[LIGHT], obj)
+  assertEq(obj.fields.flareType, "BNG_LightFlare_1")
+  heli.clear(state)
+  heli.set(state, { phase = "tracking" }, 1)
+  assertEq(drawsAt(1, true) > 0, true)
+end)
+
+beamTest("an error working out the quads stops the beam and keeps the light", function()
+  load()
+  stubBeam()
+  require("copsAndRobbers/beam").quads = function() error("quads failed") end
+  heli.set(state, { phase = "tracking" }, 0)
+  assertEq(drawsAt(0, true), 0)
+  assertEq(state.beamFailed, true)
+  assertEq(state.failed, nil)
+  local obj = fake.objects[LIGHT]
+  assertEq(obj ~= nil, true)
+  run(0, 1, 0.05)
+  assertEq(fake.objects[LIGHT], obj)
+  assertEq(state.failed, nil)
+end)
+
+beamTest("the occlusion ray ends the beam at a hit, every 0.25 s, ignoring a hit within 2 m of the aim point", function()
+  load()
+  local casts = {}
+  local short = false
+  stubBeam(function(origin, dir, maxDist)
+    casts[#casts + 1] = { origin = origin, dir = dir, maxDist = maxDist }
+    return short and maxDist - 1 or maxDist / 2
+  end)
+  heli.set(state, { phase = "tracking" }, 0)
+  assertEq(drawsAt(0, true) > 0, true)
+  local axisLen = dist3(state.lightPos, state.aimPos)
+  assertEq(#casts, 1)
+  local cast = casts[1]
+  assertNear(cast.maxDist, axisLen, 1e-9)
+  assertNear(dist3(cast.origin, state.lightPos), 0, 1e-9)
+  local toAim = vec3((state.aimPos.x - state.lightPos.x) / axisLen, (state.aimPos.y - state.lightPos.y) / axisLen, (state.aimPos.z - state.lightPos.z) / axisLen)
+  assertNear(dist3(cast.dir, toAim), 0, 1e-9)
+  assertNear(state.beamHit, axisLen / 2, 1e-9)
+  assertEq(drawn.far <= axisLen / 2 + 1e-6, true, tostring(drawn.far))
+  short = true
+  assertEq(drawsAt(0.1, true) > 0, true)
+  assertEq(#casts, 1)
+  assertEq(drawn.far <= state.beamHit + 1e-6, true, tostring(drawn.far))
+  assertEq(drawsAt(0.3, true) > 0, true)
+  assertEq(#casts, 2)
+  assertEq(state.beamHit, nil)
+  axisLen = dist3(state.lightPos, state.aimPos)
+  assertEq(drawn.far > 0.9 * axisLen, true, tostring(drawn.far))
+end)
+
+test("the glare's scale follows the light's brightness through the fly-in", function()
+  load()
+  state.random = seeded(2)
+  night(0, "arriving")
+  night(1, "tracking")
+  local obj = fake.objects[LIGHT]
+  assertEq(obj.fields.flareType, "BNG_LightFlare_1")
+  assertEq(tonumber(obj.fields.flareScale) < 0.05, true, obj.fields.flareScale)
+  local c = 1
+  while c < 1 + heli.APPROACH_SECONDS + 0.5 do
+    c = c + 0.05
+    heli.lightTick(state, target, true, c)
+    assertEq(math.abs(tonumber(obj.fields.flareScale) - state.fx.bright) <= 0.05 + 1e-9, true, c .. " " .. obj.fields.flareScale)
+  end
+  assertEq(tonumber(obj.fields.flareScale) > 0.94, true, obj.fields.flareScale)
 end)

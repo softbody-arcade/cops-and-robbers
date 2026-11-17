@@ -1,5 +1,6 @@
 local shelter = require("copsAndRobbers/shelter")
 local flight = require("copsAndRobbers/heliFlight")
+local beam = require("copsAndRobbers/beam")
 
 local M = {}
 
@@ -31,6 +32,9 @@ M.REFOUND_AIM_OFFSET = 8
 M.JUMP_METERS = flight.JUMP_METERS
 M.MAX_STEP = flight.MAX_STEP
 M.LEFTOVER_INTERVAL = 1
+M.FLARE_TYPE = "BNG_LightFlare_1"
+M.FLARE_STEP = 0.05
+M.HIT_MARGIN = 2
 
 local FIELDS = {
   { "brightness", M.BRIGHTNESS }, { "range", M.RANGE_MIN }, { "innerAngle", 8 }, { "outerAngle", 16 },
@@ -38,7 +42,7 @@ local FIELDS = {
 }
 
 function M.new()
-  return { phase = nil, reason = nil, endsAt = nil, cover = shelter.new(), sent = false, lastCheck = nil }
+  return { phase = nil, reason = nil, endsAt = nil, cover = shelter.new(), sent = false, lastCheck = nil, beamQuads = {} }
 end
 
 function M.set(state, d, clock)
@@ -76,6 +80,7 @@ end
 
 local function forgetLight(state)
   state.light, state.aim, state.fx, state.lightPos, state.aimPos = nil, nil, nil, nil, nil
+  state.beamHit, state.rayAt = nil, nil
 end
 
 local function removeLight(state)
@@ -136,10 +141,15 @@ local function aimLight(obj, lightPos, aimPos)
   obj:setField("rotation", 0, q.x .. " " .. q.y .. " " .. q.z .. " " .. q.w)
 end
 
+local function applyField(obj, name, value)
+  obj:setField(name, 0, value)
+end
+
 local function createLight(state)
   local obj = createObject("SpotLight")
   if not obj then return false end
   for _, f in ipairs(FIELDS) do obj:setField(f[1], 0, tostring(f[2])) end
+  pcall(applyField, obj, "flareType", M.FLARE_TYPE)
   obj.canSave = false
   obj:registerObject(M.LIGHT_NAME)
   if not scenetree.findObject(M.LIGHT_NAME) then
@@ -151,22 +161,26 @@ local function createLight(state)
   state.light = obj
   state.aim = M.newAim()
   state.fx = { mode = "hover", t0 = 0 }
-  state.lightRange = nil
+  state.lightRange, state.flareScale = nil, nil
   return true
-end
-
-local function applyField(obj, name, value)
-  obj:setField(name, 0, value)
 end
 
 local function setBrightness(state, factor)
   pcall(applyField, state.light, "brightness", tostring(M.BRIGHTNESS * math.max(0, math.min(1, factor))))
 end
 
-local function writeRange(state, lightPos, car)
+local function writeFlare(state, bright)
+  if state.flareScale and math.abs(bright - state.flareScale) <= M.FLARE_STEP then return end
+  if pcall(applyField, state.light, "flareScale", tostring(bright)) then state.flareScale = bright end
+end
+
+local function slantOf(lightPos, car)
   local dx, dy, dz = lightPos.x - car.x, lightPos.y - car.y, lightPos.z - car.z
-  local slant = math.sqrt(dx * dx + dy * dy + dz * dz)
-  local range = math.min(M.RANGE_MAX, math.floor(math.max(M.RANGE_MIN, slant + M.RANGE_MARGIN) + 0.5))
+  return math.sqrt(dx * dx + dy * dy + dz * dz)
+end
+
+local function writeRange(state, lightPos, car)
+  local range = math.min(M.RANGE_MAX, math.floor(math.max(M.RANGE_MIN, slantOf(lightPos, car) + M.RANGE_MARGIN) + 0.5))
   if state.lightRange and math.abs(range - state.lightRange) <= M.RANGE_STEP then return end
   if pcall(applyField, state.light, "range", tostring(range)) then state.lightRange = range end
 end
@@ -263,6 +277,7 @@ local function advance(state, car, clock)
     end
   end
   fx.bright = math.max(0, math.min(1, bright))
+  writeFlare(state, fx.bright)
   if fx.mode ~= "hover" then
     setBrightness(state, fx.bright)
   elseif fx.dirty then
@@ -336,7 +351,39 @@ local function leftover(state, clock)
   return scenetree.findObject(M.LIGHT_NAME) ~= nil
 end
 
-local function tickLight(state, target, night, clock)
+local function drawQuad(a, b, c, d, clr)
+  debugDrawer:drawQuadSolid(a, b, c, d, clr)
+end
+
+local function castBeam(state, lightPos, aimPos, clock)
+  if not castRayStatic or (state.rayAt and clock >= state.rayAt and clock - state.rayAt < beam.RAY_INTERVAL) then return end
+  state.rayAt, state.beamHit = clock, nil
+  local ax, ay, az = aimPos.x - lightPos.x, aimPos.y - lightPos.y, aimPos.z - lightPos.z
+  local axisLen = math.sqrt(ax * ax + ay * ay + az * az)
+  if not (axisLen > 0) then return end
+  local d = tonumber(castRayStatic(lightPos, vec3(ax / axisLen, ay / axisLen, az / axisLen), axisLen))
+  if d and d < axisLen - M.HIT_MARGIN then state.beamHit = d end
+end
+
+local function drawBeam(state, clock, weather)
+  local lightPos, aimPos = state.lightPos, state.aimPos
+  castBeam(state, lightPos, aimPos, clock)
+  local camPos = core_camera and core_camera.getPosition and core_camera.getPosition() or nil
+  local n = beam.quads(lightPos, aimPos, beam.strength(weather, state.fx.bright), state.beamHit, camPos, state.beamQuads)
+  beam.draw(state.beamQuads, n, drawQuad, color)
+end
+
+local function beamTick(state, car, clock, opts)
+  if (opts and opts.beam == false) or state.beamFailed or not (debugDrawer and color) then return end
+  if slantOf(state.lightPos, car) > M.RANGE_MAX then return end
+  local ok, err = pcall(drawBeam, state, clock, opts and opts.weather)
+  if not ok then
+    state.beamFailed = true
+    log("E", "cnr_heli", "searchlight beam stopped: " .. tostring(err))
+  end
+end
+
+local function tickLight(state, target, night, clock, opts)
   local random = state.random or math.random
   if state.light and not scenetree.findObject(M.LIGHT_NAME) then forgetLight(state) end
   if not target then
@@ -375,15 +422,16 @@ local function tickLight(state, target, night, clock)
   end
   if state.light and not (state.flight and advance(state, car, clock)) then removeLight(state) end
   if state.leftAt and clock - state.leftAt >= M.DEPART_SECONDS then dropFlight(state) end
+  if state.light then beamTick(state, car, clock, opts) end
 end
 
-function M.lightTick(state, target, night, clock)
+function M.lightTick(state, target, night, clock, opts)
   clock = clock or 0
   if state.failed then
     if leftover(state, clock) then pcall(removeLight, state) end
     return
   end
-  local ok = pcall(tickLight, state, target, night, clock)
+  local ok = pcall(tickLight, state, target, night, clock, opts)
   if not ok then
     pcall(removeLight, state)
     state.failed = true
@@ -398,6 +446,7 @@ function M.clear(state)
   pcall(removeLight, state)
   state.phase, state.reason, state.endsAt, state.failed, state.lightPhase = nil, nil, nil, nil, nil
   state.flight, state.leftAt, state.lastClock, state.lastCar, state.carVel = nil, nil, nil, nil, nil
+  state.beamFailed = nil
   M.resetCover(state)
 end
 
