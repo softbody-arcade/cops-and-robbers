@@ -1083,13 +1083,16 @@ beamTest("no beam by day, without a light, or at a slant over 400 m", function()
   drawn.calls = 0
   heli.lightTick(state, nil, true, 1.5)
   assertEq(drawn.calls, 0)
+  heli.set(state, { phase = "arriving" }, 1.8)
+  heli.lightTick(state, target, true, 1.8)
   heli.set(state, { phase = "tracking" }, 2)
-  assertEq(drawsAt(2, true) > 0, true)
+  local c = nightRun(2, 2 + heli.APPROACH_SECONDS + 1)
+  assertEq(drawsAt(c, true) > 0, true)
   state.flight.pos = vec3(pos.x + 300, pos.y, pos.z + 280)
-  assertEq(drawsAt(2, true), 0)
+  assertEq(drawsAt(c, true), 0)
   assertEq(fake.objects[LIGHT] ~= nil, true)
   state.flight.pos = vec3(pos.x + 300, pos.y, pos.z + 250)
-  assertEq(drawsAt(2, true) > 0, true)
+  assertEq(drawsAt(c, true) > 0, true)
 end)
 
 beamTest("a drawer error stops the beam for the round and keeps the light and its glare", function()
@@ -3400,4 +3403,44 @@ test("back from a grounding it searches from the last known state", function()
   status(c, "searching")
   assertEq(state.search.mode, "contain")
   samePos(state.flight.spot, a, 1e-9)
+end)
+
+for _, ph in ipairs({ "tracking", "searching" }) do
+  test("grounded straight to " .. ph .. " (0 s arrival) flies in and ramps the light", function()
+    load()
+    state.random = seeded(8)
+    night(0, "tracking")
+    local c = run(0, 3, 0.05)
+    c = c + 0.05
+    night(c, "grounded")
+    c = nightRun(c, c + 10, nil)
+    assertEq(state.flight, nil)
+    assertEq(fake.objects[LIGHT], nil)
+    c = c + 0.05
+    night(c, ph)
+    assertEq(horiz(state.flight.pos, pos) > heli.APPROACH_DISTANCE - 20, true)
+    local obj = fake.objects[LIGHT]
+    assertEq(obj ~= nil, true)
+    assertEq(tonumber(obj.fields.brightness) < heli.BRIGHTNESS * 0.05, true, obj.fields.brightness)
+  end)
+end
+
+test("grounded without a target and without any reference point leaves from its own position", function()
+  load()
+  state.random = seeded(9)
+  status(0, "tracking")
+  local c = flyTo(0, 2)
+  local f = state.flight
+  f.spot, f.lead, state.lastCar = nil, nil, nil
+  c = c + 0.05
+  heli.set(state, { phase = "grounded", reason = "storm" }, c)
+  heli.lightTick(state, nil, false, c)
+  assertEq(f.leaving ~= nil, true)
+  assertEq(state.leftAt, c)
+  local left = c
+  while c < left + 9 do
+    c = c + 0.05
+    heli.lightTick(state, nil, false, c)
+  end
+  assertEq(state.flight, nil)
 end)

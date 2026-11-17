@@ -427,7 +427,7 @@ local function tickLight(state, target, phase, last, night, clock, opts)
   local f = state.flight
   local desired = isUp(phase) and night and f ~= nil
   if phase ~= last and not (isUp(phase) and isUp(last)) then
-    if isUp(phase) and (last == "arriving" or last == "refuelling") then
+    if isUp(phase) and (last == "arriving" or flyingAway(last)) then
       if desired then startApproach(state, clock) end
     elseif state.light then
       if flyingAway(phase) and isUp(last) and f and state.fx.mode ~= "fade" then
