@@ -117,6 +117,9 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `weather` | random | `clear`, `cloudy`, `rain`, `storm`, `fog`, `snow` or `random` |
 | `badWeatherChancePercent` | 25 | Chance of rain, storm, fog or snow when Weather is random |
 | `weatherDriving` | true | Weather changes grip and adds wind (not on BeamNG.Earth) |
+| `weatherChanges` | true | The weather changes during the chase, only into a weather that fits the temperature and time of day (not on BeamNG.Earth) |
+| `weatherChangeMinMinutes` | 3 | The least time between two weather changes, in whole minutes (at least 1) |
+| `weatherChangeMaxMinutes` | 8 | The most time between two weather changes (never below the minimum) |
 | `trafficPerPlayer` | 5 | AI traffic cars around each player during a round (0 = off, at most 20; normal maps only, not on BeamNG.Earth yet) |
 | `trafficRunnerOnly` | false | Only the runner's game spawns traffic (the same `trafficPerPlayer` count); cops spawn none. Fewer AI cars for better performance |
 
@@ -127,7 +130,7 @@ off). With `trafficRunnerOnly` (panel: Traffic for the runner only) only the run
 better performance; practice rounds keep their traffic either way. They spawn in prep, stand still until GO, and are removed when the round ends. There are no police or emergency
 vehicles among them, and they have no name tags, so every car with lights is a cop and every name tag is a player. A
 cop who drives into a traffic car gets the crash penalty ("crash penalty 10s (traffic)"), as with any crash only within
-`copResetMinDistanceMeters` of the runner; one who gets hit by traffic doesn't. In rain, storm, fog and snow rounds traffic drives with its headlights on; at night it follows the game's own
+`copResetMinDistanceMeters` of the runner; one who gets hit by traffic doesn't. While it rains, storms, fogs or snows traffic drives with its headlights on (it follows the weather as it changes); at night it follows the game's own
 lights. Traffic is off on BeamNG.Earth for now.
 
 Every player's game simulates everyone's traffic. If that gets heavy, BeamMP's "Simplify remote vehicles" option makes
