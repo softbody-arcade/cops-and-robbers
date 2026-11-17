@@ -246,6 +246,72 @@ test("picking a vehicle sends an official car config", function()
   assertEq(s.model, "pickup"); assertEq(s.config, "vehicles/pickup/base.pc")
 end)
 
+local function pickWith(configs, origins, data, randoms)
+  local env = bootClient({ configs = configs, origins = origins })
+  local calls, i = {}, 0
+  local real = math.random
+  math.random = function(n)
+    i = i + 1
+    calls[#calls + 1] = n
+    return math.min(randoms[i] or 1, n)
+  end
+  local ok, err = pcall(env.fire, "cnr_pickVehicle", data)
+  math.random = real
+  if not ok then error(err, 0) end
+  return env.lastSent("cnr_vehiclePicked"), calls
+end
+
+local function manyConfigs()
+  local list = {}
+  for i = 1, 10 do
+    list[#list + 1] = { model_key = "amodel", key = "c" .. i, Source = "BeamNG - Official", Type = "Car", pcFilename = "/vehicles/amodel/c" .. i .. ".pc" }
+  end
+  list[#list + 1] = { model_key = "bmodel", key = "only", Source = "BeamNG - Official", Type = "Car", pcFilename = "/vehicles/bmodel/only.pc" }
+  return list
+end
+
+test("a random pick chooses the model first, then the config", function()
+  local s, calls = pickWith(manyConfigs(), nil, { includeMods = false, excludedModels = {} }, { 1, 7 })
+  assertEq(s.model, "amodel"); assertEq(s.config, "vehicles/amodel/c7.pc")
+  assertEq(calls[1], 2); assertEq(calls[2], 10)
+  s, calls = pickWith(manyConfigs(), nil, { includeMods = false, excludedModels = {} }, { 2, 1 })
+  assertEq(s.model, "bmodel"); assertEq(s.config, "vehicles/bmodel/only.pc")
+  assertEq(calls[2], 1)
+end)
+
+test("a random pick gives each model half the draws", function()
+  local a, b = 0, 0
+  for r = 1, 2 do
+    local s = pickWith(manyConfigs(), nil, { includeMods = false, excludedModels = {} }, { r, 1 })
+    if s.model == "amodel" then a = a + 1 else b = b + 1 end
+  end
+  assertEq(a, 1); assertEq(b, 1)
+end)
+
+test("a random pick with mods skips mod cars the server does not provide", function()
+  local configs = {
+    { model_key = "meocar", key = "drag", Source = "Meo", Type = "Car", pcFilename = "/vehicles/meocar/drag.pc" },
+    { model_key = "localcar", key = "x", Source = "Mine", Type = "Car", pcFilename = "/vehicles/localcar/x.pc" },
+  }
+  local origins = { ["/vehicles/meocar/drag.pc"] = "/mods/multiplayer/meo.zip", ["/vehicles/localcar/x.pc"] = "/mods/repo/mine.zip" }
+  local data = { includeMods = true, excludedModels = {} }
+  local s, calls = pickWith(configs, origins, data, { 1, 1 })
+  assertEq(s.model, "meocar"); assertEq(calls[1], 1)
+  s = pickWith(configs, origins, data, { 2, 1 })
+  assertEq(s.model, "meocar")
+  s = pickWith({ configs[2] }, origins, data, { 1, 1 })
+  assertEq(s, nil)
+  s = pickWith(configs, origins, { includeMods = false, excludedModels = {} }, { 1, 1 })
+  assertEq(s, nil)
+end)
+
+test("a random pick never takes an excluded model or the unicycle", function()
+  local configs = manyConfigs()
+  configs[#configs + 1] = { model_key = "unicycle", key = "u", Source = "BeamNG - Official", Type = "Car", pcFilename = "/vehicles/unicycle/u.pc" }
+  local s, calls = pickWith(configs, nil, { includeMods = false, excludedModels = { "amodel" } }, { 1, 1 })
+  assertEq(s.model, "bmodel"); assertEq(calls[1], 1)
+end)
+
 local function fakeLayouts()
   local name = "/settings/ui_apps/layouts/beammp.uilayout.json"
   local other = "/settings/ui_apps/layouts/earth.uilayout.json"

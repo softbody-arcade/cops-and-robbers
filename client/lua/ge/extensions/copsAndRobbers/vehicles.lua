@@ -11,23 +11,6 @@ local function vehicleType(config)
   return model and model.model and model.model.Type
 end
 
-function M.pick(includeMods, excludedModels)
-  local excluded = { unicycle = true }
-  for _, m in ipairs(excludedModels or {}) do excluded[m] = true end
-  local list = core_vehicles.getConfigList(true).configs or {}
-  local candidates = {}
-  for _, c in ipairs(list) do
-    local official = c.Source == "BeamNG - Official"
-    if (official or includeMods) and ALLOWED_TYPES[vehicleType(c)] and not excluded[c.model_key] then
-      candidates[#candidates + 1] = c
-    end
-  end
-  if #candidates == 0 then return nil end
-  local c = candidates[math.random(#candidates)]
-  local path = c.pcFilename or ("vehicles/" .. c.model_key .. "/" .. c.key .. ".pc")
-  return c.model_key, (path:gsub("^/", ""))
-end
-
 local function serverProvided(c)
   if c.Source == "BeamNG - Official" then return true end
   if type(c.pcFilename) ~= "string" or not FS or not FS.getFileOriginInfo then return false end
@@ -36,15 +19,44 @@ local function serverProvided(c)
   return type(archive) == "string" and archive:find("/mods/multiplayer/", 1, true) ~= nil
 end
 
+local function allowed(c, includeMods, excluded)
+  return type(c.pcFilename) == "string" and ALLOWED_TYPES[vehicleType(c)] and not excluded[c.model_key]
+    and (c.Source == "BeamNG - Official" or (includeMods and serverProvided(c)))
+end
+
+local function excludedSet(models)
+  local excluded = { unicycle = true }
+  for _, m in ipairs(type(models) == "table" and models or {}) do excluded[m] = true end
+  return excluded
+end
+
+function M.pick(includeMods, excludedModels)
+  local excluded = excludedSet(excludedModels)
+  local byModel, keys = {}, {}
+  for _, c in ipairs(core_vehicles.getConfigList(true).configs or {}) do
+    if allowed(c, includeMods, excluded) then
+      if not byModel[c.model_key] then
+        byModel[c.model_key] = {}
+        keys[#keys + 1] = c.model_key
+      end
+      local group = byModel[c.model_key]
+      group[#group + 1] = c
+    end
+  end
+  if #keys == 0 then return nil end
+  table.sort(keys)
+  local model = keys[math.random(#keys)]
+  local group = byModel[model]
+  local c = group[math.random(#group)]
+  return model, (c.pcFilename:gsub("^/", ""))
+end
+
 function M.configList(opts)
   opts = type(opts) == "table" and opts or {}
-  local excluded = { unicycle = true }
-  for _, m in ipairs(type(opts.excludedModels) == "table" and opts.excludedModels or {}) do excluded[m] = true end
+  local excluded = excludedSet(opts.excludedModels)
   local list = {}
   for _, c in ipairs(core_vehicles.getConfigList(true).configs or {}) do
-    local official = c.Source == "BeamNG - Official"
-    if type(c.pcFilename) == "string" and ALLOWED_TYPES[vehicleType(c)] and not excluded[c.model_key]
-      and (official or (opts.includeMods and serverProvided(c))) then
+    if allowed(c, opts.includeMods, excluded) then
       list[#list + 1] = {
         model = c.model_key, config = (c.pcFilename:gsub("^/", "")),
         label = game.carName(c.model_key) .. " – " .. tostring(c.Configuration or c.Name or c.key),

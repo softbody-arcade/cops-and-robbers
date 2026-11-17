@@ -8,7 +8,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 
 | Step | What happens |
 |---|---|
-| Start round | Picks a random car and config (or the evolving build). Everyone gets the same one. Cops are placed on a road 50–150 m by road from the runner, facing toward the runner. Everyone is frozen. |
+| Start round | Picks a random car (a car model first, each equally likely, then one of its configs; with mod vehicles on, only mod cars the server provides) or the evolving build. Everyone gets the same one. Cops are placed on a road 50–150 m by road from the runner, facing toward the runner. Everyone is frozen. |
 | Prep | No time limit. Everyone sees only their role (and cops the runner's name) and "Waiting for the host to press GO". Colors come from the Settings card only: the game's parts and paint menu is closed for everyone (except the runner in evolving mode, for their one change). A parts change the mod didn't make is shown to everyone as a notice (with the slots that changed), but not undone. New car picks another car (random mode). Once a player's car is placed, their game spawns its traffic (see Traffic), which stands still until GO. |
 | Apply change (evolving only, the runner's HUD button) | Locks in the runner's change and rebuilds every car; the screen shows APPLYING CHANGES until everyone has loaded (at most 20 s). |
 | GO | "Runner starts in 3", then the runner is released. |
