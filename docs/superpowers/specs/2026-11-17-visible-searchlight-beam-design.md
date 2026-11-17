@@ -1,6 +1,6 @@
 # Visible searchlight beam and a flying helicopter
 
-Status: approved 2026-11-17, revised after a review. The beam, the flight and line of sight shipped in 2.9.1; searching (where it last knew the runner was, tunnel exits, guided by the cops' sight, the light never cut) and the helicopter sound are 2.9.3. It builds on the police helicopter (`docs/superpowers/specs/2026-11-16-police-helicopter-design.md`). The light now hangs from a helicopter that really flies, so the beam's angle and the light's sway come from the helicopter's own motion.
+Status: approved 2026-11-17, revised after a review. The beam, the flight and line of sight shipped in 2.9.1; searching (where it last knew the runner was, tunnel exits, guided by the cops' sight, the light never cut) and the helicopter sound are 2.9.4. It builds on the police helicopter (`docs/superpowers/specs/2026-11-16-police-helicopter-design.md`). The light now hangs from a helicopter that really flies, so the beam's angle and the light's sway come from the helicopter's own motion.
 
 ## Why
 - **No beam in the air:** BeamNG lights only light the surfaces they hit; the engine renders only clouds as volumes. So the 2.9.0 searchlight is a bright spot on the road with no shaft in the air. In real life the beam is visible from the side and from below: faintly on a clear night, and clearly in haze, cloud or rain.
@@ -53,7 +53,7 @@ Status: approved 2026-11-17, revised after a review. The beam, the flight and li
   - **Hover drift removed:** `HOVER_DRIFT` and the sine waves on the light's position go; the real flight replaces them.
 - **Brightness effects**, on the light's brightness factor `fx.bright`:
   - fly-in: rising to full over `APPROACH_SECONDS` 8 s, from 0 for a new light, or from the current factor when the light already exists
-  - fly-away: full, then fading to 0 over the last `DEPART_FADE_SECONDS` 3 s of the 8 s; then the light is removed, after that frame's update
+  - fly-away: full, then fading to 0 over the last `DEPART_FADE_SECONDS` 3 s of the 8 s; then the light and the flight go together at 8 s
   - night ending: a 1.5 s fade
   - night returning: a 1 s fade-in
   - searching never cuts or dims the light (see Searching)
@@ -61,14 +61,14 @@ Status: approved 2026-11-17, revised after a review. The beam, the flight and li
 
   | From → to | The light |
   |---|---|
-  | "arriving" or "refuelling" → "tracking" or "searching", at night | fly-in (`startApproach`): a new light rises from 0, an existing one (a short refuel) from its current factor |
+  | "arriving" or "refuelling" → "tracking" or "searching", at night, with a flight | fly-in (`startApproach`): a new light rises from 0, an existing one (a short refuel) from its current factor |
   | "arriving" or "refuelling" → "tracking" or "searching", by day | unchanged: there is no light, or a night-end fade runs on |
   | "tracking" ↔ "searching" | kept as it is; the aim swings to the new target with the switch offset |
   | "tracking" or "searching" → "refuelling", with a flight and the light not in its night-end fade | fly-away (`startDepart`) |
   | anything else (the round over, a phase that grounds it, a first status), with a light | removed, unless it is already flying away and the phase is "refuelling" |
 
   - After the table, as before: night ending starts the fade; the light wanted with none there (a game joining at night, or night falling while the helicopter is up) creates it at full brightness; the light wanted while it fades or flies away fades it in.
-  - The light is wanted while the helicopter is up ("tracking" or "searching") at night.
+  - The light is wanted while the helicopter is up ("tracking" or "searching") at night and its flight exists. After a flight error there is no flight, so no light is made until the flight is back.
 - **Range:** max(120, slant distance to the aim point + 30), rounded to whole metres and capped at 400.
   - It's written when the light is created, and again whenever it differs from the last written value by more than 5 m.
   - The spot grows when the helicopter is further off (cone 16°), as a real one would.
@@ -128,7 +128,7 @@ Status: approved 2026-11-17, revised after a review. The beam, the flight and li
   - a point is seen when the ray reaches within 0.5 m of it
   - only points within 400 m (straight-line distance) of the helicopter can be seen (`SIGHT_RANGE`)
   - the car is covered when no point is seen
-- **A flight error** is logged once. The flight is dropped and stays gone until the next valid helicopter status (or the round's end), so the car counts as covered meanwhile (below).
+- **A flight error** is logged once per round. The flight is dropped and stays gone until the next valid helicopter status (or the round's end), so the car counts as covered meanwhile (below).
 - **Without a helicopter** (head start, the arrival countdown, a refuel after the fly-away, after a flight error until the next status): the car counts as covered, since nothing can see it. The roof check is no longer used for cover; it stays for the rain and the tunnel walk (see Searching). (Changed with Searching: this is what makes each flight start searching, so the state at arrival no longer comes from a roof check.)
 - **Unchanged:**
   - the client needs the same reading twice in a row (about 0.5 s) before it reports a change, and the server needs 2 s of cover before "searching"
@@ -196,7 +196,7 @@ Status: approved 2026-11-17, revised after a review. The beam, the flight and li
   - **Safety:** the emitter is always looked up by its name, never kept as a reference that a mission change could leave dangling. An error deletes it, is logged once and stops the sound for the rest of the round. While no sound is wanted, a leftover emitter (after a Lua reload) is looked for about once a second and deleted, as the light does.
 - **The file:** "Helicopter Rotor Loop" by qubodup (freesound.org/people/qubodup/sounds/187681/, CC0, cut from a US government video, marked loopable), converted to a mono OGG (Vorbis q5, 48 kHz, 6.3 s, 64 KB) and shipped in the mod at `art/sound/cnr/heli_rotor.ogg` (the client zip gains its `art` folder). CC0 needs no credit; the author asks for a link, so `docs/DEPENDENCIES.md` and `README.md` name it.
 - **Probe-verified in game (2026-11-17):** an `SFXEmitter` made from Lua with `fileName`, `is3D`, `isLooping`, `referenceDistance`, `maxDistance` and `volume` set with `setField`, registered, added to the mission group and moved with `setPosition`, plays the file in 3D and loops. It is made as our rain sound is (`Sim.upcast` when present, and checked to have registered).
-- **Checked before the build:** whether `setVolumePitchCT` changes a playing `fileName` emitter's volume (the game and our rain only call it on `track` emitters). If it does, the volume is written with it; if not, by writing the `volume` field and calling the emitter's update. The plan records which.
+- **The volume call:** assumed for the build: `setVolumePitchCT(v, 1, 0, 0)` (the game and our rain only call it on `track` emitters); checked in game afterwards. The fallback is writing the `volume` field plus `postApply()`.
 - **Not doing:** Doppler, and a separate close-up sound.
 
 ## Code
@@ -223,12 +223,14 @@ Status: approved 2026-11-17, revised after a review. The beam, the flight and li
     - update the SpotLight entry, which still says it "hovers 40 m above"
     - add the FFI `utils/debugDraw` `drawTriSolid` with the packed `color()`, `core_camera.getPosition()`, the vehicle's `getVelocity()`, `castRayStatic` for the occlusion, and the `BNG_LightFlare_1` flare datablock
   - **The 2.9.0 spec's searchlight lines** point here for the flight.
-- **Added in 2.9.3:**
+- **Added in 2.9.4:**
   - **`heliFlight.lua`:** the search mode (`search`, `follow`, a spot for `arrive` and `at`, the spot's own velocity while guided).
   - **`tunnels.lua` (new, pure):** the tunnel exit walk on the road graph.
   - **`heliSound.lua` (new):** the rotor emitter, its fades, muffle and cleanup.
   - **`heli.lua`:** the spot lifecycle, sight-only cover, the flight's own protected step, the light's phase table, the sweep and the switch offset, the sound level.
-  - **`hud.lua`:** the refuel countdown shows while searching too, since every flight now starts searching.
+  - **`shelter.lua`:** `inSight` gets a range (400 m).
+  - **`hud.lua`:** the refuel countdown shows while searching too, since every flight now starts searching; the settings payload carries the sound switch.
+  - **Player settings:** `playerSettings.lua` gets a `sound` boolean, default true, and `HudSettings.vue` a "Helicopter sound" switch.
   - **`copsAndRobbers.lua`:** the road graph and roof check for the tunnel walk, the sound, the "Helicopter sound" setting.
   - **Server:** `guided` in the helicopter status; the runner counted as covered until their game reports.
 
@@ -256,7 +258,7 @@ Status: approved 2026-11-17, revised after a review. The beam, the flight and li
   - "arriving" → "searching" at night ramps from 0 over 8 s.
   - It stays on while searching: the same light, its brightness unchanged.
   - Found again, the aim swings from the sweep to the car without a jump.
-  - The fly-away fades and is removed after 8 s, with the flight dropped after the light update.
+  - The fly-away fades, and the light and the flight go together at 8 s.
   - By day there's no light, and the flight is dropped after a day refuel.
 - **Searching:**
   - The search circle: 60 ± 3 m from the spot, 50 ± 2 m up, at 2π/40 rad/s ± 20 %, ignoring the car; a guided spot moving at 30 m/s is circled the same way.
@@ -265,7 +267,7 @@ Status: approved 2026-11-17, revised after a review. The beam, the flight and li
   - The sweep: 0 m out at t = 0, 75 at 10, 150 at 20, 75 at 30, 0 at 40, continuous; on the ground below it.
   - The aim never jumps over found, lost, a new spot and guidance starting.
   - A refuel while searching flies away from the spot, not towards the runner.
-  - Errors: a flight error drops the flight until the next status and counts as covered; a tunnel walk error searches the car's position.
+  - Errors: a flight error drops the flight until the next status, counts as covered and makes no light at night; a tunnel walk error searches the car's position.
 - **Sound:** made, moved and removed; every rise eased over 1 s; the fade-out; the muffle; a leftover found and deleted; an error deletes it and logs once; nothing left after the round.
 - **Beam:**
   - strength per weather and brightness
@@ -314,7 +316,7 @@ Status: approved 2026-11-17, revised after a review. The beam, the flight and li
   - the sweep on a hillside and over a valley: the lit spot stays on the ground, the beam ends on it, and its height doesn't visibly step between rays
 - **Sound:**
   - heard from far off, louder overhead, quieter behind buildings, the switch turns it off and on with a fade, nothing left after the round
-  - whether `setVolumePitchCT` (or the fallback) changes a playing emitter's volume: the fly-away fade and the muffle are audible
+  - whether `setVolumePitchCT` changes a playing `fileName` emitter's volume: the fade-in, the fly-away fade and the muffle are audible; if not, switch to the fallback
 - **Line of sight:**
   - "SEARCHING" shows about 2.5 s after a building is between the helicopter and the car
   - trees

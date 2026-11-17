@@ -1,12 +1,12 @@
-# Helicopter Searching and Sound Implementation Plan (2.9.3)
+# Helicopter Searching and Sound Implementation Plan (2.9.4)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal (2.9.3):**
+**Goal (2.9.4):**
 - Searching becomes a real search. Every flight starts searching at a spot: where it was called in, where it last knew the runner was, or a tunnel exit ahead (turning around dodges it). The cops' sight guides it. It tracks only once it sees the runner itself, within 400 m.
 - The searchlight stays on and sweeps while searching.
 - Every game hears a rotor sound at the helicopter, with a "Helicopter sound" switch.
-- 2.9.1 (the beam, the flight and line of sight) and 2.9.2 are merged and live; this branch starts from main.
+- 2.9.1 (the beam, the flight and line of sight) and 2.9.2 are merged and live, and a small reset fix ships as 2.9.3 before this work; this branch starts from main.
 
 **Architecture:**
 - **Server:** `cnr/helicopter.lua` carries `guided` (a cop sees the runner) in its status, and `Round` counts the runner as covered until their game reports. The tracking rule itself doesn't change: every flight starts searching because the client counts the car as covered while it has no flight (Task 4).
@@ -30,6 +30,7 @@
 - **No version bump** on the branch. **No new network message:** `guided` rides in the existing `cnr_heli` status and the round setup's `heli`.
 - **Lua:**
   - In the pure client modules, do maths per component and build vectors with `vec3(x, y, z)` from numbers only (never `vec3(v)`); the test stub `vec3` takes three numbers and has no operators.
+  - Never test a position with `type(v) == "table"`; in the game `vec3` is cdata. Read its `x`, `y` and `z` and check that they are numbers.
   - No `goto`, `//` or bit operators.
 - **Search numbers:**
   - in `heliFlight.lua`: `SEARCH_RADIUS = 60`, `SEARCH_PERIOD = 40`; the height is the existing `HELI_HEIGHT = 50` above the spot
@@ -56,7 +57,7 @@
 
 ## Review Focus
 
-1. **A runner who is never seen** (a tunnel for the whole up phase). The helicopter stays "searching" all up phase and flies away on refuel with its light. It returns to the last known spot (the runner's position at that moment in a round where it never found them), not to the runner. Pinned in Task 4.
+1. **A runner who is never seen** (a tunnel for the whole up phase). The helicopter stays "searching" all up phase and flies away on refuel with its light. It returns to the last known spot; in a round where it never found them, to the runner's position when it comes back (spec, After a refuel). Pinned in Task 4.
 2. **Phase sequences the server really sends:** "arriving" → "searching"; a short refuel either way ("tracking" → "refuelling" → "searching", "searching" → "refuelling" → "tracking"); stale cover making a flight start "tracking". The spot is reconciled every tick, the light follows the phase table, and the fly-in keeps its 8 s ramp. Pinned in Tasks 4 and 5.
 3. **Guided and lost in the same tick, guidance starting kilometres from the spot, or guidance ending inside a tunnel.** The spot is recomputed from that moment and never left at a stale live position; the circle and the sweep restart from the runner. Pinned in Task 4.
 4. **A road graph that is missing, empty, cyclic, one node, a road over 15 m from the car, or a tunnel longer than 3 km.** `tunnels.exit` returns nil or an exit without looping, and the walk is bounded. An error in it falls back to the car. Pinned in Tasks 3 and 4.
@@ -98,11 +99,11 @@
     - "a runner whose game never reports is not tracked at arrival": `started({helicopterArrivalSeconds=0})`, no `coverReport` and no sight report; ticks at 4 and 11 with `stillCars()`: the `heli` effect at 11 is "searching"; ticks from 12 to 20 with `farCars()` have no `live` effect.
     - "the heli effect carries guided while a cop sees the runner": `chasing({helicopterArrivalSeconds=0})` with `farCars()` (cop 2 at 300 m); `sightReport(12, 2, true)`; ticks at 12 and 12.25: a `heli` effect with `guided == true` by the second tick; `sightReport(13, 2, false)`; ticks every 0.25 s from 13 to 15: a later `heli` effect without `guided` (after the 1.5 s `sightGraceSeconds`, one tick late).
   - **`tests/test_main.lua`:** "cnr_heli carries guided when a cop sees the runner": boot with `helicopterArrivalSeconds` 0 and clear weather, `runToChase`, then `env.positions[2] = 300`, `cnr_sight` from 2 with seen true, and two `cnr_tick`s 0.25 s apart: the last `cnr_heli` decodes with `guided == true`. Then seen false and `cnr_tick`s past the 1.5 s grace plus one: the last `cnr_heli` has no `guided`.
-  - **Existing tests that relied on `runnerCovered` starting false** (found by flipping the default; 11 fail). Restore today's start for them with a cover report of `false` from the runner in the head start, before the helicopter goes up: `coverReport(5, 1, false)` after the tick at 4, in the `chasing` helper and in the tests that call `started` directly (in `test_main`, `cnr_cover` from 1 with `{"covered":false}` after `env.go()`). Keep what each test checks:
+  - **Existing tests that relied on `runnerCovered` starting false** (found by flipping the default; 11 fail). Restore today's start for them with a cover report of `false` from the runner in the head start, before the helicopter goes up: `coverReport(5, 1, false)` after the tick at 4, in the `chasing` helper and in the tests that call `started` directly. In `test_main`, send `cnr_cover` from 1 with `{"covered":false}` after 20 of `runToChase`'s 44 ticks of 0.25 s (inside the head start; a report during the countdown is ignored, `round.lua:567`); give `runToChase` an optional flag for it. Keep what each test checks:
     - `tests/test_round.lua`: "no last seen when sight is lost while the helicopter tracks", "no last seen when the helicopter loses the runner while a cop sees them", "a bridge pass under 2 s keeps the helicopter on the runner, 2 s of cover loses them once", "the helicopter alone: each loss sends one last seen and hides the runner, tracking again shows them", "the helicopter alone sends live updates to every cop with a route", "heli effects follow phase changes", "runnerShown hides the runner from the head start and shows them while tracked", "setup carries runnerShown and the helicopter status"
     - "cover only counts from the runner's game during the chase": flip it. Reports of `false` before the chase and from a cop leave `runnerCovered == true`; the runner's `false` sets it false and `true` sets it back. The same for the practice part (the AI runner's report is ignored, the issuer's counts).
     - `tests/test_main.lua`: "heli phases reach every player" (the `false` report before the helicopter goes up) and "cnr_cover from the runner reaches the round" (the `false` report, so a `cnr_heli` "tracking" comes first; then `true` gives "searching")
-- [ ] **Step 2: Run them to make sure they fail.** Run `lua tests/run.lua tests/test_helicopter.lua`, `lua tests/run.lua tests/test_round.lua` and `lua tests/run.lua tests/test_main.lua`. The new tests fail; the adapted ones pass.
+- [ ] **Step 2: Run them to make sure they fail.** Run `lua tests/run.lua tests/test_helicopter.lua`, `lua tests/run.lua tests/test_round.lua` and `lua tests/run.lua tests/test_main.lua`. The new tests fail. The adapted ones pass, except the flipped "cover only counts from the runner's game during the chase", which fails until `runnerCovered` starts true.
 - [ ] **Step 3: Implement** as in Interfaces.
 - [ ] **Step 4: Run `make test`.** Expected: `0 failed`.
 - [ ] **Step 5: Commit.** Message: "feat: the helicopter status carries the cops' guidance; the runner counts as covered until reported"
@@ -167,8 +168,8 @@
 - [ ] **Step 1: Write the failing tests in `tests/test_tunnels.lua`,** with small hand-built graphs (`closest` returns a distance of 2 unless stated):
   - **a straight tunnel:** nodes 1-5 on a line 100 m apart, 2-4 roofed, the car between 2 and 3. Heading towards 5 gives node 5. Heading towards 1 gives node 1 (turning around).
   - **a fork inside:** two exits. Seed 0 gives the first by id, seed 1 the second, and no seed the first.
-  - **too long:** 41 roofed nodes 100 m apart (4 km), so nil. Also 250 roofed nodes in a ring (a cycle), so nil, with no endless loop.
-  - **lengths from positions:** the 4 km tunnel with `len = 1` on every link still gives nil.
+  - **too long:** 41 roofed nodes 100 m apart (4 km), with an unroofed node beyond the 41st; the car at the first roofed node heading in: nil. Also 250 roofed nodes 10 m apart in a ring (a cycle), so the 200-node cap stops it, not the 3 km cap: nil, with no endless loop.
+  - **lengths from positions:** the same 4 km tunnel, with its unroofed node beyond, and `len = 1` on every link still gives nil.
   - **a road too far:** `closest` returns a distance of 16, so nil; 14 gives the exit; no distance gives nil.
   - **not in a tunnel:** the car isn't roofed, so nil, and `closest` is never called.
   - **missing data:** nil `roads`, nil `links`, a nil `closest` result, a node missing from `nodes`: each gives nil with no error.
@@ -195,8 +196,8 @@
   - an invalid one: clears `guided` with the phase, reason, end time and seed
 - **`M.lightTick(state, target, night, clock, opts)`** runs two parts:
   1. reads `phase = state.phase` and `last = state.lightPhase` once
-  2. **the flight part,** unless `state.flightFailed`, in its own `pcall`: `flightTick(state, target, phase, last, clock, opts)`. On an error it drops the flight (`dropFlight`), sets `state.flightFailed = true` and logs once (`log("E", "cnr_heli", "helicopter flight stopped: " .. err)`).
-  3. **the light part,** `tickLight(state, target, phase, last, night, clock, opts)` without `fly`: skipped while `state.failed` (with the leftover removal, as now), and in its own `pcall` as now. `state.failed` no longer stops the flight.
+  2. **the flight part,** unless `state.flightFailed`, in its own `pcall`: `flightTick(state, target, phase, last, clock, opts)`. On an error it drops the flight (`dropFlight`), sets `state.flightFailed = true` and logs once per round (`state.flightLogged`, reset by `clear`; `log("E", "cnr_heli", "helicopter flight stopped: " .. err)`).
+  3. **the light part,** `tickLight(state, target, phase, last, night, clock, opts)` without `fly`: skipped while `state.failed` (with the leftover removal, as now), and in its own `pcall` as now. `state.failed` no longer stops the flight. Its `desired` also needs a flight (`and state.flight ~= nil`), so no light is made and deleted every frame while the flight has failed.
   4. writes `state.lightPhase = phase` after both, and only when `target` is not nil (the existing test "a phase change while the target is missing for a moment is not lost" depends on it)
 - **`flightTick` without a target:** sets `state.missingSince = state.missingSince or clock`. The flight doesn't step and nothing is created, but the flight is dropped `DEPART_SECONDS` after `state.leftAt`, and when the phase is none of "tracking", "searching" and "refuelling".
 - **`flightTick` with a target**, in this order:
@@ -222,8 +223,8 @@
   - `state.wasGuided = state.guided`
 - **`spotFor(state, car, target, carVel, opts) -> vec3`:**
   - the direction: `carVel` when its horizontal speed is above 1 m/s, otherwise `target:getDirectionVector()` when the target has it, otherwise (0, 0)
-  - calls `opts.tunnelExit(car, dirX, dirY, state.seed)` in its own `pcall`
-  - returns the result when it is a table with numeric `x`, `y` and `z`; otherwise the car
+  - without `opts` or `opts.tunnelExit`: the car, with no call and no log
+  - otherwise calls `opts.tunnelExit(car, dirX, dirY, state.seed)` in its own `pcall`, reads `r.x`, `r.y`, `r.z` inside the pcall and returns `vec3(r.x, r.y, r.z)` when all three are numbers (any table or cdata); otherwise the car
   - an error is logged once per round (`state.tunnelLogged`) and gives the car
 - **`opts.tunnelExit`:** `copsAndRobbers.lua` passes it, only when `castRayStatic` exists, as a closure over `tunnels.exit` with:
   - `{ closest = function(p) return map.findClosestRoad(p) end, links = gp and gp.graph, nodes = m and m.nodes }`, where `gp = map.getGraphpath and map.getGraphpath()` and `m = map.getMap and map.getMap()`, resolved per call and nil-safe when `map` is missing
@@ -235,7 +236,7 @@
   - `state.failed` (the light) no longer matters
   - the spacing, the first report and the smoothing are unchanged
 - **`shelter.inSight(from, carPos, height, dirX, dirY, castRay, maxRange)`:** a point further than `maxRange` (straight line from `from` to the point at `height`) is not seen, and no ray is cast for it. Without `maxRange`, as now.
-- **`M.clear`** also resets `lastKnown`, `guided`, `wasGuided`, `sweepAt`, `retargetAt`, `flightFailed`, `missingSince` and `tunnelLogged`. (Task 5 adds its own fields; the sound's state is reset by `heliSound.clear`, Task 6.)
+- **`M.clear`** also resets `lastKnown`, `guided`, `wasGuided`, `sweepAt`, `retargetAt`, `flightFailed`, `flightLogged`, `missingSince` and `tunnelLogged`. (Task 5 adds its own fields; the sound's state is reset by `heliSound.clear`, Task 6.)
 
 - [ ] **Step 1: Write the failing tests** (dt 0.05; a car that moves keeps under 30 m per tick, so the jump rule doesn't fire):
   - **`tests/test_shelter.lua`:** "points beyond the range are not seen": from (0, 0, 1.5), a ray that never hits and counts its calls, no direction, height 1.5. The car at (401, 0, 0) with `maxRange` 400 → false and no ray cast; at (399, 0, 0) → true; at (401, 0, 0) without `maxRange` → true.
@@ -244,7 +245,7 @@
     - "a refuel returns to the last known spot": "tracking" at A for 2 s; "refuelling" for 10 s (the flight is dropped at 8 s) while the car drives at 10 m/s to B; "searching": the new flight starts 300 ± 1 m (horizontally) from A, and after 60 s circles A at 60 ± 3 m.
     - "a short refuel from tracking searches the last known spot": "tracking" at A for 2 s; "refuelling" while the car drives towards B; "searching" 5 s later: the same flight, `f.leaving` nil, `f.spot` is A to 1e-9, `state.sweepAt` is that tick's clock.
     - "a short refuel from searching back to tracking follows the car": "arriving" → "searching" at S; the car drives 200 m away and stops; "refuelling" at 30 s, "tracking" at 35 s: the same flight, `f.spot` nil, `f.mode == "circle"`, and 30 s later the helicopter is within 70 m of the car (3D).
-    - "a flight created in tracking has no spot": "arriving" → "tracking", a join in "tracking", and "refuelling" over 8 s → "tracking": `f.spot` nil each time.
+    - "a flight created in tracking has no spot" (a guard: passes before and after): "arriving" → "tracking", a join in "tracking", and "refuelling" over 8 s → "tracking": `f.spot` nil each time.
     - "losing the runner in a tunnel searches the exit":
       - an `opts.tunnelExit` stub returns E, 300 m from the car, and records its arguments
       - "tracking" → "searching" makes `f.spot` E, with one call that got the car's position and `state.seed`
@@ -262,13 +263,10 @@
     - "a light failure doesn't stop the flight": `createObject` returns nil at night, so `state.failed` is set; over 2 s the flight still moves, and `coverTick`'s rays start at its current position.
     - "a flight error drops the flight, logs once and counts as covered until the next status": `heliFlight.step` replaced by one that errors. Over 10 ticks: one log line, `state.flight` nil, `state.flightFailed` true, no new flight; the first cover report is true. With `step` restored and a new valid `set`: `flightFailed` is nil and a flight exists on the next tick.
     - "the flight keeps its timers without a target": "tracking", then "refuelling" with the target, then the target nil: the flight is dropped `DEPART_SECONDS` (± one tick) after `state.leftAt`, and `state.missingSince` is the first nil tick's clock.
-    - "a phase change reaches both parts on the same tick": "arriving" → "tracking" at night: on that tick the flight exists 300 m out and `state.fx.mode == "approach"`.
+    - "a phase change reaches both parts on the same tick" (a guard: passes before and after): "arriving" → "tracking" at night: on that tick the flight exists 300 m out and `state.fx.mode == "approach"`.
+    - "a flight error at night makes no light": "tracking" at night, then `heliFlight.step` errors: no light object is created over 10 ticks (count `createObject("SpotLight")` calls).
     - **Adapt** to sight-only cover and the dropped `castUp` argument: "the first cover check reports not covered, then only changes", "cover checks are spaced by the interval" and "cover needs two equal checks to switch and is resent after a reset" (with a flight up and a `castRay` that is free or blocked); "with a helicopter, cover comes from its line of sight". **Remove** "the cover check is cast from above the car" (the 1.5 m height is pinned by `test_shelter`'s "the points sit 1.5 m up and 2 m ahead and behind"), "a failed light stops the flight, so cover falls back to the roof check" (replaced by "a light failure doesn't stop the flight") and "without a helicopter the roof check decides" (replaced by "cover is covered without a helicopter"). Any other test that this task's spot rules break is adapted to them; light behaviour stays for Task 5.
   - **`tests/test_client.lua`:**
-    - "a tunnel loss sends the helicopter to the exit ahead":
-      - stub `map.findClosestRoad` (returns 2, 3 and a distance of 2), `map.getGraphpath` (a line of nodes 1-5, 100 m apart in +x, both directions), `map.getMap` (their positions) and `castRayStatic` (upward rays within 5 m horizontally of nodes 2-4 or of the car hit 5 m up; nothing else hits)
-      - the runner's game at night, with the car between nodes 2 and 3 heading +x: "tracking" → "searching". After 60 s the light circles node 5 at 60 ± 3 m.
-      - follow the existing helicopter tests there
     - **Adapt:** "the runner reports cover from the head start, once, and a cop does not": the first report is now `covered = true` (no helicopter in the head start).
     - **Rewrite:** "practice as a cop: the practising cop's game reports cover for the AI runner". After `cnr_runnerGo`, fire `cnr_heli` `{ phase = "searching", seconds = 100, seed = 7 }`, so a flight is up. With a `castRayStatic` that blocks every slanted ray, the report is `covered = true`; with one that blocks none, after the two-reading smoothing, `covered = false`.
 - [ ] **Step 2: Run them to make sure they fail.**
@@ -292,13 +290,13 @@
 **Interfaces:**
 - **Consumes:** `f.spot`, `state.sweepAt`, `state.retargetAt` (Task 4).
 - **When the light is wanted:**
-  - `desired` is `(phase == "tracking" or phase == "searching") and night`
+  - `desired` is `(phase == "tracking" or phase == "searching") and night and state.flight ~= nil`
   - `M.wantsNight(state)` is true for "tracking", "searching" or an existing light
 - **The phase table** replaces the block in `tickLight` that runs when `phase ~= last`:
 
   | From → to | The light |
   |---|---|
-  | "arriving" or "refuelling" → "tracking" or "searching", at night | `startApproach`: a new light from 0, an existing one from its current factor |
+  | "arriving" or "refuelling" → "tracking" or "searching", at night, with a flight | `startApproach`: a new light from 0, an existing one from its current factor |
   | the same, by day | unchanged |
   | "tracking" ↔ "searching" | kept; the switch offset comes from Task 4's `retargetAt` |
   | "tracking" or "searching" → "refuelling", with a flight and the light not in its night-end fade | `startDepart` |
@@ -322,6 +320,7 @@
   - the beam's far plane (`z = aimPos.z`) then follows the ground with no beam change
 - **Range and the beam's slant check:** to the aim point, not the car (`writeRange` and `beamTick`'s `slantOf`).
 - **`startDepart(state, ref, clock)`:** the drift direction is the unit vector from `ref = f.spot or car` to `f.leaving`.
+- **`forgetLight`** also clears `aimSwitch`, so a light made again within a couple of seconds doesn't inherit a stale offset.
 - **`M.clear`** also resets `aimSwitch`, the handled `retargetAt`, `sweepZ` and the sweep ray time.
 - **`hud.lua`:** `HELI_TIMED` gains `searching = true`, so the refuel countdown shows while searching.
 
@@ -333,15 +332,20 @@
     - "the light stays on while searching": at night, "tracking" → "searching": the same light object; `fx.bright` stays 1 and the `brightness` field 80 for 5 s.
     - "going searching during the fly-in keeps the light and its ramp" (replaces "going under cover during the fly-in cuts the light at once"): "arriving" → "tracking" at 1, "searching" at 3.05: the same light object, `fx.mode == "approach"`, `BRIGHTNESS` by 9.5.
     - "the sweep spirals out and back": the distance of `sweepPoint(spot, t)` from the spot is 0 at t = 0, 75 at t = 10, 150 at t = 20, 75 at t = 30 and 0 at t = 40, all to 1e-9; from t = 0 to 80 in steps of 0.01, no step moves the point more than 1.3 m; the bearing from the spot at t = 2 and t = 10 is the same, to 1e-9.
-    - "the sweep point sits on the ground": a `castRayStatic` stub whose downward rays return 108 gives an aim point at the spot's height − 8, to 1e-9; returning nil gives the spot's height. At most 10 downward rays in 2 s, and one on the first tick after a new spot.
-    - "the aim never jumps when the target changes": a still car; "tracking" at night for 5 s; "searching" with a `tunnelExit` stub giving a spot 120 m from the car, for 20 s; "tracking" again for 5 s. Every tick moves the aim point by at most |S| × (1 − e^(−dt / `AIM_SWITCH_SECONDS`)) + 126 × dt + 1 m. Here |S| is the size of the latest switch offset when it was set (0 before the first), and 126 m/s bounds the sweep point's speed (150 × 2π/8 + 2 × 150/40 ≈ 125.3). On each tick where `state.retargetAt` changes, the aim point moves less than 1 m.
+    - "the sweep point sits on the ground": "arriving" → "searching" at night (a new light, so no switch offset); a `castRayStatic` stub whose downward rays return 108 gives an aim point at the spot's height − 8, to 1e-9; returning nil gives the spot's height. At most 10 downward rays in 2 s, and one on the first tick after a new spot.
+    - "the aim never jumps when the target changes": a still car; "tracking" at night for 5 s; "searching" with a `tunnelExit` stub giving a spot 120 m from the car, for 20 s; "tracking" again for 5 s. Every tick moves the aim point by at most |S| × (1 − e^(−dt / `AIM_SWITCH_SECONDS`)) + 126 × dt + 1 m. Here |S| is `|state.aimSwitch|` each time it is set or re-set (a change of target, or a fly-away's drift folded in; 0 before the first), and 126 m/s bounds the sweep point's speed (150 × 2π/8 + 2 × 150/40 ≈ 125.3). On each tick where `state.retargetAt` changes, the aim point moves less than 1 m.
     - "a refuel while searching flies away with the light": at night, searching, then "refuelling": `f.leaving` set, `fx.mode == "depart"`, `fx.dir` is the unit vector from `f.spot` to `f.leaving` (to 1e-9), the brightness is below 20 % from 7.5 s, and the light and the flight are gone at 8 s.
     - "the range follows the aim point": 20 s into a search (the sweep 150 m out), the `range` field is within 5 m (the write step) of min(400, round(max(120, slant from the light to the aim point + 30))).
     - **Adapt:** "the searchlight exists only while tracking at night" (to "while up at night", searching too) and "the searchlight goes when the phase ends or on clear" ("tracking" → "searching" keeps it).
+    - **Adapt the range tests to the aim point:** rename "the light's range follows the slant to the car: 130 at 100 m, 120 at 60 m, capped, rewritten past 5 m" to say the slant to the aim point, and in it and "the range is written when the light is created, even when the stored value already matches" compute `want` from `state.aimPos` instead of the car.
     - **Rewrite:** "under cover the light is cut while the helicopter flies on, and on the way out it is back at once at the helicopter" becomes "while searching the light stays at the helicopter as it circles the spot, and found again the aim swings to the car without a jump".
     - **Remove:** "going under cover cuts the light at once" and "a re-found runner gets the light at once at full brightness, the aim 8 m off then swinging in".
   - **`tests/test_hud.lua`:** in "heliItem texts and times per phase", "searching" with `endsAt = 5` now has the time "0:05".
   - **`tests/test_client.lua`:**
+    - "a tunnel loss sends the helicopter to the exit ahead":
+      - stub `map.findClosestRoad` (returns 2, 3 and a distance of 2), `map.getGraphpath` (a line of nodes 1-5, 100 m apart in +x, both directions), `map.getMap` (their positions) and `castRayStatic` (upward rays within 5 m horizontally of nodes 2-4 or of the car hit 5 m up; nothing else hits)
+      - the runner's game at night, with the car between nodes 2 and 3 heading +x: "tracking" → "searching". After 60 s the light circles node 5 at 60 ± 3 m.
+      - follow the existing helicopter tests there
     - "no searchlight by day or while the helicopter searches" becomes "no searchlight by day; at night it stays on while the helicopter searches": by day there is no light; at night (`nightTracking("runner")`), after `cnr_heli` "searching" and 0.2 s, the same light object is there.
     - "the game asks whether it is night only while the helicopter tracks or a light is up": it also asks while "searching".
 - [ ] **Step 2: Run them to make sure they fail.**
@@ -373,10 +377,7 @@
 - Test: create `tests/test_heli_sound.lua`; also `tests/test_player_settings.lua`, `tests/test_hud.lua`, `tests/test_client.lua`, `tests/test_heli_client.lua`
 
 **Interfaces:**
-- **The volume call** (from Step 0):
-  - if `setVolumePitchCT` changes a playing `fileName` emitter's volume: `obj:setVolumePitchCT(v, 1, 0, 0)`
-  - otherwise: `obj:setField("volume", 0, tostring(v))`, then `obj:postApply()` so the emitter re-reads its fields
-  - the controller records which in Step 0 before dispatching this task
+- **The volume call:** `obj:setVolumePitchCT(v, 1, 0, 0)` (Step 0 has the fallback, if the in-game check finds it doesn't work).
 - **`heliSound.new()`, `heliSound.tick(s, pos, level, clock, camPos, castRay)`, `heliSound.clear(s)`:**
   - **Wanted:** `pos` not nil and `level` > 0. The target volume is `level × muffle` while wanted, otherwise 0.
   - **Easing:** the eased volume `s.vol` moves towards the target, rising by at most dt / `FADE_IN_SECONDS` and falling by at most dt / `FADE_OUT_SECONDS` per tick. So it fades in on creation, when the setting turns on and when a short refuel lifts the level, and fades out when it stops.
