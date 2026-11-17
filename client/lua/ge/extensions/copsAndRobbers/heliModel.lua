@@ -17,9 +17,19 @@ M.HIDE = {
   "pigeon_bintop", "pigeon_binarm", "pigeon_bin", "pigeon_body_4w", "pigeon_flare_F_4w", "pigeon_stabilizer_L", "pigeon_stabwheel_R",
   "pigeon_stabwheel_L", "pigeon_stabilizer_R", "pigeon_steering_wheel_B", "pigeon_shifter_knob_3spd",
   "pigeon_jumpseats", "pigeon_flare_R", "pigeon_bumper_R", "pigeon_taillight_L", "pigeon_taillight_R",
+  "pigeon_seat_FL", "pigeon_seat_FR", "pigeon_dash", "pigeon_gauges", "pigeon_needle_fuel", "pigeon_needle_temp",
+  "pigeon_needle_speedo", "pigeon_pedal_brake", "pigeon_pedal_gas", "pigeon_pedal_clutch", "pigeon_steering_wheel",
+  "pigeon_steeringcolumn", "pigeon_sunvisor_L", "pigeon_sunvisor_R", "pigeon_intermirror", "pigeon_doorglass_L_int",
+  "pigeon_doorglass_R_int", "pigeon_windshield_int", "pigeon_backlight_int", "pigeon_shifter_knob_5spd", "pigeon_shifter_boot",
+  "pigeon_pbrake", "pigeon_signalstalk", "pigeon_interiormisc",
 }
 M.BODY_MATERIAL = "pigeon-material"
 M.SKIN = "pigeon.skin.birdabduction"
+M.LAMP = "pigeon_lights"
+M.LAMP_MATERIALS = {
+  "pigeon_headlights-material", "pigeon_foglights-material", "pigeon_signal_L-material", "pigeon_signal_R-material",
+  "pigeon_taillight_L-material", "pigeon_taillight_R-material", "pigeon_reverselight-material",
+}
 
 M.SCALE = 3
 M.ANCHOR_Y = 0.1
@@ -68,12 +78,27 @@ function M.trim(src, names)
   return table.concat(parts), removed
 end
 
-function M.skin(text, id, name)
-  local head = '<material id="' .. id .. '" name="'
-  local s = text:find(head, 1, true)
-  local e = s and text:find('"', s + #head, true)
-  if not e then return text, false end
-  return text:sub(1, s + #head - 1) .. name .. text:sub(e), true
+function M.rename(text, names)
+  local stop = text:find("</library_materials>", 1, true)
+  local head = stop and text:sub(1, stop) or text
+  local parts, done, at, from = {}, {}, 1, 1
+  while true do
+    local s, e, id = head:find('<material id="([^"]+)" name="', from)
+    if not s then break end
+    local close = head:find('"', e + 1, true)
+    if not close then break end
+    local name = names[id]
+    if name and not done[id] then
+      parts[#parts + 1] = text:sub(at, e)
+      parts[#parts + 1] = name
+      at = close
+      done[id] = true
+    end
+    from = close + 1
+  end
+  if at == 1 then return text, done end
+  parts[#parts + 1] = text:sub(at)
+  return table.concat(parts), done
 end
 
 function M.newPose()
@@ -115,8 +140,9 @@ local function turn(p, vx, vy, speed, dt)
 end
 
 function M.step(p, vel, dt)
-  dt = math.max(0, math.min(dt or 0, M.MAX_STEP))
   local vx, vy = vel.x, vel.y
+  if vx - vx ~= 0 or vy - vy ~= 0 then return end
+  dt = math.max(0, math.min(dt or 0, M.MAX_STEP))
   turn(p, vx, vy, math.sqrt(vx * vx + vy * vy), dt)
   if p.vx and dt > 0 then
     local k = 1 - math.exp(-dt / M.TILT_SECONDS)

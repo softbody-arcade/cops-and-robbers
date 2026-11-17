@@ -43,36 +43,62 @@ test("trim removes the listed flat nodes and keeps the rest", function()
   assertEq(zero, 0)
 end)
 
-test("the hide list is the probe's list plus the tail lights", function()
+test("the hide list is the probe's list plus the tail lights and the cab's interior", function()
   local seen = {}
   for _, n in ipairs(model.HIDE) do
     assertEq(seen[n], nil, n)
     seen[n] = true
   end
-  assertEq(#model.HIDE, 48)
-  assertEq(seen.pigeon_taillight_L, true)
-  assertEq(seen.pigeon_taillight_R, true)
-  assertEq(seen.pigeon_bed, true)
-  assertEq(seen.pigeon_box, nil)
-  assertEq(seen.pigeon_body_3w, nil)
+  assertEq(#model.HIDE, 72)
+  for _, n in ipairs({ "pigeon_taillight_L", "pigeon_taillight_R", "pigeon_bed", "pigeon_seat_FL", "pigeon_seat_FR", "pigeon_dash",
+    "pigeon_gauges", "pigeon_needle_speedo", "pigeon_pedal_gas", "pigeon_steering_wheel", "pigeon_steeringcolumn", "pigeon_sunvisor_L",
+    "pigeon_intermirror", "pigeon_windshield_int", "pigeon_doorglass_L_int", "pigeon_backlight_int", "pigeon_interiormisc" }) do
+    assertEq(seen[n], true, n)
+  end
+  for _, n in ipairs({ "pigeon_box", "pigeon_boxdoor", "pigeon_body_3w", "pigeon_windshield", "pigeon_doorglass_L", "pigeon_backlight",
+    "pigeon_headlight_L", "pigeon_signal_R", "pigeon_lightbar_L", "pigeon_mirror_L", "pigeon_hood", "pigeon_door_R" }) do
+    assertEq(seen[n], nil, n)
+  end
   assertEq(model.SOURCE, "/vehicles/pigeon/pigeon.dae")
   assertEq(#model.MATERIAL_FILES, 3)
   assertEq(model.MATERIAL_FILES[3], "/vehicles/pigeon/skin.materials.json")
 end)
 
-test("skin renames only the body material", function()
-  local src = HEAD .. NODE_AB .. TAIL
-  local text, changed = model.skin(src, model.BODY_MATERIAL, model.SKIN)
-  assertEq(changed, true)
+local LAMPS = '    <material id="pigeon_headlights-material" name="pigeon_headlights">\n    </material>\n' ..
+  '    <material id="pigeon_signal_L-material" name="pigeon_signal_L">\n    </material>\n'
+
+test("rename gives the listed materials new names and leaves the rest", function()
+  local src = HEAD:gsub("  </library_materials>", LAMPS .. "  </library_materials>") .. NODE_AB ..
+    '<material id="pigeon-material" name="pigeon">' .. TAIL
+  local names = { [model.BODY_MATERIAL] = model.SKIN, ["pigeon_headlights-material"] = model.LAMP, ["pigeon_signal_L-material"] = model.LAMP,
+    ["missing-material"] = "x" }
+  local text, done = model.rename(src, names)
   assertEq(model.SKIN, "pigeon.skin.birdabduction")
+  assertEq(model.LAMP, "pigeon_lights")
   assertEq(contains(text, '<material id="pigeon-material" name="pigeon.skin.birdabduction">'), true)
+  assertEq(contains(text, '<material id="pigeon_headlights-material" name="pigeon_lights">'), true)
+  assertEq(contains(text, '<material id="pigeon_signal_L-material" name="pigeon_lights">'), true)
   assertEq(contains(text, '<material id="glass-material" name="pigeon">'), true)
   assertEq(contains(text, 'target="#pigeon-material"'), true)
-  assertEq(#text, #src + #".skin.birdabduction")
+  assertEq(contains(text, '<material id="pigeon-material" name="pigeon">' .. TAIL), true)
+  assertEq(#text, #src + #".skin.birdabduction" + #"pigeon_lights" * 2 - #"pigeon_headlights" - #"pigeon_signal_L")
+  assertEq(done[model.BODY_MATERIAL], true)
+  assertEq(done["pigeon_headlights-material"], true)
+  assertEq(done["missing-material"], nil)
   local bare = NODE_AB .. TAIL
-  local same, none = model.skin(bare, model.BODY_MATERIAL, model.SKIN)
+  local same, none = model.rename(bare, names)
   assertEq(same, bare)
-  assertEq(none, false)
+  assertEq(next(none), nil)
+end)
+
+test("every lamp material the van keeps is a glow-map name of the Pigeon", function()
+  local ids = {}
+  for _, id in ipairs(model.LAMP_MATERIALS) do ids[id] = true end
+  assertEq(#model.LAMP_MATERIALS, 7)
+  for _, n in ipairs({ "pigeon_headlights", "pigeon_foglights", "pigeon_signal_L", "pigeon_signal_R", "pigeon_taillight_L",
+    "pigeon_taillight_R", "pigeon_reverselight" }) do
+    assertEq(ids[n .. "-material"], true, n)
+  end
 end)
 
 test("the pose points along the flight and holds the heading when slow", function()
@@ -156,6 +182,22 @@ test("a left turn banks the roof to the left, a right turn to the right, capped"
   end
 end)
 
+test("a velocity that is not finite leaves the pose as it was", function()
+  local p = model.newPose()
+  for _ = 1, 20 do step(p, 10, 2, 0.05) end
+  local before = {}
+  for k, v in pairs(p) do before[k] = v end
+  for _, bad in ipairs({ 0 / 0, math.huge, -math.huge }) do
+    step(p, bad, 2, 0.05)
+    step(p, 10, bad, 0.05)
+    for k, v in pairs(before) do assertEq(p[k], v, k) end
+  end
+  for _ = 1, 20 do step(p, 10, 2, 0.05) end
+  for _, k in ipairs({ "yaw", "pitch", "bank", "ax", "ay", "fx", "ux", "lx" }) do
+    assertEq(p[k] == p[k], true, k)
+  end
+end)
+
 test("a long frame is capped and a zero frame changes nothing", function()
   local p = model.newPose()
   step(p, 10, 0, 0.05)
@@ -202,17 +244,28 @@ test("the van is three times the Pigeon and the lights sit outside its body", fu
   local x1 = model.place(p, pos, 0, -1, model.ANCHOR_Z)
   local x2 = model.place(p, pos, 0, 1, model.ANCHOR_Z)
   assertNear(x1 - x2, 2 * model.SCALE, 1e-9)
-  local beacons, steady = 0, 0
+  local BOX = { x = 0.63, y1 = 0.38, y2 = 1.74, z1 = 0.78, z2 = 1.51 }
+  local MIRROR_X = 0.77
+  local port, starboard, tail = light(255, 40, 30), light(40, 255, 90), light(255, 245, 230)
+  assertEq(port.x > MIRROR_X, true, tostring(port.x))
+  assertEq(starboard.x < -MIRROR_X, true, tostring(starboard.x))
+  assertEq(port.y < BOX.y1 and starboard.y < BOX.y1, true)
+  assertEq(tail.y > BOX.y2, true, tostring(tail.y))
+  assertEq(math.abs(tail.x) < BOX.x and tail.z > BOX.z1 and tail.z < BOX.z2, true)
+  local top, bottom
   for _, l in ipairs(model.LIGHTS) do
     if l.beacon then
-      beacons = beacons + 1
       assertEq(l.r, 255); assertEq(l.g < 80, true); assertEq(l.b < 80, true)
-    else
-      steady = steady + 1
+      if l.z > 1 then top = l else bottom = l end
     end
   end
-  assertEq(beacons, 2)
-  assertEq(steady, 3)
+  assertEq(top.z > BOX.z2, true, tostring(top.z))
+  assertEq(bottom.z < BOX.z1, true, tostring(bottom.z))
+  for _, l in ipairs({ top, bottom }) do
+    assertEq(math.abs(l.x) < BOX.x and l.y > BOX.y1 and l.y < BOX.y2, true)
+  end
+  assertEq(#model.LIGHTS, 5)
+  assertEq(model.ANCHOR_Z < 0.24, true)
 end)
 
 test("the beacon flashes 0.15 s each second", function()

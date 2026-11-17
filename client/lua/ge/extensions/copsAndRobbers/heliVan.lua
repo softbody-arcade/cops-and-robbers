@@ -4,6 +4,7 @@ local M = {}
 
 M.NAME = "cnr_heli_van"
 M.DIR = "/temp/cnr"
+M.CACHE_DIR = "/temp/temp/cnr"
 M.PREFIX = "pigeon_heli_"
 M.LEFTOVER_INTERVAL = 1
 M.MAX_STEP = model.MAX_STEP
@@ -36,12 +37,32 @@ local function loadMaterials()
   for _, f in ipairs(model.MATERIAL_FILES) do pcall(loadJsonMaterialsFile, f) end
 end
 
-local function sweep(keep)
-  if not (FS and FS.findFiles and FS.removeFile) then return end
-  for _, path in ipairs(FS:findFiles(M.DIR .. "/", M.PREFIX .. "*.dae", -1, true, false) or {}) do
+local function sweepIn(dir, ext, keep)
+  local pattern = "^" .. M.PREFIX .. "[%d_]+%." .. ext .. "$"
+  for _, path in ipairs(FS:findFiles(dir .. "/", M.PREFIX .. "*." .. ext, 0, true, false) or {}) do
     local name = path:match("([^/]+)$")
-    if name and name ~= keep and name:sub(1, #M.PREFIX) == M.PREFIX then FS:removeFile(path) end
+    if name and name ~= keep and name:find(pattern) then FS:removeFile(path) end
   end
+end
+
+local function sweep(base)
+  if not (FS and FS.findFiles and FS.removeFile) then return end
+  pcall(sweepIn, M.DIR, "dae", base .. ".dae")
+  pcall(sweepIn, M.CACHE_DIR, "cdae", base .. ".cdae")
+end
+
+local function loaded(name)
+  return scenetree ~= nil and scenetree.findObject ~= nil and scenetree.findObject(name) ~= nil
+end
+
+local function renames()
+  local names = {}
+  local livery = loaded(model.SKIN)
+  if livery then names[model.BODY_MATERIAL] = model.SKIN end
+  if loaded(model.LAMP) then
+    for _, id in ipairs(model.LAMP_MATERIALS) do names[id] = model.LAMP end
+  end
+  return names, livery
 end
 
 local function makeCopy()
@@ -50,16 +71,22 @@ local function makeCopy()
   if type(src) ~= "string" or src == "" then error("no Pigeon at " .. model.SOURCE, 0) end
   local text, removed = model.trim(src, model.HIDE)
   if removed == 0 then error("no known Pigeon part in " .. model.SOURCE, 0) end
-  local skinned
-  text, skinned = model.skin(text, model.BODY_MATERIAL, model.SKIN)
-  local name = M.PREFIX .. #text .. ".dae"
-  local path = M.DIR .. "/" .. name
+  local names, livery = renames()
+  local done
+  text, done = model.rename(text, names)
+  local lamps = 0
+  for _, id in ipairs(model.LAMP_MATERIALS) do
+    if done[id] then lamps = lamps + 1 end
+  end
+  local base = M.PREFIX .. #text
+  local path = M.DIR .. "/" .. base .. ".dae"
   if readFile(path) ~= text then
     if FS and FS.directoryCreate then pcall(FS.directoryCreate, FS, M.DIR) end
     if not writeFile(path, text) then error("could not write " .. path, 0) end
   end
-  pcall(sweep, name)
-  return path, removed, skinned
+  pcall(sweep, base)
+  local skin = done[model.BODY_MATERIAL] and "on" or (livery and "not found" or "not loaded")
+  return path, removed, skin, lamps
 end
 
 local function warm(path)
@@ -78,15 +105,16 @@ end
 function M.prepare(s)
   if s.file or s.copyFailed then return s.file end
   loadMaterials()
-  local ok, path, removed, skinned = pcall(makeCopy)
+  local ok, path, removed, skin, lamps = pcall(makeCopy)
   if not ok then
     s.copyFailed = true
     log("W", "cnr_heli", "helicopter model unavailable: " .. tostring(path))
     return nil
   end
   s.file = path
-  log("I", "cnr_heli", string.format("helicopter model %s: %d of %d parts removed, livery %s",
-    path, removed, #model.HIDE, skinned and "on" or "not found"))
+  local whole = removed == #model.HIDE and skin == "on" and lamps == #model.LAMP_MATERIALS
+  log(whole and "I" or "W", "cnr_heli", string.format("helicopter model %s: %d of %d parts removed, livery %s, %d of %d lamp materials",
+    path, removed, #model.HIDE, skin, lamps, #model.LAMP_MATERIALS))
   pcall(warm, path)
   return path
 end
@@ -104,6 +132,10 @@ local function leftover(s, clock)
 end
 
 local function create(s)
+  if FS and FS.fileExists and not FS:fileExists(s.file) then
+    s.file = nil
+    error("helicopter model copy is gone", 0)
+  end
   loadMaterials()
   local obj = createObject("TSStatic")
   if not obj then error("no TSStatic", 0) end
@@ -182,7 +214,12 @@ local function drawLights(s, pos, clock, night, camPos)
   end
 end
 
+local function finite(v)
+  return v ~= nil and v.x - v.x == 0 and v.y - v.y == 0 and v.z - v.z == 0
+end
+
 local function step(s, f, clock, dt, night, camPos)
+  if f and not (finite(f.pos) and finite(f.vel)) then f = nil end
   if not f then
     if s.made then
       s.made, s.flight, s.pose = nil, nil, nil

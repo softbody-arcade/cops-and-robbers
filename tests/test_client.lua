@@ -3266,6 +3266,23 @@ test("the copy is made when the round's helicopter is set up, before it flies", 
   assertEq(copies(none), 0)
 end)
 
+test("turning Helicopter model on makes the copy at the click when the round has a helicopter", function()
+  local off = { ["settings/cnr_settings.json"] = { model = false } }
+  local lobby = bootClient({ gameFiles = pigeon(), files = off })
+  lobby.M.ui({ action = "setting", key = "model", value = true })
+  assertEq(copies(lobby), 0)
+  local env = bootClient({ gameFiles = pigeon(), files = off })
+  local d = copy(SETUP)
+  d.heli = { phase = "arriving", seconds = 60 }
+  env.fire("cnr_roundSetup", d)
+  assertEq(copies(env), 0)
+  env.M.ui({ action = "setting", key = "model", value = false })
+  assertEq(copies(env), 0)
+  env.M.ui({ action = "setting", key = "model", value = true })
+  assertEq(copies(env), 1)
+  assertEq(env.sky.objects[HELI_VAN], nil)
+end)
+
 test("the Pigeon van flies with the helicopter by day and night and is gone after the round", function()
   for _, role in ipairs({ "cop", "runner" }) do
     local env = nightTracking(role, nil, { gameFiles = pigeon() })

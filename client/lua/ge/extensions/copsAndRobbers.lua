@@ -1190,6 +1190,7 @@ function M.ui(msg)
     if playerSettings.set(prefs, msg.key, msg.value) then
       pcall(jsonWriteFile, playerSettings.FILE, prefs, true)
       hudfeed.settings(prefs)
+      if msg.key == "model" and prefs.model and heliState.phase then heliVan.prepare(vanState) end
     end
   elseif action == "toggleApp" then
     apps.toggle(msg.name)

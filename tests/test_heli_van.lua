@@ -5,14 +5,28 @@ local savedDraw = package.loaded["utils/debugDraw"]
 
 local NAME = "cnr_heli_van"
 local SOURCE = "/vehicles/pigeon/pigeon.dae"
-local FAKE = '<?xml version="1.0"?>\n<COLLADA>\n  <library_materials>\n' ..
-  '    <material id="pigeon-material" name="pigeon">\n    </material>\n  </library_materials>\n' ..
-  '      <node id="pigeon_bed" name="pigeon_bed" type="NODE">\n      </node>\n' ..
-  '      <node id="pigeon_box" name="pigeon_box" type="NODE">\n        <instance_material target="#pigeon-material"/>\n      </node>\n' ..
-  '      <node id="pigeon_taillight_L" name="pigeon_taillight_L" type="NODE">\n      </node>\n</COLLADA>\n'
+local LAMP_NAMES = { "pigeon_headlights", "pigeon_foglights", "pigeon_signal_L", "pigeon_signal_R", "pigeon_taillight_L",
+  "pigeon_taillight_R", "pigeon_reverselight" }
+
+local function dae(hidden)
+  local parts = { '<?xml version="1.0"?>\n<COLLADA>\n  <library_materials>\n',
+    '    <material id="pigeon-material" name="pigeon">\n    </material>\n' }
+  for _, n in ipairs(LAMP_NAMES) do
+    parts[#parts + 1] = '    <material id="' .. n .. '-material" name="' .. n .. '">\n    </material>\n'
+  end
+  parts[#parts + 1] = '  </library_materials>\n  <library_visual_scenes>\n'
+  for _, n in ipairs(hidden) do
+    parts[#parts + 1] = '      <node id="' .. n .. '" name="' .. n .. '" type="NODE">\n      </node>\n'
+  end
+  parts[#parts + 1] = '      <node id="pigeon_box" name="pigeon_box" type="NODE">\n        <instance_material target="#pigeon-material"/>\n      </node>\n'
+  parts[#parts + 1] = '      <node id="pigeon_headlight_L" name="pigeon_headlight_L" type="NODE">\n' ..
+    '        <instance_material target="#pigeon_headlights-material"/>\n      </node>\n  </library_visual_scenes>\n</COLLADA>\n'
+  return table.concat(parts)
+end
 
 local van, model
-local objects, logs, files, written, reads, events, draws, removed, dirs
+local objects, logs, files, written, reads, events, draws, removed, dirs, unloaded
+local FULL, PARTIAL
 local finds = 0
 local noRegister, failWrite, failRead
 
@@ -39,8 +53,12 @@ end
 
 local function load(opts)
   opts = opts or {}
-  objects, logs, written, reads, events, draws, removed, dirs = {}, {}, {}, {}, {}, {}, {}, {}
-  if not opts.keepFiles then files = { [SOURCE] = FAKE } end
+  objects, logs, written, reads, events, draws, removed, dirs, unloaded = {}, {}, {}, {}, {}, {}, {}, {}, {}
+  package.loaded["copsAndRobbers/heliModel"] = nil
+  model = require("copsAndRobbers/heliModel")
+  FULL = dae(model.HIDE)
+  PARTIAL = dae({ "pigeon_bed", "pigeon_taillight_L" })
+  if not opts.keepFiles then files = { [SOURCE] = FULL } end
   finds, noRegister, failWrite, failRead = 0, false, false, false
   _G.vec3 = function(x, y, z) return { x = x, y = y, z = z } end
   _G.log = function(level, tag, msg) logs[#logs + 1] = { level = level, tag = tag, msg = msg } end
@@ -68,12 +86,18 @@ local function load(opts)
   end
   _G.FS = {
     directoryCreate = function(_, dir) dirs[#dirs + 1] = dir end,
-    findFiles = function(_, dir, pattern)
-      assertEq(dir, "/temp/cnr/")
-      assertEq(pattern, "pigeon_heli_*.dae")
+    fileExists = function(_, path) return files[path] ~= nil end,
+    findFiles = function(_, dir, pattern, depth)
+      assertEq(depth, 0)
+      local ext = ({ ["/temp/cnr/"] = "dae", ["/temp/temp/cnr/"] = "cdae" })[dir]
+      assertEq(ext ~= nil, true, dir)
+      assertEq(pattern, "pigeon_heli_*." .. ext)
       local out = {}
       for path in pairs(files) do
-        if path:find("^/temp/cnr/pigeon_heli_.*%.dae$") then out[#out + 1] = path end
+        local name = path:sub(#dir + 1)
+        if path:sub(1, #dir) == dir and not name:find("/", 1, true) and name:find("^pigeon_heli_.*%." .. ext .. "$") then
+          out[#out + 1] = path
+        end
       end
       return out
     end,
@@ -82,7 +106,11 @@ local function load(opts)
       files[path] = nil
     end,
   }
-  _G.loadJsonMaterialsFile = function(path) events[#events + 1] = "materials " .. path end
+  _G.loadJsonMaterialsFile = function(path)
+    events[#events + 1] = "materials " .. path
+    local made = ({ ["/vehicles/pigeon/main.materials.json"] = "pigeon_lights", ["/vehicles/pigeon/skin.materials.json"] = "pigeon.skin.birdabduction" })[path]
+    if made and not unloaded[made] then objects[made] = { material = made } end
+  end
   _G.quatFromDir = function(d, u)
     local q = {}
     function q:setFromDir(dir, up)
@@ -98,9 +126,7 @@ local function load(opts)
     Sphere = function(x, y, z, r, c, useZ) draws[#draws + 1] = { x = x, y = y, z = z, r = r, c = c, useZ = useZ } end,
   }
   package.loaded["copsAndRobbers/heliVan"] = nil
-  package.loaded["copsAndRobbers/heliModel"] = nil
   van = require("copsAndRobbers/heliVan")
-  model = require("copsAndRobbers/heliModel")
 end
 
 local function flight(x, y, z, vx, vy)
@@ -126,7 +152,7 @@ local function sameDir(a, x, y, z, msg)
   assertNear(a.x, x, 1e-9, msg); assertNear(a.y, y, 1e-9, msg); assertNear(a.z, z, 1e-9, msg)
 end
 
-test("prepare loads the materials, trims, renames the livery and writes one copy per session", function()
+test("prepare loads the materials, trims, renames the livery and the lamps and writes one copy per session", function()
   load()
   local s = van.new()
   local path = van.prepare(s)
@@ -137,10 +163,14 @@ test("prepare loads the materials, trims, renames the livery and writes one copy
   local text = files[path]
   assertEq(path, "/temp/cnr/pigeon_heli_" .. #text .. ".dae")
   assertEq(contains(text, '<node id="pigeon_box"'), true)
-  assertEq(contains(text, '<node id="pigeon_bed"'), false)
-  assertEq(contains(text, '<node id="pigeon_taillight_L"'), false)
+  assertEq(contains(text, '<node id="pigeon_headlight_L"'), true)
+  for _, n in ipairs(model.HIDE) do assertEq(contains(text, '<node id="' .. n .. '"'), false, n) end
   assertEq(contains(text, '<material id="pigeon-material" name="pigeon.skin.birdabduction">'), true)
+  for _, n in ipairs(LAMP_NAMES) do
+    assertEq(contains(text, '<material id="' .. n .. '-material" name="pigeon_lights">'), true, n)
+  end
   assertEq(contains(text, 'target="#pigeon-material"'), true)
+  assertEq(contains(text, 'target="#pigeon_headlights-material"'), true)
   assertEq(dirs[1], "/temp/cnr")
   assertEq(events[1], "materials /vehicles/pigeon/main.materials.json")
   assertEq(events[2], "materials /vehicles/pigeon/dynamicDecals/main.materials.json")
@@ -151,7 +181,9 @@ test("prepare loads the materials, trims, renames the livery and writes one copy
   assertEq(objects[NAME], nil)
   assertEq(#logs, 1)
   assertEq(logs[1].level, "I")
-  assertEq(contains(logs[1].msg, "2 of 48"), true, logs[1].msg)
+  assertEq(contains(logs[1].msg, "72 of 72 parts"), true, logs[1].msg)
+  assertEq(contains(logs[1].msg, "livery on"), true, logs[1].msg)
+  assertEq(contains(logs[1].msg, "7 of 7 lamp"), true, logs[1].msg)
   local n = #reads
   assertEq(van.prepare(s), path)
   assertEq(#reads, n)
@@ -159,24 +191,94 @@ test("prepare loads the materials, trims, renames the livery and writes one copy
   assertEq(#logs, 1)
 end)
 
-test("an unchanged copy is not rewritten on a later session and older copies are removed", function()
+test("an unchanged copy is not rewritten on a later session and older copies and their caches are removed", function()
   load()
   local path = van.prepare(van.new())
-  files["/temp/cnr/pigeon_heli_123.dae"] = "old"
-  files["/temp/cnr/notes.txt"] = "keep"
+  local cache = path:gsub("^/temp/cnr/", "/temp/temp/cnr/"):gsub("%.dae$", ".cdae")
+  local gone = { "/temp/cnr/pigeon_heli_123.dae", "/temp/cnr/pigeon_heli_1794951770_1.dae", "/temp/temp/cnr/pigeon_heli_123.cdae",
+    "/temp/temp/cnr/pigeon_heli_1794951770_1.cdae" }
+  local kept = { cache, "/temp/cnr/notes.txt", "/temp/cnr/pigeon_heli_x.dae", "/temp/cnr/pigeon_heli_.dae", "/temp/cnr/sub/pigeon_heli_5.dae",
+    "/temp/temp/cnr/pigeon_heli_9.dae" }
+  for _, f in ipairs(gone) do files[f] = "old" end
+  for _, f in ipairs(kept) do files[f] = "keep" end
   load({ keepFiles = true })
   local s = van.new()
   assertEq(van.prepare(s), path)
   assertEq(#written, 0)
-  assertEq(#removed, 1)
-  assertEq(removed[1], "/temp/cnr/pigeon_heli_123.dae")
+  assertEq(#removed, #gone)
+  for _, f in ipairs(gone) do assertEq(files[f], nil, f) end
+  for _, f in ipairs(kept) do assertEq(files[f], "keep", f) end
   assertEq(files[path] ~= nil, true)
-  assertEq(files["/temp/cnr/notes.txt"], "keep")
   files[path] = "broken"
   load({ keepFiles = true })
   assertEq(van.prepare(van.new()), path)
   assertEq(#written, 1)
   assertEq(files[path] ~= "broken", true)
+end)
+
+test("a partial trim or a livery or lamp material that didn't load warns once and still flies", function()
+  local cases = {
+    partial = { setUp = function() files[SOURCE] = PARTIAL end, says = "2 of 72 parts", body = "pigeon.skin.birdabduction", lamp = "pigeon_lights" },
+    livery = { setUp = function() unloaded["pigeon.skin.birdabduction"] = true end, says = "livery not loaded", body = "pigeon", lamp = "pigeon_lights" },
+    lamps = { setUp = function() unloaded.pigeon_lights = true end, says = "0 of 7 lamp", body = "pigeon.skin.birdabduction", lamp = "pigeon_headlights" },
+  }
+  for name, c in pairs(cases) do
+    load()
+    c.setUp()
+    local s = van.new()
+    local path = van.prepare(s)
+    assertEq(path ~= nil, true, name)
+    assertEq(#logs, 1, name)
+    assertEq(logs[1].level, "W", name)
+    assertEq(contains(logs[1].msg, c.says), true, name .. ": " .. logs[1].msg)
+    local text = files[path]
+    assertEq(contains(text, '<material id="pigeon-material" name="' .. c.body .. '">'), true, name)
+    assertEq(contains(text, '<material id="pigeon_headlights-material" name="' .. c.lamp .. '">'), true, name)
+    for i = 0, 5 do van.tick(s, flight(0, 0, 100), i * 0.1, true) end
+    assertEq(created(), 1, name)
+    assertEq(#logs, 1, name)
+  end
+end)
+
+test("a copy that is gone when the van is made means no van, one log line, and a new copy next round", function()
+  load()
+  local s = van.new()
+  local path = van.prepare(s)
+  files[path] = nil
+  for i = 0, 20 do van.tick(s, flight(0, 0, 100), i * 0.1, true) end
+  assertEq(created(), 0)
+  assertEq(objects[NAME], nil)
+  assertEq(#logs, 2)
+  assertEq(logs[2].level, "E")
+  van.clear(s)
+  assertEq(van.prepare(s), path)
+  assertEq(files[path] ~= nil, true)
+  van.tick(s, flight(0, 0, 100), 3, true)
+  assertEq(created(), 1)
+end)
+
+test("a position or velocity that is not finite counts as no flight", function()
+  load()
+  local s = van.new()
+  local f = flight(0, 0, 100, 10, 0)
+  for i = 0, 10 do van.tick(s, f, i * 0.05, true) end
+  local obj = objects[NAME]
+  local moves = #obj.posrots
+  local bad = { function(g) g.pos = vec3(0 / 0, 0, 100) end, function(g) g.vel = vec3(10, math.huge, 0) end,
+    function(g) g.pos = vec3(0, -math.huge, 100) end, function(g) g.vel = vec3(0 / 0, 0, 0) end }
+  for i, spoil in ipairs(bad) do
+    spoil(f)
+    draws = {}
+    van.tick(s, f, 0.5 + i * 0.05, true)
+    assertEq(objects[NAME], nil, tostring(i))
+    assertEq(#draws, 0, tostring(i))
+    f.pos, f.vel = vec3(0, 0, 100), vec3(10, 0, 0)
+    van.tick(s, f, 0.52 + i * 0.05, true)
+    assertEq(objects[NAME] ~= nil, true, tostring(i))
+  end
+  assertEq(#obj.posrots, moves)
+  for _, k in ipairs({ "yaw", "pitch", "bank", "fx", "ux" }) do assertEq(s.pose[k] == s.pose[k], true, k) end
+  for _, pr in ipairs(objects[NAME].posrots) do assertEq(pr.x == pr.x and pr.y - pr.y == 0, true) end
 end)
 
 test("no Pigeon, a read or write error or no known part means no van and one log line", function()
