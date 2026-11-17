@@ -154,6 +154,10 @@ function M.sitOut(on)
   sitOut = on == true
 end
 
+function M.sittingOut()
+  return sitOut
+end
+
 function M.help(open)
   helpOpen = open == true
 end

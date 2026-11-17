@@ -109,6 +109,7 @@ function Round:clear()
   self.timeline = {}
   self.copSight = {}
   self.test = false
+  self.aiOnly = false
   self.lastState = {}
   self.nextCopIndex = 1
   self.catchTracker = catch.new(self.cfg)
@@ -215,14 +216,18 @@ function Round:start(now, runnerId, issuerId, players, opts)
   self.test = opts and opts.test or false
   if self.test then
     local role = opts.role
-    if role ~= "runner" and role ~= "cop" then
+    self.aiOnly = opts.aiOnly == true
+    if not self.aiOnly and role ~= "runner" and role ~= "cop" then
       self:clear()
       return { { kind = "reply", pid = issuerId, msg = "Pick practice as runner or as cop", tone = "warn" } }
     end
-    self.testRole = role
-    self.players = { [issuerId] = players[issuerId] or "You" }
+    self.testRole = self.aiOnly and "watch" or role
     local a1, a2 = M.AI_FIRST, M.AI_FIRST - 1
-    if role == "runner" then
+    self.players = self.aiOnly and {} or { [issuerId] = players[issuerId] or "You" }
+    if self.aiOnly then
+      self.runnerId = a1
+      self.players[a1], self.players[a2], self.players[a2 - 1] = "AI runner", "AI cop 1", "AI cop 2"
+    elseif role == "runner" then
       self.runnerId = issuerId
       self.players[a1], self.players[a2] = "AI cop 1", "AI cop 2"
     else
@@ -314,16 +319,22 @@ function Round:vehiclePicked(now, pid, model, config, players)
       copColor = copColor + 1
       return c
     end
-    local own = self:setupFor(now, pid)
-    own.colorHex = colorFor(pid)
-    own.inPlace = true
-    fx[#fx + 1] = own
+    local ids = { M.AI_FIRST, M.AI_FIRST - 1 }
+    if self.aiOnly then
+      ids[3] = M.AI_FIRST - 2
+      fx[#fx + 1] = self:spectateFor(now, pid)
+    else
+      local own = self:setupFor(now, pid)
+      own.colorHex = colorFor(pid)
+      own.inPlace = true
+      fx[#fx + 1] = own
+    end
     local ai = {}
-    for _, id in ipairs({ M.AI_FIRST, M.AI_FIRST - 1 }) do
+    for _, id in ipairs(ids) do
       local e = self:setupFor(now, id)
       ai[#ai + 1] = { id = id, role = e.role, index = #ai + 1, colorHex = colorFor(id), name = self.players[id] }
     end
-    fx[#fx + 1] = { kind = "setupAI", pid = pid, ai = ai }
+    fx[#fx + 1] = { kind = "setupAI", pid = pid, ai = ai, aiOnly = self.aiOnly or nil }
   else
     for _, p in ipairs(sortedPids(self.players)) do fx[#fx + 1] = self:setupFor(now, p) end
     for _, p in ipairs(sortedPids(players or {})) do
@@ -629,6 +640,7 @@ end
 function Round:playerLeft(now, pid)
   self.sittingOut[pid] = nil
   self.watching[pid] = nil
+  if self.aiOnly and pid == self.issuerId and self.state ~= "idle" then return self:cancel(now, "Round cancelled") end
   if self.state == "idle" or self.players[pid] == nil then return {} end
   sight.forget(self.sight, pid)
   if pid == self.runnerId then
