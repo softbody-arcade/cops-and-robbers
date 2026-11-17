@@ -198,6 +198,12 @@
       </div>
 
       <div tab-heading="Rules" class="htp-tab">
+        <div v-if="r.weatherChanges !== false" class="li">
+          <BngIcon :type="icons.caution" />
+          <span>
+            <b>Changing weather:</b> the weather can change during the chase, and the grip changes with it. A forecast line under the round clock shows the next change.
+          </span>
+        </div>
         <div class="li">
           <BngIcon :type="icons.lockClosed" />
           <span>

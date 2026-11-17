@@ -90,7 +90,7 @@ export const GROUPS = [
   ] },
   { title: "Helicopter", items: [
     { key: "helicopter", label: "Police helicopter", kind: "bool",
-      help: "Searches for the runner and tracks them while it sees them; grounded in storm, fog and snow" },
+      help: "Searches for the runner and tracks them while it sees them; grounded in storm, fog and snow until it clears" },
     { key: "helicopterArrivalSeconds", label: "Arrives after", unit: "s", step: 15, min: 0, duration: true, zeroText: "at release",
       when: v => v("helicopter"), help: "How long after the cops are released the helicopter arrives" },
     { key: "helicopterUpSeconds", label: "Time up", unit: "s", step: 15, min: 15, duration: true,
