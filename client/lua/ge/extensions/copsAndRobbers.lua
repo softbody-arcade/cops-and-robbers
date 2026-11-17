@@ -835,11 +835,21 @@ local function roofedAt(p)
   return shelter.roofed(p, castUp)
 end
 
+local tunnelRoofs = {}
+local tunnelRoofGraph = nil
+
 local function tunnelExit(carPos, dirX, dirY, seed)
   local gp = map and map.getGraphpath and map.getGraphpath()
   local m = map and map.getMap and map.getMap()
-  local roadData = { closest = closestRoad, links = gp and gp.graph, nodes = m and m.nodes }
-  return tunnels.exit(carPos, dirX, dirY, roadData, roofedAt, seed)
+  local graph = gp and gp.graph
+  if graph ~= tunnelRoofGraph then
+    tunnelRoofGraph = graph
+    tunnelRoofs = {}
+  end
+  local roadData = { closest = closestRoad, links = graph, nodes = m and m.nodes }
+  local list = tunnels.watch(carPos, dirX, dirY, roadData, roofedAt, seed, tunnelRoofs)
+  local first = list and list[1]
+  return first and first.pos
 end
 
 local coverFailed = false
