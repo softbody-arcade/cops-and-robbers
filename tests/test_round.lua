@@ -1563,7 +1563,7 @@ test("the free reset ends with the cop's penalty", function()
   r:tick(11.5, { [1] = kmh(0, 60), [2] = kmh(3, 0), [3] = kmh(500, 0) }, {})
   local allowed, hint
   for i = 1, 44 do
-    local fx = r:tick(11.5 + i * 0.25, { [1] = kmh(0, 60), [2] = kmh(3, 0), [3] = kmh(500, 0) }, {})
+    local fx = r:tick(11.5 + i * 0.25, { [1] = kmh(i * 0.25 * 60 / 3.6, 60), [2] = kmh(3, 0), [3] = kmh(500, 0) }, {})
     local a, h = stateOf(fx, 1)
     if h then allowed, hint = a, h end
   end

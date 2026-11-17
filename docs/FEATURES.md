@@ -32,6 +32,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 
 ### Catching
 - The runner is caught after being held for 7 s: runner under 3 km/h with a cop within 10 m (centre to centre).
+- A runner who moves less than 3 m in 2 s counts as held too, at any speed, so rocking a stuck car doesn't escape. In the first 2 s after the cops' release only the speed counts.
 - The hold timer drains at twice the speed it fills, so one jolt does not wipe the progress.
 - Cops serving a crash penalty do not count toward a catch.
 - No catch is possible during the head start.

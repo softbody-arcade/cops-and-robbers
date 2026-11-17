@@ -39,8 +39,8 @@
           <BngIcon class="runner" :type="icons.carChase01" />
           <span>
             <b>Being caught:</b> a cop within <span class="v">{{ dist("catchRadiusMeters") }}</span> while you're under
-            <span class="v">{{ kmh("catchMaxSpeedKmh") }}</span> fills the BEING CAUGHT bar, and after
-            <span class="v">{{ sec("catchHoldSeconds") }}</span> you're caught. Get moving and it empties twice as fast as it filled.
+            <span class="v">{{ kmh("catchMaxSpeedKmh") }}</span>, or stuck (less than 3 m in 2 s, rocking counts), fills the BEING CAUGHT bar, and after
+            <span class="v">{{ sec("catchHoldSeconds") }}</span> you're caught. Drive away and it empties twice as fast as it filled.
           </span>
         </div>
         <div class="li">
@@ -94,7 +94,7 @@
         <div class="li">
           <BngIcon class="cop" :type="icons.carChase01" />
           <span>
-            <b>Catch:</b> keep the runner under <span class="v">{{ kmh("catchMaxSpeedKmh") }}</span> with a cop within
+            <b>Catch:</b> keep the runner under <span class="v">{{ kmh("catchMaxSpeedKmh") }}</span>, or stuck (less than 3 m in 2 s), with a cop within
             <span class="v">{{ dist("catchRadiusMeters") }}</span> for <span class="v">{{ sec("catchHoldSeconds") }}</span>.
             Every cop that close shares the catch.
           </span>

@@ -5,19 +5,31 @@ local Tracker = {}
 Tracker.__index = Tracker
 
 local DRAIN_FACTOR = 2
+local STUCK_WINDOW_SECONDS = 2
+local STUCK_METERS = 3
 
 function M.new(cfg)
-  return setmetatable({ cfg = cfg, hold = 0, lastNow = nil }, Tracker)
+  return setmetatable({ cfg = cfg, hold = 0, lastNow = nil, history = {} }, Tracker)
 end
 
 function Tracker:reset()
   self.hold = 0
   self.lastNow = nil
+  self.history = {}
 end
 
-function Tracker:isHeld(runner, cops)
+function Tracker:stuck(now, runner)
+  local history = self.history
+  if not runner or not runner.pos then return false end
+  history[#history + 1] = { t = now, pos = runner.pos }
+  while #history >= 2 and now - history[2].t >= STUCK_WINDOW_SECONDS - 1e-9 do table.remove(history, 1) end
+  local oldest = history[1]
+  return now - oldest.t >= STUCK_WINDOW_SECONDS - 1e-9 and vec.dist(runner.pos, oldest.pos) < STUCK_METERS
+end
+
+function Tracker:isHeld(runner, cops, stuck)
   if not runner or not runner.pos or not runner.vel then return false end
-  if vec.speedKmh(runner.vel) >= self.cfg.catchMaxSpeedKmh then return false end
+  if vec.speedKmh(runner.vel) >= self.cfg.catchMaxSpeedKmh and not stuck then return false end
   for _, cop in ipairs(cops) do
     if cop.pos and vec.dist(runner.pos, cop.pos) <= self.cfg.catchRadiusMeters then return true end
   end
@@ -27,7 +39,8 @@ end
 function Tracker:update(now, runner, cops)
   local dt = self.lastNow and (now - self.lastNow) or 0
   self.lastNow = now
-  if self:isHeld(runner, cops or {}) then
+  local stuck = self:stuck(now, runner)
+  if self:isHeld(runner, cops or {}, stuck) then
     self.hold = self.hold + dt
   else
     self.hold = math.max(0, self.hold - DRAIN_FACTOR * dt)
