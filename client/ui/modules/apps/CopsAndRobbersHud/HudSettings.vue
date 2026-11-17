@@ -41,6 +41,13 @@
       </div>
       <BngSwitch :model-value="settings.sound !== false" @update:modelValue="v => emit('setting', 'sound', v)" />
     </div>
+    <div class="row">
+      <div class="label">
+        <div class="name">Helicopter model</div>
+        <div class="desc">The police helicopter's body and lights, seen from far off</div>
+      </div>
+      <BngSwitch :model-value="settings.model !== false" @update:modelValue="v => emit('setting', 'model', v)" />
+    </div>
     <div class="row" :class="{ off: !settings.sirensAllowed }">
       <div class="label">
         <div class="name">Siren</div>

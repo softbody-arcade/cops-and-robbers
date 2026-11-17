@@ -76,6 +76,7 @@
             <template v-if="refuelNever">Before it arrives, it can't see you.</template>
             <template v-else>Before it arrives and while it refuels, it can't see you.</template>
             It is grounded while it is storm, fog or snow, and returns when the weather clears.
+            You can spot it from the ground: a flying white van in the Bird Response livery, with red, green and white lights and a flashing red beacon.
             At night its searchlight shines on you while it tracks you and keeps sweeping while it searches; you can turn its beam in the air off in your settings.
             <template v-if="sightOff">While it tracks you, cops see you live.</template>
           </span>
@@ -138,6 +139,7 @@
             <template v-if="refuelNever">Before it arrives, it can't see the runner.</template>
             <template v-else>Before it arrives and while it refuels, it can't see the runner.</template>
             It is grounded while it is storm, fog or snow, and returns when the weather clears.
+            It flies as a white van in the Bird Response livery, with red, green and white lights and a flashing red beacon.
             At night its searchlight shines on the runner while it tracks them and keeps sweeping while it searches; you can turn its beam in the air off in your settings.
           </span>
         </div>
@@ -220,7 +222,7 @@
         <div class="li">
           <span class="swatch"></span>
           <span>
-            <b>Your settings:</b> use the Settings button for your car colour, auto headlights at night and in bad weather, the helicopter's searchlight beam in the air, the helicopter's rotor sound, and as a cop, <span v-if="r.sirensAllowed !== false">a siren and </span>how the route to the runner is shown (always, only out of sight, or never).
+            <b>Your settings:</b> use the Settings button for your car colour, auto headlights at night and in bad weather, the helicopter's searchlight beam in the air, the helicopter's rotor sound and its model, and as a cop, <span v-if="r.sirensAllowed !== false">a siren and </span>how the route to the runner is shown (always, only out of sight, or never).
             A colour set in prep repaints your car straight away; otherwise it applies from the next round.
           </span>
         </div>

@@ -15,6 +15,7 @@ local nearby = require("copsAndRobbers/nearby")
 local sky = require("copsAndRobbers/sky")
 local heli = require("copsAndRobbers/heli")
 local heliSound = require("copsAndRobbers/heliSound")
+local heliVan = require("copsAndRobbers/heliVan")
 local shelter = require("copsAndRobbers/shelter")
 local traffic = require("copsAndRobbers/traffic")
 local hiding = require("copsAndRobbers/hiding")
@@ -185,6 +186,7 @@ end
 
 local heliState = heli.new()
 local soundState = heliSound.new()
+local vanState = heliVan.new()
 
 local function setHeli(h)
   heli.set(heliState, h, clock)
@@ -194,6 +196,7 @@ local function setHeli(h)
   end
   local seconds = tonumber(h.seconds)
   hudfeed.heli({ phase = h.phase, reason = h.reason, endsAt = seconds and clock + seconds or nil })
+  if prefs.model ~= false then heliVan.prepare(vanState) end
 end
 
 local function onRoundSetup(data)
@@ -563,6 +566,7 @@ local function endRound(leaving)
   hudfeed.clearRound()
   heli.clear(heliState)
   heliSound.clear(soundState)
+  heliVan.clear(vanState)
   lightsState = nil
   sky.restore(leaving)
   traffic.stop(clock)
@@ -926,13 +930,17 @@ local function updateHeli(runnerObj)
     local target = role == "runner" and ownVehicle() or runnerObj
     local opts = { weather = traffic.weather(), beam = prefs.beam ~= false, roads = roadData }
     if castRayStatic then opts.roofedAt = roofedAt end
-    heli.lightTick(heliState, target, heli.wantsNight(heliState) and sky.isNight(), clock, opts)
+    local wantsNight = heli.wantsNight(heliState)
+    local night = (wantsNight or heliState.flight ~= nil) and sky.isNight()
+    heli.lightTick(heliState, target, wantsNight and night, clock, opts)
     local camPos = core_camera and core_camera.getPosition and core_camera.getPosition() or nil
     local level = prefs.sound ~= false and heli.soundLevel(heliState, clock) or 0
     heliSound.tick(soundState, heliState.flight and heliState.flight.pos, level, clock, camPos, castRayStatic)
+    heliVan.tick(vanState, prefs.model ~= false and heli.flying(heliState, clock) or nil, clock, night, camPos)
   else
     heli.lightTick(heliState, nil, false, clock)
     heliSound.tick(soundState, nil, 0, clock)
+    heliVan.tick(vanState, nil, clock)
   end
 end
 

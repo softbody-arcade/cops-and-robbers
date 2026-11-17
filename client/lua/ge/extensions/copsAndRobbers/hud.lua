@@ -276,6 +276,7 @@ function M.payload(state, now, info)
     siren = prefs.siren == true,
     beam = prefs.beam ~= false,
     sound = prefs.sound ~= false,
+    model = prefs.model ~= false,
     route = (prefs.route == "always" or prefs.route == "never") and prefs.route or "sight",
     sirensAllowed = not (type(info.rules) == "table" and info.rules.sirensAllowed == false),
   }

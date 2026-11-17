@@ -2947,8 +2947,8 @@ end)
 
 local HELI_LIGHT = "cnr_heli_light"
 
-local function nightTracking(role, seed)
-  local env = bootClient()
+local function nightTracking(role, seed, opts)
+  local env = bootClient(opts)
   local d = copy(SETUP)
   d.phase = "running"
   d.sky = NIGHT
@@ -3229,6 +3229,152 @@ test("a leftover emitter is deleted while no round runs", function()
   assertEq(env.sky.objects[HELI_SOUND], planted)
   env.tick(1.2)
   assertEq(env.sky.objects[HELI_SOUND], nil)
+end)
+
+local HELI_VAN = "cnr_heli_van"
+
+local function pigeon()
+  return { ["/vehicles/pigeon/pigeon.dae"] = '<COLLADA>\n<material id="pigeon-material" name="pigeon"></material>\n' ..
+    '<node id="pigeon_bed" name="pigeon_bed"></node>\n<node id="pigeon_box" name="pigeon_box"></node>\n</COLLADA>\n' }
+end
+
+local function copies(env)
+  local n = 0
+  for path in pairs(env.files) do
+    if path:find("^/temp/cnr/pigeon_heli_%d+%.dae$") then n = n + 1 end
+  end
+  return n
+end
+
+local function dist3(a, b) return math.sqrt((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2 + (a.z - b.z) ^ 2) end
+
+test("the copy is made when the round's helicopter is set up, before it flies", function()
+  local env = bootClient({ gameFiles = pigeon() })
+  local d = copy(SETUP)
+  d.heli = { phase = "arriving", seconds = 60 }
+  env.fire("cnr_roundSetup", d)
+  assertEq(copies(env), 1)
+  assertEq(#env.materials, 3)
+  assertEq(env.sky.objects[HELI_VAN], nil)
+  env.tick(1)
+  assertEq(env.sky.objects[HELI_VAN], nil)
+  local off = bootClient({ gameFiles = pigeon(), files = { ["settings/cnr_settings.json"] = { model = false } } })
+  off.fire("cnr_roundSetup", d)
+  assertEq(copies(off), 0)
+  local none = bootClient({ gameFiles = pigeon() })
+  none.fire("cnr_roundSetup", copy(SETUP))
+  assertEq(copies(none), 0)
+end)
+
+test("the Pigeon van flies with the helicopter by day and night and is gone after the round", function()
+  for _, role in ipairs({ "cop", "runner" }) do
+    local env = nightTracking(role, nil, { gameFiles = pigeon() })
+    local van, light = env.sky.objects[HELI_VAN], env.sky.objects[HELI_LIGHT]
+    assertEq(van ~= nil, true, role)
+    assertEq(env.files[van.fields.shapeName] ~= nil, true, role)
+    assertEq(van.fields.shapeName:find("^/temp/cnr/pigeon_heli_%d+%.dae$") ~= nil, true, role)
+    assertEq(van.scale.x, 3, role)
+    assertEq(dist3(van.pos, light.pos) < 0.5, true, role)
+    local moves = van.moves
+    env.tick(1)
+    assertEq(van.moves, moves + 10, role)
+    assertEq(dist3(van.pos, light.pos) < 0.5, true, role)
+    assertEq(env.sky.objects[HELI_VAN], van, role)
+  end
+  local day = bootClient({ gameFiles = pigeon() })
+  local d = copy(SETUP)
+  d.phase, d.role, d.runnerId = "running", "runner", 1
+  d.sky = { time = "noon", windDir = 0, windSeed = 1 }
+  d.heli = { phase = "tracking", seconds = 100 }
+  day.fire("cnr_roundSetup", d)
+  day.tick(1)
+  assertEq(day.sky.objects[HELI_LIGHT], nil)
+  assertEq(day.sky.objects[HELI_VAN] ~= nil, true)
+  day.fire("cnr_heli", { phase = "refuelling", seconds = 90 })
+  day.tick(7)
+  assertEq(day.sky.objects[HELI_VAN] ~= nil, true)
+  day.tick(1.5)
+  assertEq(day.sky.objects[HELI_VAN], nil)
+  local exits = {
+    function(env) env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 3, runnerId = 2 }) end,
+    function(env) env.fire("cnr_roundEnd", { reason = "cancelled", runnerId = 2 }) end,
+    function(env) env.M.onBeamMPServerLeave() end,
+    function(env) env.M.onClientEndMission() end,
+    function(env) env.M.onExtensionUnloaded() end,
+  }
+  for i, exit in ipairs(exits) do
+    for _, role in ipairs({ "cop", "runner" }) do
+      local env = nightTracking(role, nil, { gameFiles = pigeon() })
+      assertEq(env.sky.objects[HELI_VAN] ~= nil, true, i .. " " .. role)
+      exit(env)
+      assertEq(env.sky.objects[HELI_VAN], nil, i .. " " .. role)
+      if i < 5 then
+        env.tick(2)
+        assertEq(env.sky.objects[HELI_VAN], nil, i .. " " .. role)
+      end
+    end
+  end
+end)
+
+test("Helicopter model off removes the van and its lights at once, on brings them back", function()
+  local saved = { color = _G.color, draw = package.loaded["utils/debugDraw"] }
+  local spheres = 0
+  _G.color = function(r, g, b, a) return r + g + b + a end
+  package.loaded["utils/debugDraw"] = { Sphere = function() spheres = spheres + 1 end, drawTriSolid = function() end }
+  local ok, err = pcall(function()
+    local env = nightTracking("runner", nil, { gameFiles = pigeon() })
+    env.M.ui({ action = "setting", key = "beam", value = false })
+    env.tick(1)
+    assertEq(spheres > 0, true)
+    local van = env.sky.objects[HELI_VAN]
+    env.M.ui({ action = "setting", key = "model", value = false })
+    assertEq(env.written["settings/cnr_settings.json"].model, false)
+    assertEq(env.hud().settings.model, false)
+    env.tick(0.1)
+    assertEq(env.sky.objects[HELI_VAN], nil)
+    assertEq(van.name == nil or env.sky.objects[van.name] ~= van, true)
+    spheres = 0
+    env.tick(2)
+    assertEq(spheres, 0)
+    assertEq(env.sky.objects[HELI_VAN], nil)
+    assertEq(env.sky.objects[HELI_LIGHT] ~= nil, true)
+    assertEq(env.sky.objects[HELI_SOUND] ~= nil, true)
+    env.M.ui({ action = "setting", key = "model", value = true })
+    env.tick(0.1)
+    local again = env.sky.objects[HELI_VAN]
+    assertEq(again ~= nil and again ~= van, true)
+    assertEq(spheres > 0, true)
+  end)
+  _G.color, package.loaded["utils/debugDraw"] = saved.color, saved.draw
+  if not ok then error(err, 0) end
+end)
+
+test("without a Pigeon there is no van, one log line, and the light and sound still work", function()
+  local logs = {}
+  local ok, err = pcall(function()
+    local env = bootClient()
+    _G.log = function(level, tag, msg) logs[#logs + 1] = { level = level, tag = tag, msg = msg } end
+    for round = 1, 2 do
+      local d = copy(SETUP)
+      d.phase, d.role, d.runnerId = "running", "runner", 1
+      d.sky = NIGHT
+      d.heli = { phase = "tracking", seconds = 100 }
+      env.fire("cnr_roundSetup", d)
+      env.tick(2)
+      assertEq(env.sky.objects[HELI_VAN], nil, tostring(round))
+      assertEq(env.sky.objects[HELI_LIGHT] ~= nil, true, tostring(round))
+      assertEq(env.sky.objects[HELI_SOUND] ~= nil, true, tostring(round))
+      env.fire("cnr_roundEnd", { reason = "cancelled", runnerId = 1 })
+      env.tick(1)
+    end
+  end)
+  _G.log = function() end
+  if not ok then error(err, 0) end
+  local lines = 0
+  for _, l in ipairs(logs) do
+    if l.msg:find("helicopter model", 1, true) then lines = lines + 1 end
+  end
+  assertEq(lines, 1)
 end)
 
 local function inLockGroup(env, action)

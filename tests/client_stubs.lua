@@ -171,6 +171,14 @@ function bootClient(opts)
     removeFile = function(_, path) env.removedFiles[#env.removedFiles + 1] = path end,
     getFileOriginInfo = function(_, path) return { archivePath = (opts.origins or {})[path] } end,
   }
+  env.files = opts.gameFiles or {}
+  env.materials = {}
+  _G.readFile = function(path) return env.files[path] end
+  _G.writeFile = function(path, data)
+    env.files[path] = data
+    return true
+  end
+  _G.loadJsonMaterialsFile = function(path) env.materials[#env.materials + 1] = path end
   _G.TriggerServerEvent = function(ev, data) env.sent[#env.sent + 1] = { ev = ev, data = data } end
   _G.AddEventHandler = function(ev, fn) env.handlers[ev] = fn end
   _G.getCurrentLevelIdentifier = function() return "west_coast_usa" end
