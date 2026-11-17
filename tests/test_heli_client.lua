@@ -2371,7 +2371,7 @@ test("a car jump re-casts the sweep's ground ray on the next tick", function()
       heli.lightTick(state, target, true, c)
     end
     local before = stub.rays
-    c = c + 0.1
+    c = state.sweepRayAt + 0.1
     pos = vec3(pos.x + 2000, pos.y, pos.z)
     heli.lightTick(state, target, true, c)
     assertEq(stub.rays, before + 1)
