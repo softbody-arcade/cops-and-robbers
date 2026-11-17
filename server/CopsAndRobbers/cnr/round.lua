@@ -599,6 +599,7 @@ end
 function Round:vehicleReset(now, pid)
   local tracker = self.resetTrackers[pid]
   if (self.state ~= "headstart" and self.state ~= "running") or not tracker then return {} end
+  self.lastState[pid] = nil
   if tracker:consume(now) then
     if pid == self.runnerId then self.freeResetUntil = nil end
     if self.crashDetectors[pid] then self.crashDetectors[pid]:reset() end

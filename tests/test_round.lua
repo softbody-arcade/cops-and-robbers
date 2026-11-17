@@ -300,6 +300,23 @@ end
 
 local function kmh(x, v) return {pos={x=x,y=0,z=0}, vel={x=v/3.6,y=0,z=0}} end
 
+test("a cop far from the runner gets the reset status again after each reset", function()
+  local r = running()
+  local far = function() return {[1]=car(0), [2]=car(300), [3]=car(1500)} end
+  local fx = r:tick(11.25, far(), {})
+  local s = find(fx, "state", 3)
+  assertEq(s.resetAllowed, true); assertEq(s.resetHint, "Reset available (far from runner)")
+  fx = r:tick(11.5, far(), {})
+  assertEq(find(fx, "state", 3), nil)
+  assertEq(find(r:vehicleReset(11.6, 3), "broadcast"), nil)
+  fx = r:tick(11.75, far(), {})
+  s = find(fx, "state", 3)
+  assertEq(s ~= nil, true)
+  assertEq(s.resetAllowed, true); assertEq(s.resetHint, "Reset available (far from runner)")
+  assertEq(find(r:vehicleReset(11.85, 3), "broadcast"), nil)
+  assertEq(find(r:tick(12, far(), {}), "state", 3) ~= nil, true)
+end)
+
 test("cop crash gives a penalty and freezes", function()
   local r = running()
   r:tick(11.25, {[1]=kmh(0, 80), [2]=kmh(200, 120), [3]=kmh(500, 0)}, {})
