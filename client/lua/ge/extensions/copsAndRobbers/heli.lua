@@ -224,7 +224,7 @@ end
 
 local function foldDrift(state, extra, clock)
   local f = state.flight
-  if f and f.spot then
+  if f and (f.spot or search.roadAim(state, clock)) then
     local x, y, z = switchLeft(state.aimSwitch, clock)
     state.aimSwitch = { x = x + extra.x, y = y + extra.y, z = z, at = clock }
   else
@@ -283,21 +283,24 @@ local function groundBelow(spot, x, y)
   return z
 end
 
-local function sweepAim(state, spot, clock)
+local function groundedAim(state, x, y, z, clock)
   local from = state.sweepAt or clock
-  local p = M.sweepPoint(spot, clock - from)
   local at = state.sweepRayAt
   if not at or state.sweepRayFor ~= from or state.jumpAt ~= state.sweepRayJump or clock < at or clock - at >= M.SWEEP_RAY_INTERVAL then
     state.sweepRayAt, state.sweepRayFor, state.sweepRayJump = clock, from, state.jumpAt
-    state.sweepZ = groundBelow(spot, p.x, p.y)
+    state.sweepZ = groundBelow({ z = z }, x, y)
   end
-  return p.x, p.y, state.sweepZ
+  return x, y, state.sweepZ
 end
 
 local function aimAt(state, f, carAim, extra, clock)
   local x, y, z
-  if f.spot then
-    x, y, z = sweepAim(state, f.spot, clock)
+  local rx, ry, rz = search.roadAim(state, clock)
+  if rx then
+    x, y, z = groundedAim(state, rx, ry, rz, clock)
+  elseif f.spot then
+    local p = M.sweepPoint(f.spot, clock - (state.sweepAt or clock))
+    x, y, z = groundedAim(state, p.x, p.y, f.spot.z, clock)
   else
     x, y, z = carAim.x, carAim.y, carAim.z
   end

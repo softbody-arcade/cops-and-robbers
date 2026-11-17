@@ -359,6 +359,12 @@ function M.tick(state, target, phase, last, clock, opts)
   state.wasGuided = state.guided
 end
 
+function M.roadAim(state, clock)
+  local s = state.search
+  if not (s and s.mode == "road" and s.run and s.run.routes[s.run.index]) then return nil end
+  return roadSearch.aimPoint(s.run, clock - (state.sweepAt or clock))
+end
+
 function M.soundLevel(state, clock)
   if not state.flight then return 0 end
   local since = state.missingSince

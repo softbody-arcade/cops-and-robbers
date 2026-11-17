@@ -316,7 +316,7 @@ local function aimGuard(clock)
     g.clock = c
     if g.prev and state.aimPos then
       local move = dist3(state.aimPos, g.prev)
-      local bound = g.s * (1 - math.exp(-dt / heli.AIM_SWITCH_SECONDS)) + SWEEP_SPEED * dt + 1
+      local bound = g.s * (1 - math.exp(-dt / heli.AIM_SWITCH_SECONDS)) + (g.speed or SWEEP_SPEED) * dt + 1
       assertEq(move <= bound, true, string.format("%.2f: the aim moved %.3f m, more than %.3f", c, move, bound))
       if state.retargetAt ~= g.retarget then
         g.switches = g.switches + 1
@@ -2526,6 +2526,85 @@ test("a moving runner lost on a road gets a road search ahead", function()
     assertNear(f.lead.y, 0, 1e-9)
   end)
   assertNear((f.lead.x - x0) / (c - c0), 45, 0.5)
+end)
+
+local function roadNight(seed)
+  load()
+  state.random = seeded(seed)
+  pos = vec3(0, 0, 0)
+  local opts = roadOpts()
+  local c = loseDriving(0, vec3(10, 0, 0), opts, nil, true)
+  assertEq(state.search.mode, "road")
+  return c, opts
+end
+
+test("on a road search the light aims 60 m ahead and sweeps 15 m across", function()
+  local c, opts = roadNight(50)
+  local f = state.flight
+  local c0 = c
+  c = drive(c, c + 6, vec3(10, 0, 0), opts, function(t)
+    if t < c0 + 6 * heli.AIM_SWITCH_SECONDS then return end
+    assertNear(state.aimPos.x - f.lead.x, 60, 1, tostring(t))
+    assertNear(state.aimPos.y, 15 * math.sin(2 * math.pi * (t - state.sweepAt) / 3), 0.5, tostring(t))
+  end, true)
+  assertEq(c > c0 + 5, true)
+end)
+
+test("the light never aims at the hidden runner's car during a road search", function()
+  local c, opts = roadNight(51)
+  local c0 = c
+  c = drive(c, c + 8, vec3(10, 0, 0), opts, function(t)
+    if t < c0 + 6 * heli.AIM_SWITCH_SECONDS then return end
+    assertEq(horiz(state.aimPos, pos) > 30, true, tostring(t) .. " " .. horiz(state.aimPos, pos))
+  end, true)
+end)
+
+test("the road aim sits on the ground", function()
+  local c, opts = roadNight(52)
+  local ray = downwardRays(108)
+  withCast(ray.cast, function()
+    c = drive(c, c + 6 * heli.AIM_SWITCH_SECONDS, vec3(10, 0, 0), opts, nil, true)
+    local before = ray.rays
+    c = drive(c, c + 2, vec3(10, 0, 0), opts, function(t)
+      local rz = state.search.run.routes[1].points[1].z
+      assertNear(state.aimPos.z, rz - 8, 1e-9, tostring(t))
+    end, true)
+    assertEq(ray.rays - before <= 10 and ray.rays - before >= 5, true, tostring(ray.rays - before))
+  end)
+end)
+
+test("switching from tracking to a road search doesn't jump the aim", function()
+  load()
+  state.random = seeded(53)
+  pos = vec3(0, 0, 0)
+  local opts = roadOpts()
+  status(0, "tracking", nil, opts, nil, true)
+  local g = aimGuard(0)
+  g.speed = 45 + 2 * math.pi * 15 / 3
+  local c = drive(0, 1, vec3(10, 0, 0), opts, g.check, true)
+  c = c + 0.05
+  nudge(vec3(10, 0, 0))
+  status(c, "searching", nil, opts, nil, true)
+  g.check(c)
+  assertEq(state.search.mode, "road")
+  c = drive(c, c + 8, vec3(10, 0, 0), opts, g.check, true)
+  assertEq(g.switches >= 1, true)
+end)
+
+test("a fly-away that resumes into a road search keeps its drift in the aim", function()
+  local c, opts = roadNight(54)
+  c = drive(c, c + 3, vec3(10, 0, 0), opts, nil, true)
+  c = c + 0.05
+  nudge(vec3(10, 0, 0))
+  status(c, "refuelling", nil, opts, nil, true)
+  local g = aimGuard(c)
+  g.speed = 45 + 2 * math.pi * 15 / 3
+  c = drive(c, c + 5, vec3(10, 0, 0), opts, g.check, true)
+  c = c + 0.05
+  nudge(vec3(10, 0, 0))
+  status(c, "searching", nil, opts, nil, true)
+  g.check(c)
+  c = drive(c, c + 3, vec3(10, 0, 0), opts, g.check, true)
 end)
 
 test("a runner under 5 m/s gets containment at the car", function()
