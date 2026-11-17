@@ -1,6 +1,6 @@
 # Visible searchlight beam and a flying helicopter
 
-Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and plan review. It builds on the police helicopter (`docs/superpowers/specs/2026-11-16-police-helicopter-design.md`). The light now hangs from a helicopter that really flies, so the beam's angle and the light's sway come from the helicopter's own motion.
+Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and plan review. After the first in-game test the same day, two parts were added: cover from the helicopter's line of sight (approved) and a helicopter sound (proposed). It builds on the police helicopter (`docs/superpowers/specs/2026-11-16-police-helicopter-design.md`). The light now hangs from a helicopter that really flies, so the beam's angle and the light's sway come from the helicopter's own motion.
 
 ## Why
 - **No beam in the air:** BeamNG lights only light the surfaces they hit; the engine renders only clouds as volumes. So the 2.9.0 searchlight is a bright spot on the road with no shaft in the air. In real life the beam is visible from the side and from below: faintly on a clear night, and clearly in haze, cloud or rain.
@@ -110,6 +110,39 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - The beam also needs `debugDrawer` and `color` to exist.
 - **The player setting:** "Searchlight beam" in the HUD settings card, on by default. Off removes the beam, the cone in the air, on that player's game. The light and its glare stay.
 
+## Line of sight (added after the first in-game test, approved 2026-11-17)
+- **Why:** cover was a roof check: rays straight up from the car. A building between the helicopter and the car never counted, so the light could be blocked on screen while the server still said "tracking". Now the helicopter has a position, so cover can be what the helicopter sees.
+- **The check:** on the game that reports cover today (the runner's, or the issuer's in practice), every 0.25 s while that game's helicopter flight exists:
+  - `castRayStatic` from the flight's position to three points on the runner's car: the middle at 1.5 m above the car's position, and 2 m ahead and 2 m behind it along the car's direction, at the same height
+  - a point is seen when the ray reaches within 0.5 m of it
+  - the car is covered when no point is seen
+- **Before the helicopter exists** (head start, the arrival countdown, a refuel after the fly-away): the roof check as today, so the head-start hiding and the state at arrival still work.
+- **Unchanged:**
+  - the client needs the same reading twice in a row (about 0.5 s) before it reports a change, and the server needs 2 s of cover before "searching"
+  - tracking again the moment a point is seen
+  - the light is cut while searching
+  - the beam's own blocking ray
+- **The same helicopter on every game:**
+  - The server picks a new random seed each time the helicopter goes up (from "arriving" or "refuelling") and sends it in the helicopter status it already sends (`cnr_heli` and the round setup's `heli`).
+  - Each game draws the flight's side, its fly-in bearing and its fly-away heading from a small generator seeded with it, separate from the operator sway's randomness.
+  - A game joining mid-round (`at`) draws from the same seed in the same order, so it takes the same side and bearing.
+  - Positions still differ a little between games: network lag on the runner's car, and a joiner starts on its target point instead of mid-fly-in.
+  - A short refuel resumes the existing flight and ignores the new seed.
+- **Gameplay:** the runner loses the helicopter behind buildings, in valleys and while it flies in low from 300 m. That is intended. The height (50 m) and side offset (15 m) become balance values, tuned in game.
+- **Trees:** whatever `castRayStatic` hits counts. The game's drone camera uses the same call for line of sight. Whether trees block it is an in-game check.
+
+## Helicopter sound (proposed 2026-11-17)
+- **Why:** you hear a police helicopter long before you see it, and the runner hearing it is part of the chase.
+- **The sound:** one looping 3D `SFXEmitter` named `cnr_heli_sound` at the simulated helicopter, on every game, moved with it every frame.
+  - It plays day and night while the flight exists, and is removed with it: on the drop after the fly-away, `clear`, the round's end, a cancel, leaving, a map change and unload. No emitter is left behind.
+  - The game's 3D audio fades it with distance, so the fly-in and the fly-away get louder and quieter by themselves. The reference and maximum distances are tuned in game (start: 40 m and 800 m).
+  - It fades in over 1 s when the flight starts close (a game joining mid-round) and fades out over the fly-away's last 3 s, so it never cuts off.
+  - **Muffled when hidden:** one ray every 0.25 s from the camera to the helicopter. When it's blocked, the volume eases down to half over 0.5 s, and back up when it's clear.
+  - **A player setting** "Helicopter sound", on by default, next to "Searchlight beam".
+- **The file:** one mono OGG loop of a helicopter's rotor heard from a distance, shipped in the mod at `art/sound/cnr/heli_rotor.ogg` (the client zip gains its `art` folder). Its licence and credit go in `docs/DEPENDENCIES.md` and `README.md`. A CC BY-NC sound is fine for this free mod, credited; it would have to be replaced if the mod or the server were ever sold.
+- **First, a quick in-game probe:** an emitter made from Lua with `fileName` pointing into the mod's zip plays 3D, loops and follows `setPosition`.
+- **Not doing:** Doppler, and a separate close-up sound.
+
 ## Code
 - **`client/lua/ge/extensions/copsAndRobbers/heliFlight.lua` (new, pure):**
   - the flight: position, velocity, side, orbit, leaving point
@@ -203,7 +236,7 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
 - **Range cap:** 400 m, with no beam beyond it.
 - **Beam blocking:** a ray every 0.25 s, so the beam ends at a bridge or a roof.
 - **Glare:** its scale follows the light's brightness. The beam setting turns off only the cone; the glare stays with the light, since it costs nothing and is part of how a real light looks.
-- **Each game simulates its own helicopter** (no network sync).
+- **Each game simulates its own helicopter.** Since the line-of-sight change, the server's seed makes them take the same side and directions; positions are not synced.
 
 ## Left to the builder
 - The test stubs for the debug drawer, `color`, the camera position and `getVelocity`.
