@@ -87,7 +87,17 @@ When the helicopter loses the runner, or the cops' guidance ends while searching
 **After a refuel:**
 - The same choice, made from the last known state. When this game last tracked the runner, or the cops last guided it, it stored the position, direction of travel and speed.
 - A joiner without a last known state uses the runner's current car, as in 2.9.4.
-- While the cops guide it, it circles the runner's live position, as in 2.9.4. Guidance overrides every mode.
+- While the cops guide it, it circles the runner's live position, as in 2.9.4. Guidance overrides every mode, with one exception below.
+
+**Guided while the runner is in a tunnel** (added at the user's question, 2026-11-17). A real crew told "in the tunnel, eastbound" goes to the east exit, because it can't see into a tunnel.
+- **Where it goes:** while a cop sees the runner and the runner's car is under a roof, the helicopter goes to the exit ahead of the runner's current position and direction: the first candidate of the tunnel walk (A3), not the runner's live position.
+- **A U-turn the cop sees:** the direction flips, the walk is redone, and the exit ahead becomes the other end, so the helicopter turns and flies there.
+- **A branch the cop sees:** the walk from the runner's new position finds the exit on that branch.
+- **When the walk is redone:** at most once a second, and only when the runner's closest road edge changes or their direction along it flips.
+- **Roof results:** the roof check per road node is cached for the round, keyed by node id. Tunnels don't move, so a redone walk casts almost no rays.
+- **Back in the open while guided:** it circles the live position again.
+- **When guidance ends inside:** the timed tunnel watch (A3) starts from the runner's position and direction at that moment.
+- **No exit found** (the walk's caps, or no road data): it circles the live position, as now.
 
 ### A3. Tunnel watch (`tunnels.lua` extended)
 - **Candidates:** the walk returns an ordered list of ways out. Exits ahead come first, straightest-on first (the smallest turn summed along the path), with ties by node id and the seed. Then comes the entrance behind the car (a U-turn). Each candidate carries its road path length from the car.
@@ -224,6 +234,13 @@ Unchanged, except that the schedule is rolled with the sky. Prep shows only the 
   - a ring road terminates
   - the search point moves at 45 m/s
 - **Tunnel watch:** the candidate order (straightest exit first, then the others, then the entrance); the watch times; the switch to the next candidate; a road search after the last.
+- **Guided in a tunnel:**
+  - it goes to the exit ahead, not above the runner
+  - a U-turn flips it to the other end
+  - a branch moves it to that branch's exit
+  - the walk is redone at most once a second, and only on an edge or direction change
+  - the cached roof results keep a redone walk almost ray-free
+  - back in the open, it follows the live position
 - **Mode choice:**
   - the same choice at the first arrival, from the runner's car when it goes up
   - moving ≥ 5 m/s gives a road search
