@@ -125,6 +125,25 @@ test("an emitter that doesn't register is deleted and logged", function()
   assertEq(logs[1].level, "E")
 end)
 
+test("a field that throws deletes the half-made emitter and logs once", function()
+  load()
+  _G.createObject = function(class)
+    local obj = newEmitter(class)
+    function obj:setField() error("bad field") end
+    made[#made + 1] = obj
+    return obj
+  end
+  local s = sound.new()
+  run(s, 0, 20, P, 1)
+  assertEq(#made, 1)
+  assertEq(made[1].deleted, true)
+  assertEq(made[1].name, nil)
+  assertEq(made[1].inMission, nil)
+  assertEq(objects[NAME], nil)
+  assertEq(#logs, 1)
+  assertEq(logs[1].level, "E")
+end)
+
 test("it fades in over 1 s", function()
   load()
   local s = sound.new()
