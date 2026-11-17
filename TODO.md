@@ -9,6 +9,8 @@ One entry per piece of work that has started: what it is, its branch (or "design
   - [ ] Dynamic weather during a round: the weather changes mid-round, for example rain clearing to sun or building to a storm. The server picks the changes from the round's weather seed so every player gets the same change at the same time. They blend with the existing sky and rain fades (`sky.lua`, `rain.lua`), the road grip follows (`surfaces.lua`), and the helicopter is grounded or flies again when the weather turns storm, fog or snow or clears. Decide which conditions a run records on the leaderboard (the start, the worst, or all)
   - [ ] A new round's rain that starts while the previous round's fade is still running keeps the roof state (a narrow window, re-settles in about 1 s, `rain.lua`); leave until the 2.10 rain changes land
   - [ ] A sunrise time equal to the high time (two hours after noon) would make the game reject the temperature curve, and the previous curve would stay. Impossible at stock latitudes (`sky.lua` `roundState`). Gone with 2.10, whose curve uses fixed hours (06:00 and 14:00)
+- [ ] Fixes alongside 2.11 (the parallel rule) on branch `fixes-9` (worktree)
+  - [ ] A runner whose round car is a police config can switch the lightbar and siren on: `ownLights.lightbarSignal` returns nil for any role but cop, so the runner's lightbar is never forced off, and the lightbar and siren actions aren't in the round's locked actions (the user, 2026-11-17)
 
 ## In-game checks
 Things only a player in the game can confirm, each with what to look for. Add them here when work is merged or deployed without the check; delete a line once it is checked, and turn anything that fails into an Issue.
