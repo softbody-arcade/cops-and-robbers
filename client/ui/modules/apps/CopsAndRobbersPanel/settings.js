@@ -15,7 +15,7 @@ export const GROUPS = [
   { title: "Sky", noEarth: true, items: [
     { key: "timeOfDay", label: "Time of day", kind: "choice", common: true,
       options: [["sunrise", "Sunrise"], ["morning", "Morning"], ["noon", "Noon"], ["afternoon", "Afternoon"], ["sunset", "Sunset"], ["night", "Night"], ["random", "Random"]],
-      help: "The time the chase starts at; random follows the night chance" },
+      help: "The time the chase is played at (with a moving clock it starts just before); random follows the night chance" },
     { key: "nightChancePercent", label: "Night chance", unit: "%", step: 5, min: 0, max: 100, common: true, when: v => v("timeOfDay") === "random",
       help: "How often a random time of day is night" },
     { key: "dayLength", label: "Day length", kind: "choice",

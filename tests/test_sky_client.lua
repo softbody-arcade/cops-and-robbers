@@ -62,6 +62,18 @@ test("with a moving clock the round starts an hour before the named time", funct
   assertEq(math.abs(fake2.setStates[1].time - (1 - 1 / 24)) < 1e-9, true, tostring(fake2.setStates[1].time))
 end)
 
+test("on a slow clock the lead is at most 75 s of real time", function()
+  for _, daySeconds in ipairs({ 7200, 86400 }) do
+    local sky, fake = load()
+    local p = {}
+    for k, v in pairs(WINTER) do p[k] = v end
+    p.daySeconds = daySeconds
+    sky.apply(p)
+    local want = 0.775 - 75 / daySeconds
+    assertEq(math.abs(fake.setStates[1].time - want) < 1e-9, true, daySeconds .. ": " .. tostring(fake.setStates[1].time))
+  end
+end)
+
 test("with the clock stopped the round starts at the named time", function()
   local sky, fake = load()
   local p = {}
