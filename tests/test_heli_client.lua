@@ -3210,6 +3210,23 @@ test("an exit that appears and goes restarts the circle, the sweep and the retar
   samePos(f.spot, pos, 1e-9)
 end)
 
+test("a 2 km car jump while guided in a tunnel moves the exit with the car", function()
+  local opts = tunnelOpts()
+  local v, car, c = guidedStart(71, vec3(150, 0, 0), vec3(10, 0, 0), opts)
+  local f = state.flight
+  c = guidedDrive(c, c + 1.5, v, car, opts)
+  samePos(f.spot, vec3(400, 0, 0), 1e-9)
+  local retarget = state.retargetAt
+  pos = vec3(pos.x + 2000, pos.y, pos.z)
+  local exit = vec3(400 + 2000 + 10 * 0.05, 0, 0)
+  guidedDrive(c, c + 0.3, v, car, opts, function(t)
+    samePos(f.spot, exit, 1e-9, tostring(t))
+    samePos(state.guidedExit, exit, 1e-9, tostring(t))
+    samePos(state.guidedList[1].pos, exit, 1e-9, tostring(t))
+    assertEq(state.retargetAt, retarget, tostring(t))
+  end)
+end)
+
 test("guidance ending inside starts the timed watch from that moment", function()
   local opts = tunnelOpts()
   local v, car, c = guidedStart(70, vec3(150, 0, 0), vec3(10, 0, 0), opts)

@@ -52,6 +52,8 @@ local function carVelocity(state, target, car, dt, clock)
     local k = state.lastKnown
     if k then state.lastKnown = moved(k, jx, jy, jz) end
     shiftSearch(state.search, jx, jy, jz)
+    if state.guidedExit then state.guidedExit = moved(state.guidedExit, jx, jy, jz) end
+    for _, c in ipairs(state.guidedList or {}) do c.pos = moved(c.pos, jx, jy, jz) end
     state.jumpAt = clock
   end
   state.lastCar = vec3(car.x, car.y, car.z)
