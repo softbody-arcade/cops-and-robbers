@@ -80,6 +80,13 @@ test("a max below the min is raised to the min", function()
   assertEq(w[1], "weatherChangeMaxMinutes (2) is below weatherChangeMinMinutes, using 5")
 end)
 
+test("setValue compares numbers when the stored max is a string", function()
+  local u, err = config.setValue({ weatherChangeMaxMinutes = "8" }, "weatherChangeMinMinutes", "6")
+  assertEq(err, nil)
+  assertEq(tonumber(u.weatherChangeMaxMinutes), 8)
+  assertEq(u.weatherChangeMinMinutes, 6)
+end)
+
 test("setValue raises the max with the min, and clamps a lowered max", function()
   local u = config.setValue({ weatherChangeMaxMinutes = 4 }, "weatherChangeMinMinutes", "6")
   assertEq(u.weatherChangeMinMinutes, 6)

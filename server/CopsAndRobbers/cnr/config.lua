@@ -170,9 +170,9 @@ function M.setValue(raw, key, text)
   end
   updated[key] = value
   if key == "weatherChangeMinMinutes" or key == "weatherChangeMaxMinutes" then
-    local minV = updated.weatherChangeMinMinutes
+    local minV = tonumber(updated.weatherChangeMinMinutes)
     if minV == nil then minV = M.DEFAULTS.weatherChangeMinMinutes end
-    local maxV = updated.weatherChangeMaxMinutes
+    local maxV = tonumber(updated.weatherChangeMaxMinutes)
     if maxV == nil then maxV = M.DEFAULTS.weatherChangeMaxMinutes end
     if maxV < minV then updated.weatherChangeMaxMinutes = minV end
   end
