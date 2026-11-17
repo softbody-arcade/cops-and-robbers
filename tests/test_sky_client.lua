@@ -369,8 +369,10 @@ test("rain keeps falling under a high bridge", function()
   withRoof(20, function()
     local sky, fake = load()
     sky.apply(RAIN_NIGHT)
-    for _ = 1, 4 do sky.update(0.25) end
-    assertEq(hidden(fake), false)
+    for _ = 1, 16 do
+      sky.update(0.25)
+      assertEq(hidden(fake), false)
+    end
   end)
 end)
 
@@ -414,6 +416,22 @@ test("GO during a blend lands the full sky and locks", function()
   assertEq(landed ~= nil, true)
   assertEq(fake.setStates[#fake.setStates].play, true)
   assertEq(fake.locked, true)
+end)
+
+test("GO during a blend with Day length Off lands the sky, locks and never starts the clock", function()
+  local sky, fake = load()
+  sky.apply({ time = "sunset", weather = "rain", daySeconds = 0, month = 4, day = 2, windDir = 0, windSeed = 1 })
+  local n = #fake.setStates
+  assertEq(fake.locked, false)
+  sky.startClock(0)
+  assertEq(#fake.setStates, n + 1)
+  local s = fake.setStates[n + 1]
+  assertEq(fake.lerps[n + 1], nil)
+  assertEq(s.cloudCover, 2.2); assertEq(s.time, 0.245); assertEq(s.play, false)
+  for i = 1, #fake.setStates do assertEq(fake.setStates[i].play ~= true, true) end
+  assertEq(fake.locked, true)
+  sky.update(5)
+  assertEq(#fake.setStates, n + 1); assertEq(fake.locked, true)
 end)
 
 test("GO after the blend only starts the clock", function()
@@ -479,6 +497,21 @@ test("a round starting during the restore blend saves the player's own sky", fun
   fake.state.cloudCover = 1.1
   sky.apply(RAIN_NIGHT); sky.update(4); sky.restore(); sky.update(4)
   assertEq(fake.state.cloudCover, 0.05)
+end)
+
+test("a round starting during the restore blend saves the player's own sky and lock", function()
+  local sky, fake = load({ locked = true })
+  fake.state.cloudCover = 0.05
+  sky.apply(RAIN_NIGHT); sky.update(4); sky.restore()
+  assertEq(fake.locked, false)
+  fake.state.cloudCover = 1.1
+  sky.apply(RAIN_NIGHT); sky.update(4)
+  assertEq(fake.locked, true)
+  sky.restore()
+  assertEq(fake.locked, false)
+  sky.update(4)
+  assertEq(fake.state.cloudCover, 0.05)
+  assertEq(fake.locked, true)
 end)
 
 test("drop cancels a pending lock timer", function()

@@ -1804,12 +1804,25 @@ test("the round end gives the player's sky back, a map change only forgets it", 
   env.fire("cnr_roundEnd", { reason = "cancelled" })
   assertEq(env.sky.locked, false); assertEq(env.sky.state.cloudCover, 0.3)
   env.tick(5)
+  assertEq(env.sky.locked, false); assertEq(env.sky.state.cloudCover, 0.3)
   env.fire("cnr_roundSetup", d); env.tick(5)
   local n = #env.sky.setStates
   assertEq(env.sky.locked, true)
   env.M.onClientEndMission()
   assertEq(#env.sky.setStates, n)
   assertEq(env.sky.locked, false)
+end)
+
+test("the round end puts the player's own sky lock back", function()
+  local env = bootClient()
+  env.sky.locked = true
+  local d = copy(SETUP); d.sky = { weather = "storm", driving = true, windDir = 0, windSeed = 7 }
+  env.fire("cnr_roundSetup", d); env.tick(5)
+  assertEq(env.sky.locked, true); assertEq(env.sky.state.cloudCover ~= 0.3, true)
+  env.fire("cnr_roundEnd", { reason = "cancelled" })
+  assertEq(env.sky.locked, false)
+  env.tick(5)
+  assertEq(env.sky.locked, true); assertEq(env.sky.state.cloudCover, 0.3)
 end)
 
 test("leaving the server mid-rain removes the rain at once", function()
