@@ -2656,6 +2656,16 @@ test("a night road search never jumps the aim at a route change, and aims within
   assertEq(g.switches >= 2 * changes + 1, true, tostring(g.switches))
 end)
 
+test("on a road search without an aim point the light aims at the search point, never at the car", function()
+  local c, opts = roadNight(57)
+  c = drive(c, c + 6 * heli.AIM_SWITCH_SECONDS, vec3(10, 0, 0), opts, nil, true)
+  require("copsAndRobbers/heliSearch").roadAim = function() return nil end
+  drive(c, c + 0.05, vec3(10, 0, 0), opts, nil, true)
+  local f = state.flight
+  assertEq(horiz(state.aimPos, f.lead) < 1, true, tostring(horiz(state.aimPos, f.lead)))
+  assertEq(horiz(state.aimPos, pos) > 30, true, tostring(horiz(state.aimPos, pos)))
+end)
+
 test("a runner under 5 m/s gets containment at the car", function()
   load()
   state.random = seeded(41)

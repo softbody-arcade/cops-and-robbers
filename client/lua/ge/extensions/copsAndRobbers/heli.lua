@@ -301,6 +301,8 @@ local function aimAt(state, f, carAim, extra, clock)
   elseif f.spot then
     local p = M.sweepPoint(f.spot, clock - (state.sweepAt or clock))
     x, y, z = groundedAim(state, p.x, p.y, f.spot.z, clock)
+  elseif f.lead then
+    x, y, z = groundedAim(state, f.lead.x, f.lead.y, f.lead.z, clock)
   else
     x, y, z = carAim.x, carAim.y, carAim.z
   end
