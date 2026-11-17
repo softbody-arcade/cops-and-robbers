@@ -16,6 +16,13 @@
         <span v-if="spectate.heli.time" class="mono">{{ spectate.heli.time }}</span>
       </span>
     </div>
+    <div v-if="spectate.forecast" class="spectate-forecast">
+      <span class="item">
+        <BngIcon :type="icons.weather" />
+        <span>{{ spectate.forecast.text }}</span>
+      </span>
+      <span v-if="spectate.forecast.heli" class="forecast-heli">{{ spectate.forecast.heli }}</span>
+    </div>
     <span class="buttons">
       <BngButton class="cnr-btn" :accent="ACCENTS.secondary" :icon="spectate.sitOut ? icons.play : icons.pause" @click="emit('sitOut', !spectate.sitOut)">
         {{ spectate.sitOut ? "Play" : "Sit out" }}
@@ -64,6 +71,19 @@ const apps = computed(() => props.spectate.apps || {})
   font-weight: 700;
   white-space: nowrap;
   --bng-icon-size: 1.5rem;
+}
+.spectate-forecast {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 1.25rem;
+  font-weight: 700;
+  white-space: nowrap;
+  --bng-icon-size: 1.5rem;
+}
+.forecast-heli {
+  font-size: 1rem;
+  font-weight: 600;
 }
 .item {
   display: inline-flex;

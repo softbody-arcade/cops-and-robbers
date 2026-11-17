@@ -154,6 +154,13 @@ function M.label(p, withDate)
   return table.concat(parts, " · ")
 end
 
+function M.prepLabel(p)
+  local label = M.label(p, true)
+  local forecast = p and skyChanges.prepForecast(p)
+  if label and forecast then return label .. " · " .. forecast end
+  return label or forecast
+end
+
 local function fail(part, err)
   failed[part] = true
   log("E", "cnr_sky", part .. ": " .. tostring(err))
@@ -345,6 +352,11 @@ end
 function M.weather()
   if not round then return nil end
   return skyChanges.current(round, roundTime)
+end
+
+function M.forecast(heliOn)
+  if not (round and started) then return nil end
+  return skyChanges.forecast(round, roundTime, heliOn)
 end
 
 function M.restore(immediate)

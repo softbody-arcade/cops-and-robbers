@@ -25,6 +25,13 @@
         <span class="info-text"><span v-if="status.info.before">{{ status.info.before }}</span><span v-if="status.info.dist" class="mono">{{ status.info.before ? ' ' : '' }}{{ status.info.dist }}</span><span v-if="status.info.after">{{ status.info.before || status.info.dist ? ' ' : '' }}{{ status.info.after }}</span><span v-if="status.info.age">{{ ' · ' + status.info.age }}</span></span>
       </span>
     </div>
+    <div v-if="status && status.forecast" class="chase-forecast">
+      <span class="item">
+        <BngIcon :type="icons.weather" />
+        <span>{{ status.forecast.text }}</span>
+      </span>
+      <span v-if="status.forecast.heli" class="forecast-heli">{{ status.forecast.heli }}</span>
+    </div>
     <div v-if="bar && bar.visible" class="chase-catch" :class="'tone-' + barTone">
       <div class="catch-label">
         <span>{{ bar.label }}</span>
@@ -83,6 +90,20 @@ const percent = computed(() => Math.max(0, Math.min(100, Number(props.bar && pro
   line-height: 1.5rem;
   letter-spacing: 0.08em;
   text-shadow: none;
+}
+.chase-forecast {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 0.25rem;
+  font-size: 1.25rem;
+  font-weight: 700;
+  white-space: nowrap;
+  --bng-icon-size: 1.5rem;
+}
+.forecast-heli {
+  font-size: 1rem;
+  font-weight: 600;
 }
 .item {
   display: inline-flex;

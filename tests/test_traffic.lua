@@ -39,3 +39,53 @@ test("the rules payload carries the effective traffic", function()
   assertEq(rules.payload(cfg).trafficPerPlayer, 5)
   assertEq(rules.payload(cfg, 3).trafficPerPlayer, 3)
 end)
+
+dofile("tests/client_stubs.lua")
+
+local function clearingRound(time)
+  local env = bootClient()
+  env.fire("cnr_roundSetup", {
+    role = "cop", runnerId = 2, model = "pickup", config = "vehicles/pickup/base.pc", phase = "running", chaseElapsed = 0,
+    runnerPos = { x = 0, y = 0, z = 0 },
+    sky = { time = time, weather = "rain", windDir = 0, windSeed = 1, clockSeconds = 0, changes = { { at = 10, to = "cloudy", forecastFrom = 0 } } },
+  })
+  env.fire("cnr_trafficStart", { count = 3 })
+  return env
+end
+
+local function trafficCars(env)
+  local list = {}
+  for id in pairs(env.gameTraffic) do list[#list + 1] = env.objects[id] end
+  return list
+end
+
+local function sent(obj, cmd)
+  local n = 0
+  for _, c in ipairs(obj.commands) do if c == cmd then n = n + 1 end end
+  return n
+end
+
+local OFF = "electrics.setLightsState(0)"
+
+test("traffic headlights go off once when it clears by day, and not at night", function()
+  local day = clearingRound("noon")
+  day.tick(9)
+  local cars = trafficCars(day)
+  assertEq(#cars, 3)
+  for _, obj in ipairs(cars) do
+    assertEq(sent(obj, "electrics.setLightsState(1)") > 0, true)
+    assertEq(sent(obj, OFF), 0)
+  end
+  day.tick(3)
+  for _, obj in ipairs(cars) do assertEq(sent(obj, OFF), 1) end
+  day.tick(10)
+  for _, obj in ipairs(cars) do assertEq(sent(obj, OFF), 1) end
+  local night = clearingRound("night")
+  night.tick(15)
+  local dark = trafficCars(night)
+  assertEq(#dark, 3)
+  for _, obj in ipairs(dark) do assertEq(sent(obj, OFF), 0) end
+  night.sky.state.time = 0
+  night.tick(3)
+  for _, obj in ipairs(dark) do assertEq(sent(obj, OFF), 1) end
+end)

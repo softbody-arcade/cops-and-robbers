@@ -86,6 +86,7 @@ local runnerObject
 local helpSeen = false
 local prefs = playerSettings.load(nil)
 local sirensAllowed = true
+local heliOn = false
 local routeDrawn = false
 local lightsState, lightsPlaced, lastLightsCheck = nil, false, 0
 local lastLightSync, lightSyncCount = 0, 0
@@ -232,15 +233,15 @@ local function onRoundSetup(data)
   placeVehicle(d.model, roundConfig, pos, rot, d.color)
 
   sky.apply(d.sky)
-  local skyLabel = sky.label(d.sky, true)
+  local skyLabel = sky.prepLabel(d.sky)
   local phase = d.phase or "running"
   runnerOut = phase == "headstart" or phase == "running"
-  traffic.setWeather(d.sky and d.sky.weather)
   lightsState = ownLights.new(prefs.headlights)
   lightsPlaced = false
   if phase == "countdown" or phase == "headstart" or phase == "running" then
     sky.startClock(d.sky and d.sky.clockSeconds or 0)
   end
+  traffic.setWeather(sky.weather())
   frozen = phase == "prep" or phase == "applying" or phase == "ready" or phase == "countdown" or (phase == "headstart" and role == "cop")
   if phase == "applying" then hudfeed.applying(true) end
   if phase == "prep" or phase == "applying" or phase == "ready" then
@@ -276,12 +277,12 @@ local function onSpectate(data)
   traffic.removeOwn()
   spectator.park()
   sky.apply(d.sky)
-  traffic.setWeather(d.sky and d.sky.weather)
   local phase = d.phase or "running"
   runnerOut = phase == "headstart" or phase == "running"
   if phase == "countdown" or phase == "headstart" or phase == "running" then
     sky.startClock(d.sky and d.sky.clockSeconds or 0)
   end
+  traffic.setWeather(sky.weather())
   timerEnd = nil
   if phase == "countdown" then
     startTimer(tonumber(d.countdownRemaining), "Runner starts in")
@@ -297,9 +298,9 @@ local function onSky(data)
   if not active and not spectating then return end
   local d = jsonDecode(data) or {}
   sky.apply(d)
-  traffic.setWeather(d.weather)
+  traffic.setWeather(sky.weather())
+  hudfeed.prepSky(sky.prepLabel(d))
   local label = sky.label(d, true)
-  hudfeed.prepSky(label)
   if label then hudfeed.event("New sky: " .. label, clock, "info") end
 end
 
@@ -755,7 +756,7 @@ local function updateLightsAndPatch()
     local n = ownLights.lightbarSignal(role, statusActive, prefs.siren, sirensAllowed)
     if n then veh:queueLuaCommand(n == 2 and ownLights.SIREN_ON or ownLights.LIGHTS_ONLY) end
   end
-  ai.lightsOn(sky.isNight())
+  ai.lightsOn(sky.isNight() or sky.isBadWeather(traffic.weather()))
 end
 
 local function updateOwnLights()
@@ -935,7 +936,11 @@ end
 
 local function onUpdate(dtReal)
   clock = clock + (dtReal or 0)
-  sky.update(dtReal or 0)
+  local change = sky.update(dtReal or 0)
+  if change then
+    traffic.setWeather(change.to)
+    hudfeed.event(change.notice, clock, "info")
+  end
   updatePendingPlacement()
   updateResetLock()
   updateOwnCar()
@@ -964,6 +969,7 @@ local function onUpdate(dtReal)
     resetAllowed = resetAllowed, resetHint = lastHint, penalty = penaltyActive, infoParts = infoParts, infoSeenAt = infoSeenAt, infoTag = infoTag,
     timer = timerEnd and { label = timerLabel, endsAt = timerEnd } or nil,
     spectate = spectating and { name = spectator.watchedName() } or nil,
+    forecast = sky.forecast(heliOn),
   })
 end
 
@@ -1032,7 +1038,7 @@ end
 
 local function leaveServer()
   endRound(true)
-  sirensAllowed = true
+  sirensAllowed, heliOn = true, false
   hudfeed.clearResult()
   hudfeed.leave()
   hudfeed.connect(false)
@@ -1084,6 +1090,7 @@ local function onExtensionLoaded()
     local r = jsonDecode(data)
     hudfeed.rules(r)
     sirensAllowed = not (type(r) == "table" and r.sirensAllowed == false)
+    heliOn = type(r) == "table" and r.helicopter == true
   end)
   AddEventHandler("cnr_lobby", function(data)
     hudfeed.lobby(jsonDecode(data))

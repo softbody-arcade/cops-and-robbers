@@ -1012,3 +1012,25 @@ test("a ground model push that still fails at restore never blocks the sky resto
     assertEq(#lines, 1)
   end)
 end)
+
+test("the forecast runs on the round clock from the countdown, and none before it or after the round", function()
+  local sky = load()
+  local p = changing({ weather = "rain", changes = { { at = 500, to = "storm", forecastFrom = 430 } } })
+  sky.apply(p)
+  assertEq(sky.forecast(true), nil)
+  sky.startClock(100)
+  local f = sky.forecast(true)
+  assertEq(f.text, "Forecast: a storm in 5-8 min"); assertEq(f.heli, "(helicopter grounded)")
+  assertEq(sky.forecast(false).heli, nil)
+  sky.restore(true)
+  assertEq(sky.forecast(true), nil)
+end)
+
+test("the prep label adds the first change's forecast to the sky label", function()
+  local sky = load()
+  local p = { time = "noon", weather = "clear", releaseAt = 10, changes = { { at = 400, to = "cloudy", forecastFrom = 330 } } }
+  assertEq(sky.prepLabel(p), "Noon · Clear · Forecast: clouds 5-8 min after release")
+  p.changes = {}
+  assertEq(sky.prepLabel(p), "Noon · Clear")
+  assertEq(sky.prepLabel(nil), nil)
+end)
