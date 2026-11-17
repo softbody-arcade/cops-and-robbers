@@ -60,6 +60,7 @@ function Round:clear()
   self.buildStep, self.buildName = nil, nil
   self.sky = nil
   self.traffic = nil
+  self.trafficRunnerOnly = nil
   self.prevTraffic = nil
   self.applyStartedAt, self.setupDone, self.readyPids, self.rebuildId = nil, false, {}, nil
   self.startedAt = nil
@@ -155,6 +156,7 @@ function Round:finish(now, reason)
       mode = self.evolving and "evolving" or "random", buildStep = self.buildStep, buildName = self.buildName,
       sky = sky.record(self.sky, self.cfg),
       traffic = (self.traffic or 0) > 0 and self.traffic or nil,
+      trafficRunnerOnly = (self.traffic or 0) > 0 and self.trafficRunnerOnly or nil,
       helicopter = self.heli and helicopter.flew(self.heli) or nil,
     } }
     local run = fx[#fx].run
@@ -209,6 +211,7 @@ function Round:start(now, runnerId, issuerId, players, opts)
   self.pickStartedAt = now
   self.sky = opts and opts.sky or nil
   self.traffic = opts and opts.traffic or nil
+  self.trafficRunnerOnly = opts and opts.trafficRunnerOnly == true or nil
   local b = opts and opts.build
   if b then
     self.evolving = true

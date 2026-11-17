@@ -1880,6 +1880,19 @@ test("leaderboard round rows get a sky label", function()
   assertEq(d.rounds[1].skyLabel, "Night · Rain"); assertEq(d.rounds[2].skyLabel, nil)
 end)
 
+test("leaderboard round rows get a traffic label, for the runner only or per player", function()
+  local env = bootClient()
+  env.fire("cnr_boardState", { rounds = {
+    { id = 1, model = "pickup", traffic = 5, trafficRunnerOnly = true },
+    { id = 2, model = "pickup", traffic = 5 },
+    { id = 3, model = "pickup" },
+  } })
+  local d = env.lastTrigger("CnRBoard")
+  assertEq(d.rounds[1].trafficLabel, "Traffic: 5 for the runner")
+  assertEq(d.rounds[2].trafficLabel, "Traffic: 5 per player")
+  assertEq(d.rounds[3].trafficLabel, nil)
+end)
+
 local function trafficObjects(env)
   local list = {}
   for id in pairs(env.gameTraffic) do

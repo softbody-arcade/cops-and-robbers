@@ -452,7 +452,7 @@ local function boardState(sub, viewerKey)
   local f = {
     map = sub.map ~= "all" and sub.map or nil,
     mode = (sub.mode == "random" or sub.mode == "evolving") and sub.mode or nil,
-    traffic = (sub.traffic == "with" or sub.traffic == "without") and sub.traffic or nil,
+    traffic = (sub.traffic == "with" or sub.traffic == "runner" or sub.traffic == "without") and sub.traffic or nil,
   }
   local runners, mine = {}, nil
   for rank, entry in ipairs(leaderboard.runners(board, f, math.huge)) do
@@ -707,7 +707,7 @@ function handlers.start(pid, cmd)
   partsBaseline = {}
   missingCount = {}
   lastResult = nil
-  applyEffects(current:start(now(), runnerId, pid, players, { build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random, geoMode), traffic = traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), geoMode, false) }))
+  applyEffects(current:start(now(), runnerId, pid, players, { build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random, geoMode), traffic = traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), geoMode, false), trafficRunnerOnly = cfg.trafficRunnerOnly == true }))
 end
 
 function handlers.test(pid, cmd)

@@ -263,6 +263,27 @@ test("the traffic filter splits runs with and without traffic", function()
   assertEq(leaderboard.rounds(b, { traffic = "with" })[1].traffic, 5)
 end)
 
+test("traffic for the runner only is its own kind in the filter and reaches the rounds list", function()
+  local b = leaderboard.load(nil)
+  local all = run("A", 300); all.traffic = 5
+  local runnerOnly = run("B", 200); runnerOnly.traffic = 5; runnerOnly.trafficRunnerOnly = true
+  all.catchers = { "Lee" }; runnerOnly.catchers = { "Kim" }
+  local none = run("C", 100)
+  leaderboard.add(b, all); leaderboard.add(b, runnerOnly); leaderboard.add(b, none)
+  local with = leaderboard.runners(b, { traffic = "with" }, 10)
+  assertEq(#with, 1); assertEq(with[1].player, "A")
+  local runner = leaderboard.runners(b, { traffic = "runner" }, 10)
+  assertEq(#runner, 1); assertEq(runner[1].player, "B")
+  local without = leaderboard.runners(b, { traffic = "without" }, 10)
+  assertEq(#without, 1); assertEq(without[1].player, "C")
+  local cops = leaderboard.cops(b, { traffic = "runner" }, 10)
+  assertEq(#cops, 1); assertEq(cops[1].name, "Kim")
+  local rounds = leaderboard.rounds(b, nil, 10)
+  assertEq(rounds[2].trafficRunnerOnly, true)
+  assertEq(rounds[1].trafficRunnerOnly, nil)
+  assertEq(rounds[3].trafficRunnerOnly, nil)
+end)
+
 test("a timeline cause reaches the rounds list", function()
   local b = leaderboard.load(nil)
   local r = run("Bob", 60)

@@ -57,7 +57,8 @@ const MODES = [
 ]
 const TRAFFIC = [
   { value: "all", label: "All traffic" },
-  { value: "with", label: "With traffic" },
+  { value: "with", label: "Traffic per player" },
+  { value: "runner", label: "Traffic for the runner" },
   { value: "without", label: "No traffic" },
 ]
 

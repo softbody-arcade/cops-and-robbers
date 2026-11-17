@@ -26,7 +26,9 @@ local function matches(r, filter)
   if map ~= nil and r.map ~= map then return false end
   if mode ~= nil and (r.mode or "random") ~= mode then return false end
   local withTraffic = (tonumber(r.traffic) or 0) > 0
-  if traffic == "with" and not withTraffic then return false end
+  local runnerOnly = withTraffic and r.trafficRunnerOnly == true
+  if traffic == "with" and (not withTraffic or runnerOnly) then return false end
+  if traffic == "runner" and not runnerOnly then return false end
   if traffic == "without" and withTraffic then return false end
   return true
 end
@@ -255,6 +257,7 @@ function M.rounds(board, filter, limit)
       endReason = r.endReason, catchers = r.catchers, model = r.model, mode = r.mode, buildStep = r.buildStep,
       timeline = type(r.timeline) == "table" and #r.timeline > 0 and r.timeline or nil, cops = cops,
       tracked = type(r.timeline) == "table" or nil, sky = r.sky, traffic = r.traffic,
+      trafficRunnerOnly = (tonumber(r.traffic) or 0) > 0 and r.trafficRunnerOnly == true or nil,
     }
   end
   return list, #ids

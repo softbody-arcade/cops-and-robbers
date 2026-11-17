@@ -127,14 +127,14 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 ## Leaderboards (saved permanently)
 
 - Shown in the Cops and Robbers Leaderboard app, and the top 3 in the result card after each round.
-- **Saved per run:** runner, time, map, car, the round's conditions (time of day, weather, day length, date, whether weather affected driving), the traffic per player, end reason (caught, called, escaped, disconnect), catchers, every cop in the round with their seconds of sight, the runner's hidden time and how often they lost the cops, the car mode and build step, and a timeline of what happened (cops released, lost the cops, crash penalties, illegal resets, teleports, parts changes, the end).
+- **Saved per run:** runner, time, map, car, the round's conditions (time of day, weather, day length, date, whether weather affected driving), the traffic per player and whether it was for the runner only, end reason (caught, called, escaped, disconnect), catchers, every cop in the round with their seconds of sight, the runner's hidden time and how often they lost the cops, the car mode and build step, and a timeline of what happened (cops released, lost the cops, crash penalties, illegal resets, teleports, parts changes, the end).
 - A cancelled round and a practice round are never recorded.
 - **Fresh start in 1.7.0:** the leaderboard file has a new format. An older file is moved to `data/leaderboard-1.6.json` (kept, not used).
 
 ## Leaderboard app
 
 - "Cops and Robbers Leaderboard" has the look of the game's multiplayer scoreboard: rows on dark cards, gold, silver and bronze rank badges, and your own row outlined in orange. Open it from the lobby card or Esc > UI Apps. It has a ✕, refreshes after every round and hides itself during a round.
-- **Filters:** map (this map by default, all maps, or any map that has runs, shown with its real name), car mode (all, random, evolving) and traffic (all, with traffic, no traffic; rounds from before traffic count as no traffic).
+- **Filters:** map (this map by default, all maps, or any map that has runs, shown with its real name), car mode (all, random, evolving) and traffic (all, traffic per player, traffic for the runner, no traffic; rounds from before traffic count as no traffic, and rounds with traffic from before 2.9.3 count as per player).
 - **Runners:** each player's best survival time with the car (and the map when showing all maps). When you are not in the visible top, your own row is pinned at the bottom with your rank.
 - **Cops:** catches per player, assists and the fastest catch.
 - **Players:** runs, best, catches and assists per player; click a player for all stats and their last rounds:
@@ -144,7 +144,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
   - **Hidden from cops:** the share of their chases the runner spent out of every cop's sight.
   - **Lost the cops:** how often they broke all cops' sight.
   - Rounds played with sight off (`sightMaxMeters = 0`) show "–" for the last two.
-- **Rounds:** every recorded round, newest first, grouped by day. Each row shows how it ended, who ran and who caught them, the time of day, car (followed by the conditions, for example "Gavril D-Series · Night · Rain · Traffic") and build step, the survival time, and a yellow line for anything that went wrong ("Kim reset illegally"). Click a round for its timeline and each cop's share of the chase with the runner in sight. Rounds saved before the timeline existed show only the result. Long lists load more with "Show more".
+- **Rounds:** every recorded round, newest first, grouped by day. Each row shows how it ended, who ran and who caught them, the time of day, car (followed by the conditions, for example "Gavril D-Series · Night · Rain · Traffic") and build step, the survival time, and a yellow line for anything that went wrong ("Kim reset illegally"). Click a round for its timeline and each cop's share of the chase with the runner in sight; its heading names the traffic ("Traffic: 5 per player", or "Traffic: 5 for the runner"). Rounds saved before the timeline existed show only the result. Long lists load more with "Show more".
 
 ## Traffic
 

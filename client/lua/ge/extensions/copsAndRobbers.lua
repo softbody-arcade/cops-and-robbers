@@ -563,7 +563,10 @@ local function onBoardState(data)
   addCar(d.mine)
   for _, row in ipairs(type(d.rounds) == "table" and d.rounds or {}) do
     addCar(row)
-    if type(row) == "table" then row.skyLabel = sky.label(row.sky) end
+    if type(row) == "table" then
+      row.skyLabel = sky.label(row.sky)
+      row.trafficLabel = traffic.label(row.traffic, row.trafficRunnerOnly)
+    end
   end
   local names = {}
   local function name(id)

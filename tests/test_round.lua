@@ -1480,6 +1480,20 @@ test("a run records the traffic it was played with", function()
   assertEq(find(quiet:endCalled(20, 2), "record").run.traffic, nil)
 end)
 
+test("a run records traffic for the runner only, and only with traffic", function()
+  local function recorded(opts)
+    local r = round.new((config.merge(nil)))
+    r:start(0, 1, 2, players, opts)
+    r:vehiclePicked(1, 2, "pickup", "cfg", players)
+    r:go(1, 3)
+    r:tick(4, stillCars(), {}); r:tick(11, stillCars(), {})
+    return find(r:endCalled(20, 2), "record").run
+  end
+  assertEq(recorded({ traffic = 5, trafficRunnerOnly = true }).trafficRunnerOnly, true)
+  assertEq(recorded({ traffic = 5 }).trafficRunnerOnly, nil)
+  assertEq(recorded({ traffic = 0, trafficRunnerOnly = true }).trafficRunnerOnly, nil)
+end)
+
 local FREE = "Free reset (cop crashed into you)"
 
 local function stateOf(fx, pid)
