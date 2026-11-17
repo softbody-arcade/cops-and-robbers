@@ -35,6 +35,7 @@ M.LEFTOVER_INTERVAL = 1
 M.FLARE_TYPE = "BNG_LightFlare_1"
 M.FLARE_STEP = 0.05
 M.HIT_MARGIN = 2
+M.SIGHT_RANGE = 400
 
 local FIELDS = {
   { "brightness", M.BRIGHTNESS }, { "range", M.RANGE_MIN }, { "innerAngle", 8 }, { "outerAngle", 16 },
@@ -48,13 +49,15 @@ end
 function M.set(state, d, clock)
   state.failed = nil
   if type(d) ~= "table" or type(d.phase) ~= "string" then
-    state.phase, state.reason, state.endsAt, state.seed = nil, nil, nil, nil
+    state.phase, state.reason, state.endsAt, state.seed, state.guided = nil, nil, nil, nil, false
     return
   end
   local seconds = tonumber(d.seconds)
   state.phase, state.reason = d.phase, d.reason
   state.endsAt = seconds and clock + seconds or nil
   state.seed = tonumber(d.seed)
+  state.guided = d.guided == true
+  state.flightFailed = nil
 end
 
 function M.tracking(state)
@@ -65,24 +68,22 @@ function M.resetCover(state)
   state.cover, state.sent, state.lastCheck = shelter.new(), false, nil
 end
 
-function M.coverTick(state, clock, obj, castUp, castRay)
+function M.coverTick(state, clock, obj, castRay)
   if state.lastCheck and clock - state.lastCheck < M.COVER_INTERVAL then return nil end
   state.lastCheck = clock
-  local p = obj:getPosition()
-  local roofed
-  if state.flight and castRay and not state.failed then
+  local f = state.flight
+  local covered = true
+  if f and castRay then
+    local p = obj:getPosition()
     local dir = obj.getDirectionVector and obj:getDirectionVector()
-    local seen = shelter.inSight(state.flight.pos, p, M.COVER_HEIGHT, dir and dir.x or 0, dir and dir.y or 0, castRay)
-    roofed = not seen
-  else
-    roofed = shelter.roofed(vec3(p.x, p.y, p.z + M.COVER_HEIGHT), castUp) and true or false
+    covered = not shelter.inSight(f.pos, p, M.COVER_HEIGHT, dir and dir.x or 0, dir and dir.y or 0, castRay, M.SIGHT_RANGE)
   end
   if not state.sent then
     state.sent = true
-    state.cover = { covered = roofed, pending = nil, count = 0 }
-    return roofed
+    state.cover = { covered = covered, pending = nil, count = 0 }
+    return covered
   end
-  if shelter.step(state.cover, roofed) then return state.cover.covered end
+  if shelter.step(state.cover, covered) then return state.cover.covered end
   return nil
 end
 
@@ -307,7 +308,13 @@ end
 
 local function carVelocity(state, target, car, dt)
   local last, kept = state.lastCar, state.carVel
-  local jumped = last and (car.x - last.x) ^ 2 + (car.y - last.y) ^ 2 + (car.z - last.z) ^ 2 > M.JUMP_METERS ^ 2
+  local jumped = false
+  if last then
+    local jx, jy, jz = car.x - last.x, car.y - last.y, car.z - last.z
+    jumped = jx * jx + jy * jy + jz * jz > M.JUMP_METERS ^ 2
+    local k = state.lastKnown
+    if jumped and k then state.lastKnown = vec3(k.x + jx, k.y + jy, k.z + jz) end
+  end
   state.lastCar = vec3(car.x, car.y, car.z)
   if kept and (dt <= 0 or jumped) then return kept end
   local v
@@ -324,8 +331,8 @@ local function carVelocity(state, target, car, dt)
 end
 
 local function dropFlight(state)
-  if state.light then removeLight(state) end
   state.flight, state.leftAt, state.flightRandom = nil, nil, nil
+  if state.light then removeLight(state) end
 end
 
 local function fly(state, phase, last, car, carVel, dt, clock, random)
@@ -335,23 +342,121 @@ local function fly(state, phase, last, car, carVel, dt, clock, random)
     if not f then
       state.flightRandom = state.seed and flight.seeded(state.seed) or random
       random = state.flightRandom
-      if last == "arriving" or last == "refuelling" then
-        state.flight = flight.arrive(car, random, carVel)
+      local fresh = last == "arriving" or last == "refuelling"
+      if phase == "searching" then
+        if fresh then
+          local spot = last == "refuelling" and state.lastKnown or car
+          f = flight.arrive(car, random, carVel, spot)
+          flight.search(f, spot)
+        else
+          f = flight.at(car, carVel, random, car)
+        end
+        state.sweepAt, state.retargetAt = clock, clock
+      elseif fresh then
+        f = flight.arrive(car, random, carVel)
       else
-        state.flight = flight.at(car, carVel, random)
+        f = flight.at(car, carVel, random)
       end
+      state.flight = f
     elseif f.leaving then
       flight.resume(f)
       state.leftAt = nil
     end
   elseif phase == "refuelling" then
     if f and not f.leaving then
-      flight.leave(f, car, state.flightRandom or random)
+      flight.leave(f, f.spot or car, state.flightRandom or random)
       state.leftAt = clock
     end
   elseif f then
     dropFlight(state)
   end
+end
+
+local function finite(n)
+  return type(n) == "number" and n == n and n ~= math.huge and n ~= -math.huge
+end
+
+local function exitAhead(state, car, target, carVel, tunnelExit)
+  local dirX, dirY = 0, 0
+  if carVel.x * carVel.x + carVel.y * carVel.y > 1 then
+    dirX, dirY = carVel.x, carVel.y
+  elseif target.getDirectionVector then
+    local d = target:getDirectionVector()
+    if d then dirX, dirY = d.x, d.y end
+  end
+  local r = tunnelExit(car, dirX, dirY, state.seed)
+  if not r then return nil end
+  return r.x, r.y, r.z
+end
+
+local function spotFor(state, car, target, carVel, opts)
+  local tunnelExit = opts and opts.tunnelExit
+  if tunnelExit then
+    local ok, x, y, z = pcall(exitAhead, state, car, target, carVel, tunnelExit)
+    if not ok then
+      if not state.tunnelLogged then
+        state.tunnelLogged = true
+        log("E", "cnr_heli", "tunnel exit failed: " .. tostring(x))
+      end
+    elseif finite(x) and finite(y) and finite(z) then
+      return vec3(x, y, z)
+    end
+  end
+  return vec3(car.x, car.y, car.z)
+end
+
+local function retarget(state, f, phase, last, car, target, carVel, clock, opts)
+  if phase == "tracking" then
+    if f.spot then
+      flight.follow(f, car, carVel)
+      state.retargetAt = clock
+    end
+    state.lastKnown = vec3(car.x, car.y, car.z)
+    return
+  end
+  if phase ~= "searching" then return end
+  local spot
+  if last == "tracking" then
+    spot = state.guided and car or spotFor(state, car, target, carVel, opts)
+  elseif state.guided and not state.wasGuided then
+    spot = car
+  elseif state.wasGuided and not state.guided then
+    spot = spotFor(state, car, target, carVel, opts)
+  elseif f.spot == nil then
+    spot = state.lastKnown or car
+  end
+  if spot then
+    flight.search(f, spot)
+    state.sweepAt, state.retargetAt = clock, clock
+  end
+  if state.guided then
+    f.spot = vec3(car.x, car.y, car.z)
+    f.spotVel = vec3(carVel.x, carVel.y, carVel.z)
+    state.lastKnown = vec3(car.x, car.y, car.z)
+  else
+    f.spotVel = vec3(0, 0, 0)
+  end
+end
+
+local function flightTick(state, target, phase, last, clock, opts)
+  if not target then
+    state.missingSince = state.missingSince or clock
+    local up = phase == "tracking" or phase == "searching" or phase == "refuelling"
+    if state.flight and (not up or (state.leftAt and clock - state.leftAt >= M.DEPART_SECONDS)) then
+      dropFlight(state)
+    end
+    return
+  end
+  state.missingSince = nil
+  local car = target:getPosition()
+  local dt = state.lastClock and clock - state.lastClock or 0
+  state.lastClock = clock
+  local carVel = carVelocity(state, target, car, dt)
+  fly(state, phase, last, car, carVel, dt, clock, state.random or math.random)
+  local f = state.flight
+  if f and not f.leaving then retarget(state, f, phase, last, car, target, carVel, clock, opts) end
+  if state.leftAt and clock - state.leftAt >= M.DEPART_SECONDS then dropFlight(state) end
+  state.wasGuided = state.guided
 end
 
 local function leftover(state, clock)
@@ -398,20 +503,15 @@ local function beamTick(state, car, clock, opts)
   end
 end
 
-local function tickLight(state, target, night, clock, opts)
+local function tickLight(state, target, phase, last, night, clock, opts)
   local random = state.random or math.random
   if state.light and not scenetree.findObject(M.LIGHT_NAME) then forgetLight(state) end
   if not target then
     if leftover(state, clock) then removeLight(state) end
     return
   end
-  local phase, last = state.phase, state.lightPhase
-  state.lightPhase = phase
   local car = target:getPosition()
-  local dt = state.lastClock and clock - state.lastClock or 0
-  state.lastClock = clock
-  fly(state, phase, last, car, carVelocity(state, target, car, dt), dt, clock, random)
-  local desired = phase == "tracking" and night
+  local desired = phase == "tracking" and night and state.flight ~= nil
   if phase ~= last then
     if phase == "tracking" then
       if desired and (last == "arriving" or last == "refuelling") then
@@ -436,21 +536,33 @@ local function tickLight(state, target, night, clock, opts)
     end
   end
   if state.light and not (state.flight and advance(state, car, clock)) then removeLight(state) end
-  if state.leftAt and clock - state.leftAt >= M.DEPART_SECONDS then dropFlight(state) end
   if state.light then beamTick(state, car, clock, opts) end
 end
 
 function M.lightTick(state, target, night, clock, opts)
   clock = clock or 0
+  local phase, last = state.phase, state.lightPhase
+  if not state.flightFailed then
+    local ok, err = pcall(flightTick, state, target, phase, last, clock, opts)
+    if not ok then
+      pcall(dropFlight, state)
+      state.flightFailed = true
+      if not state.flightLogged then
+        state.flightLogged = true
+        log("E", "cnr_heli", "helicopter flight stopped: " .. tostring(err))
+      end
+    end
+  end
   if state.failed then
     if leftover(state, clock) then pcall(removeLight, state) end
-    return
+  else
+    local ok = pcall(tickLight, state, target, phase, last, night, clock, opts)
+    if not ok then
+      pcall(removeLight, state)
+      state.failed = true
+    end
   end
-  local ok = pcall(tickLight, state, target, night, clock, opts)
-  if not ok then
-    pcall(removeLight, state)
-    state.failed = true
-  end
+  if target then state.lightPhase = phase end
 end
 
 function M.wantsNight(state)
@@ -463,6 +575,8 @@ function M.clear(state)
   state.flight, state.leftAt, state.lastClock, state.lastCar, state.carVel = nil, nil, nil, nil, nil
   state.flightRandom, state.seed = nil, nil
   state.beamFailed = nil
+  state.lastKnown, state.guided, state.wasGuided, state.sweepAt, state.retargetAt = nil, nil, nil, nil, nil
+  state.flightFailed, state.flightLogged, state.missingSince, state.tunnelLogged = nil, nil, nil, nil
   M.resetCover(state)
 end
 

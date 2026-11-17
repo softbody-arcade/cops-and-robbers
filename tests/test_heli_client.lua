@@ -19,8 +19,8 @@ local function load()
 end
 
 local target = { getPosition = function() return pos end }
-local function open() return nil end
-local function roofAll() return 1 end
+local function seeAll() return nil end
+local function blockAll() return 1 end
 
 local function seeded(seed)
   local x = seed
@@ -46,37 +46,39 @@ local function atFlight(obj)
   assertEq(state.lightPos.x, f.x); assertEq(state.lightPos.y, f.y); assertEq(state.lightPos.z, f.z)
 end
 
+local function flightUp()
+  heli.set(state, { phase = "tracking" }, 0)
+  heli.lightTick(state, target, false, 0)
+  assertEq(state.flight ~= nil, true)
+end
+
 test("the first cover check reports not covered, then only changes", function()
   load()
-  assertEq(heli.coverTick(state, 1, target, open), false)
-  assertEq(heli.coverTick(state, 2, target, open), nil)
-  assertEq(heli.coverTick(state, 3, target, open), nil)
+  flightUp()
+  assertEq(heli.coverTick(state, 1, target, seeAll), false)
+  assertEq(heli.coverTick(state, 2, target, seeAll), nil)
+  assertEq(heli.coverTick(state, 3, target, seeAll), nil)
 end)
 
 test("cover checks are spaced by the interval", function()
   load()
-  assertEq(heli.coverTick(state, 1, target, open), false)
-  assertEq(heli.coverTick(state, 1.1, target, roofAll), nil)
-  assertEq(heli.coverTick(state, 1.3, target, roofAll), nil)
-  assertEq(heli.coverTick(state, 1.4, target, roofAll), nil)
-  assertEq(heli.coverTick(state, 1.6, target, roofAll), true)
+  flightUp()
+  assertEq(heli.coverTick(state, 1, target, seeAll), false)
+  assertEq(heli.coverTick(state, 1.1, target, blockAll), nil)
+  assertEq(heli.coverTick(state, 1.3, target, blockAll), nil)
+  assertEq(heli.coverTick(state, 1.4, target, blockAll), nil)
+  assertEq(heli.coverTick(state, 1.6, target, blockAll), true)
 end)
 
 test("cover needs two equal checks to switch and is resent after a reset", function()
   load()
-  assertEq(heli.coverTick(state, 1, target, open), false)
-  assertEq(heli.coverTick(state, 2, target, roofAll), nil)
-  assertEq(heli.coverTick(state, 3, target, roofAll), true)
-  assertEq(heli.coverTick(state, 4, target, roofAll), nil)
+  flightUp()
+  assertEq(heli.coverTick(state, 1, target, seeAll), false)
+  assertEq(heli.coverTick(state, 2, target, blockAll), nil)
+  assertEq(heli.coverTick(state, 3, target, blockAll), true)
+  assertEq(heli.coverTick(state, 4, target, blockAll), nil)
   heli.resetCover(state)
-  assertEq(heli.coverTick(state, 5, target, roofAll), true)
-end)
-
-test("the cover check is cast from above the car", function()
-  load()
-  local z
-  heli.coverTick(state, 1, target, function(p) z = p.z end)
-  assertEq(z, 5 + heli.COVER_HEIGHT)
+  assertEq(heli.coverTick(state, 5, target, blockAll), true)
 end)
 
 test("with a helicopter, cover comes from its line of sight", function()
@@ -84,36 +86,21 @@ test("with a helicopter, cover comes from its line of sight", function()
   heli.set(state, { phase = "tracking" }, 0)
   heli.lightTick(state, target, true, 0)
   assertEq(state.flight ~= nil, true)
-  local blockAll = function() return 1 end
-  local seeAll = function() return nil end
-  assertEq(heli.coverTick(state, 1, target, open, blockAll), true)
-  assertEq(heli.coverTick(state, 2, target, roofAll, seeAll), nil)
-  assertEq(heli.coverTick(state, 3, target, roofAll, seeAll), false)
-  assertEq(heli.coverTick(state, 4, target, open, blockAll), nil)
-  assertEq(heli.coverTick(state, 5, target, open, blockAll), true)
+  assertEq(heli.coverTick(state, 1, target, blockAll), true)
+  assertEq(heli.coverTick(state, 2, target, seeAll), nil)
+  assertEq(heli.coverTick(state, 3, target, seeAll), false)
+  assertEq(heli.coverTick(state, 4, target, blockAll), nil)
+  assertEq(heli.coverTick(state, 5, target, blockAll), true)
 end)
 
-test("a failed light stops the flight, so cover falls back to the roof check", function()
+test("cover is covered without a helicopter", function()
   load()
-  heli.set(state, { phase = "tracking" }, 0)
-  heli.lightTick(state, target, true, 0)
-  assertEq(state.flight ~= nil, true)
-  state.failed = true
+  heli.set(state, { phase = "arriving" }, 0)
+  heli.lightTick(state, target, false, 0)
+  assertEq(state.flight, nil)
   local rays = 0
-  local blockAll = function() rays = rays + 1; return 1 end
-  assertEq(heli.coverTick(state, 1, target, open, blockAll), false)
+  assertEq(heli.coverTick(state, 1, target, function() rays = rays + 1; return nil end), true)
   assertEq(rays, 0)
-  assertEq(heli.coverTick(state, 2, target, roofAll, blockAll), nil)
-  assertEq(heli.coverTick(state, 3, target, roofAll, blockAll), true)
-  assertEq(rays, 0)
-end)
-
-test("without a helicopter the roof check decides", function()
-  load()
-  local blockAll = function() return 1 end
-  assertEq(heli.coverTick(state, 1, target, open, blockAll), false)
-  assertEq(heli.coverTick(state, 2, target, open, blockAll), nil)
-  assertEq(heli.coverTick(state, 3, target, open, blockAll), nil)
 end)
 
 test("the searchlight exists only while tracking at night", function()
@@ -1247,4 +1234,478 @@ test("a short refuel resumes and ignores the new seed", function()
   assertEq(state.flight, f)
   assertEq(state.flight.side, side)
   assertEq(state.flightRandom, gen)
+end)
+
+local function status(c, ph, extra, opts, tgt, isNight)
+  local d = { phase = ph }
+  for k, v in pairs(extra or {}) do d[k] = v end
+  heli.set(state, d, c)
+  heli.lightTick(state, tgt or target, isNight or false, c, opts)
+end
+
+local function moveCar(to, speed, dt)
+  local dx, dy, dz = to.x - pos.x, to.y - pos.y, to.z - pos.z
+  local d = math.sqrt(dx * dx + dy * dy + dz * dz)
+  if d <= 0 then return end
+  local s = math.min(d, speed * dt)
+  pos = vec3(pos.x + dx / d * s, pos.y + dy / d * s, pos.z + dz / d * s)
+end
+
+local function flyTo(c, to, opts, driveTo, speed, each)
+  while c < to - 1e-9 do
+    c = c + 0.05
+    if driveTo then moveCar(driveTo, speed, 0.05) end
+    heli.lightTick(state, target, false, c, opts)
+    if each then each(c) end
+  end
+  return c
+end
+
+local function samePos(a, b, eps, msg)
+  assertNear(a.x, b.x, eps, msg); assertNear(a.y, b.y, eps, msg); assertNear(a.z, b.z, eps, msg)
+end
+
+local function exitStub(result)
+  local calls = {}
+  local opts = { tunnelExit = function(car, dirX, dirY, seed)
+    calls[#calls + 1] = { car = copyPos(car), dirX = dirX, dirY = dirY, seed = seed }
+    if type(result) == "function" then return result(car) end
+    return result
+  end }
+  return opts, calls
+end
+
+local function countLogs(fn)
+  local saved, lines = _G.log, 0
+  _G.log = function() lines = lines + 1 end
+  local ok, err = pcall(fn)
+  _G.log = saved
+  if not ok then error(err, 0) end
+  return lines
+end
+
+local function lose(c, opts, extra)
+  status(c, "tracking", extra, opts)
+  c = flyTo(c, c + 1, opts)
+  c = c + 0.05
+  status(c, "searching", extra, opts)
+  return c
+end
+
+test("arrival searches where the runner was", function()
+  load()
+  state.random = seeded(2)
+  local a = copyPos(pos)
+  status(0, "arriving")
+  status(1, "searching")
+  local f = state.flight
+  assertEq(f ~= nil, true)
+  local b = vec3(a.x + 200, a.y, a.z)
+  flyTo(1, 61, nil, b, 10, function(c)
+    if c >= 51 then assertNear(horiz(f.pos, a), 60, 3, tostring(c)) end
+  end)
+  assertNear(horiz(pos, b), 0, 1e-6)
+  assertEq(state.flight, f)
+  assertNear(horiz(f.pos, a), 60, 3)
+  samePos(f.spot, a, 1e-9)
+end)
+
+test("a refuel returns to the last known spot", function()
+  load()
+  state.random = seeded(3)
+  local a = copyPos(pos)
+  status(0, "tracking")
+  local c = flyTo(0, 2)
+  c = c + 0.05
+  status(c, "refuelling")
+  local left, dropped = c, nil
+  c = flyTo(c, left + 10, nil, vec3(a.x + 100, a.y, a.z), 10, function(t)
+    if not dropped and not state.flight then dropped = t end
+  end)
+  assertNear(dropped, left + heli.DEPART_SECONDS, 0.051)
+  assertNear(horiz(pos, a), 100, 1e-6)
+  c = c + 0.05
+  status(c, "searching")
+  local f = state.flight
+  assertNear(horiz(f.pos, a), heli.APPROACH_DISTANCE, 1)
+  flyTo(c, c + 60)
+  assertEq(state.flight, f)
+  assertNear(horiz(f.pos, a), 60, 3)
+end)
+
+test("a short refuel from tracking searches the last known spot", function()
+  load()
+  state.random = seeded(4)
+  local a = copyPos(pos)
+  status(0, "tracking")
+  local c = flyTo(0, 2)
+  c = c + 0.05
+  status(c, "refuelling")
+  local f = state.flight
+  c = flyTo(c, c + 4.95, nil, vec3(a.x + 200, a.y, a.z), 10)
+  c = c + 0.05
+  status(c, "searching")
+  assertEq(state.flight, f)
+  assertEq(f.leaving, nil)
+  samePos(f.spot, a, 1e-9)
+  assertEq(state.sweepAt, c)
+end)
+
+test("a short refuel from searching back to tracking follows the car", function()
+  load()
+  state.random = seeded(5)
+  local s = copyPos(pos)
+  status(0, "arriving")
+  status(1, "searching")
+  local f = state.flight
+  local c = flyTo(1, 29.95, nil, vec3(s.x + 200, s.y, s.z), 10)
+  samePos(f.spot, s, 1e-9)
+  c = c + 0.05
+  status(c, "refuelling")
+  assertEq(f.leaving ~= nil, true)
+  c = flyTo(c, c + 4.95)
+  c = c + 0.05
+  status(c, "tracking")
+  assertEq(state.flight, f)
+  assertEq(f.spot, nil)
+  assertEq(f.mode, "circle")
+  flyTo(c, c + 30)
+  assertEq(state.flight, f)
+  assertEq(dist3(f.pos, pos) < 70, true, tostring(dist3(f.pos, pos)))
+end)
+
+test("a flight created in tracking has no spot", function()
+  load()
+  status(0, "arriving")
+  status(1, "tracking")
+  assertEq(state.flight ~= nil, true)
+  assertEq(state.flight.spot, nil)
+  local c = flyTo(1, 3)
+  c = c + 0.05
+  status(c, "refuelling")
+  c = flyTo(c, c + heli.DEPART_SECONDS + 0.5)
+  assertEq(state.flight, nil)
+  c = c + 0.05
+  status(c, "tracking")
+  assertEq(state.flight ~= nil, true)
+  assertEq(state.flight.spot, nil)
+  load()
+  status(0, "tracking")
+  assertEq(state.flight ~= nil, true)
+  assertEq(state.flight.spot, nil)
+end)
+
+test("losing the runner in a tunnel searches the exit", function()
+  load()
+  state.random = seeded(6)
+  local e = vec3(pos.x + 300, pos.y, pos.z)
+  local opts, calls = exitStub(e)
+  local c = lose(0, opts, { seed = 42 })
+  samePos(state.flight.spot, e, 1e-9)
+  assertEq(#calls, 1)
+  samePos(calls[1].car, pos, 1e-9)
+  assertEq(calls[1].seed, 42)
+  assertEq(calls[1].seed, state.seed)
+  opts, calls = exitStub(nil)
+  c = lose(c + 0.05, opts, { seed = 42 })
+  assertEq(#calls, 1)
+  samePos(state.flight.spot, pos, 1e-9)
+  local failing = { tunnelExit = function() error("walk failed") end }
+  local lines = countLogs(function()
+    c = lose(c + 0.05, failing, { seed = 42 })
+    samePos(state.flight.spot, pos, 1e-9)
+    c = lose(c + 0.05, failing, { seed = 42 })
+    samePos(state.flight.spot, pos, 1e-9)
+  end)
+  assertEq(lines, 1)
+  assertEq(state.flightFailed, nil)
+  assertEq(state.flight ~= nil, true)
+end)
+
+test("the tunnel direction is the car's velocity above 1 m/s, otherwise its facing", function()
+  for _, case in ipairs({ { speed = 10, x = 1, y = 0 }, { speed = 0.5, x = 0, y = 1 } }) do
+    load()
+    local opts, calls = exitStub(nil)
+    local car = {
+      getPosition = function() return pos end,
+      getVelocity = function() return vec3(case.speed, 0, 0) end,
+      getDirectionVector = function() return vec3(0, 1, 0) end,
+    }
+    status(0, "tracking", nil, opts, car)
+    status(0.05, "searching", nil, opts, car)
+    assertEq(#calls, 1)
+    local dx, dy = calls[1].dirX, calls[1].dirY
+    assertNear(dx * case.y - dy * case.x, 0, 1e-9, tostring(case.speed))
+    assertEq(dx * case.x + dy * case.y > 0, true, tostring(case.speed))
+  end
+end)
+
+test("guided follows the runner and recomputes when guidance ends", function()
+  load()
+  state.random = seeded(7)
+  local vel = vec3(0, 0, 0)
+  local car = {
+    getPosition = function() return pos end,
+    getVelocity = function() return vel end,
+    getDirectionVector = function() return vec3(1, 0, 0) end,
+  }
+  local e
+  local opts, calls = exitStub(function(p)
+    e = vec3(p.x + 250, p.y, p.z)
+    return e
+  end)
+  local s = copyPos(pos)
+  status(0, "searching", nil, opts, car)
+  local f = state.flight
+  samePos(f.spot, s, 1e-9)
+  local c = 0
+  for _ = 1, 10 do
+    c = c + 0.05
+    heli.lightTick(state, car, false, c, opts)
+  end
+  heli.set(state, { phase = "searching", guided = true }, c)
+  vel = vec3(20, 0, 0)
+  for _ = 1, 200 do
+    c = c + 0.05
+    pos = vec3(pos.x + 1, pos.y, pos.z)
+    heli.lightTick(state, car, false, c, opts)
+    samePos(f.spot, pos, 1e-9, tostring(c))
+    samePos(f.spotVel, vel, 1e-9, tostring(c))
+  end
+  assertEq(#calls, 0)
+  c = c + 0.05
+  pos = vec3(pos.x + 1, pos.y, pos.z)
+  status(c, "searching", nil, opts, car)
+  assertEq(#calls, 1)
+  samePos(f.spot, e, 1e-9)
+  samePos(f.spotVel, vec3(0, 0, 0), 0)
+  for _ = 1, 20 do
+    c = c + 0.05
+    heli.lightTick(state, car, false, c, opts)
+  end
+  assertEq(#calls, 1)
+  samePos(f.spot, e, 1e-9)
+end)
+
+test("guidance starting restarts the circle and the sweep from the runner", function()
+  load()
+  state.random = seeded(8)
+  local opts = exitStub(function(p) return vec3(p.x + 500, p.y, p.z) end)
+  local c = lose(0, opts)
+  local f = state.flight
+  assertNear(horiz(f.spot, pos), 500, 1e-9)
+  c = flyTo(c, c + 10, opts)
+  assertEq(state.sweepAt < c, true)
+  c = c + 0.05
+  status(c, "searching", { guided = true }, opts)
+  assertEq(state.sweepAt, c)
+  assertEq(state.retargetAt, c)
+  samePos(f.spot, pos, 1e-9)
+  assertNear(f.searchAngle, math.atan2(f.pos.y - pos.y, f.pos.x - pos.x), 1e-9)
+end)
+
+test("guided and lost in the same tick search the runner", function()
+  load()
+  local opts, calls = exitStub(function(p) return vec3(p.x + 300, p.y, p.z) end)
+  lose(0, opts, { guided = true })
+  samePos(state.flight.spot, pos, 1e-9)
+  assertEq(#calls, 0)
+end)
+
+test("a refuel while searching far away flies away from the spot", function()
+  load()
+  local e = vec3(pos.x + 1000, pos.y, pos.z)
+  local opts = exitStub(e)
+  local lostAt = lose(0, opts, { seed = 9 })
+  local f = state.flight
+  samePos(f.spot, e, 1e-9)
+  local c, left = lostAt, nil
+  while not left do
+    c = c + 0.05
+    assertEq(c < lostAt + 200, true)
+    if c >= lostAt + 60 and math.abs(math.atan2(f.pos.y - e.y, f.pos.x - e.x)) <= math.rad(30) then
+      status(c, "refuelling", { seed = 9 }, opts)
+      left = c
+    else
+      heli.lightTick(state, target, false, c, opts)
+    end
+  end
+  assertEq(f.leaving ~= nil, true)
+  assertNear(horiz(f.leaving, e), 400, 1e-6)
+  local closest = horiz(f.pos, pos)
+  while state.flight do
+    c = c + 0.05
+    heli.lightTick(state, target, false, c, opts)
+    closest = math.min(closest, horiz(f.pos, pos))
+  end
+  assertNear(c, left + heli.DEPART_SECONDS, 0.051)
+  assertEq(closest > 900, true, tostring(closest))
+  assertEq(horiz(f.pos, pos) > 1000, true, tostring(horiz(f.pos, pos)))
+end)
+
+test("a car jump moves the last known spot", function()
+  load()
+  local a = copyPos(pos)
+  status(0, "tracking")
+  local c = flyTo(0, 1)
+  c = c + 0.05
+  status(c, "refuelling")
+  local left = c
+  c = flyTo(c, left + 9)
+  assertEq(state.flight, nil)
+  pos = vec3(pos.x + 2000, pos.y, pos.z)
+  c = flyTo(c, left + 10)
+  c = c + 0.05
+  status(c, "searching")
+  samePos(state.flight.spot, vec3(a.x + 2000, a.y, a.z), 1e-9)
+end)
+
+test("clear forgets the last known spot and guidance", function()
+  load()
+  local a = copyPos(pos)
+  status(0, "searching", { guided = true })
+  status(0.05, "tracking", { guided = true })
+  heli.lightTick(state, nil, false, 0.1)
+  samePos(state.lastKnown, a, 1e-9)
+  assertEq(state.guided, true)
+  assertEq(state.wasGuided, true)
+  assertEq(state.sweepAt ~= nil, true)
+  assertEq(state.retargetAt ~= nil, true)
+  assertEq(state.missingSince, 0.1)
+  state.flightFailed, state.flightLogged, state.tunnelLogged = true, true, true
+  heli.clear(state)
+  for _, k in ipairs({ "lastKnown", "guided", "wasGuided", "sweepAt", "retargetAt", "flightFailed", "flightLogged", "missingSince", "tunnelLogged" }) do
+    assertEq(not state[k], true, k)
+  end
+  pos = vec3(a.x + 700, a.y + 300, a.z)
+  status(1, "refuelling")
+  status(2, "searching")
+  samePos(state.flight.spot, pos, 1e-9)
+end)
+
+test("an invalid status clears guided", function()
+  load()
+  heli.set(state, { phase = "searching", guided = true }, 0)
+  assertEq(state.guided, true)
+  heli.set(state, nil, 1)
+  assertEq(state.guided, false)
+end)
+
+test("a light failure doesn't stop the flight", function()
+  load()
+  local make = _G.createObject
+  _G.createObject = function(class)
+    if class == "SpotLight" then return nil end
+    return make(class)
+  end
+  heli.set(state, { phase = "tracking" }, 0)
+  heli.lightTick(state, target, true, 0)
+  assertEq(state.failed, true)
+  local f = state.flight
+  assertEq(f ~= nil, true)
+  local c, start, prev = 0, copyPos(f.pos), copyPos(f.pos)
+  while c < 2 - 1e-9 do
+    c = c + 0.05
+    heli.lightTick(state, target, true, c)
+    assertEq(state.flight, f)
+    assertEq(dist3(f.pos, prev) > 0, true, tostring(c))
+    prev = copyPos(f.pos)
+  end
+  assertEq(dist3(f.pos, start) > 1, true, tostring(dist3(f.pos, start)))
+  local from
+  heli.coverTick(state, c, target, function(o)
+    from = from or copyPos(o)
+    return nil
+  end)
+  samePos(from, f.pos, 0)
+end)
+
+local function failingStep(fn)
+  local fl = require("copsAndRobbers/heliFlight")
+  local step = fl.step
+  fl.step = function() error("step failed") end
+  local ok, err = pcall(fn, function() fl.step = step end)
+  fl.step = step
+  if not ok then error(err, 0) end
+end
+
+test("a flight error drops the flight, logs once and counts as covered until the next status", function()
+  load()
+  status(0, "tracking")
+  assertEq(state.flight ~= nil, true)
+  local saved, lines = _G.log, 0
+  _G.log = function(_, _, msg)
+    if tostring(msg):find("helicopter flight stopped", 1, true) then lines = lines + 1 end
+  end
+  local ok, err = pcall(failingStep, function(restore)
+    local c = 0
+    for _ = 1, 10 do
+      c = c + 0.05
+      heli.lightTick(state, target, false, c)
+      assertEq(state.flight, nil)
+      assertEq(state.flightFailed, true)
+    end
+    assertEq(lines, 1)
+    assertEq(heli.coverTick(state, c, target, seeAll), true)
+    restore()
+    c = c + 0.05
+    heli.set(state, { phase = "tracking" }, c)
+    assertEq(state.flightFailed, nil)
+    heli.lightTick(state, target, false, c)
+    assertEq(state.flight ~= nil, true)
+  end)
+  _G.log = saved
+  if not ok then error(err, 0) end
+end)
+
+test("the flight keeps its timers without a target", function()
+  load()
+  status(0, "tracking")
+  local c = flyTo(0, 2)
+  c = c + 0.05
+  status(c, "refuelling")
+  local left = state.leftAt
+  assertEq(left, c)
+  c = c + 0.05
+  heli.lightTick(state, nil, false, c)
+  local first = c
+  assertEq(state.flight ~= nil, true)
+  while state.flight and c < left + 20 do
+    c = c + 0.05
+    heli.lightTick(state, nil, false, c)
+  end
+  assertEq(state.flight, nil)
+  assertNear(c, left + heli.DEPART_SECONDS, 0.051)
+  assertEq(state.missingSince, first)
+end)
+
+test("a phase change reaches both parts on the same tick", function()
+  load()
+  state.random = seeded(2)
+  night(0, "arriving")
+  night(1, "tracking")
+  assertEq(state.flight ~= nil, true)
+  assertNear(horiz(state.flight.pos, pos), heli.APPROACH_DISTANCE, 1e-6)
+  assertEq(state.fx.mode, "approach")
+end)
+
+test("a flight error at night makes no light", function()
+  load()
+  night(0, "tracking")
+  assertEq(fake.objects[LIGHT] ~= nil, true)
+  local made = 0
+  local make = _G.createObject
+  _G.createObject = function(class)
+    if class == "SpotLight" then made = made + 1 end
+    return make(class)
+  end
+  failingStep(function()
+    local c = 0
+    for _ = 1, 10 do
+      c = c + 0.05
+      heli.lightTick(state, target, true, c)
+    end
+  end)
+  assertEq(made, 0)
+  assertEq(fake.objects[LIGHT], nil)
 end)

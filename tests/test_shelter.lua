@@ -113,3 +113,14 @@ test("the points sit 1.5 m up and 2 m ahead and behind", function()
     assertEq(math.abs(from.z + c.dir.z * c.d - want[i].z) < 1e-6, true)
   end
 end)
+
+test("points beyond the range are not seen", function()
+  local calls = 0
+  local cast = function() calls = calls + 1; return nil end
+  local from = v(0, 0, 1.5)
+  assertEq(shelter.inSight(from, v(401, 0, 0), 1.5, 0, 0, cast, 400), false)
+  assertEq(calls, 0)
+  assertEq(shelter.inSight(from, v(399, 0, 0), 1.5, 0, 0, cast, 400), true)
+  assertEq(calls, 1)
+  assertEq(shelter.inSight(from, v(401, 0, 0), 1.5, 0, 0, cast), true)
+end)

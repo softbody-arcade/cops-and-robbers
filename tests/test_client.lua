@@ -2491,7 +2491,7 @@ test("the runner reports cover from the head start, once, and a cop does not", f
   assertEq(env.lastSent("cnr_cover"), nil)
   env.fire("cnr_runnerGo", { headStartSeconds = 7 })
   env.tick(0.5)
-  assertEq(env.lastSent("cnr_cover").covered, false)
+  assertEq(env.lastSent("cnr_cover").covered, true)
   assertEq(sentCount(env, "cnr_cover"), 1)
   env.fire("cnr_release", {})
   env.tick(1)
@@ -2776,14 +2776,29 @@ test("an error in the cover check is logged once and the game keeps running", fu
 end)
 
 test("practice as a cop: the practising cop's game reports cover for the AI runner", function()
-  local env = bootClient()
-  local aiRunner = practiceAsCop(env)
-  env.blockFrom = vec3(aiRunner.pos.x, aiRunner.pos.y, aiRunner.pos.z + 1.5)
-  env.tick(1)
-  assertEq(env.lastSent("cnr_cover"), nil)
-  env.fire("cnr_runnerGo", { headStartSeconds = 7 })
-  env.tick(0.5)
-  assertEq(env.lastSent("cnr_cover").covered, true)
+  local saved = _G.castRayStatic
+  local ok, err = pcall(function()
+    local env = bootClient()
+    practiceAsCop(env)
+    env.tick(1)
+    assertEq(env.lastSent("cnr_cover"), nil)
+    local fromAbove = 0
+    _G.castRayStatic = function(origin, dir, len)
+      if dir.z == 1 then return len + 100 end
+      if origin.z > 40 then fromAbove = fromAbove + 1 end
+      return 1
+    end
+    env.fire("cnr_runnerGo", { headStartSeconds = 7 })
+    env.fire("cnr_heli", { phase = "searching", seconds = 100, seed = 7 })
+    env.tick(1)
+    assertEq(env.lastSent("cnr_cover").covered, true)
+    assertEq(fromAbove > 0, true)
+    _G.castRayStatic = function(origin, dir, len) return len + 100 end
+    env.tick(1)
+    assertEq(env.lastSent("cnr_cover").covered, false)
+  end)
+  _G.castRayStatic = saved
+  if not ok then error(err, 0) end
 end)
 
 test("the game asks whether it is night only while the helicopter tracks or a light is up", function()
