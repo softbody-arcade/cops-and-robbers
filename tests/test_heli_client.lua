@@ -975,6 +975,34 @@ beamTest("the occlusion ray ends the beam at a hit, every 0.25 s, ignoring a hit
   assertEq(drawn.far > 0.9 * axisLen, true, tostring(drawn.far))
 end)
 
+beamTest("a low beam's ray hitting the road at the lit spot does not cut the beam; a deck 5 m above the spot does", function()
+  load()
+  local mode, casts = "none", 0
+  stubBeam(function(origin, dir, maxDist)
+    casts = casts + 1
+    if mode == "road" then return maxDist - 2.6 end
+    if mode == "deck" then return maxDist - 5 / -dir.z end
+    return maxDist
+  end)
+  heli.set(state, { phase = "tracking" }, 0)
+  drawsAt(0, true)
+  state.flight.pos = vec3(pos.x - 257, pos.y, pos.z + 50)
+  mode = "road"
+  assertEq(drawsAt(0.3, true) > 0, true)
+  assertEq(casts, 2)
+  local axisLen = dist3(state.lightPos, state.aimPos)
+  local elevation = math.deg(math.asin((state.lightPos.z - state.aimPos.z) / axisLen))
+  assertNear(elevation, 11, 1, "elevation")
+  assertEq(state.beamHit, nil)
+  assertEq(drawn.far > axisLen, true, tostring(drawn.far))
+  mode = "deck"
+  assertEq(drawsAt(0.6, true) > 0, true)
+  assertEq(casts, 3)
+  axisLen = dist3(state.lightPos, state.aimPos)
+  assertEq(state.beamHit ~= nil and state.beamHit < axisLen - 20, true, tostring(state.beamHit))
+  assertEq(drawn.far <= state.beamHit + 1e-6, true, tostring(drawn.far))
+end)
+
 test("the glare's scale follows the light's brightness through the fly-in", function()
   load()
   state.random = seeded(2)

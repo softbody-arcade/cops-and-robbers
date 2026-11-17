@@ -75,16 +75,23 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
 - **A vertical axis:** the ring's basis uses the x axis as the helper when the axis is nearly vertical (|axis.z| / |axis| > 0.9), so there's no NaN.
 - **Blocked by solid things:** every 0.25 s a static ray is cast from the light, `castRayStatic(lightPos, normalized direction to the aim point, axis length)`.
   - A hit means the returned distance d < the axis length. Something is in the way, like a bridge deck, a building or a tunnel roof, so D = d and every side line ends at most d from the light.
-  - Hits within 2 m of the aim point count as no hit: that's the road itself, or an aim point just under it.
+  - A hit counts only when d < the axis length − 2 m and the hit point (lightPos.z + the direction's z × d) is more than 2 m above the aim point's height (`aimPos.z` + 2). Any other hit counts as no hit.
+    - Within 2 m of the aim point along the ray: that's the road itself, or an aim point just under it.
+    - At or below `aimPos.z` + 2: that's the road at the lit spot. A low beam's ray meets the road h/sin(elevation) before the aim point, with h the aim point's height above the road (`aimPos.z` is the car's reference height). That is more than 2 m once h > 2·sin(elevation): 0.38 m at 11°, 0.68 m at 20°. Counting it would end the beam's upper half as an upright half-disc over the car.
+    - Bridge decks and tunnel roofs over the car are well above `aimPos.z` + 2, so they still count.
   - When `castRayStatic` doesn't exist, the ray is skipped.
   - When D is 1 m or less (the light sits at or inside something), there's no beam.
 - **Strength by the round's weather** (the client's round weather, `traffic.weather()`):
   - clear, cloudy and rain: 0.06, 0.12 and 0.2
   - any other value, nil (the map's own weather) and BeamNG.Earth: 0.06
   - storm, fog and snow ground the helicopter, so there's no light then
-- **Near the camera:** each quad fades by the distance from the camera to the nearest of its four vertices.
+- **Near the camera:** each quad fades by the camera's distance to the nearest of its four edges: its two side-line segments and its two ring segments (rungs).
   - The fade runs from invisible within 6 m to full at 18 m.
-  - Each vertex's distance is worked out once per frame (at most 1,320 vertices). So no drawn quad has a vertex within 6 m of the camera, and even a wide beam shows no sheets next to it.
+  - Side lines: once per side line (per layer and side), the camera is projected onto the line and the parameter kept; for each segment that parameter is clamped to the segment's [t_j, t_(j+1)] and the distance taken (at most 1,200 segments a frame).
+  - Rungs: each ring segment's distance is worked out once per frame (at most 1,320).
+  - Distances are kept squared; the square root is taken only for a quad's nearest edge, and only when it is within 18 m.
+  - Why edges, not vertices: a segment is a tenth of its side line, so a quad can be tens of metres long; and on a low beam the quads near the ground are slivers about 100 m wide along the ring but only a few metres between their rungs. A camera can be inside such a quad with every vertex, or both side-line edges, beyond 18 m.
+  - So no drawn quad has an edge within 6 m of the camera, and the quad the camera is in isn't drawn. What's left: on a low beam (11° or less), the middle of a quad wider than 12 m both ways can still come within 6 m of the camera, at no more than 2 of 10 alpha steps at the strongest weather.
 - **Glare:**
   - The light gets `flareType` `BNG_LightFlare_1`.
   - `flareScale` follows `fx.bright`, rewritten when it changes by more than 0.05.
@@ -154,9 +161,10 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - the call count: 1,200 with a camera, 2,400 without, at strength 0.2
   - a vertical beam draws only finite vertices
   - a 60° beam's far ring lies at `aimPos.z` ± ε
-  - no drawn quad has a vertex within 6 m of the camera
+  - no drawn quad has an edge within 6 m of the camera: with the camera at the aim point; and for an 11° beam and an 8° beam at a 400 m slant, with the camera 0.5 m above the centre of the near-ground quad whose nearest vertex is farthest from its centre, and 0.5 m above the middle of the longest side-line segment, where the camera's own quad isn't drawn either
   - an occlusion hit at half the axis leaves no vertex further than the hit + 1e-6 from the light, also for 30° and 11° beams
   - a hit within 2 m of the aim point is ignored
+  - at about 11°, a hit 2.6 m short of the aim point (the road at the lit spot, under `aimPos.z` + 2) is ignored; a deck 5 m above the spot ends the beam
   - a hit 0.1 m from the light gives no beam (no NaN)
   - a low (11°) beam has no vertex further than 2 × the axis length + 1e-6 from the light
   - nothing is drawn without a light, by day, with the setting off, or at a slant over 400 m

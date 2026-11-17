@@ -131,6 +131,73 @@ test("no drawn quad has a vertex within 6 m of the camera", function()
   assertEq(n < beam.LAYERS * beam.SEGMENTS * beam.SIDES, true)
 end)
 
+local function segmentDist(p, a, b)
+  local ux, uy, uz = b.x - a.x, b.y - a.y, b.z - a.z
+  local l2 = ux * ux + uy * uy + uz * uz
+  local t = math.max(0, math.min(1, ((p.x - a.x) * ux + (p.y - a.y) * uy + (p.z - a.z) * uz) / l2))
+  return dist(p, vec3(a.x + ux * t, a.y + uy * t, a.z + uz * t))
+end
+
+local function quadKey(q)
+  local keys = { key(q.a), key(q.b), key(q.c), key(q.d) }
+  table.sort(keys)
+  return table.concat(keys, "|")
+end
+
+local function centre(q)
+  return vec3((q.a.x + q.b.x + q.c.x + q.d.x) / 4, (q.a.y + q.b.y + q.c.y + q.d.y) / 4, (q.a.z + q.b.z + q.c.z + q.d.z) / 4)
+end
+
+local function widestNearGround(out, n, groundZ)
+  local best, found = -1, nil
+  for i = 1, n do
+    local q = out[i]
+    if math.min(q.a.z, q.b.z, q.c.z, q.d.z) < groundZ + 1e-6 then
+      local c = centre(q)
+      local m = math.min(dist(c, q.a), dist(c, q.b), dist(c, q.c), dist(c, q.d))
+      if m > best then best, found = m, q end
+    end
+  end
+  return found, best
+end
+
+local function longestSideLine(out, n)
+  local best, found = -1, nil
+  for i = 1, n do
+    local q = out[i]
+    if dist(q.a, q.d) > best then best, found = dist(q.a, q.d), q end
+  end
+  return found, best
+end
+
+test("no drawn quad has an edge within 6 m of the camera, even on long or sheared low-beam quads", function()
+  for _, beamCase in ipairs({ { 11, 60 }, { 8, 400 * math.sin(math.rad(8)) } }) do
+    local light, aim = slanted(beamCase[1], beamCase[2])
+    local plain = {}
+    local all = beam.quads(light, aim, STRENGTH, nil, nil, plain)
+    local wide, wideReach = widestNearGround(plain, all, aim.z)
+    local long, longReach = longestSideLine(plain, all)
+    assertEq(wideReach > 18 and longReach > 36, true, beamCase[1] .. " " .. wideReach .. " " .. longReach)
+    local wc = centre(wide)
+    local la, ld = long.a, long.d
+    for _, probe in ipairs({
+      { cam = vec3(wc.x, wc.y, wc.z + 0.5), quad = quadKey(wide) },
+      { cam = vec3((la.x + ld.x) / 2, (la.y + ld.y) / 2, (la.z + ld.z) / 2 + 0.5), quad = quadKey(long) },
+    }) do
+      local out = {}
+      local n = beam.quads(light, aim, STRENGTH, nil, probe.cam, out)
+      assertEq(n > 0, true)
+      for i = 1, n do
+        local q = out[i]
+        local m = math.min(segmentDist(probe.cam, q.a, q.b), segmentDist(probe.cam, q.b, q.c),
+          segmentDist(probe.cam, q.c, q.d), segmentDist(probe.cam, q.d, q.a))
+        assertEq(m >= beam.NEAR, true, beamCase[1] .. " " .. m)
+        assertEq(quadKey(q) ~= probe.quad, true, tostring(beamCase[1]))
+      end
+    end
+  end
+end)
+
 test("an occlusion hit at half the axis ends every side line there", function()
   for _, elevation in ipairs({ 60, 30, 11 }) do
     local light, aim = slanted(elevation, 50)

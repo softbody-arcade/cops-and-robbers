@@ -362,7 +362,7 @@ local function castBeam(state, lightPos, aimPos, clock)
   local axisLen = math.sqrt(ax * ax + ay * ay + az * az)
   if not (axisLen > 0) then return end
   local d = tonumber(castRayStatic(lightPos, vec3(ax / axisLen, ay / axisLen, az / axisLen), axisLen))
-  if d and d < axisLen - M.HIT_MARGIN then state.beamHit = d end
+  if d and d < axisLen - M.HIT_MARGIN and lightPos.z + az / axisLen * d > aimPos.z + M.HIT_MARGIN then state.beamHit = d end
 end
 
 local function drawBeam(state, clock, weather)
