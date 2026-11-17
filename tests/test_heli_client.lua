@@ -455,6 +455,7 @@ test("back from a short refuel the helicopter turns back from where it is, brigh
   atFlight(obj)
   assertEq(dist3(obj.pos, before) <= 70 * 0.05 + 1e-9, true, tostring(dist3(obj.pos, before)))
   assertEq(tonumber(obj.fields.brightness) <= b0 + heli.BRIGHTNESS * 0.05, true, obj.fields.brightness)
+  assertEq(tonumber(obj.fields.brightness) >= b0 - 1e-6, true, obj.fields.brightness)
   assertEq(horiz(state.aimPos, aimBefore) < 2, true, tostring(horiz(state.aimPos, aimBefore)))
   local prevAim, worst = copyPos(state.aimPos), 0
   local resumed, stop = c, c + heli.APPROACH_SECONDS + 0.5
@@ -762,4 +763,75 @@ test("night ending during the fly-away puts the drift into the aim offset, so th
   assertEq(state.fx.mode, "fade")
   assertEq(aimOff() > 20, true, tostring(aimOff()))
   assertEq(horiz(state.aimPos, aimBefore) < 2, true, tostring(horiz(state.aimPos, aimBefore)))
+end)
+
+test("a 2 km jump on the refuel's first tick leaves the leaving point 400 m out on the helicopter's side, never over the runner", function()
+  for _, gap in ipairs({ 0, 3 }) do
+    load()
+    state.random = seeded(4)
+    night(0, "tracking")
+    local c = run(0, 5, 0.05)
+    local f = state.flight
+    local bx, by = f.pos.x - pos.x, f.pos.y - pos.y
+    local bl = math.sqrt(bx * bx + by * by)
+    heli.set(state, { phase = "refuelling" }, c)
+    for _ = 1, gap do
+      c = c + 0.05
+      heli.lightTick(state, nil, true, c)
+    end
+    pos = vec3(pos.x - bx / bl * 2000, pos.y - by / bl * 2000, pos.z)
+    c = c + 0.05
+    heli.lightTick(state, target, true, c)
+    assertEq(state.flight, f)
+    local lx, ly = f.leaving.x - pos.x, f.leaving.y - pos.y
+    local hx, hy = f.pos.x - pos.x, f.pos.y - pos.y
+    local ll, hl = math.sqrt(lx * lx + ly * ly), math.sqrt(hx * hx + hy * hy)
+    assertNear(ll, 400, 1e-6, tostring(gap))
+    assertNear(f.leaving.z - pos.z, 80, 1e-6, tostring(gap))
+    assertEq(hl < 60, true, tostring(hl))
+    assertEq((lx * hx + ly * hy) / (ll * hl) >= 0.5 - 1e-9, true, tostring(gap))
+    if gap == 0 then
+      assertEq(state.fx.mode, "depart")
+      assertEq((state.fx.dir.x * hx + state.fx.dir.y * hy) / hl >= 0.5 - 1e-9, true)
+    end
+    local closest = hl
+    while state.flight do
+      c = c + 0.05
+      heli.lightTick(state, target, true, c)
+      if state.flight then closest = math.min(closest, horiz(f.pos, pos)) end
+    end
+    assertEq(closest > 20, true, gap .. " " .. closest)
+  end
+end)
+
+test("arrive, at and resume on the same tick as a 2 km jump place the helicopter by the car's new position", function()
+  load()
+  state.random = seeded(6)
+  night(0, "arriving")
+  pos = vec3(pos.x + 2000, pos.y, pos.z)
+  night(0.05, "tracking")
+  assertNear(horiz(state.flight.pos, pos), heli.APPROACH_DISTANCE, 1)
+
+  load()
+  state.random = seeded(6)
+  local flight = require("copsAndRobbers/heliFlight")
+  heli.lightTick(state, target, true, 0)
+  pos = vec3(pos.x + 2000, pos.y, pos.z)
+  night(0.05, "tracking")
+  assertNear(dist3(state.flight.pos, flight.target(state.flight, pos, vec3(0, 0, 0))), 0, 1)
+
+  load()
+  state.random = seeded(6)
+  night(0, "tracking")
+  local c = run(0, 5, 0.05) + 0.05
+  night(c, "refuelling")
+  c = run(c, c + 3, 0.05)
+  local f = state.flight
+  local before = horiz(f.pos, pos)
+  pos = vec3(pos.x + 2000, pos.y, pos.z)
+  c = c + 0.05
+  night(c, "tracking")
+  assertEq(state.flight, f)
+  assertEq(f.leaving, nil)
+  assertNear(horiz(f.pos, pos), before, 70 * 0.05 + 1e-6)
 end)

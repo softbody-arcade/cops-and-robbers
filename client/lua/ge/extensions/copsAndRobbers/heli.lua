@@ -306,6 +306,7 @@ end
 
 local function fly(state, phase, last, car, carVel, dt, clock, random)
   local f = state.flight
+  if f then flight.step(f, car, carVel, dt) end
   if phase == "tracking" or phase == "searching" then
     if not f then
       if last == "arriving" or last == "refuelling" then
@@ -325,7 +326,6 @@ local function fly(state, phase, last, car, carVel, dt, clock, random)
   elseif f then
     dropFlight(state)
   end
-  if state.flight then flight.step(state.flight, car, carVel, dt) end
 end
 
 local function leftover(state, clock)
