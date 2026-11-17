@@ -90,7 +90,7 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `copSpawnMinMeters` / `copSpawnMaxMeters` | 50 / 150 | Cop start distance from the runner, by road |
 | `crashSpeedLossKmh` | 50 | Speed lost within 0.5 s that counts as a crash (~2.8 G) |
 | `crashPenaltySeconds` | 10 | Freeze for the cop at fault |
-| `helicopter` | true | Police helicopter that tracks the runner in the open |
+| `helicopter` | true | Police helicopter that searches for the runner and tracks them while it sees them |
 | `helicopterArrivalSeconds` | 60 | It arrives this long after the cops are released (0 = at release) |
 | `helicopterUpSeconds` | 120 | How long it flies before it refuels (more than 0) |
 | `helicopterRefuelSeconds` | 90 | How long it is away refuelling (0 = stays up) |

@@ -103,20 +103,28 @@ test("cover is covered without a helicopter", function()
   assertEq(rays, 0)
 end)
 
-test("the searchlight exists only while tracking at night", function()
+test("the searchlight exists only while the helicopter is up at night", function()
+  for _, ph in ipairs({ "tracking", "searching" }) do
+    load()
+    heli.set(state, { phase = ph, seconds = 30 }, 0)
+    assertEq(heli.tracking(state), ph == "tracking")
+    heli.lightTick(state, target, false)
+    assertEq(fake.objects["cnr_heli_light"], nil, ph)
+    heli.lightTick(state, target, true)
+    assertEq(fake.objects["cnr_heli_light"].class, "SpotLight", ph)
+    heli.lightTick(state, target, true)
+    assertEq(fake.objects["cnr_heli_light"] ~= nil, true, ph)
+    heli.lightTick(state, target, false, 1)
+    assertEq(fake.objects["cnr_heli_light"] ~= nil, true, ph)
+    heli.lightTick(state, target, false, 1 + heli.FADE_SECONDS + 0.1)
+    assertEq(fake.objects["cnr_heli_light"], nil, ph)
+  end
   load()
-  heli.set(state, { phase = "tracking", seconds = 30 }, 0)
-  assertEq(heli.tracking(state), true)
-  heli.lightTick(state, target, false)
-  assertEq(fake.objects["cnr_heli_light"], nil)
-  heli.lightTick(state, target, true)
-  assertEq(fake.objects["cnr_heli_light"].class, "SpotLight")
-  heli.lightTick(state, target, true)
-  assertEq(fake.objects["cnr_heli_light"] ~= nil, true)
-  heli.lightTick(state, target, false, 1)
-  assertEq(fake.objects["cnr_heli_light"] ~= nil, true)
-  heli.lightTick(state, target, false, 1 + heli.FADE_SECONDS + 0.1)
-  assertEq(fake.objects["cnr_heli_light"], nil)
+  for i, ph in ipairs({ "arriving", "refuelling", "grounded" }) do
+    heli.set(state, { phase = ph }, i)
+    heli.lightTick(state, target, true, i)
+    assertEq(fake.objects["cnr_heli_light"], nil, ph)
+  end
 end)
 
 test("the searchlight casts shadows, so a bridge deck or tunnel roof blocks the beam", function()
@@ -130,10 +138,15 @@ test("the searchlight goes when the phase ends or on clear", function()
   load()
   heli.set(state, { phase = "tracking" }, 0)
   heli.lightTick(state, target, true)
+  local obj = fake.objects["cnr_heli_light"]
+  assertEq(obj ~= nil, true)
   heli.set(state, { phase = "searching" }, 1)
   heli.lightTick(state, target, true)
+  assertEq(fake.objects["cnr_heli_light"], obj)
+  heli.set(state, nil, 2)
+  heli.lightTick(state, target, true)
   assertEq(fake.objects["cnr_heli_light"], nil)
-  heli.set(state, { phase = "tracking" }, 2)
+  heli.set(state, { phase = "tracking" }, 3)
   heli.lightTick(state, target, true)
   assertEq(fake.objects["cnr_heli_light"] ~= nil, true)
   heli.clear(state)
@@ -283,29 +296,80 @@ local function run(from, to, step)
   return c
 end
 
-test("a helicopter that just arrived flies in from 300 m and sweeps onto the car", function()
+local SWEEP_SPEED = 126
+
+local function size(v) return math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z) end
+
+local function aimGuard(clock)
+  local g = { clock = clock, s = 0, switches = 0 }
+  local function remember()
+    g.prev = state.aimPos and copyPos(state.aimPos)
+    g.retarget = state.retargetAt
+    local s = state.aimSwitch
+    if s ~= g.switch or (s and s.at ~= g.at) then
+      g.switch, g.at, g.s = s, s and s.at, s and size(s) or 0
+    end
+  end
+  remember()
+  function g.check(c)
+    local dt = math.max(0, c - g.clock)
+    g.clock = c
+    if g.prev and state.aimPos then
+      local move = dist3(state.aimPos, g.prev)
+      local bound = g.s * (1 - math.exp(-dt / heli.AIM_SWITCH_SECONDS)) + SWEEP_SPEED * dt + 1
+      assertEq(move <= bound, true, string.format("%.2f: the aim moved %.3f m, more than %.3f", c, move, bound))
+      if state.retargetAt ~= g.retarget then
+        g.switches = g.switches + 1
+        assertEq(move < 1, true, string.format("%.2f: the aim moved %.3f m on a change of target", c, move))
+      end
+    end
+    remember()
+  end
+  return g
+end
+
+local function nightRun(from, to, opts, each)
+  local c = from
+  while c < to - 1e-9 do
+    c = c + 0.05
+    heli.lightTick(state, target, true, c, opts)
+    if each then each(c) end
+  end
+  return c
+end
+
+local function nightStatus(c, ph, extra, opts)
+  local d = { phase = ph }
+  for k, v in pairs(extra or {}) do d[k] = v end
+  heli.set(state, d, c)
+  heli.lightTick(state, target, true, c, opts)
+end
+
+test("arriving → searching at night ramps from 0 over 8 s", function()
   load()
   state.random = seeded(2)
   night(0, "arriving")
   assertEq(fake.objects[LIGHT], nil)
   assertEq(state.flight, nil)
-  night(1, "tracking")
+  night(1, "searching")
   local obj = fake.objects[LIGHT]
   assertEq(obj ~= nil, true)
   atFlight(obj)
+  local spot = copyPos(state.flight.spot)
   local p = obj.pos
-  assertEq(math.abs(horiz(p, pos) - heli.APPROACH_DISTANCE) < 15, true)
-  assertEq(math.abs(p.z - pos.z - heli.APPROACH_HEIGHT) < 1, true)
-  assertNear(horiz(state.aimPos, pos), heli.AIM_SWEEP_OFFSET, 1)
+  assertNear(horiz(p, spot), heli.APPROACH_DISTANCE, 15)
+  assertNear(p.z - spot.z, heli.APPROACH_HEIGHT, 1)
   assertEq(tonumber(obj.fields.brightness) < heli.BRIGHTNESS * 0.05, true, obj.fields.brightness)
-  run(1, 1 + heli.APPROACH_SECONDS / 2, 0.05)
+  local function near(c)
+    assertEq(horiz(state.aimPos, spot) <= heli.SWEEP_RADIUS + 1, true, c .. " " .. horiz(state.aimPos, spot))
+  end
+  near(1)
+  nightRun(1, 1 + heli.APPROACH_SECONDS / 2, nil, near)
   assertNear(tonumber(obj.fields.brightness), heli.BRIGHTNESS / 2, heli.BRIGHTNESS * 0.02)
-  run(1 + heli.APPROACH_SECONDS / 2, 1 + heli.APPROACH_SECONDS + 0.5, 0.05)
+  nightRun(1 + heli.APPROACH_SECONDS / 2, 1 + heli.APPROACH_SECONDS + 0.5, nil, near)
   atFlight(obj)
   assertEq(tonumber(obj.fields.brightness), heli.BRIGHTNESS)
-  assertEq(horiz(obj.pos, pos) < 100, true, tostring(horiz(obj.pos, pos)))
-  run(1 + heli.APPROACH_SECONDS + 0.5, 20, 0.05)
-  assertEq(aimOff() <= heli.NUDGE_RADIUS + 0.3, true, tostring(aimOff()))
+  assertEq(fake.objects[LIGHT], obj)
 end)
 
 local function departs(obj, c, from, fieldFades)
@@ -345,33 +409,23 @@ test("a departing helicopter flies away with the light, which fades and goes wit
   assertEq(dist3(obj.pos, pos) > d0 + 150, true, tostring(dist3(obj.pos, pos)))
 end)
 
-test("going under cover cuts the light at once", function()
-  load()
-  night(0, "tracking")
-  run(0, 3, 0.05)
-  night(3, "searching")
-  assertEq(fake.objects[LIGHT], nil)
-end)
-
-test("a re-found runner gets the light at once at full brightness, the aim 8 m off then swinging in", function()
+test("the light stays on while searching", function()
   load()
   state.random = seeded(9)
   night(0, "tracking")
-  night(1, "searching")
-  assertEq(fake.objects[LIGHT], nil)
-  night(5, "tracking")
+  local c = run(0, 3, 0.05)
   local obj = fake.objects[LIGHT]
   assertEq(obj ~= nil, true)
-  assertEq(tonumber(obj.fields.brightness), heli.BRIGHTNESS)
-  atFlight(obj)
-  assertEq(math.abs(aimOff() - heli.REFOUND_AIM_OFFSET) < 1e-6, true)
-  run(5, 5.5, 0.05)
-  assertEq(tonumber(obj.fields.brightness), heli.BRIGHTNESS)
-  assertEq(aimOff() < heli.REFOUND_AIM_OFFSET - 0.5, true, tostring(aimOff()))
-  assertEq(aimOff() > 2, true, tostring(aimOff()))
-  run(5.5, 9, 0.05)
-  assertEq(aimOff() <= heli.NUDGE_RADIUS + 0.3, true, tostring(aimOff()))
-  assertEq(tonumber(obj.fields.brightness), heli.BRIGHTNESS)
+  c = c + 0.05
+  night(c, "searching")
+  local function on(t)
+    assertEq(fake.objects[LIGHT], obj, tostring(t))
+    assertEq(state.fx.bright, 1, tostring(t))
+    assertEq(tonumber(obj.fields.brightness), heli.BRIGHTNESS, tostring(t))
+  end
+  on(c)
+  nightRun(c, c + 5, nil, on)
+  assertEq(state.flight.spot ~= nil, true)
 end)
 
 test("clear deletes the light at once mid-approach and mid-depart", function()
@@ -503,14 +557,20 @@ test("back from a short refuel the helicopter turns back from where it is, brigh
   assertEq(aimOff() < heli.AIM_MAX_OFFSET, true, tostring(aimOff()))
 end)
 
-test("going under cover during the fly-in cuts the light at once", function()
+test("going searching during the fly-in keeps the light and its ramp", function()
   load()
   night(0, "arriving")
   night(1, "tracking")
   run(1, 3, 0.05)
-  assertEq(fake.objects[LIGHT] ~= nil, true)
+  local obj = fake.objects[LIGHT]
+  assertEq(obj ~= nil, true)
   night(3.05, "searching")
-  assertEq(fake.objects[LIGHT], nil)
+  assertEq(fake.objects[LIGHT], obj)
+  assertEq(state.fx.mode, "approach")
+  assertEq(tonumber(obj.fields.brightness) < heli.BRIGHTNESS, true, obj.fields.brightness)
+  run(3.05, 9.5, 0.05)
+  assertEq(fake.objects[LIGHT], obj)
+  assertEq(tonumber(obj.fields.brightness), heli.BRIGHTNESS)
 end)
 
 test("a phase change while the target is missing for a moment is not lost", function()
@@ -597,34 +657,50 @@ test("the light sits at the helicopter through the fly-in, the hover, a night fa
   tick(100, true, "depart")
 end)
 
-test("under cover the light is cut while the helicopter flies on, and on the way out it is back at once at the helicopter", function()
+test("while searching the light stays at the helicopter as it circles the spot, and found again the aim swings to the car without a jump", function()
   load()
   state.random = seeded(12)
   night(0, "tracking")
   local c = run(0, 3, 0.05) + 0.05
+  local obj = fake.objects[LIGHT]
+  assertEq(obj ~= nil, true)
+  local g = aimGuard(c - 0.05)
   night(c, "searching")
-  assertEq(fake.objects[LIGHT], nil)
+  g.check(c)
+  assertEq(fake.objects[LIGHT], obj)
   local f = state.flight
   assertEq(f ~= nil, true)
+  local spot = copyPos(f.spot)
   local before = copyPos(f.pos)
   for _ = 1, 40 do
     local prev = copyPos(f.pos)
     c = c + 0.05
     pos = vec3(pos.x + 1, pos.y, pos.z)
-    heli.lightTick(state, target, false, c)
-    assertEq(fake.objects[LIGHT], nil)
+    heli.lightTick(state, target, true, c)
+    g.check(c)
+    assertEq(fake.objects[LIGHT], obj)
+    atFlight(obj)
+    assertEq(tonumber(obj.fields.brightness), heli.BRIGHTNESS)
     assertEq(dist3(f.pos, prev) > 0, true)
   end
   assertEq(state.flight, f)
+  assertNear(dist3(f.spot, spot), 0, 1e-9)
   assertEq(dist3(f.pos, before) > 3, true, tostring(dist3(f.pos, before)))
   c = c + 0.05
   night(c, "tracking")
-  local obj = fake.objects[LIGHT]
-  assertEq(obj ~= nil, true)
+  g.check(c)
+  assertEq(fake.objects[LIGHT], obj)
   assertEq(state.flight, f)
+  assertEq(f.spot, nil)
   assertEq(tonumber(obj.fields.brightness), heli.BRIGHTNESS)
   atFlight(obj)
-  assertNear(aimOff(), heli.REFOUND_AIM_OFFSET, 1e-6)
+  local found = c
+  c = nightRun(c, found + 3, nil, function(t)
+    g.check(t)
+    atFlight(obj)
+  end)
+  assertEq(g.switches, 2)
+  assertEq(horiz(state.aimPos, pos) <= heli.AIM_MAX_OFFSET + 1, true, tostring(horiz(state.aimPos, pos)))
 end)
 
 test("by day the helicopter still flies: arriving, tracking and refuelling make a flight and never a light, dropped after 8 s", function()
@@ -712,21 +788,29 @@ test("a 2 km car jump moves the helicopter with the car: the light's step matche
   end
 end)
 
-test("the light's range follows the slant to the car: 130 at 100 m, 120 at 60 m, capped, rewritten past 5 m", function()
+test("the light's range follows the slant to the aim point: 130 at 100 m, 120 at 60 m, capped, rewritten past 5 m", function()
   load()
   heli.set(state, { phase = "tracking" }, 0)
   heli.lightTick(state, target, true, 0)
   local obj = fake.objects[LIGHT]
+  local function want()
+    return math.min(400, math.floor(math.max(120, dist3(state.lightPos, state.aimPos) + 30) + 0.5))
+  end
   local function at(dx, dz)
     state.flight.pos = vec3(pos.x + dx, pos.y, pos.z + dz)
     heli.lightTick(state, target, true, 0)
     return tonumber(obj.fields.range)
   end
   assertEq(at(0, 100), 130)
+  assertEq(want(), 130)
   assertEq(at(0, 104), 130)
+  assertEq(want(), 134)
   assertEq(at(60, 0), 120)
+  assertEq(want(), 120)
   assertEq(at(0, 100.6), 131)
+  assertEq(want(), 131)
   assertEq(at(0, 1000), 400)
+  assertEq(want(), 400)
   assertEq(state.lightRange, 400)
 end)
 
@@ -740,7 +824,7 @@ test("the range is written when the light is created, even when the stored value
     return fake.objects[LIGHT]
   end
   local obj = flyIn(nil)
-  local want = math.floor(dist3(obj.pos, pos) + 30 + 0.5)
+  local want = math.floor(dist3(obj.pos, state.aimPos) + 30 + 0.5)
   assertEq(want > 300, true)
   assertEq(tonumber(obj.fields.range), want)
   obj = flyIn(want)
@@ -993,7 +1077,7 @@ beamTest("no beam by day, without a light, or at a slant over 400 m", function()
   heli.set(state, { phase = "tracking" }, 0)
   assertEq(drawsAt(0, false), 0)
   assertEq(fake.objects[LIGHT], nil)
-  heli.set(state, { phase = "searching" }, 1)
+  heli.set(state, { phase = "grounded", reason = "fog" }, 1)
   assertEq(drawsAt(1, true), 0)
   assertEq(fake.objects[LIGHT], nil)
   drawn.calls = 0
@@ -1708,4 +1792,416 @@ test("a flight error at night makes no light", function()
   end)
   assertEq(made, 0)
   assertEq(fake.objects[LIGHT], nil)
+end)
+
+test("tracking → refuelling → searching within 7 s keeps the same light object and ramps from its faded value", function()
+  load()
+  state.random = seeded(4)
+  night(0, "tracking")
+  local c = run(0, 2, 0.05)
+  local obj, f = fake.objects[LIGHT], state.flight
+  local spot = copyPos(pos)
+  local g = aimGuard(c)
+  night(2, "refuelling")
+  g.check(2)
+  c = 2
+  while c < 9 - 1e-9 do
+    c = c + 0.05
+    pos = vec3(pos.x, pos.y + 0.5, pos.z)
+    heli.lightTick(state, target, true, c)
+    g.check(c)
+  end
+  local before, b0 = copyPos(obj.pos), tonumber(obj.fields.brightness)
+  assertEq(b0 < heli.BRIGHTNESS * 0.5, true, tostring(b0))
+  c = c + 0.05
+  night(c, "searching")
+  g.check(c)
+  assertEq(fake.objects[LIGHT], obj)
+  assertEq(state.flight, f)
+  assertEq(f.leaving, nil)
+  atFlight(obj)
+  assertEq(dist3(obj.pos, before) <= 70 * 0.05 + 1e-9, true, tostring(dist3(obj.pos, before)))
+  local b = tonumber(obj.fields.brightness)
+  assertEq(b >= b0 - 1e-6 and b <= b0 + heli.BRIGHTNESS * 0.05, true, b0 .. " " .. b)
+  samePos(f.spot, spot, 1e-9)
+  assertEq(horiz(pos, spot) > 30, true)
+  nightRun(c, c + heli.APPROACH_SECONDS + 0.5, nil, g.check)
+  assertEq(fake.objects[LIGHT], obj)
+  assertEq(tonumber(obj.fields.brightness), heli.BRIGHTNESS)
+  assertEq(g.switches, 1)
+end)
+
+test("searching → refuelling → searching within 7 s keeps the spot and the light", function()
+  load()
+  state.random = seeded(10)
+  night(0, "arriving")
+  night(1, "searching")
+  local obj, f = fake.objects[LIGHT], state.flight
+  local spot = copyPos(f.spot)
+  local g = aimGuard(1)
+  local c = 1
+  local function drive(to)
+    while c < to - 1e-9 do
+      c = c + 0.05
+      pos = vec3(pos.x + 0.25, pos.y, pos.z)
+      heli.lightTick(state, target, true, c)
+      g.check(c)
+    end
+  end
+  drive(15)
+  c = c + 0.05
+  night(c, "refuelling")
+  g.check(c)
+  assertEq(f.leaving ~= nil, true)
+  assertEq(state.fx.mode, "depart")
+  drive(c + 6.5)
+  local b0 = tonumber(obj.fields.brightness)
+  assertEq(b0 < heli.BRIGHTNESS * 0.75, true, tostring(b0))
+  c = c + 0.05
+  night(c, "searching")
+  g.check(c)
+  assertEq(fake.objects[LIGHT], obj)
+  assertEq(state.flight, f)
+  assertEq(f.leaving, nil)
+  samePos(f.spot, spot, 1e-9)
+  local b = tonumber(obj.fields.brightness)
+  assertEq(b >= b0 - 1e-6 and b <= b0 + heli.BRIGHTNESS * 0.05, true, b0 .. " " .. b)
+  drive(c + heli.APPROACH_SECONDS + 0.5)
+  assertEq(fake.objects[LIGHT], obj)
+  assertEq(tonumber(obj.fields.brightness), heli.BRIGHTNESS)
+  samePos(f.spot, spot, 1e-9)
+  assertEq(horiz(pos, spot) > 30, true)
+end)
+
+test("the sweep spirals out and back", function()
+  load()
+  local spot = vec3(100, -50, 7)
+  local function out(t)
+    local p = heli.sweepPoint(spot, t)
+    assertEq(p.z, spot.z)
+    return horiz(p, spot)
+  end
+  assertNear(out(0), 0, 1e-9)
+  assertNear(out(10), 75, 1e-9)
+  assertNear(out(20), 150, 1e-9)
+  assertNear(out(30), 75, 1e-9)
+  assertNear(out(40), 0, 1e-9)
+  local prev, worst = heli.sweepPoint(spot, 0), 0
+  for i = 1, 8000 do
+    local p = heli.sweepPoint(spot, i * 0.01)
+    worst = math.max(worst, dist3(p, prev))
+    prev = p
+  end
+  assertEq(worst <= 1.3, true, tostring(worst))
+  local function bearing(t)
+    local p = heli.sweepPoint(spot, t)
+    return math.atan2(p.y - spot.y, p.x - spot.x)
+  end
+  assertNear(bearing(10), bearing(2), 1e-9)
+end)
+
+local function downwardRays(ground)
+  local stub = { rays = 0, ground = ground }
+  stub.cast = function(origin, dir, len)
+    if dir.x == 0 and dir.y == 0 and dir.z < 0 then
+      stub.rays = stub.rays + 1
+      stub.last = { origin = copyPos(origin), dir = copyPos(dir), len = len }
+      return stub.ground
+    end
+    return nil
+  end
+  return stub
+end
+
+local function withCast(cast, fn)
+  local saved = _G.castRayStatic
+  _G.castRayStatic = cast
+  local ok, err = pcall(fn)
+  _G.castRayStatic = saved
+  if not ok then error(err, 0) end
+end
+
+test("the sweep point sits on the ground", function()
+  load()
+  state.random = seeded(2)
+  local ray = downwardRays(108)
+  withCast(ray.cast, function()
+    night(0, "arriving")
+    assertEq(ray.rays, 0)
+    night(1, "searching")
+    local spot = copyPos(state.flight.spot)
+    assertEq(ray.rays, 1)
+    local first = heli.sweepPoint(spot, 0)
+    samePos(ray.last.origin, vec3(first.x, first.y, spot.z + heli.SWEEP_RAY_HEIGHT), 1e-9)
+    samePos(ray.last.dir, vec3(0, 0, -1), 0)
+    assertEq(ray.last.len, heli.SWEEP_RAY_LENGTH)
+    assertEq(state.aimSwitch, nil)
+    assertNear(state.aimPos.z, spot.z - 8, 1e-9)
+    local c = nightRun(1, 3, nil, function(t)
+      local p = heli.sweepPoint(spot, t - 1)
+      assertNear(horiz(state.aimPos, p), 0, 1e-9, tostring(t))
+      assertNear(state.aimPos.z, spot.z - 8, 1e-9, tostring(t))
+    end)
+    assertEq(ray.rays <= 10 and ray.rays >= 7, true, tostring(ray.rays))
+    ray.ground = nil
+    c = nightRun(c, c + 0.5)
+    assertNear(state.aimPos.z, spot.z, 1e-9)
+    local last
+    repeat
+      last = ray.rays
+      c = c + 0.05
+      heli.lightTick(state, target, true, c)
+    until ray.rays > last
+    c = c + 0.05
+    last = ray.rays
+    nightStatus(c, "searching", { guided = true })
+    assertEq(state.sweepAt, c)
+    assertEq(ray.rays, last + 1)
+    heli.lightTick(state, target, true, c + 0.05)
+    assertEq(ray.rays, last + 1)
+  end)
+end)
+
+test("the aim never jumps when the target changes", function()
+  load()
+  state.random = seeded(14)
+  local opts = exitStub(function(p) return vec3(p.x + 120, p.y, p.z) end)
+  nightStatus(0, "tracking", nil, opts)
+  local g = aimGuard(0)
+  local c = nightRun(0, 5, opts, g.check)
+  c = c + 0.05
+  nightStatus(c, "searching", nil, opts)
+  g.check(c)
+  assertNear(horiz(state.flight.spot, pos), 120, 1e-9)
+  c = nightRun(c, c + 20, opts, g.check)
+  assertEq(horiz(state.aimPos, state.flight.spot) > 100, true, tostring(horiz(state.aimPos, state.flight.spot)))
+  c = c + 0.05
+  nightStatus(c, "tracking", nil, opts)
+  g.check(c)
+  nightRun(c, c + 5, opts, g.check)
+  assertEq(g.switches, 2)
+  assertEq(horiz(state.aimPos, pos) <= heli.AIM_MAX_OFFSET + 1, true, tostring(horiz(state.aimPos, pos)))
+end)
+
+test("a refuel while searching flies away with the light", function()
+  load()
+  state.random = seeded(15)
+  local opts = exitStub(function(p) return vec3(p.x + 300, p.y, p.z) end)
+  nightStatus(0, "tracking", nil, opts)
+  local c = nightRun(0, 2, opts)
+  c = c + 0.05
+  nightStatus(c, "searching", nil, opts)
+  local f, obj = state.flight, fake.objects[LIGHT]
+  assertNear(horiz(f.spot, pos), 300, 1e-9)
+  c = nightRun(c, c + 30, opts)
+  c = c + 0.05
+  nightStatus(c, "refuelling", nil, opts)
+  local left = c
+  assertEq(f.leaving ~= nil, true)
+  assertEq(state.fx.mode, "depart")
+  local dx, dy = f.leaving.x - f.spot.x, f.leaving.y - f.spot.y
+  local len = math.sqrt(dx * dx + dy * dy)
+  assertNear(state.fx.dir.x, dx / len, 1e-9)
+  assertNear(state.fx.dir.y, dy / len, 1e-9)
+  while fake.objects[LIGHT] do
+    c = c + 0.05
+    heli.lightTick(state, target, true, c, opts)
+    if fake.objects[LIGHT] then
+      assertEq(state.flight, f)
+      atFlight(obj)
+      if c >= left + 7.5 then
+        assertEq(state.fx.bright < 0.2, true, tostring(state.fx.bright))
+        assertEq(tonumber(obj.fields.brightness) < heli.BRIGHTNESS * 0.2, true, obj.fields.brightness)
+      end
+    end
+  end
+  assertEq(state.flight, nil)
+  assertNear(c, left + heli.DEPART_SECONDS, 0.051)
+end)
+
+test("the range follows the aim point", function()
+  load()
+  state.random = seeded(16)
+  night(0, "arriving")
+  night(1, "searching")
+  local obj, f = fake.objects[LIGHT], state.flight
+  run(1, 21, 0.05)
+  assertEq(horiz(state.aimPos, f.spot) > 140, true, tostring(horiz(state.aimPos, f.spot)))
+  local want = math.min(400, math.floor(math.max(120, dist3(state.lightPos, state.aimPos) + 30) + 0.5))
+  assertEq(want > 125, true, tostring(want))
+  assertEq(math.abs(tonumber(obj.fields.range) - want) <= heli.RANGE_STEP, true, obj.fields.range .. " " .. want)
+end)
+
+test("a refuel that starts while the target is missing flies away and drops the flight after 8 s", function()
+  load()
+  state.random = seeded(3)
+  local a = copyPos(pos)
+  status(0, "tracking")
+  local c = flyTo(0, 2)
+  local f = state.flight
+  c = c + 0.05
+  heli.set(state, { phase = "refuelling" }, c)
+  heli.lightTick(state, nil, false, c)
+  local left = c
+  assertEq(f.leaving ~= nil, true)
+  assertEq(state.leftAt, left)
+  local dropped
+  while c < left + 12 - 1e-9 do
+    c = c + 0.05
+    heli.lightTick(state, nil, false, c)
+    if not dropped and not state.flight then dropped = c end
+  end
+  assertEq(dropped ~= nil, true)
+  assertNear(dropped, left + heli.DEPART_SECONDS, 0.051)
+  c = c + 0.05
+  heli.lightTick(state, target, false, c)
+  assertEq(state.flight, nil)
+  c = c + 0.05
+  status(c, "searching")
+  assertEq(state.flight ~= nil and state.flight ~= f, true)
+  assertNear(horiz(state.flight.pos, a), heli.APPROACH_DISTANCE, 1)
+  samePos(state.flight.spot, a, 1e-9)
+end)
+
+test("a guided return after a long refuel flies in to the runner, not to the old spot", function()
+  load()
+  state.random = seeded(5)
+  local a = copyPos(pos)
+  status(0, "tracking")
+  local c = flyTo(0, 2)
+  c = c + 0.05
+  status(c, "refuelling")
+  local left = c
+  c = flyTo(c, left + 30, nil, vec3(a.x + 1200, a.y, a.z), 50)
+  assertEq(state.flight, nil)
+  assertNear(horiz(pos, a), 1200, 1e-6)
+  c = c + 0.05
+  status(c, "searching", { guided = true })
+  local f = state.flight
+  assertNear(horiz(f.pos, pos), heli.APPROACH_DISTANCE, 1)
+  assertEq(horiz(f.pos, a) > 800, true, tostring(horiz(f.pos, a)))
+  samePos(f.spot, pos, 1e-9)
+end)
+
+test("a flight made again after a flight error mid-search searches the last known spot", function()
+  load()
+  state.random = seeded(6)
+  local a = copyPos(pos)
+  status(0, "tracking")
+  local c = flyTo(0, 1)
+  c = c + 0.05
+  status(c, "searching")
+  samePos(state.flight.spot, a, 1e-9)
+  c = flyTo(c, c + 10, nil, vec3(a.x + 300, a.y, a.z), 20)
+  assertNear(horiz(pos, a), 200, 1e-6)
+  failingStep(function(restore)
+    c = c + 0.05
+    heli.lightTick(state, target, false, c)
+    assertEq(state.flight, nil)
+    assertEq(state.flightFailed, true)
+    restore()
+  end)
+  c = c + 0.05
+  status(c, "searching")
+  local f = state.flight
+  assertEq(f ~= nil, true)
+  samePos(f.spot, a, 1e-9)
+  assertNear(horiz(f.pos, a), 60, 1e-6)
+  assertEq(horiz(f.pos, pos) > 100, true, tostring(horiz(f.pos, pos)))
+end)
+
+test("a light error is logged once per round", function()
+  load()
+  local make = _G.createObject
+  _G.createObject = function(class)
+    if class == "SpotLight" then return nil end
+    return make(class)
+  end
+  local saved, lines = _G.log, {}
+  _G.log = function(_, _, msg)
+    if tostring(msg):find("searchlight stopped: ", 1, true) then lines[#lines + 1] = msg end
+  end
+  local ok, err = pcall(function()
+    for i = 0, 5 do
+      heli.set(state, { phase = "tracking" }, i)
+      heli.lightTick(state, target, true, i)
+      assertEq(state.failed, true)
+    end
+    assertEq(#lines, 1)
+    assertEq(lines[1]:find("no light", 1, true) ~= nil, true, lines[1])
+    heli.clear(state)
+    heli.set(state, { phase = "tracking" }, 10)
+    heli.lightTick(state, target, true, 10)
+    assertEq(#lines, 2)
+  end)
+  _G.log = saved
+  if not ok then error(err, 0) end
+end)
+
+test("a 2 km car jump on a guided tick leaves the spot and the last known position on the car", function()
+  load()
+  state.random = seeded(7)
+  status(0, "searching", { guided = true })
+  local c = flyTo(0, 2)
+  local f = state.flight
+  pos = vec3(pos.x + 2000, pos.y, pos.z)
+  c = c + 0.05
+  heli.lightTick(state, target, false, c)
+  assertEq(state.flight, f)
+  samePos(f.spot, pos, 1e-9)
+  samePos(state.lastKnown, pos, 1e-9)
+end)
+
+test("a 2 km car jump while searching moves the sweep with the car", function()
+  local function drive(jumpAt)
+    load()
+    state.random = seeded(22)
+    local out = {}
+    withCast(downwardRays(108).cast, function()
+      local shift = 0
+      night(0, "arriving")
+      local c = 0
+      for i = 1, 200 do
+        c = c + 0.05
+        if i == jumpAt then shift = 1 end
+        pos = vec3(10 + 2000 * shift, 20, 5 + 50 * shift)
+        if i == 1 then heli.set(state, { phase = "searching" }, c) end
+        heli.lightTick(state, target, true, c)
+        out[i] = { x = state.aimPos.x - pos.x, y = state.aimPos.y - pos.y, z = state.aimPos.z - pos.z }
+      end
+    end)
+    return out
+  end
+  local plain = drive(nil)
+  for jumpAt = 101, 107 do
+    local jumped = drive(jumpAt)
+    for i = 1, 200 do
+      local msg = jumpAt .. " " .. i
+      assertNear(jumped[i].x, plain[i].x, 1e-9, msg)
+      assertNear(jumped[i].y, plain[i].y, 1e-9, msg)
+      assertNear(jumped[i].z, plain[i].z, 1e-9, msg)
+    end
+  end
+end)
+
+test("a light made again soon after does not keep the old switch offset", function()
+  load()
+  state.random = seeded(17)
+  local opts = exitStub(function(p) return vec3(p.x + 120, p.y, p.z) end)
+  nightStatus(0, "tracking", nil, opts)
+  local c = nightRun(0, 3, opts)
+  c = c + 0.05
+  nightStatus(c, "searching", nil, opts)
+  assertEq(state.aimSwitch ~= nil, true)
+  local spot = copyPos(state.flight.spot)
+  while fake.objects[LIGHT] do
+    c = c + 0.05
+    heli.lightTick(state, target, false, c, opts)
+  end
+  assertEq(state.aimSwitch, nil)
+  c = c + 0.05
+  heli.lightTick(state, target, true, c, opts)
+  assertEq(fake.objects[LIGHT] ~= nil, true)
+  local p = heli.sweepPoint(spot, c - state.sweepAt)
+  assertNear(horiz(state.aimPos, p), 0, 1e-9)
 end)

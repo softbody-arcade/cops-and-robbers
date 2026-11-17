@@ -64,10 +64,12 @@
             and flies for <span class="v">{{ duration("helicopterUpSeconds") }}</span>.
             <template v-if="refuelNever">Then it stays up.</template>
             <template v-else>Then it refuels for <span class="v">{{ duration("helicopterRefuelSeconds") }}</span>.</template>
-            It tracks you while it can see you. Buildings, hills, tunnels and garages hide you: it loses you after 2 s out of its sight.
-            The moment it sees you again, the cops know where you are.
+            It starts by searching: it circles where it last knew you were. In a tunnel it waits at the exit ahead; turn around to dodge it.
+            When a cop sees you, it flies to you.
+            It finds you only by seeing you itself, within <span class="v">{{ meters(400) }}</span>. Then it tracks you, and the cops know where you are.
+            Buildings, hills, tunnels and garages hide you: it loses you after 2 s out of its sight.
             It stays grounded in storm, fog and snow.
-            At night its searchlight shines on the runner; you can turn its beam in the air off in your settings.
+            At night its searchlight shines on you while it tracks you and keeps sweeping while it searches; you can turn its beam in the air off in your settings.
             <template v-if="sightOff">While it tracks you, cops see you live.</template>
           </span>
         </div>
@@ -122,10 +124,12 @@
             and flies for <span class="v">{{ duration("helicopterUpSeconds") }}</span>.
             <template v-if="refuelNever">Then it stays up.</template>
             <template v-else>Then it refuels for <span class="v">{{ duration("helicopterRefuelSeconds") }}</span>.</template>
-            While it tracks the runner in the open, every cop sees where they are. It must see the runner: buildings, hills, tunnels and garages hide them. It loses them after 2 s out of its sight
-            and finds them again the moment it sees them.
+            It starts by searching: it circles where it last knew the runner was. In a tunnel it waits at the exit ahead, so the runner can dodge it by turning around.
+            While any cop sees the runner, it flies to them.
+            It finds them only by seeing them itself, within <span class="v">{{ meters(400) }}</span>. While it tracks the runner, every cop sees where they are.
+            Buildings, hills, tunnels and garages hide them: it loses them after 2 s out of its sight.
             It stays grounded in storm, fog and snow.
-            At night its searchlight shines on the runner; you can turn its beam in the air off in your settings.
+            At night its searchlight shines on the runner while it tracks them and keeps sweeping while it searches; you can turn its beam in the air off in your settings.
           </span>
         </div>
         <div class="li">
@@ -263,7 +267,9 @@ function kmh(key) {
 }
 function dist(key) {
   const n = value(key)
-  if (n === null) return "–"
+  return n === null ? "–" : meters(n)
+}
+function meters(n) {
   if (imperial.value) {
     const ft = Math.round(n * 3.28084)
     if (ft < 1000) return `${ft} ft`

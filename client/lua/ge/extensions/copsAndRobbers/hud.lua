@@ -135,7 +135,7 @@ end
 local HELI_TEXTS = {
   arriving = "HELICOPTER IN", tracking = "HELICOPTER", searching = "HELICOPTER SEARCHING", refuelling = "HELICOPTER REFUELLING",
 }
-local HELI_TIMED = { arriving = true, tracking = true, refuelling = true }
+local HELI_TIMED = { arriving = true, tracking = true, searching = true, refuelling = true }
 
 function M.heliItem(heli, now)
   if type(heli) ~= "table" then return nil end

@@ -2579,7 +2579,7 @@ test("turning the beam off stops the quads while the light and its glare stay", 
   if not ok then error(err, 0) end
 end)
 
-test("no searchlight by day or while the helicopter searches", function()
+test("no searchlight by day; at night it stays on while the helicopter searches", function()
   local env = bootClient()
   local d = copy(SETUP)
   d.phase, d.role, d.runnerId = "running", "runner", 1
@@ -2589,9 +2589,56 @@ test("no searchlight by day or while the helicopter searches", function()
   env.tick(1)
   assertEq(env.sky.objects[HELI_LIGHT], nil)
   local night = nightTracking("runner")
+  local light = night.sky.objects[HELI_LIGHT]
+  assertEq(light ~= nil, true)
   night.fire("cnr_heli", { phase = "searching" })
   night.tick(0.2)
-  assertEq(night.sky.objects[HELI_LIGHT], nil)
+  assertEq(night.sky.objects[HELI_LIGHT], light)
+end)
+
+test("a tunnel loss sends the helicopter to the exit ahead", function()
+  local saved = { _G.castRayStatic, _G.map }
+  local ok, err = pcall(function()
+    local env = nightTracking("runner")
+    local car = env.veh:getPosition()
+    env.veh.getDirectionVector = function() return vec3(1, 0, 0) end
+    local nodes, graph = {}, {}
+    for i = 1, 5 do
+      nodes[i] = { pos = vec3(car.x + (i - 2.5) * 100, car.y, car.z) }
+      graph[i] = {}
+    end
+    for i = 1, 4 do
+      local link = { inNode = i, outNode = i + 1, oneWay = false, gated = 0, len = 100 }
+      graph[i][i + 1], graph[i + 1][i] = link, link
+    end
+    _G.map = {
+      getMap = function() return { nodes = nodes } end,
+      getGraphpath = function() return { graph = graph } end,
+      findClosestRoad = function() return 2, 3, 2 end,
+    }
+    local roofs = { nodes[2].pos, nodes[3].pos, nodes[4].pos, car }
+    _G.castRayStatic = function(origin, dir, len)
+      if dir.x == 0 and dir.y == 0 and dir.z == 1 then
+        for _, r in ipairs(roofs) do
+          if horizontal(origin, r) <= 5 then return 5 end
+        end
+      end
+      return len + 100
+    end
+    local light = env.sky.objects[HELI_LIGHT]
+    assertEq(light ~= nil, true)
+    env.fire("cnr_heli", { phase = "searching", seconds = 100 })
+    env.tick(60)
+    local exit = nodes[5].pos
+    for _ = 1, 10 do
+      assertEq(env.sky.objects[HELI_LIGHT], light)
+      local d = horizontal(light.pos, exit)
+      assertEq(near(d, 60, 3), true, tostring(d))
+      env.tick(1)
+    end
+  end)
+  _G.castRayStatic, _G.map = saved[1], saved[2]
+  if not ok then error(err, 0) end
 end)
 
 test("the searchlight is gone after the round, a cancel, leaving, a map change and unloading", function()
@@ -2801,21 +2848,23 @@ test("practice as a cop: the practising cop's game reports cover for the AI runn
   if not ok then error(err, 0) end
 end)
 
-test("the game asks whether it is night only while the helicopter tracks or a light is up", function()
-  local env = bootClient()
-  local d = copy(SETUP)
-  d.phase, d.sky, d.heli = "running", NIGHT, { phase = "arriving", seconds = 60 }
-  env.fire("cnr_roundSetup", d)
-  env.tick(1)
-  local asked = 0
-  local getLightState = core_environment.getLightState
-  core_environment.getLightState = function() asked = asked + 1; return getLightState() end
-  env.tick(3)
-  assertEq(asked < 10, true, tostring(asked))
-  local idle = asked
-  env.fire("cnr_heli", { phase = "tracking", seconds = 100 })
-  env.tick(3)
-  assertEq(asked - idle >= 30, true, tostring(asked - idle))
+test("the game asks whether it is night only while the helicopter tracks or searches, or a light is up", function()
+  for _, phase in ipairs({ "tracking", "searching" }) do
+    local env = bootClient()
+    local d = copy(SETUP)
+    d.phase, d.sky, d.heli = "running", NIGHT, { phase = "arriving", seconds = 60 }
+    env.fire("cnr_roundSetup", d)
+    env.tick(1)
+    local asked = 0
+    local getLightState = core_environment.getLightState
+    core_environment.getLightState = function() asked = asked + 1; return getLightState() end
+    env.tick(3)
+    assertEq(asked < 10, true, phase .. " " .. asked)
+    local idle = asked
+    env.fire("cnr_heli", { phase = phase, seconds = 100 })
+    env.tick(3)
+    assertEq(asked - idle >= 30, true, phase .. " " .. (asked - idle))
+  end
 end)
 
 local function hiddenRunnerTag()

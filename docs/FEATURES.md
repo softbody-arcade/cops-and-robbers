@@ -102,12 +102,17 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 
 - **A tracking rule, not a model:** the game ships no helicopter model, but at night you see its searchlight, the beam in the air and the glare. On by default (`helicopter`).
 - **Phases:** it arrives `helicopterArrivalSeconds` (60 s) after the cops are released, flies for `helicopterUpSeconds` (120 s), then refuels for `helicopterRefuelSeconds` (90 s) and comes back, until the chase ends. With refuel 0 it stays up once it has arrived.
-- **Tracking:** while it is up and the runner is in the open, every cop gets the runner's live position, like cop sight. With sight Off it still sends them.
-- **Cover:** the runner's game checks 4 times a second what the helicopter can see. The runner is lost after 2 s out of its sight in a row: behind buildings and hills, in tunnels and under covers, and while it flies in low. Then it searches. Before the helicopter arrives, a roof check decides: anything overhead (tunnels, bridges, garages, canopies). The moment it sees them again it tracks them at once, in any weather. If no cop sees the runner either, one last-seen ping goes out where the runner went under.
+- **Tracking:** while it is up and sees the runner, every cop gets the runner's live position, like cop sight. With sight Off it still sends them.
+- **Cover:** the runner's game checks 4 times a second what the helicopter can see, up to 400 m away. The runner is lost after 2 s out of its sight in a row: behind buildings and hills, in tunnels and under covers, more than 400 m away, and while it flies in low. Then it searches. Before it arrives and while it refuels, nothing sees the runner. The moment it sees them again it tracks them at once, in any weather. If no cop sees the runner either, one last-seen ping goes out where the runner went under.
+- **Searching:** every flight starts searching. It finds the runner only by seeing them itself, within 400 m.
+  - It circles where it last knew the runner was, 60 m out and 50 m up: at arrival, where they were when it went up; after a refuel, where it last tracked them or the cops last guided it; when it loses them, where they were then.
+  - Lost in a tunnel, it waits at the exit ahead. Each game follows the road from the car in its direction of travel to where the road leaves the roof, up to 3 km. Turning around in the tunnel dodges it.
+  - While any cop sees the runner, it flies to them and circles them. It still says SEARCHING until it sees them itself. AI cops don't guide it.
+  - At night its light keeps sweeping: a spiral around the spot, out to 150 m and back in, on the ground.
 - **Weather:** grounded for the whole round in storm, fog and snow, read from the round's sky when the cops are released. It never arrives then. Rain doesn't affect it.
-- **HUD:** everyone sees its state: "HELICOPTER IN 0:45", "HELICOPTER 1:20" (no time when refuel is 0), "HELICOPTER SEARCHING", "HELICOPTER REFUELLING 0:30" or "HELICOPTER GROUNDED (FOG)".
-- **Searchlight (night only):** while it tracks, at night, a searchlight hangs from the helicopter and keeps its spot on the runner's car with small corrections, as an operator would. The helicopter really flies, in every game: it trails a moving car about 25 m behind, 15 m to one side and 50 m up, swings wide on turns, circles a stopped car at 30 m, flies in from 300 m out and flies away on refuel. The light casts shadows, so a bridge deck or tunnel roof blocks it. It goes out at once when the helicopter loses the runner and is back at once, at full brightness, when it finds them again.
-  - **Beam in the air:** a soft, see-through cone from the light down to the lit spot, drawn with the game's debug drawer. It is faint on a clear night (strength 0.06), stronger in cloud (0.12) and clearest in rain (0.2), and it fades in and out with the light. A bridge deck or tunnel roof over the car ends it, and it fades out near the camera so you never see a sheet up close.
+- **HUD:** everyone sees its state: "HELICOPTER IN 0:45", "HELICOPTER 1:20" or "HELICOPTER SEARCHING 1:20" (no time when refuel is 0), "HELICOPTER REFUELLING 0:30" or "HELICOPTER GROUNDED (FOG)".
+- **Searchlight (night only):** while it is up at night, a searchlight hangs from the helicopter. While it tracks, the light keeps its spot on the runner's car with small corrections, as an operator would. While it searches, the light sweeps around the spot. The helicopter really flies, in every game: it trails a moving car about 25 m behind, 15 m to one side and 50 m up, swings wide on turns, circles a stopped car at 30 m, flies in from 300 m out and flies away on refuel. The light casts shadows, so a bridge deck or tunnel roof blocks it. It stays on while the helicopter searches, and when the helicopter finds or loses the runner the spot swings over smoothly.
+  - **Beam in the air:** a soft, see-through cone from the light down to the lit spot, drawn with the game's debug drawer. It is faint on a clear night (strength 0.06), stronger in cloud (0.12) and clearest in rain (0.2), and it fades in and out with the light. A bridge deck or tunnel roof over the lit spot ends it, and it fades out near the camera so you never see a sheet up close.
   - **Glare:** the light has a soft halo, so you see where the helicopter is when you look up.
   - **Setting:** Searchlight beam in the player settings, on by default. Off removes the beam in the air on your game; the light and its glare stay.
   - There is no minimap ring or icon.
@@ -260,7 +265,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | `copSpawnMinMeters` / `copSpawnMaxMeters` | 50 / 150 | Cop start distance from the runner, by road |
 | `crashSpeedLossKmh` | 50 | Speed lost within 0.5 s that counts as a crash |
 | `crashPenaltySeconds` | 10 | Freeze for the cop at fault |
-| `helicopter` | true | Police helicopter that tracks the runner in the open |
+| `helicopter` | true | Police helicopter that searches for the runner and tracks them while it sees them |
 | `helicopterArrivalSeconds` | 60 | It arrives this long after the cops are released (0 = at release) |
 | `helicopterUpSeconds` | 120 | How long it flies before it refuels (more than 0) |
 | `helicopterRefuelSeconds` | 90 | How long it is away refuelling (0 = stays up) |
