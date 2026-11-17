@@ -7,6 +7,7 @@ local hiddenKeys = {}
 local lastTick = -math.huge
 local wrapped
 local lastOriginal
+local drawFailed = false
 
 local function vehicleEntry(key)
   if not key or not MPVehicleGE or not MPVehicleGE.getVehicles then return nil end
@@ -22,6 +23,15 @@ end
 
 local function clearTags()
   for key in pairs(hiddenKeys) do clearTag(key) end
+end
+
+local function hideKey(key)
+  if hiddenKeys[key] then return end
+  local v = vehicleEntry(key)
+  if v then
+    v.hideNametag = true
+    hiddenKeys[key] = true
+  end
 end
 
 local function drawWrapper(...)
@@ -41,8 +51,12 @@ local function drawWrapper(...)
     end
     return skip, state
   end
-  pcall(original, ...)
+  local ok, err = pcall(original, ...)
   activeVehiclesIterator = realIterator
+  if not ok and not drawFailed then
+    drawFailed = true
+    log("E", "cnr_hiding", "minimap draw failed: " .. tostring(err))
+  end
 end
 
 local function wrap()
@@ -67,15 +81,7 @@ function M.set(newTarget)
   for key in pairs(hiddenKeys) do
     if not keys[key] then clearTag(key) end
   end
-  for key in pairs(keys) do
-    if not hiddenKeys[key] then
-      local v = vehicleEntry(key)
-      if v then
-        v.hideNametag = true
-        hiddenKeys[key] = true
-      end
-    end
-  end
+  for key in pairs(keys) do hideKey(key) end
 end
 
 function M.tick(clock)
@@ -86,15 +92,7 @@ function M.tick(clock)
     if v then v.hideNametag = true end
   end
   if target and target.keys then
-    for key in pairs(target.keys) do
-      if not hiddenKeys[key] then
-        local v = vehicleEntry(key)
-        if v then
-          v.hideNametag = true
-          hiddenKeys[key] = true
-        end
-      end
-    end
+    for key in pairs(target.keys) do hideKey(key) end
   end
   wrap()
 end

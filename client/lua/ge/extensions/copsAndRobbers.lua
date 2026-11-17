@@ -32,6 +32,7 @@ local BASELINE_DELAY = 1.5
 local MODES_INTERVAL = 3
 local MODES_SETTLE = 2.5
 local RESET_LOCK = 2
+local HIDING_INTERVAL = 1
 local HELP_FILE = "settings/cnr_help_seen.json"
 local BINDING_WARNING = "Bind a reset or recover button to reset during rounds"
 
@@ -63,6 +64,7 @@ local runnerId
 local runnerOut = false
 local runnerShown = true
 local hidingTarget
+local hidingBuiltAt = -math.huge
 local evolving = false
 local sightMax = 0
 local sightState = sight.new()
@@ -185,6 +187,7 @@ local function onRoundSetup(data)
   role = d.role
   runnerId = d.runnerId
   runnerShown = d.runnerShown ~= false
+  hidingBuiltAt = -math.huge
   evolving = d.evolving == true
   rebuildId = tonumber(d.rebuild)
   buildBaseline, lastChangeKey, lastChanges = nil, nil, {}
@@ -767,6 +770,8 @@ local function updateHiding(obj)
   if not active then return end
   local keys, vids
   if role == "runner" then
+    if hidingTarget and clock - hidingBuiltAt < HIDING_INTERVAL then return hiding.tick(clock) end
+    hidingBuiltAt = clock
     keys, vids = copHidingSets()
   elseif role == "cop" and not runnerShown then
     keys, vids = {}, {}
@@ -950,6 +955,7 @@ local function onExtensionLoaded()
   end)
   AddEventHandler("cnr_roundCars", function(data)
     traffic.setRoundCars((jsonDecode(data) or {}).keys)
+    hidingBuiltAt = -math.huge
   end)
   AddEventHandler("cnr_runnerShown", function(data)
     runnerShown = (jsonDecode(data) or {}).shown ~= false

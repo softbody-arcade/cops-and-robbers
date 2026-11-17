@@ -2926,6 +2926,31 @@ test("leaving the server shows the cops to a runner again", function()
   assertEq(env.mpVehicles["4-0"].hideNametag, nil)
 end)
 
+test("a cop car that turns up mid-round is hidden from the runner within 1 s", function()
+  withMinimap({ 100, 300, 400, 500 }, function(draw)
+    local env = bootClient()
+    runnerWithCops(env)
+    env.fire("cnr_roundCars", { keys = { "1-0", "3-0", "4-0", "5-0" } })
+    env.tick(0.1)
+    env.mpVehicles["5-0"] = { gameVehicleID = 500, isSpawned = true }
+    env.tick(1)
+    assertEq(env.mpVehicles["5-0"].hideNametag, true)
+    assertEq(draw(), "100")
+    env.M.onExtensionUnloaded()
+  end)
+end)
+
+test("the runner's cop sets are rebuilt at most once a second, not every frame", function()
+  local env = bootClient()
+  runnerWithCops(env)
+  local traffic = package.loaded["copsAndRobbers/traffic"]
+  local real, calls = traffic.roundCarOwners, 0
+  traffic.roundCarOwners = function() calls = calls + 1 return real() end
+  env.tick(2)
+  traffic.roundCarOwners = real
+  assertEq(calls >= 1 and calls <= 2, true, "rebuilds in 20 frames: " .. calls)
+end)
+
 test("on BeamNG.Earth a runner's cops lose the name tag but stay on the minimap", function()
   withMinimap({ 100, 300, 400 }, function(draw)
     local env = bootClient()
