@@ -15,7 +15,7 @@
 - No code comments, no emojis; LuaJIT-safe client code (no `goto`, `//`, bit operators; `vec3` is cdata).
 - No version bump, no `TODO.md` edit.
 - `round.lua` changes stay in the joining, role and setup paths (`start`, `vehiclePicked`, `setupFor`, `playerJoined`, `playerLeft`).
-- Copy, verbatim: "Sit out" (off) / "Play" (on); "Need two players who aren't sitting out"; "SPECTATING · <name>" with the name or "free camera".
+- Copy, verbatim: "Sit out" (off) / "Play" (on); "Everyone is sitting out" (review ruling: no two-player minimum); "SPECTATING · <name>" with the name or "free camera".
 - Practice rounds unchanged. The lobby's online count includes spectators.
 
 ## Review Focus
@@ -63,7 +63,7 @@
 
 - [ ] **Step 1: Write the failing tests**
   - `Sit out is stored per player, answered and cleared on disconnect`: `cnr_sitOut {"on":true}` → answer `{"on":true}`; malformed (`{}`, `{"on":"yes"}`, not JSON) changes nothing and sends nothing; after `onPlayerDisconnect` the next Start includes them.
-  - `Start needs two players who aren't sitting out`: two online, one sitting out → reply "Need two players who aren't sitting out", no round.
+  - `Start is refused only when everyone sits out`: everyone sitting out → reply "Everyone is sitting out", no round; one player left → a round with them as runner.
   - `a sitting-out player is never the runner`: three online, Kim sitting out with 0 runs → `start next` never picks Kim; `start kim` → "Kim is sitting out"; `start again` with Kim as the last runner → same.
   - `Sit out during a round applies next round and says so`: notice "You sit out from the next round" / "You play again from the next round"; this round keeps its players; the next Start excludes or includes them; the toggle persists across rounds.
   - `a sitting-out player gets cnr_spectate at the pick, with the round's sky`; `a mid-chase joiner gets cnr_spectate, round cars and no setup or traffic go-ahead` (replaces the setup-based joiner tests, which become rejoins).
@@ -73,7 +73,7 @@
 - [ ] **Step 2: Run** `make test` — the new tests fail.
 - [ ] **Step 3: Implement** `sitOut` table, `playing(players)`, `cnrOnSitOut` (registered as `cnr_sitOut`), the minimum and runner checks in `handlers.start`, `opts.sittingOut` copy, the `spectate` effect in `applyEffects`, `spectating(pid)` refusal at the top of `cnrOnVehicleSpawn`, `handlers.sky` to every online player in a real round, `sitOut` and `playing` in `panelState`/`playerEntries`/`nextRunnerName`.
 - [ ] **Step 4: Run** `make test` — all pass.
-- [ ] **Step 5: Commit** `feat: a per-session Sit out on the server, two players to start, spectators get the round's state`
+- [ ] **Step 5: Commit** `feat: a per-session Sit out on the server, spectators get the round's state`
 
 ### Task 3: The Sit out toggle and the spectating HUD
 

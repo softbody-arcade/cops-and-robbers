@@ -21,7 +21,7 @@
   - **The toggle:** on the lobby card, next to Hide ("Sit out" while off, "Play" while on). It is stored per player on the server for the session; disconnecting clears it.
   - **Changing it:** works in the lobby. Once a round is set up (picking onward), a change applies to the next round.
   - **The runner:** a player sitting out is never picked as the runner.
-  - **Enough players:** a round needs two players who aren't sitting out. Otherwise Start says why ("Need two players who aren't sitting out").
+  - **Enough players:** a round needs one player who isn't sitting out, as before (a lone player is the runner). When everyone sits out, Start says why ("Everyone is sitting out").
   - **Their car:** taken off the map for the round, so it isn't in the chase. When the round ends it is put back where it stood, with the same model and configuration.
 - **Spectating:**
   - **The camera:** switches between every round player's car, the runner included. That's the user's choice, trusting spectators on voice chat.
@@ -30,7 +30,7 @@
   - **No driving:** a spectator never controls another player's car.
 - **HUD while spectating:**
   - "SPECTATING · <name>", with the watched player's name or "free camera"
-  - the round clock and the runner's status line, as a cop would see them
+  - the round clock with the time limit and the helicopter's status, as a cop sees them; no "Runner seen" line, which needs a cop's own car
   - no reset, penalty or role actions
 - **After the round:** spectators are back in the lobby like everyone else, and play the next round unless Sit out is on.
 - **Unchanged:**
@@ -44,7 +44,7 @@
 - **(c) Force-loading the joiner's car on every game.** Rejected by the user: it stutters each game, and the user chose spectating instead.
 
 ## Left to the builder
-- **Taking a sitting-out player's car off the map and back:** for example, the player's own game saves model, config and pose, deletes the car at setup and respawns it at round end; BeamMP syncs both. It must survive a round that is cancelled, a map change and the player leaving.
+- **Taking a sitting-out player's car off the map and back:** for example, the player's own game saves model, config and pose, deletes the car at setup and respawns it at round end; BeamMP syncs both. It must survive a round that is cancelled, a map change and the player leaving. On a map change or leaving the saved car is dropped, because BeamMP removes every car then.
 - **The camera switching:** BeamMP lets a player enter a remote car to watch it. Cycle through the round players' cars with the game's own switch-vehicle keys, and keep free camera on its usual key.
 - **The HUD layout,** within the existing kit.
 
@@ -53,14 +53,14 @@
   - a mid-round joiner gets no setup, no role and no place in `players`
   - a rejoin still resumes
   - Sit out excludes a player from the runner pick and the roles
-  - Start is refused with fewer than two players who aren't sitting out
+  - Start is refused only when everyone sits out
   - the toggle persists across rounds, is cleared on disconnect, and a change during a round applies next round
 - **Client:**
   - a spectator's HUD and the lifted camera blocks
-  - a sitting-out player's car is removed at setup and restored at round end, cancel and map change
+  - a sitting-out player's car is removed at setup, restored at round end and cancel, and dropped on a map change
   - nothing is left behind
 
 ## In-game check
 - Join mid-round: you are spectating with free camera, can cycle through every car, the runner included, and nobody sees a phantom car.
 - Sit out: your car disappears for the round and comes back where it stood.
-- The round still needs two players.
+- With everyone sitting out, Start says "Everyone is sitting out"; one player left still gets a round.
