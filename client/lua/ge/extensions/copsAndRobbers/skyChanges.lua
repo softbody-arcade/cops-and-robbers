@@ -54,7 +54,7 @@ end
 local function span(from, at, suffix)
   local a = (from - at) / 60
   local b = a + M.WINDOW_SECONDS / 60
-  local lo, hi = math.floor(a), math.ceil(b)
+  local lo, hi = math.floor(a), math.max(1, math.ceil(b))
   if lo >= 1 then return string.format("%s%d-%d min%s", suffix == "" and "in " or "", lo, hi, suffix) end
   return string.format("within %d min%s", hi, suffix)
 end

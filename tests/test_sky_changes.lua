@@ -151,29 +151,44 @@ test("the curve", function()
   local p = {
     gameStart = gs, daySeconds = 1800,
     temps = {
-      { t = -0.20833, hour = 14, c = 18 },
-      { t = 0.125, hour = 6, c = 8 },
-      { t = 0.79167, hour = 14, c = 20 },
-      { t = 1.125, hour = 6, c = 9 },
+      { t = -0.20833, hour = 6, c = 8 },
+      { t = 0.125, hour = 14, c = 18 },
+      { t = 0.79167, hour = 6, c = 9 },
+      { t = 1.125, hour = 14, c = 20 },
     },
   }
-  local c, i = sc.curve(p, gs, 0)
+  local c1, i = sc.curve(p, gs, 0)
   assertEq(i, 1)
-  assertEq(c[1][1], 2 / 24); assertEq(c[1][2], 18)
-  assertEq(c[2][1], 0.75); assertEq(c[2][2], 8)
-  c, i = sc.curve(p, gs, 224)
-  assertEq(i, 1)
-  c, i = sc.curve(p, gs, 225)
+  assertEq(c1[1][1], 2 / 24); assertEq(c1[1][2], 18)
+  assertEq(c1[2][1], 0.75); assertEq(c1[2][2], 8)
+  assertEq(select(2, sc.curve(p, gs, 224)), 1)
+  local c2
+  c2, i = sc.curve(p, gs, 225)
   assertEq(i, 2)
-  assertEq(c[1][1], 2 / 24); assertEq(c[1][2], 20)
-  assertEq(c[2][1], 0.75); assertEq(c[2][2], 8)
-  c, i = sc.curve(p, gs + 0.02, 188)
-  assertEq(i, 1)
-  c, i = sc.curve(p, gs + 0.02, 189)
+  assertEq(c2[1][1], 2 / 24); assertEq(c2[1][2], c1[1][2])
+  assertEq(c2[2][1], 0.75); assertEq(c2[2][2], 9)
+  assertEq(select(2, sc.curve(p, gs + 0.02, 188)), 1)
+  local c3
+  c3, i = sc.curve(p, gs + 0.02, 189)
   assertEq(i, 2)
-  assertEq(c[1][2], 20)
-  assertEq(select(2, sc.curve(p, gs, 1e6)), 3)
+  assertEq(c3[1][2], c1[1][2])
+  local c4
+  c4, i = sc.curve(p, gs, 1e6)
+  assertEq(i, 3)
+  assertEq(c4[2][2], c2[2][2])
+  assertEq(c4[1][2], 20)
   assertEq(sc.curve({ gameStart = gs }, gs, 0), nil)
-  c = sc.curve({ gameStart = gs, temps = p.temps }, gs, 1e6)
   assertEq(select(2, sc.curve({ gameStart = gs, temps = p.temps }, gs, 1e6)), 1)
+end)
+
+test("the minute range at its boundary", function()
+  local p = payload({ { at = 500, to = "rain", forecastFrom = 300 } }, { weather = "cloudy" })
+  assertEq(sc.forecast(p, 240).text, "Forecast: rain in 1-3 min")
+  assertEq(sc.forecast(p, 210).text, "Forecast: rain in 1-4 min")
+  assertEq(sc.forecast(p, 241).text, "Forecast: rain within 3 min")
+end)
+
+test("the prep text never says within 0 min", function()
+  local p = payload({ { at = 500, to = "rain", forecastFrom = 0 } }, { weather = "cloudy", releaseAt = 300 })
+  assertEq(sc.prepForecast(p), "Forecast: rain within 1 min after release")
 end)
