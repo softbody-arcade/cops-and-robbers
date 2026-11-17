@@ -64,7 +64,7 @@
             and flies for <span class="v">{{ duration("helicopterUpSeconds") }}</span>.
             <template v-if="refuelNever">Then it stays up.</template>
             <template v-else>Then it refuels for <span class="v">{{ duration("helicopterRefuelSeconds") }}</span>.</template>
-            It starts by searching: it circles where it last knew you were. In a tunnel it waits at the exit ahead; turn around to dodge it.
+            It starts by searching: it circles where it last knew you were. After a refuel, or when it loses you while you're moving, it searches along the road ahead, then the best other branch, then back. In a tunnel it watches each way out in turn, then searches the road beyond. When a cop sees you in a tunnel, it waits at the exit ahead.
             When a cop sees you, it flies to you; AI cops in practice don't guide it.
             It finds you only by seeing you itself, within <span class="v">{{ meters(400) }}</span>. Then it tracks you, and the cops know where you are.
             Buildings, hills, tunnels and garages hide you: it loses you after 2 s out of its sight.
@@ -126,8 +126,8 @@
             and flies for <span class="v">{{ duration("helicopterUpSeconds") }}</span>.
             <template v-if="refuelNever">Then it stays up.</template>
             <template v-else>Then it refuels for <span class="v">{{ duration("helicopterRefuelSeconds") }}</span>.</template>
-            It starts by searching: it circles where it last knew the runner was. In a tunnel it waits at the exit ahead, so the runner can dodge it by turning around.
-            While any cop sees the runner, it flies to them.
+            It starts by searching: it circles where it last knew the runner was. After a refuel, or when it loses a moving runner, it searches along the road ahead, then the best other branch, then back. In a tunnel it watches each way out in turn, then searches the road beyond.
+            While any cop sees the runner, it flies to them; seen in a tunnel, it waits at the exit ahead.
             It finds them only by seeing them itself, within <span class="v">{{ meters(400) }}</span>. While it tracks the runner, every cop sees where they are.
             Buildings, hills, tunnels and garages hide them: it loses them after 2 s out of its sight.
             <template v-if="refuelNever">Before it arrives, it can't see the runner.</template>
