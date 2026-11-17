@@ -159,7 +159,7 @@
             </div>
             <div class="li">
               <BngIcon :type="icons.timer" />
-              <span>after standing still for <span class="v">{{ sec("resetWaitSeconds") }}</span></span>
+              <span>after standing still for <span class="v">{{ sec("resetWaitSeconds") }}</span>, rocking in place still counts</span>
             </div>
             <div class="li">
               <BngIcon :type="icons.carChase01" />

@@ -41,7 +41,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 ### Resets
 - **When a reset is allowed:**
   - at a gas station, when standing still
-  - after standing still for 7 s anywhere
+  - after standing still for 7 s anywhere; rocking in place (within 3 m, such as on your side) still counts
   - for a cop who is 1 km or more from the runner, at any time
   - for the runner, once, right after a cop crashes into them (the cop at fault): a free reset without standing still, while that cop serves the crash penalty. It isn't allowed while the runner is being caught, and using it (or any reset) ends it. The HUD shows "Free reset (cop crashed into you)".
 - **When a reset is not allowed:**
@@ -266,8 +266,8 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | `catchHoldSeconds` | 7 | How long the runner must be held |
 | `catchRadiusMeters` | 10 | Distance at which a cop is holding the runner |
 | `catchMaxSpeedKmh` | 3 | Runner speed below which they count as held |
-| `resetWaitSeconds` | 7 | Stand still this long to reset anywhere |
-| `stillMaxSpeedKmh` | 1 | "Standing still" threshold |
+| `resetWaitSeconds` | 7 | Stand still this long to reset anywhere; rocking in place (within 3 m) still counts |
+| `stillMaxSpeedKmh` | 1 | "Standing still" threshold; it only sets where the 7 s wait starts, after that staying within 3 m counts |
 | `gasStationRadiusMeters` | 25 | Gas station reset area |
 | `copResetMinDistanceMeters` | 1000 | Cops this far from the runner may always reset and get no crash penalty |
 | `copSpawnMinMeters` / `copSpawnMaxMeters` | 50 / 150 | Cop start distance from the runner, by road |
