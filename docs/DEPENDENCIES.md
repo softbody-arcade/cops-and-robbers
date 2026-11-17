@@ -105,7 +105,7 @@ Then do the checks for whatever actually updated.
   - `require("utils/debugDraw").drawTriSolid(a, b, c, packedColor, true)` (the game's FFI `BNG_DBG_DRAW_TriSolid`, as its road editor uses it) draws a solid, see-through, depth-tested triangle. Each beam quad is two triangles in the quad's winding. It is backface-culled, so each quad is drawn in the winding that faces the camera. `color(r, g, b, a)` returns a packed number in 0.40, which the FFI call takes; `debugDrawer:drawQuadSolid` refuses it ("expect userdata, got number"), so the beam doesn't use it.
   - `core_camera.getPosition()` gives the camera position, for the winding and the fade near the camera.
   - The vehicle's `getVelocity()` gives the runner's velocity for the helicopter's flight; without it we use position deltas.
-  - `castRayStatic(origin, dir, maxDist)` returns the distance to the first static hit. We cast it from the light to the lit spot every 0.25 s, so a bridge deck or tunnel roof ends the beam.
+  - `castRayStatic(origin, dir, maxDist)` returns the distance to the first static hit. We cast it from the light to the lit spot every 0.25 s, so a bridge deck or tunnel roof ends the beam. For cover we cast it from the helicopter to three points on the car (`copsAndRobbers/shelter.lua` `inSight`), every 0.25 s.
   - `BNG_LightFlare_1` is a flare datablock in the game's `art/datablocks/lights.datablocks.json` (inside gameengine.zip). It is the light's `flareType` and gives the glare.
   - On update, check: the beam still draws as a soft cone ending on the road, it fades near the camera, a deck over the car ends it, and the glare shows when you look up at the light.
 - **Placement and roads** (`roads.lua`):

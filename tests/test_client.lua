@@ -2696,6 +2696,26 @@ test("practice as a cop: the AI runner's game id is the one skipped on the minim
   if not ok then error(err, 0) end
 end)
 
+test("the runner's game reports cover from the helicopter's view", function()
+  local saved = _G.castRayStatic
+  local function lastCover(blocked)
+    local env = nightTracking("runner")
+    _G.castRayStatic = function(origin, dir, len)
+      if dir.z == 1 then return len + 100 end
+      if blocked then return 1 end
+      return len + 100
+    end
+    for _ = 1, 8 do env.tick(0.3) end
+    return env.lastSent("cnr_cover")
+  end
+  local ok, err = pcall(function()
+    assertEq(lastCover(true).covered, true)
+    assertEq(lastCover(false).covered, false)
+  end)
+  _G.castRayStatic = saved
+  if not ok then error(err, 0) end
+end)
+
 test("practice as a cop: the practising cop's game reports cover for the AI runner", function()
   local env = bootClient()
   local aiRunner = practiceAsCop(env)

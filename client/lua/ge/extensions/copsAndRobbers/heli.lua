@@ -65,11 +65,18 @@ function M.resetCover(state)
   state.cover, state.sent, state.lastCheck = shelter.new(), false, nil
 end
 
-function M.coverTick(state, clock, obj, castUp)
+function M.coverTick(state, clock, obj, castUp, castRay)
   if state.lastCheck and clock - state.lastCheck < M.COVER_INTERVAL then return nil end
   state.lastCheck = clock
   local p = obj:getPosition()
-  local roofed = shelter.roofed(vec3(p.x, p.y, p.z + M.COVER_HEIGHT), castUp) and true or false
+  local roofed
+  if state.flight and castRay then
+    local dir = obj.getDirectionVector and obj:getDirectionVector()
+    local seen = shelter.inSight(state.flight.pos, p, dir and dir.x or 0, dir and dir.y or 0, castRay)
+    roofed = not seen
+  else
+    roofed = shelter.roofed(vec3(p.x, p.y, p.z + M.COVER_HEIGHT), castUp) and true or false
+  end
   if not state.sent then
     state.sent = true
     state.cover = { covered = roofed, pending = nil, count = 0 }

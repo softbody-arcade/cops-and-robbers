@@ -20,6 +20,29 @@ function M.roofed(pos, castUp)
   return across and along
 end
 
+local SIGHT_HEIGHT = 1.5
+local SIGHT_REACH = 2
+local SIGHT_SLACK = 0.5
+
+function M.inSight(from, carPos, dirX, dirY, castRay)
+  local z = carPos.z + SIGHT_HEIGHT
+  local xs, ys = { carPos.x }, { carPos.y }
+  local len = math.sqrt(dirX * dirX + dirY * dirY)
+  if len >= 1e-6 then
+    local ux, uy = dirX / len, dirY / len
+    xs[2], ys[2] = carPos.x + ux * SIGHT_REACH, carPos.y + uy * SIGHT_REACH
+    xs[3], ys[3] = carPos.x - ux * SIGHT_REACH, carPos.y - uy * SIGHT_REACH
+  end
+  for i = 1, #xs do
+    local dx, dy, dz = xs[i] - from.x, ys[i] - from.y, z - from.z
+    local d = math.sqrt(dx * dx + dy * dy + dz * dz)
+    if d <= SIGHT_SLACK then return true end
+    local hit = tonumber(castRay(from, vec3(dx / d, dy / d, dz / d), d))
+    if not (hit and hit < d - SIGHT_SLACK) then return true end
+  end
+  return false
+end
+
 function M.new()
   return { covered = false, pending = nil, count = 0 }
 end

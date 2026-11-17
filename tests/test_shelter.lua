@@ -51,3 +51,65 @@ test("cover switches only after two checks in a row", function()
   assertEq(shelter.step(s, false), false)
   assertEq(shelter.step(s, false), true); assertEq(s.covered, false)
 end)
+
+local function blocking(blocked, calls)
+  return function(from, dir, d)
+    if calls then calls[#calls + 1] = { from = from, dir = dir, d = d } end
+    if blocked(from, dir, d) then return 5 end
+    return nil
+  end
+end
+
+test("the helicopter sees the car when one ray gets through", function()
+  local from, car = v(10, -30, 55), v(10, 20, 5)
+  local function blockedToFrontAndMiddle(f, dir, d)
+    return f.y + dir.y * d > 19
+  end
+  assertEq(shelter.inSight(from, car, 0, 1, blocking(blockedToFrontAndMiddle)), true)
+end)
+
+test("covered only when every ray is blocked", function()
+  local all = blocking(function() return true end)
+  assertEq(shelter.inSight(v(10, -30, 55), v(10, 20, 5), 0, 1, all), false)
+end)
+
+test("a hit at the point itself does not block", function()
+  local cast = function(from, dir, d) return d - 0.3 end
+  assertEq(shelter.inSight(v(10, -30, 55), v(10, 20, 5), 0, 1, cast), true)
+end)
+
+test("no direction gives only the middle point", function()
+  local calls = {}
+  local cast = blocking(function() return true end, calls)
+  assertEq(shelter.inSight(v(10, -30, 55), v(10, 20, 5), 0, 0, cast), false)
+  assertEq(#calls, 1)
+  local d = calls[1].dir
+  assertEq(d.x == d.x and d.y == d.y and d.z == d.z, true)
+end)
+
+test("the helicopter at the point sees it", function()
+  local called = false
+  local cast = function() called = true; return 0 end
+  assertEq(shelter.inSight(v(10, 20, 6.5), v(10, 20, 5), 0, 1, cast), true)
+  assertEq(called, false)
+end)
+
+test("a nil, full or longer return counts as seen", function()
+  local from, car = v(10, -30, 55), v(10, 20, 5)
+  assertEq(shelter.inSight(from, car, 0, 1, function() return nil end), true)
+  assertEq(shelter.inSight(from, car, 0, 1, function(f, dir, d) return d end), true)
+  assertEq(shelter.inSight(from, car, 0, 1, function(f, dir, d) return d + 10 end), true)
+end)
+
+test("the points sit 1.5 m up and 2 m ahead and behind", function()
+  local calls = {}
+  local from = v(10, -30, 55)
+  shelter.inSight(from, v(10, 20, 5), 0, 1, blocking(function() return true end, calls))
+  assertEq(#calls, 3)
+  local want = { v(10, 20, 6.5), v(10, 22, 6.5), v(10, 18, 6.5) }
+  for i, c in ipairs(calls) do
+    assertEq(math.abs(from.x + c.dir.x * c.d - want[i].x) < 1e-6, true)
+    assertEq(math.abs(from.y + c.dir.y * c.d - want[i].y) < 1e-6, true)
+    assertEq(math.abs(from.z + c.dir.z * c.d - want[i].z) < 1e-6, true)
+  end
+end)

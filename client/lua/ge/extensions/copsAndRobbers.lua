@@ -796,7 +796,7 @@ local function updateHeli(runnerObj)
   if runnerOut and castRayStatic then
     local car = role == "runner" and ownVehicle() or ai.runnerObject()
     if car then
-      local c = heli.coverTick(heliState, clock, car, castUp)
+      local c = heli.coverTick(heliState, clock, car, castUp, castRayStatic)
       if c ~= nil then sendServer("cnr_cover", { covered = c }) end
     end
   end

@@ -79,6 +79,28 @@ test("the cover check is cast from above the car", function()
   assertEq(z, 5 + heli.COVER_HEIGHT)
 end)
 
+test("with a helicopter, cover comes from its line of sight", function()
+  load()
+  heli.set(state, { phase = "tracking" }, 0)
+  heli.lightTick(state, target, true, 0)
+  assertEq(state.flight ~= nil, true)
+  local blockAll = function() return 1 end
+  local seeAll = function() return nil end
+  assertEq(heli.coverTick(state, 1, target, open, blockAll), true)
+  assertEq(heli.coverTick(state, 2, target, roofAll, seeAll), nil)
+  assertEq(heli.coverTick(state, 3, target, roofAll, seeAll), false)
+  assertEq(heli.coverTick(state, 4, target, open, blockAll), nil)
+  assertEq(heli.coverTick(state, 5, target, open, blockAll), true)
+end)
+
+test("without a helicopter the roof check decides", function()
+  load()
+  local blockAll = function() return 1 end
+  assertEq(heli.coverTick(state, 1, target, open, blockAll), false)
+  assertEq(heli.coverTick(state, 2, target, open, blockAll), nil)
+  assertEq(heli.coverTick(state, 3, target, open, blockAll), nil)
+end)
+
 test("the searchlight exists only while tracking at night", function()
   load()
   heli.set(state, { phase = "tracking", seconds = 30 }, 0)
