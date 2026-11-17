@@ -354,6 +354,15 @@ test("fog lifts when it warms above 12 C", function()
   assertEq(tod > 0.75 and tod < 0.875, true)
 end)
 
+test("a fog crossing at the turning point just filled refills it with the new weather", function()
+  local r = weather.build({ time = "night", weather = "fog", month = 10 }, noSlots(), script({ 0.75 }, 0.5))
+  assertEq(r.temps[2].c, 12)
+  local ch = r.changes[1]
+  assertEq(ch.cross, true); assertEq(ch.to, "clear")
+  assertNear(ch.at, r.temps[2].t * 900, 1e-6)
+  assertEq(r.temps[3].c, 22)
+end)
+
 test("a crossing during a change waits for its end", function()
   local kinds = { "rain", "snow", "storm", "fog", "cloudy" }
   local months = { 1, 3, 12, 10 }
