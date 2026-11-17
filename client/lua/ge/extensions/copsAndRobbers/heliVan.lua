@@ -38,7 +38,7 @@ end
 
 local function sweep(keep)
   if not (FS and FS.findFiles and FS.removeFile) then return end
-  for _, path in ipairs(FS:findFiles(M.DIR .. "/", M.PREFIX .. "*.dae", -1, false, false) or {}) do
+  for _, path in ipairs(FS:findFiles(M.DIR .. "/", M.PREFIX .. "*.dae", -1, true, false) or {}) do
     local name = path:match("([^/]+)$")
     if name and name ~= keep and name:sub(1, #M.PREFIX) == M.PREFIX then FS:removeFile(path) end
   end
