@@ -122,6 +122,7 @@ end
 
 local function onSetupAI(data)
   ai.setup(jsonDecode(data) or {})
+  hidingBuiltAt = -math.huge
 end
 
 local function onPickVehicle(data)
@@ -349,6 +350,7 @@ local function onRebuild(data)
   local veh = ownVehicle()
   placeVehicle(roundModel, roundConfig, veh and veh:getPosition(), veh and game.uprightRotation(veh), roundColor)
   ai.rebuild(roundModel, d.config)
+  hidingBuiltAt = -math.huge
   local missing = {}
   for _, part in pairs(type(d.config.parts) == "table" and d.config.parts or {}) do
     if not vehicles.hasPart(roundModel, part) then missing[#missing + 1] = part end

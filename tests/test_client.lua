@@ -2992,3 +2992,22 @@ test("practice as a runner: the AI cops are skipped on the minimap", function()
     env.M.onExtensionUnloaded()
   end)
 end)
+
+test("practice as a runner: AI cops spawned mid-throttle are hidden on the next frame, not up to 1 s later", function()
+  local env = bootClient()
+  local d = copy(SETUP)
+  d.role, d.runnerId, d.inPlace = "runner", 1, true
+  withMinimap({ 100, 201, 202 }, function(draw)
+    env.fire("cnr_roundSetup", d)
+    env.tick(0.1)
+    assertEq(draw(), "100,201,202")
+    env.fire("cnr_setupAI", { model = "pickup", config = "vehicles/pickup/base.pc", runnerId = 1, ai = {
+      { id = -10, role = "cop", index = 1, name = "AI cop 1" },
+      { id = -11, role = "cop", index = 2, name = "AI cop 2" },
+    } })
+    assertEq(env.spawned[1].veh:getID(), 201); assertEq(env.spawned[2].veh:getID(), 202)
+    env.tick(0.1)
+    assertEq(draw(), "100")
+    env.M.onExtensionUnloaded()
+  end)
+end)
