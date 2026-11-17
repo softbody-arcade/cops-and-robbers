@@ -39,10 +39,10 @@ local function copy(t)
   return c
 end
 
-local function without(players, set)
+local function without(players, set, other)
   local c = {}
   for pid, name in pairs(players or {}) do
-    if not set[pid] then c[pid] = name end
+    if not set[pid] and not (other and other[pid]) then c[pid] = name end
   end
   return c
 end
@@ -83,6 +83,7 @@ function Round:clear()
   self.pickStartedAt = nil
   self.players = {}
   self.sittingOut = {}
+  self.watching = {}
   self.resetTrackers = {}
   self.crashDetectors = {}
   self.penalties = {}
@@ -296,7 +297,7 @@ end
 
 function Round:vehiclePicked(now, pid, model, config, players)
   if self.state ~= "picking" or pid ~= self.issuerId then return {} end
-  if not self.test then self.players = without(players, self.sittingOut) end
+  if not self.test then self.players = without(players, self.sittingOut, self.watching) end
   if not self.test and not self.players[self.runnerId] then
     return self:cancel(now, "Runner left, round cancelled")
   end
@@ -503,7 +504,10 @@ end
 function Round:playerJoined(now, pid, name)
   if self.state == "idle" or self.test then return {} end
   local left = self.leftPlayers[name]
-  if self.state ~= "picking" and not left then return { self:spectateFor(now, pid) } end
+  if self.state ~= "picking" and not left then
+    self.watching[pid] = true
+    return { self:spectateFor(now, pid) }
+  end
   self.players[pid] = name
   if self.state == "picking" then return {} end
   local setup = self:setupFor(now, pid)
@@ -622,6 +626,8 @@ function Round:coverReport(now, pid, covered)
 end
 
 function Round:playerLeft(now, pid)
+  self.sittingOut[pid] = nil
+  self.watching[pid] = nil
   if self.state == "idle" or self.players[pid] == nil then return {} end
   sight.forget(self.sight, pid)
   if pid == self.runnerId then

@@ -1798,3 +1798,32 @@ test("leaving and rejoining holds the checks again for the new placement", funct
   assertEq(find(fx, "broadcast"), nil)
   assertEq(find(fx, "penalty"), nil)
 end)
+
+test("a prep joiner keeps spectating through a New car pick", function()
+  local r = round.new((config.merge(nil)))
+  r:start(0, 1, 2, players)
+  r:vehiclePicked(1, 2, "pickup", "cfg", players)
+  assertEq(find(r:playerJoined(2, 4, "Dan"), "spectate", 4) ~= nil, true)
+  r:reroll(3, 2)
+  local all = {[1]="Reinder", [2]="Bob", [3]="Ann", [4]="Dan"}
+  local fx = r:vehiclePicked(4, 2, "etk800", "cfg", all)
+  assertEq(find(fx, "setup", 4), nil); assertEq(find(fx, "spectate", 4) ~= nil, true)
+  assertEq(r.players[4], nil); assertEq(find(fx, "setup", 3).role, "cop")
+end)
+
+test("a reused id inherits neither a sit-out nor a spectator's place", function()
+  local r = round.new((config.merge(nil)))
+  r:start(0, 1, 2, players, { sittingOut = { [3] = true } })
+  r:playerLeft(0.5, 3)
+  r:playerJoined(0.6, 3, "Zed")
+  local all = {[1]="Reinder", [2]="Bob", [3]="Zed"}
+  local fx = r:vehiclePicked(1, 2, "pickup", "cfg", all)
+  assertEq(find(fx, "setup", 3).role, "cop"); assertEq(find(fx, "spectate"), nil)
+  r:playerJoined(2, 4, "Dan")
+  r:playerLeft(3, 4)
+  r:reroll(4, 2)
+  r:playerJoined(4.5, 4, "Eve")
+  all[4] = "Eve"
+  fx = r:vehiclePicked(5, 2, "etk800", "cfg", all)
+  assertEq(find(fx, "setup", 4).role, "cop"); assertEq(find(fx, "spectate"), nil)
+end)

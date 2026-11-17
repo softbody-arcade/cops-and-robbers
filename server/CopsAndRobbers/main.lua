@@ -524,6 +524,7 @@ local function applyEffects(effects)
     elseif e.kind == "pickVehicle" then
       send(e.pid, "cnr_pickVehicle", { includeMods = cfg.includeModVehicles, excludedModels = cfg.excludedModels })
     elseif e.kind == "setup" then
+      spectators[e.pid] = nil
       if e.role == "runner" and not current.test then
         local key = playerKey(e.pid)
         lastRunnerKey = key

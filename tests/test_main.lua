@@ -3180,3 +3180,18 @@ test("a name that fits several players still says so when one of them sits out",
   assertEq(env.replyHas("Andy is sitting out"), true)
   env.cleanup()
 end)
+
+test("a player who joins in prep keeps spectating through New car, with spawns still refused", function()
+  local env = boot()
+  env.startRound()
+  env.names = { "Reinder", "Bob", "Kim" }
+  env.call("onPlayerJoin", 3)
+  env.panel(2, "reroll")
+  env.sent = {}
+  env.call("cnr_vehiclePicked", 2, '{"model":"etk800","config":"vehicles/etk800/base.pc"}')
+  assertEq(sentTo(env, "cnr_roundSetup", 3), nil)
+  assertEq(sentTo(env, "cnr_spectate", 3) ~= nil, true)
+  assertEq(sentTo(env, "cnr_roundSetup", 1) ~= nil, true)
+  assertEq(env.call("onVehicleSpawn", 3, 0, '3:Kim:3-0:{"jbm":"etk800","vcf":{"partConfigFilename":"vehicles/etk800/base.pc"}}'), 1)
+  env.cleanup()
+end)
