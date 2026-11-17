@@ -1877,7 +1877,7 @@ end)
 
 test("the role card shows the round's date", function()
   local env = bootClient()
-  local d = copy(SETUP); d.sky = { time = "night", weather = "rain", year = 2026, month = 12, day = 14, windDir = 0, windSeed = 7 }
+  local d = copy(SETUP); d.sky = { time = "night", weather = "rain", year = 2026, month = 12, day = 14, windDir = 0, windSeed = 7, temps = { { t = -0.1, hour = 6, c = 3 }, { t = 0.2, hour = 14, c = 5 } } }
   env.fire("cnr_roundSetup", d); env.tick(1)
   assertEq(env.hud().center.car, "Gavril Pickup · Night · Rain · 14 Dec · 3 to 5 °C")
 end)
@@ -1886,7 +1886,7 @@ test("New sky updates the card and says so", function()
   local env = bootClient()
   local d = copy(SETUP); d.sky = { weather = "rain", windDir = 0, windSeed = 7 }
   env.fire("cnr_roundSetup", d); env.tick(1)
-  env.fire("cnr_sky", { time = "noon", weather = "snow", year = 2026, month = 1, day = 3, windDir = 0, windSeed = 9 })
+  env.fire("cnr_sky", { time = "noon", weather = "snow", year = 2026, month = 1, day = 3, windDir = 0, windSeed = 9, temps = { { t = -0.1, hour = 6, c = -5 }, { t = 0.2, hour = 14, c = -1 } } })
   env.tick(0.2)
   assertEq(env.hud().center.car, "Gavril Pickup · Noon · Snow · 3 Jan · -5 to -1 °C")
   env.tick(3.5)
@@ -2371,6 +2371,128 @@ test("held traffic is lit at night by the mod, and only while held", function()
   for _, obj in ipairs(cars) do obj.commands = {} end
   env.tick(2)
   for _, obj in ipairs(cars) do assertEq(hasCommand(obj, "electrics.setLightsState(1)"), false) end
+end)
+
+local function chaseWith(env, sky)
+  local d = copy(SETUP); d.phase = "running"; d.chaseElapsed = 0; d.sky = sky
+  env.fire("cnr_roundSetup", d)
+end
+
+local function hasNotice(env, text)
+  for _, n in ipairs(env.hud().notices) do if n.text == text then return true end end
+  return false
+end
+
+local function cloudyToRain()
+  return { time = "noon", weather = "cloudy", windDir = 0, windSeed = 1, clockSeconds = 0, changes = { { at = 30, to = "rain", forecastFrom = 0 } } }
+end
+
+local function rainToStorm()
+  return { time = "noon", weather = "rain", windDir = 0, windSeed = 1, clockSeconds = 100, changes = { { at = 500, to = "storm", forecastFrom = 430 } } }
+end
+
+test("a weather change during the chase shows its notice and moves the lights and the beam", function()
+  local env = bootClient()
+  local traffic = package.loaded["copsAndRobbers/traffic"]
+  chaseWith(env, cloudyToRain())
+  env.fire("cnr_trafficStart", { count = 3 })
+  local notices = countEvents(env, "Weather: rain coming")
+  env.tick(29)
+  local cars = trafficObjects(env)
+  assertEq(#cars, 3)
+  assertEq(traffic.weather(), "cloudy")
+  for _, obj in ipairs(cars) do assertEq(hasCommand(obj, "electrics.setLightsState(1)"), false) end
+  assertEq(notices.n, 0)
+  env.tick(1.5)
+  assertEq(hasNotice(env, "Weather: rain coming"), true)
+  assertEq(traffic.weather(), "rain")
+  env.tick(1.1)
+  for _, obj in ipairs(cars) do assertEq(hasCommand(obj, "electrics.setLightsState(1)"), true) end
+  env.tick(10)
+  assertEq(notices.n, 1)
+end)
+
+test("a mid-chase joiner starts with the weather in effect and no notice for a change already past", function()
+  local env = bootClient()
+  local traffic = package.loaded["copsAndRobbers/traffic"]
+  local sky = cloudyToRain(); sky.clockSeconds = 50
+  local notices = countEvents(env, "Weather: rain coming")
+  chaseWith(env, sky)
+  assertEq(traffic.weather(), "rain")
+  env.tick(2)
+  assertEq(notices.n, 0)
+end)
+
+test("the forecast reaches the HUD under the timer, with the helicopter hint when it is on", function()
+  local env = bootClient()
+  env.fire("cnr_rules", { helicopter = true })
+  chaseWith(env, rainToStorm())
+  env.tick(1)
+  local f = env.hud().status.forecast
+  assertEq(f.text, "Forecast: a storm in 5-8 min"); assertEq(f.heli, "(helicopter grounded)")
+  env.fire("cnr_rules", { helicopter = false })
+  env.tick(0.2)
+  assertEq(env.hud().status.forecast.text, "Forecast: a storm in 5-8 min"); assertEq(env.hud().status.forecast.heli, nil)
+  env.tick(330, 1)
+  assertEq(env.hud().status.forecast.text, "Forecast: a storm any minute")
+  env.tick(70, 1)
+  assertEq(env.hud().status.forecast, nil)
+  assertEq(env.hud().status.time ~= nil, true)
+  env.fire("cnr_rules", { helicopter = true })
+  env.M.onBeamMPServerLeave()
+  chaseWith(env, rainToStorm())
+  env.tick(1)
+  assertEq(env.hud().status.forecast.text, "Forecast: a storm in 5-8 min"); assertEq(env.hud().status.forecast.heli, nil)
+end)
+
+test("prep shows the first change's forecast", function()
+  local env = bootClient()
+  local d = copy(SETUP)
+  d.sky = { time = "noon", weather = "clear", windDir = 0, windSeed = 1, releaseAt = 10, changes = { { at = 400, to = "cloudy", forecastFrom = 330 } } }
+  env.fire("cnr_roundSetup", d); env.tick(0.2)
+  assertEq(env.hud().center.car, "Gavril Pickup · Noon · Clear · Forecast: clouds 5-8 min after release")
+  assertEq(env.hud().status, nil)
+  local news = countEvents(env, "New sky: Noon · Rain")
+  env.fire("cnr_sky", { time = "noon", weather = "rain", windDir = 0, windSeed = 3, releaseAt = 10, changes = { { at = 200, to = "storm", forecastFrom = 100 } } })
+  env.tick(0.2)
+  assertEq(env.hud().center.car, "Gavril Pickup · Noon · Rain · Forecast: a storm 1-4 min after release")
+  assertEq(news.n, 1)
+  assertEq(package.loaded["copsAndRobbers/traffic"].weather(), "rain")
+end)
+
+test("no forecast without changes", function()
+  local env = bootClient()
+  env.fire("cnr_rules", { helicopter = true })
+  local d = copy(SETUP); d.sky = { time = "noon", weather = "clear", windDir = 0, windSeed = 1, releaseAt = 10, changes = {} }
+  env.fire("cnr_roundSetup", d); env.tick(0.2)
+  assertEq(env.hud().center.car, "Gavril Pickup · Noon · Clear")
+  local chase = bootClient()
+  local sky = rainToStorm(); sky.changes = {}
+  chaseWith(chase, sky)
+  chase.tick(1)
+  assertEq(chase.hud().status.time ~= nil, true); assertEq(chase.hud().status.forecast, nil)
+  local bare = bootClient()
+  chaseWith(bare, nil)
+  bare.tick(1)
+  assertEq(bare.hud().status.time ~= nil, true); assertEq(bare.hud().status.forecast, nil)
+end)
+
+local function practiceWith(env, sky)
+  local d = copy(SETUP); d.role = "runner"; d.runnerId = 1; d.inPlace = true; d.phase = "running"; d.chaseElapsed = 0
+  d.sky = sky
+  env.fire("cnr_roundSetup", d)
+  env.fire("cnr_setupAI", { model = "pickup", config = "vehicles/pickup/base.pc", runnerId = 1, ai = { { id = -1, role = "cop", index = 1, name = "AI cop 1" } } })
+end
+
+test("practice AI cars switch their headlights on in bad weather by day", function()
+  local env = bootClient()
+  practiceWith(env, { time = "noon", weather = "rain", windDir = 0, windSeed = 1, clockSeconds = 0, changes = { { at = 10, to = "cloudy", forecastFrom = 0 } } })
+  env.tick(3)
+  local car = env.spawned[1].veh
+  assertEq(hasCommand(car, "electrics.setLightsState(1)"), true)
+  assertEq(hasCommand(car, "electrics.setLightsState(0)"), false)
+  env.tick(10)
+  assertEq(hasCommand(car, "electrics.setLightsState(0)"), true)
 end)
 
 test("service vehicles never become traffic", function()
@@ -3866,6 +3988,41 @@ test("a spectator gets the round's sky and New sky, and its own back afterwards"
     assertEq(#env.sky.setStates > n, true)
     env.fire("cnr_roundEnd", { reason = "cancelled" })
     assertEq(env.sky.locked, false); assertEq(env.sky.state.cloudCover, 0.3)
+  end)
+end)
+
+test("a spectator sees the forecast under the chase clock and the weather notices, and the beam follows the weather", function()
+  withCamera(function()
+    local env = bootClient()
+    env.fire("cnr_mode", {})
+    env.fire("cnr_rules", { helicopter = true })
+    spectate(env, { phase = "countdown", countdownRemaining = 1,
+      sky = { time = "noon", weather = "rain", windDir = 0, windSeed = 1, clockSeconds = 0, changes = { { at = 400, to = "storm", forecastFrom = 330 } } } })
+    env.tick(1)
+    assertEq(env.hud().spectate.time, nil); assertEq(env.hud().spectate.forecast, nil)
+    env.fire("cnr_runnerGo", { headStartSeconds = 1 })
+    env.fire("cnr_release", {})
+    env.tick(1)
+    local f = env.hud().spectate.forecast
+    assertEq(f.text, "Forecast: a storm in 5-8 min"); assertEq(f.heli, "(helicopter grounded)")
+    local joiner = bootClient()
+    local traffic = package.loaded["copsAndRobbers/traffic"]
+    local past = countEvents(joiner, "Weather: rain coming")
+    joiner.fire("cnr_mode", {})
+    joiner.fire("cnr_rules", { helicopter = true })
+    spectate(joiner, { phase = "running", chaseElapsed = 30,
+      sky = { time = "noon", weather = "cloudy", windDir = 0, windSeed = 1, clockSeconds = 100,
+        changes = { { at = 50, to = "rain", forecastFrom = 0 }, { at = 500, to = "storm", forecastFrom = 430 } } } })
+    assertEq(traffic.weather(), "rain")
+    joiner.tick(1.5)
+    assertEq(joiner.hud().spectate.time, "0:31")
+    assertEq(joiner.hud().spectate.forecast.text, "Forecast: a storm in 5-8 min")
+    assertEq(joiner.hud().spectate.forecast.heli, "(helicopter grounded)")
+    joiner.tick(400, 1)
+    assertEq(hasNotice(joiner, "Weather: the rain is getting heavier"), true)
+    assertEq(traffic.weather(), "storm")
+    assertEq(joiner.hud().spectate.forecast, nil)
+    assertEq(past.n, 0)
   end)
 end)
 

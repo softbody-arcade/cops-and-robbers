@@ -1,7 +1,7 @@
 local rules = require("cnr.rules")
 local config = require("cnr.config")
 
-test("rules payload has exactly the 19 keys with the config values", function()
+test("rules payload has exactly the 20 keys with the config values", function()
   local cfg = {}
   for k, v in pairs(config.DEFAULTS) do cfg[k] = v end
   cfg.headStartSeconds = 9
@@ -11,12 +11,13 @@ test("rules payload has exactly the 19 keys with the config values", function()
     n = n + 1
     assertEq(v, cfg[k])
   end
-  assertEq(n, 19)
-  assertEq(#rules.KEYS, 19)
+  assertEq(n, 20)
+  assertEq(#rules.KEYS, 20)
   assertEq(p.headStartSeconds, 9)
   assertEq(p.sirensAllowed, true)
   assertEq(p.autoNextRound, nil)
   assertEq(p.helicopter, true)
+  assertEq(p.weatherChanges, true)
   assertEq(p.helicopterUpSeconds, 120)
   assertEq(p.lastSeenIntervalSeconds, nil)
 end)

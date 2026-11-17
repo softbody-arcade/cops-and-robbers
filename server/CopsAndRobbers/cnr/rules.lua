@@ -5,6 +5,7 @@ M.KEYS = {
   "resetWaitSeconds", "copResetMinDistanceMeters", "crashSpeedLossKmh", "crashPenaltySeconds",
   "sightMaxMeters", "roundTimeLimitSeconds", "carMode", "trafficPerPlayer", "trafficRunnerOnly",
   "sirensAllowed", "helicopter", "helicopterArrivalSeconds", "helicopterUpSeconds", "helicopterRefuelSeconds",
+  "weatherChanges",
 }
 
 function M.payload(cfg, trafficPerPlayer)

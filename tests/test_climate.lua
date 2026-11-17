@@ -1,4 +1,4 @@
-local climate = require("copsAndRobbers/climate")
+local climate = require("cnr.climate")
 test("climate gives the table's range per weather and month", function()
   local lo, hi = climate.range("clear", 7); assertEq(lo, 20); assertEq(hi, 31)
   lo, hi = climate.range("rain", 4); assertEq(lo, 10); assertEq(hi, 13)

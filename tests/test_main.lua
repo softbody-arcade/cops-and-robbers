@@ -1067,6 +1067,30 @@ test("New sky picks a date that fits the new weather", function()
   env.cleanup()
 end)
 
+test("the setup and New sky payloads carry the schedule", function()
+  local env = boot({ config = '{"weather":"random"}' })
+  env.startRound()
+  local function check(s)
+    assertEq(type(s.changes), "table")
+    assertEq(#s.temps >= 2, true)
+    assertEq(type(s.gameStart), "number"); assertEq(type(s.releaseAt), "number")
+  end
+  local function key(s)
+    local parts = {}
+    for _, c in ipairs(s.changes) do parts[#parts + 1] = c.to .. "@" .. tostring(c.at) end
+    return table.concat(parts, ",")
+  end
+  local setup = decodeJson(env.lastSent("cnr_roundSetup").data).sky
+  check(setup)
+  assertEq(#setup.changes > 0, true)
+  env.sent = {}
+  env.panel(1, "sky")
+  local again = decodeJson(env.lastSent("cnr_sky").data)
+  check(again)
+  assertEq(key(again) ~= key(setup), true)
+  env.cleanup()
+end)
+
 test("New sky needs a random setting", function()
   local env = boot({ config = '{"timeOfDay":"noon","weather":"clear"}' })
   env.startRound()

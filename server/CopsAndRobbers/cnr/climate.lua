@@ -10,6 +10,16 @@ local OFFSET = {
   fog = { 0, -6 },
 }
 
+function M.normal(month)
+  return LOW[month], HIGH[month]
+end
+
+function M.offset(weather)
+  local o = OFFSET[weather == "snow" and "cloudy" or weather]
+  if not o then return nil end
+  return o[1], o[2]
+end
+
 function M.range(weather, month)
   if type(weather) ~= "string" or not LOW[month] then return nil end
   local low, high = LOW[month], HIGH[month]

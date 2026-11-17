@@ -160,6 +160,11 @@ function M.heliItem(heli, now)
   return { text = text, time = time }
 end
 
+local function forecastItem(f)
+  if type(f) ~= "table" or type(f.text) ~= "string" then return nil end
+  return { text = f.text, heli = type(f.heli) == "string" and f.heli or nil }
+end
+
 local function limitText(info)
   local limit = tonumber(type(info.rules) == "table" and info.rules.roundTimeLimitSeconds)
   return limit and limit > 0 and M.formatTime(limit) or nil
@@ -191,6 +196,7 @@ local function statusBlock(info, now)
   end
   status.tag = info.infoTag
   status.heli = M.heliItem(info.heli, now)
+  status.forecast = forecastItem(info.forecast)
   return status
 end
 
@@ -199,6 +205,7 @@ local function spectateBlock(info, now)
   if info.chaseStart then
     block.time = M.formatTime(now - info.chaseStart)
     block.limit = limitText(info)
+    block.forecast = forecastItem(info.forecast)
   end
   block.heli = M.heliItem(info.heli, now)
   return block

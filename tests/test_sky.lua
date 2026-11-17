@@ -1,4 +1,5 @@
 local sky = require("cnr.sky")
+local weather = require("cnr.weather")
 local config = require("cnr.config")
 
 local function rng(roll, index)
@@ -9,6 +10,33 @@ local function rng(roll, index)
   end
 end
 local function cfg(o) return (config.merge(o)) end
+
+test("pick rolls a weather seed and a schedule", function()
+  local s = sky.pick(cfg(nil), rng(0.5, 1), false, 2026)
+  assertEq(s.weatherSeed, 1)
+  assertEq(type(s.changes), "table"); assertEq(type(s.temps), "table")
+  assertEq(#s.temps >= 2, true)
+  assertEq(s.releaseAt, 10)
+  assertEq(type(s.gameStart), "number")
+  local again = weather.build({ time = s.time, weather = s.weather, month = s.month, weatherSeed = 1 }, cfg(nil))
+  assertEq(#s.changes, #again.changes)
+  assertEq(s.changes[1].at, again.changes[1].at)
+  local draws = 0
+  assertEq(next(sky.pick(cfg(nil), function() draws = draws + 1; return 1 end, true)), nil)
+  assertEq(draws, 0)
+end)
+
+test("payload carries the schedule", function()
+  local changes = { { at = 100, to = "cloudy", forecastFrom = 50 } }
+  local temps = { { t = -0.2, hour = 6, c = 3 }, { t = 0.1, hour = 14, c = 9 } }
+  local s = { time = "noon", weather = "rain", windDir = 1, windSeed = 1, weatherSeed = 5, changes = changes, temps = temps, gameStart = 0.95, releaseAt = 10 }
+  local p = sky.payload(s, cfg(nil), nil)
+  assertEq(p.changes, changes); assertEq(p.temps, temps)
+  assertEq(p.gameStart, 0.95); assertEq(p.releaseAt, 10)
+  assertEq(p.weatherSeed, nil)
+  p = sky.payload({ time = "noon", windDir = 1, windSeed = 1 }, cfg(nil), nil)
+  assertEq(p.changes, nil); assertEq(p.temps, nil); assertEq(p.gameStart, nil); assertEq(p.releaseAt, nil)
+end)
 
 test("random choices are the default and still pick wind", function()
   local s = sky.pick(cfg(nil), rng(0.5, 1), false, 2026)
@@ -121,4 +149,15 @@ test("record keeps the conditions without the wind", function()
   assertEq(r.year, 2026); assertEq(r.month, 3); assertEq(r.day, 9)
   assertEq(r.windSeed, nil); assertEq(r.windDir, nil); assertEq(r.daySeconds, nil)
   assertEq(sky.record({}, cfg(nil)), nil)
+end)
+
+test("record gives the worst weather and the start weather", function()
+  local s = { weather = "cloudy", changes = { { at = 10, to = "rain" }, { at = 20, to = "storm" }, { at = 30, to = "cloudy" } } }
+  local r = sky.record(s, cfg(nil), 35)
+  assertEq(r.weather, "storm"); assertEq(r.weatherStart, "cloudy")
+  assertEq(sky.record(s, cfg(nil), 15).weather, "rain")
+  assertEq(sky.record(s, cfg(nil), 5).weather, "cloudy")
+  assertEq(sky.record({ weather = "snow", changes = { { at = 1, to = "fog" } } }, cfg(nil), 5).weather, "snow")
+  assertEq(sky.record({ weather = "fog", changes = { { at = 1, to = "snow" } } }, cfg(nil), 5).weather, "fog")
+  assertEq(sky.record({ weather = "storm", changes = { { at = 1, to = "clear" } } }, cfg(nil), 5).weather, "storm")
 end)

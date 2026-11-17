@@ -1083,13 +1083,16 @@ beamTest("no beam by day, without a light, or at a slant over 400 m", function()
   drawn.calls = 0
   heli.lightTick(state, nil, true, 1.5)
   assertEq(drawn.calls, 0)
+  heli.set(state, { phase = "arriving" }, 1.8)
+  heli.lightTick(state, target, true, 1.8)
   heli.set(state, { phase = "tracking" }, 2)
-  assertEq(drawsAt(2, true) > 0, true)
+  local c = nightRun(2, 2 + heli.APPROACH_SECONDS + 1)
+  assertEq(drawsAt(c, true) > 0, true)
   state.flight.pos = vec3(pos.x + 300, pos.y, pos.z + 280)
-  assertEq(drawsAt(2, true), 0)
+  assertEq(drawsAt(c, true), 0)
   assertEq(fake.objects[LIGHT] ~= nil, true)
   state.flight.pos = vec3(pos.x + 300, pos.y, pos.z + 250)
-  assertEq(drawsAt(2, true) > 0, true)
+  assertEq(drawsAt(c, true) > 0, true)
 end)
 
 beamTest("a drawer error stops the beam for the round and keeps the light and its glare", function()
@@ -3283,4 +3286,161 @@ test("guidance ending inside starts the timed watch from that moment", function(
   assertEq(s.list[1].id, 1)
   assertEq(s.since, c)
   samePos(state.flight.spot, vec3(0, 0, 0), 1e-9)
+end)
+
+local function grounded(c, isNight)
+  status(c, "grounded", { reason = "storm" }, nil, nil, isNight)
+end
+
+test("grounded while up flies away with the light", function()
+  load()
+  state.random = seeded(4)
+  night(0, "tracking")
+  local c = run(0, 5, 0.05)
+  local obj = fake.objects[LIGHT]
+  assertEq(obj ~= nil, true)
+  heli.set(state, { phase = "grounded", reason = "storm" }, c)
+  heli.lightTick(state, target, true, c)
+  local f = state.flight
+  assertEq(f.leaving ~= nil, true)
+  assertEq(state.fx.mode, "depart")
+  local left = state.leftAt
+  assertEq(left, c)
+  assertNear(heli.soundLevel(state, left + 6.5), 0.5, 1e-9)
+  departs(obj, c, c, true)
+  assertEq(fake.objects[LIGHT], nil)
+  assertEq(state.flight, nil)
+end)
+
+test("grounded during the fly-in flies away too", function()
+  load()
+  state.random = seeded(2)
+  night(0, "arriving")
+  night(1, "tracking")
+  local c = run(1, 3, 0.05)
+  local obj = fake.objects[LIGHT]
+  assertEq(obj ~= nil, true)
+  c = c + 0.05
+  heli.set(state, { phase = "grounded", reason = "fog" }, c)
+  heli.lightTick(state, target, true, c)
+  assertEq(state.flight.leaving ~= nil, true)
+  assertEq(state.fx.mode, "depart")
+  local prev = copyPos(obj.pos)
+  local worst = 0
+  while fake.objects[LIGHT] do
+    atFlight(obj)
+    prev = copyPos(obj.pos)
+    c = c + 0.05
+    heli.lightTick(state, target, true, c)
+    if fake.objects[LIGHT] then worst = math.max(worst, dist3(obj.pos, prev)) end
+  end
+  assertEq(worst <= 70 * 0.05 + 1e-9, true, tostring(worst))
+  assertEq(state.flight, nil)
+end)
+
+test("grounded during a refuel's fly-away keeps it going", function()
+  load()
+  state.random = seeded(5)
+  night(0, "tracking")
+  local c = run(0, 3, 0.05)
+  c = c + 0.05
+  night(c, "refuelling")
+  local f, left = state.flight, state.leftAt
+  local leaving = f.leaving
+  c = nightRun(c, c + 3, nil)
+  heli.set(state, { phase = "grounded", reason = "snow" }, c)
+  heli.lightTick(state, target, true, c)
+  assertEq(state.flight, f)
+  assertEq(f.leaving, leaving)
+  assertEq(state.leftAt, left)
+  assertEq(state.fx.mode, "depart")
+  local dropped
+  while c < left + 10 do
+    c = c + 0.05
+    heli.lightTick(state, target, true, c)
+    if not dropped and not state.flight then dropped = c end
+  end
+  assertNear(dropped, left + heli.DEPART_SECONDS, 0.051)
+  assertEq(fake.objects[LIGHT], nil)
+end)
+
+test("grounded without a target still drops the flight 8 s after it left", function()
+  load()
+  state.random = seeded(6)
+  status(0, "tracking")
+  local c = flyTo(0, 2)
+  c = c + 0.05
+  heli.set(state, { phase = "grounded", reason = "storm" }, c)
+  heli.lightTick(state, nil, false, c)
+  local f = state.flight
+  assertEq(f ~= nil, true)
+  assertEq(f.leaving ~= nil, true)
+  assertEq(state.leftAt, c)
+  assertEq(state.lightPhase, "grounded")
+  local left, dropped = c, nil
+  while c < left + 10 do
+    c = c + 0.05
+    heli.lightTick(state, nil, false, c)
+    if not dropped and not state.flight then dropped = c end
+  end
+  assertNear(dropped, left + heli.DEPART_SECONDS, 0.051)
+end)
+
+test("back from a grounding it searches from the last known state", function()
+  load()
+  state.random = seeded(7)
+  local a = copyPos(pos)
+  status(0, "tracking")
+  local c = flyTo(0, 2)
+  c = c + 0.05
+  grounded(c)
+  c = flyTo(c, c + 10, nil, vec3(a.x + 300, a.y, a.z), 100)
+  assertEq(state.flight, nil)
+  assertNear(horiz(pos, a), 300, 1e-6)
+  c = c + 0.05
+  status(c, "arriving")
+  c = c + 0.05
+  status(c, "searching")
+  assertEq(state.search.mode, "contain")
+  samePos(state.flight.spot, a, 1e-9)
+end)
+
+for _, ph in ipairs({ "tracking", "searching" }) do
+  test("grounded straight to " .. ph .. " (0 s arrival) flies in and ramps the light", function()
+    load()
+    state.random = seeded(8)
+    night(0, "tracking")
+    local c = run(0, 3, 0.05)
+    c = c + 0.05
+    night(c, "grounded")
+    c = nightRun(c, c + 10, nil)
+    assertEq(state.flight, nil)
+    assertEq(fake.objects[LIGHT], nil)
+    c = c + 0.05
+    night(c, ph)
+    assertEq(horiz(state.flight.pos, pos) > heli.APPROACH_DISTANCE - 20, true)
+    local obj = fake.objects[LIGHT]
+    assertEq(obj ~= nil, true)
+    assertEq(tonumber(obj.fields.brightness) < heli.BRIGHTNESS * 0.05, true, obj.fields.brightness)
+  end)
+end
+
+test("grounded without a target and without any reference point leaves from its own position", function()
+  load()
+  state.random = seeded(9)
+  status(0, "tracking")
+  local c = flyTo(0, 2)
+  local f = state.flight
+  f.spot, f.lead, state.lastCar = nil, nil, nil
+  c = c + 0.05
+  heli.set(state, { phase = "grounded", reason = "storm" }, c)
+  heli.lightTick(state, nil, false, c)
+  assertEq(f.leaving ~= nil, true)
+  assertEq(state.leftAt, c)
+  local left = c
+  while c < left + 9 do
+    c = c + 0.05
+    heli.lightTick(state, nil, false, c)
+  end
+  assertEq(state.flight, nil)
 end)

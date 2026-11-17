@@ -75,7 +75,7 @@
             Buildings, hills, tunnels and garages hide you: it loses you after 2 s out of its sight.
             <template v-if="refuelNever">Before it arrives, it can't see you.</template>
             <template v-else>Before it arrives and while it refuels, it can't see you.</template>
-            It stays grounded in storm, fog and snow.
+            It is grounded while it is storm, fog or snow, and returns when the weather clears.
             At night its searchlight shines on you while it tracks you and keeps sweeping while it searches; you can turn its beam in the air off in your settings.
             <template v-if="sightOff">While it tracks you, cops see you live.</template>
           </span>
@@ -137,7 +137,7 @@
             Buildings, hills, tunnels and garages hide them: it loses them after 2 s out of its sight.
             <template v-if="refuelNever">Before it arrives, it can't see the runner.</template>
             <template v-else>Before it arrives and while it refuels, it can't see the runner.</template>
-            It stays grounded in storm, fog and snow.
+            It is grounded while it is storm, fog or snow, and returns when the weather clears.
             At night its searchlight shines on the runner while it tracks them and keeps sweeping while it searches; you can turn its beam in the air off in your settings.
           </span>
         </div>
@@ -198,6 +198,12 @@
       </div>
 
       <div tab-heading="Rules" class="htp-tab">
+        <div v-if="r.weatherChanges !== false" class="li">
+          <BngIcon :type="icons.caution" />
+          <span>
+            <b>Changing weather:</b> the weather can change during the chase, and the grip changes with it. A forecast line under the round clock shows the next change.
+          </span>
+        </div>
         <div class="li">
           <BngIcon :type="icons.lockClosed" />
           <span>

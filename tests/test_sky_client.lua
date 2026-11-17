@@ -15,11 +15,18 @@ end)
 
 local WINTER = { time = "sunrise", weather = "snow", year = 2026, month = 12, day = 14, windDir = 0, windSeed = 1 }
 
+local function withTemps(p, low, high)
+  local q = {}
+  for k, v in pairs(p) do q[k] = v end
+  q.temps = { { t = -0.1, hour = 6, c = low }, { t = 0.2, hour = 14, c = high } }
+  return q
+end
+
 test("labels end with the date only when asked", function()
   local sky = load()
-  assertEq(sky.label(WINTER, true), "Sunrise · Snow · 14 Dec · -4 to 0 °C")
-  assertEq(sky.label(WINTER), "Sunrise · Snow")
-  assertEq(sky.label({ time = "noon", weather = "clear", month = 1, day = 3 }, true), "Noon · Clear · 3 Jan · 0 to 8 °C")
+  assertEq(sky.label(withTemps(WINTER, -4, 0), true), "Sunrise · Snow · 14 Dec · -4 to 0 °C")
+  assertEq(sky.label(withTemps(WINTER, -4, 0)), "Sunrise · Snow")
+  assertEq(sky.label(withTemps({ time = "noon", weather = "clear", month = 1, day = 3 }, 0, 8), true), "Noon · Clear · 3 Jan · 0 to 8 °C")
   assertEq(sky.label({ time = "noon", weather = "clear", month = 13, day = 3 }, true), "Noon · Clear")
 end)
 
@@ -27,14 +34,15 @@ test("the label shows the range in Fahrenheit when the game does", function()
   local sky = load()
   local saved = _G.settings
   _G.settings = { getValue = function(k) return k == "uiUnitTemperature" and "f" or nil end }
-  local label = sky.label(WINTER, true)
+  local label = sky.label(withTemps(WINTER, -4, 0), true)
   _G.settings = saved
   assertEq(label, "Sunrise · Snow · 14 Dec · 25 to 32 °F")
 end)
 
-test("a label without a month or with an unknown weather has no temperature", function()
+test("a label without turning points has no temperature", function()
   local sky = load()
   assertEq(sky.label({ time = "noon", weather = "clear", day = 3 }, true), "Noon · Clear")
+  assertEq(sky.label({ time = "noon", weather = "clear", month = 1, day = 3 }, true), "Noon · Clear · 3 Jan")
   assertEq(sky.label({ time = "noon", weather = "hail", month = 1, day = 3 }, true), "Noon · Hail · 3 Jan")
 end)
 
@@ -104,7 +112,7 @@ test("a map south of the equator gets the same season six months on", function()
   local s = fake.setStates[1]
   assertEq(s.year, 2026); assertEq(s.month, 6); assertEq(s.day, 14)
   assertEq(fake.solarState.month, 6); assertEq(fake.solarState.day, 14)
-  assertEq(sky.label(WINTER, true), "Sunrise · Snow · 14 Jun · -4 to 0 °C")
+  assertEq(sky.label(withTemps(WINTER, -4, 0), true), "Sunrise · Snow · 14 Jun · -4 to 0 °C")
 end)
 
 test("the shifted date stays a real day", function()
@@ -112,8 +120,8 @@ test("the shifted date stays a real day", function()
   fake.state.latitude = -44.57
   sky.apply({ time = "noon", weather = "clear", year = 2026, month = 12, day = 31, windDir = 0, windSeed = 1 })
   assertEq(fake.setStates[1].month, 6); assertEq(fake.setStates[1].day, 30)
-  assertEq(sky.label({ time = "noon", weather = "clear", month = 8, day = 31 }, true), "Noon · Clear · 28 Feb · 19 to 30 °C")
-  assertEq(sky.label({ time = "noon", weather = "clear", month = 1, day = 31 }, true), "Noon · Clear · 31 Jul · 0 to 8 °C")
+  assertEq(sky.label({ time = "noon", weather = "clear", month = 8, day = 31 }, true), "Noon · Clear · 28 Feb")
+  assertEq(sky.label({ time = "noon", weather = "clear", month = 1, day = 31 }, true), "Noon · Clear · 31 Jul")
 end)
 
 test("restore gives the player's own date back", function()
@@ -153,22 +161,47 @@ test("a part on the map's own comes from the map's start values", function()
   assertEq(#fake.profiles, 0)
 end)
 
-test("the temperature follows the weather and the server's month", function()
+local TEMPS = {
+  { t = -0.20833, hour = 6, c = 8 },
+  { t = 0.125, hour = 14, c = 18 },
+  { t = 0.79167, hour = 6, c = 9 },
+  { t = 1.125, hour = 14, c = 20 },
+}
+
+local function changing(extra)
+  local p = {
+    time = "noon", weather = "cloudy", year = 2026, month = 12, day = 14, daySeconds = 1800, gameStart = 23 / 24,
+    windDir = 90, windSeed = 7, changes = { { at = 20, to = "rain", forecastFrom = 0 } }, temps = TEMPS,
+  }
+  for k, v in pairs(extra or {}) do p[k] = v end
+  return p
+end
+
+test("the temperature curve is the server's turning points around the start", function()
   local sky, fake = load()
-  sky.apply(WINTER)
+  sky.apply(changing())
   local c = fake.setStates[#fake.setStates].temperatureCurveOverrideC
   assertEq(#c, 2)
-  assertNear(c[1][1], 2 / 24, 1e-9); assertEq(c[1][2], 0)
-  assertNear(c[2][1], 0.775, 1e-9); assertEq(c[2][2], -4)
+  assertNear(c[1][1], 2 / 24, 1e-12); assertEq(c[1][2], 18)
+  assertEq(c[2][1], 0.75); assertEq(c[2][2], 8)
   assertEq(#fake.profiles, 0)
   sky, fake = load()
   fake.state.latitude = -44.57
-  sky.apply(WINTER)
+  sky.apply(changing())
   c = fake.setStates[#fake.setStates].temperatureCurveOverrideC
-  assertEq(#c, 2)
-  assertNear(c[1][1], 2 / 24, 1e-9); assertEq(c[1][2], 0)
-  assertNear(c[2][1], 0.775, 1e-9); assertEq(c[2][2], -4)
-  assertEq(#fake.profiles, 0)
+  assertNear(c[1][1], 2 / 24, 1e-12); assertEq(c[1][2], 18)
+  assertEq(c[2][1], 0.75); assertEq(c[2][2], 8)
+  sky, fake = load()
+  sky.apply(changing({ clockSeconds = 300 }))
+  c = fake.setStates[#fake.setStates].temperatureCurveOverrideC
+  assertNear(c[1][1], 2 / 24, 1e-12); assertEq(c[1][2], 18)
+  assertEq(c[2][1], 0.75); assertEq(c[2][2], 9)
+  sky, fake = load()
+  sky.apply(changing({ temps = false }))
+  assertEq(fake.setStates[#fake.setStates].temperatureCurveOverrideC, false)
+  sky, fake = load()
+  sky.apply(WINTER)
+  assertEq(fake.setStates[#fake.setStates].temperatureCurveOverrideC, false)
 end)
 
 test("restore gives the player's own wind back", function()
@@ -322,10 +355,16 @@ end)
 test("a failing apply still relocks and restore still works", function()
   local sky, fake = load()
   fake.state.cloudCover = 0.05
-  local make = _G.be.setGroundModel
-  _G.be.setGroundModel = function() error("boom") end
+  local make = core_environment.setState
+  core_environment.setState = function(s, seconds)
+    if s and s.cloudCover == 2.2 and s.time and not fake.threw then
+      fake.threw = true
+      error("boom")
+    end
+    return make(s, seconds)
+  end
   sky.apply(RAIN_NIGHT)
-  _G.be.setGroundModel = make
+  core_environment.setState = make
   assertEq(fake.objects.cnr_precipitation, nil)
   assertEq(fake.locked, true)
   assertEq(fake.lerps[#fake.setStates], nil); assertEq(fake.state.cloudCover, 2.2)
@@ -567,4 +606,431 @@ test("round end fades the rain out", function()
   assertEq(fake.objects.cnr_precipitation ~= nil, true)
   sky.update(3.2)
   assertEq(fake.objects.cnr_precipitation, nil); assertEq(fake.objects.cnr_rain_sound, nil)
+end)
+
+local function drops(fake)
+  local obj = fake.objects.cnr_precipitation
+  return obj and tonumber(obj:getField("numDrops")) or 0
+end
+
+local function curveAt(curve, time)
+  local t = time % 1
+  for i = 2, #curve do
+    local a, b = curve[i - 1], curve[i]
+    if t >= a[1] and t <= b[1] then return a[2] + (b[2] - a[2]) * (t - a[1]) / (b[1] - a[1]) end
+  end
+  local first, last = curve[1], curve[#curve]
+  if t < first[1] then t = t + 1 end
+  return last[2] + (first[2] - last[2]) * (t - last[1]) / (1 + first[1] - last[1])
+end
+
+local function started(extra)
+  local sky, fake = load()
+  local p = changing(extra)
+  sky.apply(p)
+  sky.startClock(p.clockSeconds or 0)
+  return sky, fake, p.clockSeconds or 0
+end
+
+local function runFor(sky, t, seconds, dt, each)
+  for _ = 1, math.floor(seconds / dt + 0.5) do
+    local change = sky.update(dt)
+    t = t + dt
+    if each then each(t, change) end
+  end
+  return t
+end
+
+test("clouds and fog step twice a second, locked between steps", function()
+  local sky, fake = started()
+  local count, steps, last = #fake.setStates, 0, nil
+  runFor(sky, 0, 90, 0.1, function(t)
+    assertEq(fake.locked, true, "locked at " .. t)
+    for i = count + 1, #fake.setStates do
+      local s = fake.setStates[i]
+      assertEq(fake.lerps[i], nil)
+      local keys = 0
+      for k in pairs(s) do
+        keys = keys + 1
+        assertEq(k == "cloudCover" or k == "fogDensity" or k == "windSpeed", true, k)
+      end
+      assertEq(keys, 3)
+      if last then assertEq(t - last >= 0.5 - 1e-6, true, string.format("%.2f after %.2f", t, last)) end
+      last = t
+      assertEq(t >= 20 and t <= 80.6, true, tostring(t))
+      steps = steps + 1
+    end
+    count = #fake.setStates
+  end)
+  assertEq(steps >= 110, true, tostring(steps))
+end)
+
+test("the steps follow a smoothstep", function()
+  local sky, fake = started()
+  local t = runFor(sky, 0, 35, 0.1)
+  assertNear(fake.state.cloudCover, 1.8625, 0.03)
+  runFor(sky, t, 15, 0.1)
+  assertNear(fake.state.cloudCover, 2.0, 0.02); assertNear(fake.state.fogDensity, 2.5, 0.1); assertNear(fake.state.windSpeed, 0.4, 0.01)
+  runFor(sky, 50, 31, 0.1)
+  assertEq(fake.state.cloudCover, 2.2); assertEq(fake.state.fogDensity, 4); assertEq(fake.state.windSpeed, 0.5)
+end)
+
+test("a step never touches time, play, the day length, the date or the temperature", function()
+  local sky, fake = started()
+  local count = #fake.setStates
+  local before = {}
+  for k, v in pairs(fake.state) do before[k] = v end
+  runFor(sky, 0, 90, 0.1)
+  assertEq(#fake.setStates > count, true)
+  for i = count + 1, #fake.setStates do
+    local s = fake.setStates[i]
+    for _, k in ipairs({ "time", "play", "dayLength", "year", "month", "day", "temperatureCurveOverrideC", "groundWind" }) do
+      assertEq(s[k], nil, k)
+    end
+  end
+  for _, k in ipairs({ "time", "play", "dayLength", "year", "month", "day", "temperatureCurveOverrideC" }) do
+    assertEq(fake.state[k], before[k], k)
+  end
+  assertEq(#fake.profiles, 0)
+end)
+
+test("rain fades in over the change", function()
+  local sky, fake = started()
+  local t = runFor(sky, 0, 19.9, 0.1)
+  assertEq(fake.objects.cnr_precipitation, nil)
+  t = runFor(sky, t, 30.1, 0.1)
+  assertNear(drops(fake), 1500, 150)
+  runFor(sky, t, 31, 0.1)
+  assertEq(drops(fake), 3000)
+end)
+
+test("the curve moves on only at a turning point, and the two curves agree there", function()
+  local sky, fake = load()
+  sky.apply(changing())
+  local curve = fake.setStates[#fake.setStates].temperatureCurveOverrideC
+  sky.startClock(0)
+  local clockStart = fake.setStates[#fake.setStates].time
+  local count, writes = #fake.setStates, {}
+  runFor(sky, 0, 1500, 0.25, function(t)
+    for i = count + 1, #fake.setStates do
+      local s = fake.setStates[i]
+      if s.temperatureCurveOverrideC ~= nil then
+        assertEq(s.cloudCover, nil); assertEq(s.time, nil); assertEq(fake.lerps[i], nil)
+        writes[#writes + 1] = { t = t, curve = s.temperatureCurveOverrideC }
+      end
+    end
+    count = #fake.setStates
+    assertEq(fake.locked, true)
+  end)
+  assertEq(#writes, 2)
+  assertEq(writes[1].t >= 225 and writes[1].t <= 225.5, true, tostring(writes[1].t))
+  assertEq(writes[2].t >= 1425 and writes[2].t <= 1425.5, true, tostring(writes[2].t))
+  local turns = { 2 / 24, 0.75 }
+  for i, w in ipairs(writes) do
+    local at = (clockStart + w.t / 1800) % 1
+    assertNear(at, turns[i], 0.5 / 1800 + 1e-9)
+    assertNear(curveAt(curve, turns[i]), curveAt(w.curve, turns[i]), 1e-9)
+    assertNear(curveAt(curve, at), curveAt(w.curve, at), 0.01)
+    curve = w.curve
+  end
+  assertEq(writes[1].curve[2][2], 9); assertEq(writes[2].curve[1][2], 20)
+end)
+
+test("the wind cross-fades", function()
+  local sky, fake = started({ weather = "rain", driving = true, changes = { { at = 20, to = "cloudy", forecastFrom = 0 } } })
+  local wind = require("copsAndRobbers/wind")
+  local t = runFor(sky, 0, 50, 0.25)
+  local g = fake.groundWinds[#fake.groundWinds]
+  local x, y = wind.at("rain", 7, 90, 50)
+  assertNear(g.x, x / 2, 1e-6); assertNear(g.y, y / 2, 1e-6)
+  assertEq(math.abs(x) > 1, true)
+  t = runFor(sky, t, 29.75, 0.25)
+  local n = #fake.groundWinds
+  local q = #fake.queued
+  g = fake.groundWinds[n]
+  assertEq(g.x ~= 0 or g.y ~= 0, true)
+  runFor(sky, t, 10, 0.25)
+  assertEq(#fake.groundWinds, n + 1)
+  g = fake.groundWinds[n + 1]
+  assertEq(g.x, 0); assertEq(g.y, 0); assertEq(g.z, 0)
+  assertEq(#fake.queued, q + 1)
+  assertEq(fake.queued[q + 1], "obj:setWind(0.000000,0.000000,0.000000)")
+end)
+
+test("the wind picks up over a change into a windy weather", function()
+  local sky, fake = started({ driving = true })
+  local wind = require("copsAndRobbers/wind")
+  local t = runFor(sky, 0, 19.75, 0.25)
+  assertEq(#fake.groundWinds, 0)
+  runFor(sky, t, 30.25, 0.25)
+  local g = fake.groundWinds[#fake.groundWinds]
+  local x = wind.at("rain", 7, 90, 50)
+  assertNear(g.x, x / 2, 1e-6)
+end)
+
+test("a joiner mid-change gets the in-between sky", function()
+  local sky, fake = load()
+  sky.apply(changing({ clockSeconds = 50 }))
+  local s = fake.setStates[#fake.setStates]
+  assertNear(s.cloudCover, 2.0, 1e-9); assertNear(s.fogDensity, 2.5, 1e-9); assertNear(s.windSpeed, 0.4, 1e-9)
+  assertEq(s.temperatureCurveOverrideC[2][2], 8)
+  assertEq(sky.weather(), "rain")
+  sky.startClock(50)
+  assertEq(fake.locked, true)
+  assertEq(fake.state.cloudCover, s.cloudCover)
+  local t = runFor(sky, 50, 15, 0.1, function(_, change) assertEq(change, nil) end)
+  assertNear(drops(fake), 1500, 150)
+  assertNear(fake.state.cloudCover, 1.8 + 0.4 * 0.84375, 0.03)
+  runFor(sky, t, 15.1, 0.1)
+  assertEq(drops(fake), 3000)
+  assertEq(fake.state.cloudCover, 2.2)
+
+  sky, fake = load()
+  sky.apply(changing({ clockSeconds = 50, weather = "rain", changes = { { at = 20, to = "storm", forecastFrom = 0 } } }))
+  assertEq(drops(fake), 3000)
+  assertEq(fake.objects.cnr_precipitation:getField("dropSize"), "1")
+  sky.startClock(50)
+  runFor(sky, 50, 15, 0.1)
+  assertNear(drops(fake), 5000, 200)
+
+  sky, fake = load()
+  sky.apply(changing({ clockSeconds = 100 }))
+  s = fake.setStates[#fake.setStates]
+  assertEq(s.cloudCover, 2.2); assertEq(fake.lerps[#fake.setStates], 3)
+  assertEq(fake.objects.cnr_precipitation, nil)
+  sky.startClock(100)
+  runFor(sky, 100, 3.1, 0.1)
+  assertEq(drops(fake), 3000)
+end)
+
+test("update reports a change once, with its notice", function()
+  local sky = started({ changes = { { at = 20, to = "rain", forecastFrom = 0 }, { at = 70, to = "storm", forecastFrom = 0 } } })
+  local seen = {}
+  runFor(sky, 0, 150, 0.1, function(t, change)
+    if change then seen[#seen + 1] = { t = t, change = change } end
+  end)
+  assertEq(#seen, 2)
+  assertEq(seen[1].t >= 20 - 1e-6 and seen[1].t < 20.15, true, tostring(seen[1].t))
+  assertEq(seen[1].change.from, "cloudy"); assertEq(seen[1].change.to, "rain")
+  assertEq(seen[1].change.notice, "Weather: rain coming")
+  assertEq(seen[2].change.from, "rain"); assertEq(seen[2].change.to, "storm")
+  assertEq(seen[2].change.notice, "Weather: the rain is getting heavier")
+end)
+
+test("weather() follows the schedule", function()
+  local sky = load()
+  assertEq(sky.weather(), nil)
+  sky.apply(changing())
+  assertEq(sky.weather(), "cloudy")
+  sky.startClock(0)
+  local t = runFor(sky, 0, 19.9, 0.1)
+  assertEq(sky.weather(), "cloudy")
+  runFor(sky, t, 5, 0.1)
+  assertEq(sky.weather(), "rain")
+  sky.restore()
+  assertEq(sky.weather(), nil)
+end)
+
+test("no step while the round sky blends in", function()
+  local sky, fake = started()
+  local t = runFor(sky, 0, 30, 0.1)
+  sky.apply(changing())
+  local n = #fake.setStates
+  assertEq(fake.lerps[n], 3)
+  t = runFor(sky, t, 3.4, 0.1)
+  assertEq(#fake.setStates, n)
+  runFor(sky, t, 1, 0.1)
+  assertEq(#fake.setStates > n, true)
+  assertEq(fake.lerps[#fake.setStates], nil)
+  assertEq(fake.locked, true)
+end)
+
+test("a failing step logs once and stays locked", function()
+  local sky, fake = started()
+  withLog(function(lines)
+    local setState = core_environment.setState
+    core_environment.setState = function(s, seconds)
+      if s and s.cloudCover then error("step boom") end
+      return setState(s, seconds)
+    end
+    for _ = 1, 900 do
+      assertEq(pcall(sky.update, 0.1), true)
+      assertEq(fake.locked, true)
+    end
+    core_environment.setState = setState
+    assertEq(#lines, 1)
+    assertEq(lines[1]:find("E cnr_sky", 1, true), 1)
+    assertNear(drops(fake), 3000, 1)
+  end)
+end)
+
+test("a failing curve write logs once, stays locked and the clouds go on", function()
+  local sky, fake = started()
+  withLog(function(lines)
+    local setState = core_environment.setState
+    local tries = 0
+    core_environment.setState = function(s, seconds)
+      if s and s.temperatureCurveOverrideC ~= nil then
+        tries = tries + 1
+        error("curve boom")
+      end
+      return setState(s, seconds)
+    end
+    runFor(sky, 0, 1500, 0.25, function() assertEq(fake.locked, true) end)
+    core_environment.setState = setState
+    assertEq(tries, 1)
+    assertEq(#lines, 1)
+    assertEq(fake.state.cloudCover, 2.2)
+  end)
+end)
+
+test("restore forgets the step state", function()
+  local sky, fake = started()
+  withLog(function(lines)
+    local setState = core_environment.setState
+    core_environment.setState = function(s, seconds)
+      if s and s.cloudCover and seconds == nil and s.time == nil then error("step boom") end
+      return setState(s, seconds)
+    end
+    runFor(sky, 0, 25, 0.1)
+    core_environment.setState = setState
+    assertEq(#lines, 1)
+  end)
+  sky.restore(); sky.update(4)
+  sky.apply(changing()); sky.startClock(0)
+  local n = #fake.setStates
+  runFor(sky, 0, 25, 0.1)
+  assertEq(#fake.setStates > n, true)
+end)
+
+test("the label's range comes from the turning points around the start", function()
+  local sky = load()
+  assertEq(sky.label(changing(), true), "Noon · Cloudy · 14 Dec · 8 to 18 °C")
+  local p = changing({ temps = { { t = -0.2, hour = 14, c = 7.6 }, { t = 0.1, hour = 6, c = -2.4 }, { t = 0.5, hour = 14, c = 30 } } })
+  assertEq(sky.label(p, true), "Noon · Cloudy · 14 Dec · -2 to 8 °C")
+  assertEq(sky.label(changing({ temps = false }), true), "Noon · Cloudy · 14 Dec")
+end)
+
+local function asphalt(fake) return fake.models.ASPHALT.cdata.staticFrictionCoefficient end
+
+local function gripRound(extra)
+  local p = changing({ driving = true, weather = "cloudy", changes = { { at = 20, to = "rain", forecastFrom = 0 }, { at = 200, to = "cloudy", forecastFrom = 0 } } })
+  for k, v in pairs(extra or {}) do p[k] = v end
+  local sky, fake = load()
+  sky.apply(p); sky.startClock(0); sky.update(4)
+  return sky, fake, p
+end
+
+test("grip gets wet over the change and dries over 180 s after it", function()
+  local sky, fake = gripRound()
+  local t = 4
+  t = runFor(sky, t, 50 - t, 0.5)
+  assertNear(asphalt(fake), (0.98 + 0.92) / 2, 0.06 * 0.06 + 0.001)
+  t = runFor(sky, t, 80 - t, 0.5)
+  assertNear(asphalt(fake), 0.92, 1e-6)
+  t = runFor(sky, t, 200 - t, 0.5)
+  assertNear(asphalt(fake), 0.92, 1e-6)
+  t = runFor(sky, t, 350 - t, 0.5)
+  assertNear(asphalt(fake), (0.98 + 0.92) / 2, 0.003)
+  t = runFor(sky, t, 440 - t, 0.5)
+  assertNear(asphalt(fake), 0.98, 1e-6)
+end)
+
+test("between wet kinds the blend runs over the change", function()
+  local sky, fake = gripRound({
+    weather = "rain", changes = { { at = 20, to = "snow", forecastFrom = 0 } },
+  })
+  local t = runFor(sky, 4, 46, 0.5)
+  assertNear(asphalt(fake), (0.92 + 0.65) / 2, 0.03)
+  t = runFor(sky, t, 40, 0.5)
+  assertNear(asphalt(fake), 0.65, 1e-6)
+end)
+
+test("driving off never changes grip", function()
+  local sky, fake = gripRound({ driving = false })
+  runFor(sky, 4, 120, 0.5)
+  assertEq(#fake.modelSets, 0)
+  assertEq(asphalt(fake), 0.98)
+end)
+
+test("a joiner gets the grip in effect", function()
+  local sky, fake = load()
+  local p = changing({ driving = true, weather = "cloudy", clockSeconds = 50, changes = { { at = 20, to = "rain", forecastFrom = 0 } } })
+  sky.apply(p)
+  assertNear(asphalt(fake), (0.98 + 0.92) / 2, 0.003)
+  local sky2, fake2 = load()
+  p.clockSeconds = 100
+  sky2.apply(p)
+  assertNear(asphalt(fake2), 0.92, 1e-6)
+end)
+
+test("a failing grip push logs once and stops grip for the round", function()
+  local sky, fake = gripRound()
+  withLog(function(lines)
+    local make = _G.be.setGroundModel
+    _G.be.setGroundModel = function() error("push boom") end
+    runFor(sky, 4, 100, 0.5, function() assertEq(fake.locked, true) end)
+    _G.be.setGroundModel = make
+    assertEq(#lines, 1)
+    assertEq(fake.state.cloudCover, 2.2)
+    local n = #fake.modelSets
+    runFor(sky, 104, 400, 0.5)
+    assertEq(#fake.modelSets, n)
+  end)
+end)
+
+test("a grip push failure at apply keeps the rain, the clouds and the lock", function()
+  local sky, fake = load()
+  withLog(function(lines)
+    local make = _G.be.setGroundModel
+    _G.be.setGroundModel = function() error("push boom") end
+    sky.apply(RAIN_NIGHT)
+    _G.be.setGroundModel = make
+    assertEq(#lines, 1)
+    assertEq(lines[1]:find("grip", 1, true) ~= nil, true)
+    sky.update(0.1)
+    assertEq(fake.objects.cnr_precipitation ~= nil, true)
+    assertEq(fake.state.cloudCover, 2.2)
+    assertEq(fake.locked, false)
+    sky.update(4)
+    assertEq(fake.locked, true)
+    assertEq(fake.models.ASPHALT.cdata.staticFrictionCoefficient, 0.98)
+  end)
+end)
+
+test("a ground model push that still fails at restore never blocks the sky restore", function()
+  local sky, fake = load()
+  withLog(function(lines)
+    sky.apply(RAIN_NIGHT); sky.startClock(0); sky.update(4)
+    local make = _G.be.setGroundModel
+    _G.be.setGroundModel = function() error("push boom") end
+    assertEq(pcall(sky.restore), true)
+    sky.update(4)
+    _G.be.setGroundModel = make
+    assertEq(fake.locked, false)
+    assertEq(fake.models.ASPHALT.cdata.staticFrictionCoefficient, 0.98)
+    assertEq(#lines, 1)
+  end)
+end)
+
+test("the forecast runs on the round clock from the countdown, and none before it or after the round", function()
+  local sky = load()
+  local p = changing({ weather = "rain", changes = { { at = 500, to = "storm", forecastFrom = 430 } } })
+  sky.apply(p)
+  assertEq(sky.forecast(true), nil)
+  sky.startClock(100)
+  local f = sky.forecast(true)
+  assertEq(f.text, "Forecast: a storm in 5-8 min"); assertEq(f.heli, "(helicopter grounded)")
+  assertEq(sky.forecast(false).heli, nil)
+  sky.restore(true)
+  assertEq(sky.forecast(true), nil)
+end)
+
+test("the prep label adds the first change's forecast to the sky label", function()
+  local sky = load()
+  local p = { time = "noon", weather = "clear", releaseAt = 10, changes = { { at = 400, to = "cloudy", forecastFrom = 330 } } }
+  assertEq(sky.prepLabel(p), "Noon · Clear · Forecast: clouds 5-8 min after release")
+  p.changes = {}
+  assertEq(sky.prepLabel(p), "Noon · Clear")
+  assertEq(sky.prepLabel(nil), nil)
 end)

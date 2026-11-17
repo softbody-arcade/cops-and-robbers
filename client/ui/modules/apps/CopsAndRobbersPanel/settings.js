@@ -28,6 +28,12 @@ export const GROUPS = [
       help: "How often random weather is rain, storm, fog or snow" },
     { key: "weatherDriving", label: "Weather affects driving", kind: "bool",
       help: "Rain, storm and snow change grip and bring gusty wind" },
+    { key: "weatherChanges", label: "Weather changes", kind: "bool",
+      help: "The weather changes during the chase when the day allows it" },
+    { key: "weatherChangeMinMinutes", label: "Shortest between changes", unit: "min", step: 1, min: 1, when: v => v("weatherChanges"),
+      help: "The least time between two weather changes" },
+    { key: "weatherChangeMaxMinutes", label: "Longest between changes", unit: "min", step: 1, min: 1, when: v => v("weatherChanges"),
+      help: "The most time between two weather changes; never below the shortest" },
   ] },
   { title: "Traffic", noEarth: true, items: [
     { key: "trafficPerPlayer", label: "Traffic", unit: "per player", step: 1, min: 0, max: 20, common: true, offAtZero: true,
@@ -84,7 +90,7 @@ export const GROUPS = [
   ] },
   { title: "Helicopter", items: [
     { key: "helicopter", label: "Police helicopter", kind: "bool",
-      help: "Searches for the runner and tracks them while it sees them; grounded in storm, fog and snow" },
+      help: "Searches for the runner and tracks them while it sees them; grounded in storm, fog and snow until it clears" },
     { key: "helicopterArrivalSeconds", label: "Arrives after", unit: "s", step: 15, min: 0, duration: true, zeroText: "at release",
       when: v => v("helicopter"), help: "How long after the cops are released the helicopter arrives" },
     { key: "helicopterUpSeconds", label: "Time up", unit: "s", step: 15, min: 15, duration: true,

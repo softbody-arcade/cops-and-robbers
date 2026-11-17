@@ -12,6 +12,7 @@ local TAGS_INTERVAL = 0.25
 local FREEZE_ON = "controller.setFreeze(1)"
 local FREEZE_OFF = "controller.setFreeze(0)"
 local HEADLIGHTS_ON = "electrics.setLightsState(1)"
+local HEADLIGHTS_OFF = "electrics.setLightsState(0)"
 local OFFICIAL = "BeamNG - Official"
 local SPECIAL_WORDS = { "police", "sheriff", "interceptor", "ambulance", "fire", "rescue", "emergency", "taxi" }
 
@@ -22,7 +23,7 @@ local lastHold, lastReport, lastLights = -math.huge, -math.huge, -math.huge
 local reportKey
 local cleanupUntil = -math.huge
 local lastTags = -math.huge
-local weather
+local weather, cleared
 local roundCars, ownerCar = {}, {}
 local hidden = {}
 
@@ -170,7 +171,9 @@ function M.isTraffic(key)
 end
 
 function M.setWeather(key)
+  local was = weather
   weather = type(key) == "string" and key or nil
+  if sky.isBadWeather(was) and not sky.isBadWeather(weather) then cleared = true end
 end
 
 function M.weather()
@@ -219,7 +222,7 @@ function M.stop(clock)
   end
   clearTags()
   roundCars, ownerCar = {}, {}
-  weather = nil
+  weather, cleared = nil, nil
 end
 
 function M.tick(clock)
@@ -242,7 +245,12 @@ function M.tick(clock)
   end
   if clock - lastLights >= LIGHTS_INTERVAL then
     lastLights = clock
-    if sky.isBadWeather(weather) or (held and sky.isNight()) then sendAll(list(), HEADLIGHTS_ON) end
+    if sky.isBadWeather(weather) or (held and sky.isNight()) then
+      sendAll(list(), HEADLIGHTS_ON)
+    elseif cleared and not sky.isNight() then
+      cleared = nil
+      sendAll(list(), HEADLIGHTS_OFF)
+    end
   end
   if not checked and clock >= startedAt + SPAWN_CHECK_SECONDS then
     checked = true

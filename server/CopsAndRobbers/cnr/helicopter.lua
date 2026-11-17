@@ -3,11 +3,11 @@ local M = {}
 M.GROUNDED = { storm = true, fog = true, snow = true }
 M.LOSE_SECONDS = 2
 
-function M.new(cfg, weather, now, random)
+function M.new(cfg, grounded, now, random)
   local h = { cfg = cfg, tracking = false, coveredSince = nil, random = random or math.random }
-  if weather and M.GROUNDED[weather] then
+  if grounded and M.GROUNDED[grounded] then
     h.phase = "grounded"
-    h.reason = weather
+    h.reason = grounded
     return h
   end
   h.phase = "arriving"
@@ -17,6 +17,7 @@ end
 
 local function enterUp(h, start, covered)
   h.phase = "up"
+  h.flew = true
   h.seed = h.random(1, 2147483646)
   h.tracking = not covered
   h.coveredSince = nil
@@ -46,9 +47,24 @@ function M.status(h, now)
   return s
 end
 
-function M.update(h, now, covered, guided)
-  if h.phase == "grounded" then return false end
+function M.update(h, now, covered, guided, grounded)
+  if grounded then
+    if h.phase == "grounded" and h.reason == grounded then return false end
+    h.phase = "grounded"
+    h.reason = grounded
+    h.phaseEnd = nil
+    h.tracking = false
+    h.coveredSince = nil
+    h.guided = false
+    return true
+  end
   local before, seedBefore, guidedBefore = phaseName(h), h.seed, h.guided == true
+  if h.phase == "grounded" then
+    h.reason = nil
+    h.phase = "arriving"
+    h.phaseEnd = now + h.cfg.helicopterArrivalSeconds
+    before = nil
+  end
   h.guided = guided == true
   while h.phaseEnd and now >= h.phaseEnd do
     local ended = h.phaseEnd
@@ -81,7 +97,7 @@ function M.tracking(h)
 end
 
 function M.flew(h)
-  return h.phase ~= "grounded"
+  return h.flew == true
 end
 
 return M

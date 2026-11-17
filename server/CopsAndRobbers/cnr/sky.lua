@@ -1,6 +1,8 @@
+local weather = require("cnr.weather")
+
 local M = {}
 
-M.DAY_SECONDS = { fast = 900, moderate = 1800, slow = 7200, realtime = 86400 }
+M.DAY_SECONDS = weather.DAY_SECONDS
 
 local DAY = { "sunrise", "morning", "noon", "afternoon", "sunset" }
 local CALM = { "clear", "cloudy" }
@@ -44,17 +46,21 @@ end
 function M.pick(cfg, random, geo, year)
   if geo then return {} end
   local time = pickTime(cfg, random)
-  local weather = pickWeather(cfg, random)
-  local month, day = M.date(weather, random)
-  return {
+  local kind = pickWeather(cfg, random)
+  local month, day = M.date(kind, random)
+  local s = {
     time = time,
-    weather = weather,
+    weather = kind,
     year = year or tonumber(os.date("%Y")),
     month = month,
     day = day,
     windDir = random(0, 359),
     windSeed = random(1, 2147483646),
   }
+  s.weatherSeed = random(1, 2147483646)
+  local plan = weather.build(s, cfg)
+  s.changes, s.temps, s.gameStart, s.releaseAt = plan.changes, plan.temps, plan.gameStart, plan.releaseAt
+  return s
 end
 
 function M.hasRandom(cfg)
@@ -73,15 +79,29 @@ function M.payload(s, cfg, clockSeconds)
     windSeed = s.windSeed,
     clockSeconds = clockSeconds,
     daySeconds = M.DAY_SECONDS[cfg.dayLength],
+    changes = s.changes,
+    temps = s.temps,
+    gameStart = s.gameStart,
+    releaseAt = s.releaseAt,
   }
   if s.weather and cfg.weatherDriving then p.driving = true end
   return p
 end
 
-function M.record(s, cfg)
+local RANK = { clear = 0, cloudy = 1, rain = 2, fog = 3, snow = 3, storm = 4 }
+
+local function worst(s, clock)
+  local w = s.weather
+  for _, ch in ipairs(s.changes or {}) do
+    if clock and ch.at <= clock and (RANK[ch.to] or 0) > (RANK[w] or 0) then w = ch.to end
+  end
+  return w
+end
+
+function M.record(s, cfg, clock)
   local p = M.payload(s, cfg, nil)
   if not p then return nil end
-  return { time = p.time, weather = p.weather, year = p.year, month = p.month, day = p.day, dayLength = cfg.dayLength, driving = p.driving }
+  return { time = p.time, weather = worst(s, clock), weatherStart = s.weather, year = p.year, month = p.month, day = p.day, dayLength = cfg.dayLength, driving = p.driving }
 end
 
 return M
