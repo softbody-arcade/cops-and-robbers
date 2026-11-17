@@ -2,8 +2,8 @@ local M = {}
 
 M.NAME = "cnr_heli_sound"
 M.FILE = "/art/sound/cnr/heli_rotor.ogg"
-M.REF_DISTANCE = 40
-M.MAX_DISTANCE = 800
+M.REF_DISTANCE = 130
+M.MAX_DISTANCE = 1500
 M.FADE_IN_SECONDS = 1
 M.FADE_OUT_SECONDS = 1
 M.MUFFLED = 0.5
