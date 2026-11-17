@@ -106,6 +106,11 @@ test("applyValues still rejects a max below the min", function()
   assertEq(err:find("copSpawnMaxMeters", 1, true) ~= nil, true)
 end)
 
+test("applyValues raises the weather change max to the min", function()
+  local updated = panel.applyValues({}, { weatherChangeMinMinutes = 10, weatherChangeMaxMinutes = 5 })
+  assertEq(updated.weatherChangeMinMinutes, 10); assertEq(updated.weatherChangeMaxMinutes, 10)
+end)
+
 test("applyValues accepts list entries that are strings or numbers only", function()
   local updated = panel.applyValues({}, { excludedModels = { "a", 3 } })
   assertEq(updated.excludedModels[1], "a"); assertEq(updated.excludedModels[2], "3")

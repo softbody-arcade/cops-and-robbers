@@ -28,6 +28,12 @@ export const GROUPS = [
       help: "How often random weather is rain, storm, fog or snow" },
     { key: "weatherDriving", label: "Weather affects driving", kind: "bool",
       help: "Rain, storm and snow change grip and bring gusty wind" },
+    { key: "weatherChanges", label: "Weather changes", kind: "bool",
+      help: "The weather changes during the chase when the day allows it" },
+    { key: "weatherChangeMinMinutes", label: "Shortest between changes", unit: "min", step: 1, min: 1, when: v => v("weatherChanges"),
+      help: "The least time between two weather changes" },
+    { key: "weatherChangeMaxMinutes", label: "Longest between changes", unit: "min", step: 1, min: 1, when: v => v("weatherChanges"),
+      help: "The most time between two weather changes; never below the shortest" },
   ] },
   { title: "Traffic", noEarth: true, items: [
     { key: "trafficPerPlayer", label: "Traffic", unit: "per player", step: 1, min: 0, max: 20, common: true, offAtZero: true,

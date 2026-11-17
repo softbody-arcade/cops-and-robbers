@@ -38,6 +38,9 @@ M.DEFAULTS = {
   weather = "random",
   badWeatherChancePercent = 25,
   weatherDriving = true,
+  weatherChanges = true,
+  weatherChangeMinMinutes = 3,
+  weatherChangeMaxMinutes = 8,
   trafficPerPlayer = 5,
   trafficRunnerOnly = false,
 }
@@ -52,6 +55,7 @@ M.CHOICES = {
 local strictlyPositive = {
   catchHoldSeconds = true, catchRadiusMeters = true, crashSpeedLossKmh = true,
   catchMaxSpeedKmh = true, stillMaxSpeedKmh = true, sightLiveIntervalSeconds = true, helicopterUpSeconds = true,
+  weatherChangeMinMinutes = true, weatherChangeMaxMinutes = true,
 }
 
 local function copyList(t)
@@ -74,7 +78,7 @@ end
 local RETIRED_KEYS = { clockSpeed = true, lastSeenIntervalSeconds = true }
 local RETIRED_VALUES = { timeOfDay = "map", weather = "map" }
 local MAXIMA = { assistMinSightPercent = 100, nightChancePercent = 100, badWeatherChancePercent = 100, trafficPerPlayer = 20 }
-local WHOLE = { trafficPerPlayer = true }
+local WHOLE = { trafficPerPlayer = true, weatherChangeMinMinutes = true, weatherChangeMaxMinutes = true }
 
 local function validNumber(key, v)
   if type(v) ~= "number" or v ~= v or v == math.huge or v == -math.huge then return false end
@@ -131,6 +135,10 @@ function M.merge(raw)
     warnings[#warnings + 1] = string.format("copSpawnMaxMeters (%s) is below copSpawnMinMeters, using %s", tostring(cfg.copSpawnMaxMeters), tostring(cfg.copSpawnMinMeters))
     cfg.copSpawnMaxMeters = cfg.copSpawnMinMeters
   end
+  if cfg.weatherChangeMaxMinutes < cfg.weatherChangeMinMinutes then
+    warnings[#warnings + 1] = string.format("weatherChangeMaxMinutes (%s) is below weatherChangeMinMinutes, using %s", tostring(cfg.weatherChangeMaxMinutes), tostring(cfg.weatherChangeMinMinutes))
+    cfg.weatherChangeMaxMinutes = cfg.weatherChangeMinMinutes
+  end
   return cfg, warnings
 end
 
@@ -161,6 +169,13 @@ function M.setValue(raw, key, text)
     if not RETIRED_KEYS[k] and RETIRED_VALUES[k] ~= v then updated[k] = v end
   end
   updated[key] = value
+  if key == "weatherChangeMinMinutes" or key == "weatherChangeMaxMinutes" then
+    local minV = updated.weatherChangeMinMinutes
+    if minV == nil then minV = M.DEFAULTS.weatherChangeMinMinutes end
+    local maxV = updated.weatherChangeMaxMinutes
+    if maxV == nil then maxV = M.DEFAULTS.weatherChangeMaxMinutes end
+    if maxV < minV then updated.weatherChangeMaxMinutes = minV end
+  end
   local _, warnings = M.merge(updated)
   for _, w in ipairs(warnings) do
     if w:find(key .. " ", 1, true) == 1 then return nil, invalid end
