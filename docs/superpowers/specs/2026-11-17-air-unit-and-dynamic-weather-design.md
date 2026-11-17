@@ -15,8 +15,8 @@ Status: for the user's approval, 2026-11-17, after a builder check. Builds on 2.
   - over a stopped runner: containment
   - at a tunnel: a timed watch of each way out
 - It tracks from a realistic height and stand-off, sees over most buildings, and keeps its light useful.
-- The weather can change once or twice during a chase, the same for every player at the same moment. It blends over about a minute, and grip, wind, rain, sound and lights follow it.
-- The helicopter is grounded when the weather turns to storm or fog. It comes back when the weather clears.
+- The weather changes during a chase whenever the day allows it (worked out in advance on the server, at set intervals, only into logical neighbours for the temperature and time of day), the same for every player at the same moment. It blends over about a minute, and grip, wind, rain, sound and lights follow it.
+- The helicopter is grounded when the weather turns to storm, fog or snow. It comes back when the weather clears.
 - Everything stays deterministic across games: the server's seeds and the round clock decide; positions come from each game's copy of the runner's car, as in 2.9.4.
 
 ## Non-goals
@@ -131,29 +131,39 @@ See B5. A grounded helicopter flies away and drops its search. When it comes bac
 
 ## Part B: dynamic weather
 
-### B1. Setting
-- **`weatherChanges`:** a boolean, default true. Panel: Sky group, a "Weather changes" switch with the help "The weather may change once or twice during the chase".
-- **Scope:** no effect on BeamNG.Earth (no sky), and none when the round's weather is snow (B2).
-- **Settings are locked during a round,** as now.
+### B1. Settings
+- **`weatherChanges`:** a boolean, default true. Panel: Sky group, a "Weather changes" switch, help "The weather changes during the chase when the day allows it".
+- **`weatherChangeMinMinutes`** (default 3) and **`weatherChangeMaxMinutes`** (default 8): the time between two changes, in whole minutes, at least 1. Min may not exceed max; the panel and the config clamp max up to min. Both are shown only while Weather changes is on.
+- **Scope:** no effect on BeamNG.Earth (no sky).
+- **Locked:** settings are locked during a round, as now.
 
-### B2. The schedule (server `cnr/sky.lua`)
-- **When:** at `pick` (round start and New sky), when `weatherChanges` is on and the sky has a weather. The schedule uses a new `weatherSeed` (1..2147483646) through a seeded generator (Park–Miller, as the flight seed), so New sky re-rolls it.
-- **Number of changes:** 0 (40%), 1 (45%) or 2 (15%).
-- **Times,** on the round clock that the clients already keep (seconds since the countdown started, `clockSeconds`):
-  - first change at countdown + head start + uniform(120, 360) s
-  - second change at the first + uniform(180, 360) s
-- **Transitions** (the next weather, weighted):
+### B2. The schedule: precalculated and logical (server, new pure module `cnr/weather.lua`)
+- **Precalculated:** at `pick` (round start and New sky), when `weatherChanges` is on and the sky has a weather, the server works out every change of the round in advance. It uses a new `weatherSeed` (1..2147483646) and a seeded generator (Park–Miller, as the flight seed). New sky re-rolls it.
+- **How many:** there is no fixed number. Each change comes uniform(`weatherChangeMinMinutes`, `weatherChangeMaxMinutes`) after the previous one; the first one after the cops' release. Changes are worked out up to the round's time limit, or 180 minutes without one.
+- **The round clock:** times are seconds on the round clock the clients already keep (seconds since the countdown started, the same as `clockSeconds`).
+- **The temperature at a change.** The server becomes the one source of the round's temperatures:
+  - The climate table (`LOW`, `HIGH` by month, `OFFSET` by weather; today `client/.../climate.lua`) moves to the server (`cnr/climate.lua`).
+  - The sky payload carries the round's `tempLow` and `tempHigh`: the start weather's range for the round's month. The client uses those for the prep label and the temperature curve instead of its own table, so the label, the curve and the weather logic agree.
+  - The server knows the game time of each change: the start time key's value (the game's table: sunrise 0.775, morning 0.825, noon 0, afternoon 0.175, sunset 0.245, night 0.5), minus the lead, plus the elapsed time divided by `daySeconds`.
+  - It estimates the temperature at that time from `tempLow` at sunrise (about 06:00) to `tempHigh` at about 14:00, on a smooth (cosine) curve. Sunrise and the afternoon high are approximations of the game's solar model. They're good enough for "is it cold enough to snow".
+- **Only logical changes.** At each change the next weather is drawn, with equal weights, from the neighbours the conditions allow. T is the temperature then; a day counts as warm when `tempHigh` ≥ 15 °C. Foggy conditions mean T ≤ 12 °C and the time between sunset and three hours after sunrise.
 
-  | From | To |
+  | From | Allowed next |
   |---|---|
-  | clear | cloudy |
-  | cloudy | clear 0.4, rain 0.4, fog 0.2 |
-  | rain | cloudy 0.5, storm 0.5 |
+  | clear | cloudy; fog in foggy conditions |
+  | cloudy | clear; rain if T ≥ 2 °C; snow if T ≤ 1 °C; fog in foggy conditions |
+  | rain | cloudy; storm on a warm day; snow if T ≤ 1 °C (rain turning to snow) |
   | storm | rain |
-  | fog | cloudy |
-  | snow | none: snow rounds don't change (one snow preset, and the date is in winter) |
+  | snow | cloudy; rain if T ≥ 2 °C |
+  | fog | cloudy; clear |
 
-- **Payload:** the sky payload gains `changes = { { at = seconds, to = weather }, ... }`. The base `weather` stays the start weather.
+  - **Turning cold or warm:** a weather that has stopped fitting is replaced first. Rain at T ≤ 1 °C becomes snow, and snow at T ≥ 2 °C becomes rain. That's the change at that slot.
+  - **In-between temperatures:** between 1 and 2 °C both rain and snow hold.
+  - **Always a neighbour:** every weather has at least one allowed neighbour, so each slot changes the weather.
+- **Season and start:**
+  - The date is still chosen from the start weather's window (as now), so a December round with a snow start is cold, and a July round never sees snow.
+  - A clear or cloudy start in December can turn to snow only when the morning curve dips to 1 °C or below.
+- **Payload:** the sky payload gains `changes = { { at = seconds, to = weather }, ... }` (possibly empty), plus `tempLow` and `tempHigh`. The base `weather` stays the start weather.
 - **Server state:** the server keeps the schedule in `round.sky` and works out the current weather from its own round clock (B5, B6).
 
 ### B3. The change on the clients (client `sky.lua`, `rain.lua`, `surfaces.lua`, `wind.lua`)
@@ -186,10 +196,11 @@ Unchanged, except that the schedule is rolled with the sky. Prep shows only the 
 
 ### B5. The helicopter and the weather (server `helicopter.lua`, client `heli.lua`)
 - **Grounding:**
-  - When a change to storm or fog starts, the helicopter is recalled: its phase becomes "grounded" with the reason (the new weather).
+  - When a change to storm, fog or snow starts, the helicopter is recalled: its phase becomes "grounded" with the reason (the new weather).
   - If it was up, every game flies it away first (the refuel fly-away, with the light fading) rather than dropping it.
-- **Coming back:** when a change from storm or fog to rain, cloudy or clear ends, a grounded helicopter becomes "arriving" with `helicopterArrivalSeconds`, then flies up as usual.
-- **Rounds that start grounded:** a round that starts in storm or fog (or snow, which never changes) starts grounded as now, and can come back the same way.
+- **Coming back:** when a change from storm, fog or snow to rain, cloudy or clear ends, a grounded helicopter becomes "arriving" with `helicopterArrivalSeconds`, then flies up as usual.
+- **Rounds that start grounded:** a round that starts in storm, fog or snow starts grounded as now. It comes back when the weather turns to rain, cloudy or clear.
+- **Snow** grounds it as well. Real crews avoid snow showers; this is the same rule as 2.9.0.
 - **The server:**
   - `helicopter.update` gets the current weather (B2 state). Grounded is no longer final.
   - `flew()` is true if it was ever up.
@@ -251,7 +262,13 @@ Unchanged, except that the schedule is rolled with the sky. Prep shows only the 
 - **Light during a road search:** the aim point is 60 m ahead plus a 15 m sweep across the road; no jump when switching modes (the 2.9.4 switch offset).
 - **Weather schedule** (server):
   - the counts, times and transitions from a fixed seed
-  - snow never changes
+  - changes come at intervals between the set minimum and maximum, without a count cap, up to the time limit or 180 min
+  - each draw comes only from the logical neighbours: snow only at T ≤ 1 °C, rain only at T ≥ 2 °C, storm only on a warm day, fog only in foggy conditions
+  - rain turns to snow when it gets cold, and snow to rain when it warms
+  - a July round never sees snow
+  - the temperature estimate at known times
+  - `tempLow`/`tempHigh` in the payload match the moved climate table
+  - min ≤ max is enforced
   - off when `weatherChanges` is off or on BeamNG.Earth
   - New sky re-rolls it
 - **Weather on the client:**
@@ -264,8 +281,8 @@ Unchanged, except that the schedule is rolled with the sky. Prep shows only the 
   - the notice texts
   - a joiner mid-change gets the in-between values
 - **Helicopter and weather:**
-  - grounded at the start of a change to storm or fog, with a fly-away on every game
-  - arriving at the end of a change away from storm or fog
+  - grounded at the start of a change to storm, fog or snow, with a fly-away on every game
+  - arriving at the end of a change away from storm, fog or snow
   - a full time up after each return
   - a grounding during a refuel
   - `flew()`
@@ -297,8 +314,11 @@ Unchanged, except that the schedule is rolled with the sky. Prep shows only the 
 - the light's sweep across the road: 60 m ahead, ±15 m, 3 s
 - the tunnel watch time clamp(len / max(v, 10) × 1.5, 15, 90)
 - the weather change odds 40/45/15, the times, the transition weights, `CHANGE_SECONDS` 60, `DRY_SECONDS` 60, two steps a second
-- snow doesn't change
-- the recall at the start of a change to storm or fog, and the return at the end of a change away from them
+- the weather logic: the thresholds 1 / 2 °C, warm day ≥ 15 °C, fog ≤ 12 °C between sunset and sunrise + 3 h; equal weights among allowed neighbours
+- the default interval 3 to 8 minutes; the horizon 180 minutes without a time limit
+- the temperature estimate's sunrise about 06:00 and high about 14:00, approximating the game's solar model
+- snow grounds the helicopter, as in 2.9.0
+- the recall at the start of a change to storm, fog or snow, and the return at the end of a change away from them
 - records keep the worst weather plus the start weather
 - the first arrival uses the same mode choice as a loss, from the runner's car at that moment (the builder check asked)
 - a full time up after each return from a grounding (the builder check asked)
