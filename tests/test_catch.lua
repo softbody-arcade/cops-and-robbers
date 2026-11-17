@@ -116,6 +116,16 @@ test("a runner creeping at 4 km/h with a cop alongside is held", function()
   assertEq(c, true)
 end)
 
+test("a runner at a steady 6 km/h with a cop alongside is never held", function()
+  local t = catch.new(cfg)
+  for i = 0, 80 do
+    local x = i * 0.25 * 6 / 3.6
+    local p, c = t:update(i * 0.25, moving(x, 6), { moving(x + 3, 6) })
+    assertEq(p, 0, "at " .. i * 0.25)
+    assertEq(c, false)
+  end
+end)
+
 test("a cop beyond the catch radius never holds a stuck runner", function()
   local t = catch.new(cfg)
   for i = 0, 80 do
