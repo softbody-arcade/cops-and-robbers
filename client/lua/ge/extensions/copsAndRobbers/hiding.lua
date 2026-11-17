@@ -6,7 +6,6 @@ local target
 local hiddenKeys = {}
 local lastTick = -math.huge
 local wrapped
-local lastOriginal
 local drawFailed = false
 
 local function vehicleEntry(key)
@@ -34,45 +33,46 @@ local function hideKey(key)
   end
 end
 
-local function drawWrapper(...)
-  local original = wrapped and wrapped.original or lastOriginal
-  if not original then return end
-  local vids = target and target.minimap and target.vids
-  if not vids or not next(vids) then return original(...) end
-  local realIterator = activeVehiclesIterator
-  activeVehiclesIterator = function(ctx)
-    local iterate, state = realIterator(ctx)
-    local function skip(s, control)
-      local id, veh = iterate(s, control)
-      while id ~= nil and vids[id] do
-        id, veh = iterate(s, id)
+local function makeWrapper(original)
+  return function(...)
+    local vids = target and target.minimap and target.vids
+    if not vids or not next(vids) then return original(...) end
+    local realIterator = activeVehiclesIterator
+    activeVehiclesIterator = function(ctx)
+      local iterate, state = realIterator(ctx)
+      local function skip(s, control)
+        local id, veh = iterate(s, control)
+        while id ~= nil and vids[id] do
+          id, veh = iterate(s, id)
+        end
+        return id, veh
       end
-      return id, veh
+      return skip, state
     end
-    return skip, state
+    local ok, err = pcall(original, ...)
+    activeVehiclesIterator = realIterator
+    if not ok and not drawFailed then
+      drawFailed = true
+      log("E", "cnr_hiding", "minimap draw failed: " .. tostring(err))
+    end
   end
-  local ok, err = pcall(original, ...)
-  activeVehiclesIterator = realIterator
-  if not ok and not drawFailed then
-    drawFailed = true
-    log("E", "cnr_hiding", "minimap draw failed: " .. tostring(err))
+end
+
+local function unwrap()
+  if wrapped and wrapped.ext.drawOtherVehicles == wrapped.wrapper then
+    wrapped.ext.drawOtherVehicles = wrapped.original
   end
+  wrapped = nil
 end
 
 local function wrap()
   local ext = ui_apps_minimap_vehicles
   if type(ext) ~= "table" or type(ext.drawOtherVehicles) ~= "function" then return end
-  if ext.drawOtherVehicles == drawWrapper then
-    if wrapped then
-      wrapped.ext = ext
-    elseif lastOriginal then
-      wrapped = { ext = ext, original = lastOriginal }
-    end
-    return
-  end
-  wrapped = { ext = ext, original = ext.drawOtherVehicles }
-  lastOriginal = wrapped.original
-  ext.drawOtherVehicles = drawWrapper
+  if wrapped and wrapped.ext == ext and ext.drawOtherVehicles == wrapped.wrapper then return end
+  unwrap()
+  local original = ext.drawOtherVehicles
+  wrapped = { ext = ext, original = original, wrapper = makeWrapper(original) }
+  ext.drawOtherVehicles = wrapped.wrapper
 end
 
 function M.set(newTarget)
@@ -104,10 +104,7 @@ end
 
 function M.unload()
   M.clear()
-  if wrapped and wrapped.ext.drawOtherVehicles == drawWrapper then
-    wrapped.ext.drawOtherVehicles = wrapped.original
-  end
-  wrapped = nil
+  unwrap()
 end
 
 return M

@@ -266,3 +266,52 @@ test("the re-assert restores every hidden key after a rebuilt vehicle table", fu
     assertEq(vehicles["3-0"].hideNametag, true)
   end)
 end)
+
+local function namedDraw(name, calls)
+  return function()
+    calls[#calls + 1] = name
+    draw()
+  end
+end
+
+test("an older minimap table coming back draws with its own original, and unload gives each table its own", function()
+  run(function()
+    local calls = {}
+    local drawA, drawB = namedDraw("A", calls), namedDraw("B", calls)
+    local extA, extB = { drawOtherVehicles = drawA }, { drawOtherVehicles = drawB }
+    ui_apps_minimap_vehicles = extA
+    hiding.set({ vids = { [2] = true }, minimap = true })
+    hiding.tick(0)
+    ui_apps_minimap_vehicles = extB
+    hiding.tick(1)
+    ui_apps_minimap_vehicles = extA
+    hiding.tick(2)
+    extA.drawOtherVehicles()
+    assertEq(table.concat(calls, ","), "A")
+    assertEq(ids(), "1,3")
+    hiding.unload()
+    assertEq(extA.drawOtherVehicles, drawA)
+    assertEq(extB.drawOtherVehicles, drawB)
+  end)
+end)
+
+test("after the minimap reloads, the old table gets its original back and its old wrapper keeps to it", function()
+  run(function()
+    local calls = {}
+    local drawA, drawB = namedDraw("A", calls), namedDraw("B", calls)
+    local extA, extB = { drawOtherVehicles = drawA }, { drawOtherVehicles = drawB }
+    ui_apps_minimap_vehicles = extA
+    hiding.set({ vids = { [2] = true }, minimap = true })
+    hiding.tick(0)
+    local oldWrapper = extA.drawOtherVehicles
+    ui_apps_minimap_vehicles = extB
+    hiding.tick(1)
+    assertEq(extA.drawOtherVehicles, drawA)
+    assert(extB.drawOtherVehicles ~= drawB)
+    oldWrapper()
+    assertEq(table.concat(calls, ","), "A")
+    extB.drawOtherVehicles()
+    assertEq(table.concat(calls, ","), "A,B")
+    assertEq(ids(), "1,3")
+  end)
+end)
