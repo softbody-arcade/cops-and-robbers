@@ -6,6 +6,7 @@ The shared ledger for every agent and worktree. Edit this file only on main (in 
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
 - [ ] Visible searchlight beam in the air: BeamNG lights only light surfaces (only clouds are volumetric), so fake the shaft from the helicopter down to the runner's car, faint on a clear night, stronger in cloudy and rain. Start with a quick in-game test of a soft glowing cone model shipped with the mod against a cone drawn by the debug drawer; a glare at the light source when looking up is a third option (no flare definition found in the game yet). Builds on the police helicopter searchlight. Target: 2.9.1. Design approved (`docs/superpowers/specs/2026-11-17-visible-searchlight-beam-design.md`): debug-drawn cone + glare (picked in a spike) + a helicopter that really flies. Plan: `docs/superpowers/plans/2026-11-17-visible-searchlight-beam.md`. Spec and plan approved after three review passes (2026-11-17). Building subagent-driven on branch `searchlight-beam` (worktree), tasks 1a, 1b, 2, 3
+- [ ] Panel traffic settings: Traffic for the runner only moves up next to the Traffic count (a common setting, shown while traffic is on), and the count's unit, explanation and cost line follow it ("5 for the runner", "5 cars in all with 6 players"). Building on branch `traffic-settings` (worktree)
 
 ## In-game checks
 Things only a player in the game can confirm, each with what to look for. Add them here when work is merged or deployed without the check; delete a line once it is checked, and turn anything that fails into an Issue.
@@ -34,6 +35,7 @@ Things only a player in the game can confirm, each with what to look for. Add th
 ## Issues
 - [ ] Cop spots next to a narrow median: the runner can be matched to the other carriageway, so cops are placed for that side (`roads.lua` uses `findClosestRoad`, not the runner's heading)
 - [ ] Cop spots on a road piece not connected to the rest: the straight-line fallback widens from 0 and ignores gates, so a cop can start right next to the runner or behind a gate (`roads.lua` `lineSpots`)
+- [ ] Leaderboard runs don't record Traffic for the runner only, so a runner-only round shows "Traffic: 5 per player" in the Rounds tab and counts the same as everyone-traffic in the traffic filter (`leaderboard.lua`, `BoardRounds.vue`)
 - [ ] Leaderboard Cops tab: cops with only assists get no row (`leaderboard.lua` `cops`). Showing them needs a sort and empty-state decision, since the tab ranks catches
 - [ ] README says "Everything is clickable with the mouse cursor shown" without saying how a player shows the cursor. Check the game's control and say it
 - [ ] Leaving the server removes every app the mod placed, also one the player removed and then added back themselves (`apps.lua` leave). Decide what counts as the mod's
