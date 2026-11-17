@@ -4,7 +4,7 @@
       <template v-if="hud.visible">
         <HudNotices v-if="!settingsShown" :notices="hud.notices" />
         <template v-if="mode === 'lobby' && hud.lobby">
-          <HudTab v-if="hud.lobby.hudHidden" @show="setHidden(false)" />
+          <HudTab v-if="hud.lobby.hudHidden" :warnings="hud.lobby.warnings" @show="setHidden(false)" />
           <HudLobby v-else v-show="!settingsOpen" :lobby="hud.lobby" @settings="openSettings" @help="openHelp" @toggle="toggleApp" @hide="setHidden(true)" />
         </template>
         <template v-if="mode === 'round'">
