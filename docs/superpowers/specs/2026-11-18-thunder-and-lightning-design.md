@@ -96,7 +96,7 @@ The user: "it should be possible for the same weather to chain so clear -> clear
 1. **Group.** Split the allowed options (including "stay") into calm (clear, cloudy) and bad (rain, storm, fog, snow, thunderstorm: the server's `BAD` list). If both groups have options, roll the bad group with `badWeatherChancePercent` and the calm group otherwise. If only one group has options, use that one.
 2. **Weather.** Pick inside the group by the weights in the table below.
 
-Over a long round, about `badWeatherChancePercent` of the time is then bad weather, the same share as for the starting weather. At 25%:
+Over a long round the share of bad weather then follows `badWeatherChancePercent`. It runs below it when the temperature rules out every bad option from a calm weather: on a hot day clear can't turn foggy, so it only goes calm. Worked out for a hot day (20 °C or more) at 25%, the long-run shares are clear 35%, cloudy 47%, rain 10%, thunderstorm 5.5% and storm 2%, so 17% bad. At 25%:
 - From cloudy on a cool day: 75% stays calm (cloudy again or clear), 25% turns bad (rain, snow or fog, as the temperature allows).
 - From rain: 25% stays bad (rain again, storm, snow or thunderstorm), 75% clears to cloudy.
 
