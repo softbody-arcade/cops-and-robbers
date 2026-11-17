@@ -1,4 +1,4 @@
-# Cops and Robbers 2.10.0: features
+# Cops and Robbers 2.10.1: features
 
 A BeamMP server plugin with a client mod that BeamMP downloads automatically. The mod enforces the group's cops-and-robbers rules. It is one mod for every map, and it switches to geo mode on BeamNG.Earth by itself.
 
@@ -8,7 +8,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 
 | Step | What happens |
 |---|---|
-| Start round | Picks a random car (a car model first, each equally likely, then one of its configs; with mod vehicles on, only mod cars the server provides) or the evolving build. Everyone gets the same one. Cops are placed on a road 50–150 m by road from the runner, facing toward the runner, and the runner is moved to the nearest road, facing the way their car was pointing (in practice they stay where they are). Everyone is frozen. |
+| Start round | Needs one player who isn't sitting out ("Everyone is sitting out" otherwise). Picks a random car (a car model first, each equally likely, then one of its configs; with mod vehicles on, only mod cars the server provides) or the evolving build. Everyone gets the same one. Cops are placed on a road 50–150 m by road from the runner, facing toward the runner, and the runner is moved to the nearest road, facing the way their car was pointing (in practice they stay where they are). Everyone is frozen. |
 | Prep | No time limit. Everyone sees only their role (and cops the runner's name) and "Waiting for the host to press GO". Colors come from the Settings card only: the game's parts and paint menu is closed for everyone (except the runner in evolving mode, for their one change). A parts change the mod didn't make is shown to everyone as a notice (with the slots that changed), but not undone. New car picks another car (random mode). Once a player's car is placed, their game spawns its traffic (see Traffic), which stands still until GO. |
 | Apply change (evolving only, the runner's HUD button) | Locks in the runner's change and rebuilds every car; the screen shows APPLYING CHANGES until everyone has loaded (at most 20 s). |
 | GO | "Runner starts in 3", then the runner is released. |
@@ -19,6 +19,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 
 ### Choosing the runner
 - The Round tab's player list is the runner picker: Next (whoever has run least this session, preselected; only rounds that really end count as a run, not a cancelled round or a practice), the last runner (marked "last"), Random, or any player by name (sent as an exact name, so names like "next" work).
+- A player sitting out is marked "sitting out" in the list and is never the runner: Next and Random skip them, and picking them by name or with Again says "Bob is sitting out".
 
 ## Evolving car mode
 
@@ -76,7 +77,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Parts, tuning and paint:** locked for everyone during a round, whichever menu is used (the game's part, tuning and paint functions refuse and the HUD says so). Only the evolving runner may change parts and tuning, in prep until Apply. Color comes from the Settings card.
 - **Parts check on the server:** a client that gets around the lock anyway is caught by the server: "⚠ Ann changed parts during the round: engine, intake" is shown to everyone as a notice, once per player per round. The car is never replaced. Changes the mod makes itself (round setup, repaint, Apply rebuild) and the evolving runner's prep change never count; for a few seconds after the mod places a car, BeamMP's reports only set the new baseline.
 - **Physics:** slow motion and the node grabber.
-- **Cameras and modes:** switching vehicles, free camera (open in practice; dropping the car at the camera stays locked), photo mode, walking mode.
+- **Cameras and modes:** switching vehicles, free camera (both open for spectators, free camera open in practice; dropping the car at the camera stays locked), photo mode, walking mode.
 - **Tools:** the editor, track builder, AI traffic, and the "fun stuff" (fire, boost, fling, force field and so on).
 - **Consoles:** the Lua console, the UI console and Lua reload.
 - **Big map:** "teleport to this point".
@@ -99,9 +100,18 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Cop placement:** cops start a short drive from the runner (by road, following one-way roads), facing toward the runner, and spread out so they do not overlap. The search widens until it covers at least 2 km by road. On a divided road with a narrow median (up to 5 m), the runner counts as being on the carriageway its car points along, even when the other one is a little closer. A runner on a piece of road that isn't connected to the rest gets cops placed by straight-line distance, still at least the minimum start distance away and never on a gated road or a private road behind one. If no road is found at all, the cop gets a notice and starts where they are.
 - **Runner placement:** at round start the runner's new car is placed on the nearest road, facing the direction of that road closest to the way their car was heading, so nobody starts stuck on a wall or a rock or turned around. Practice rounds keep the runner where they are. If no road is found, the runner gets a notice ("No road found nearby, you start where you are") and starts where they are.
 - **Late joiners and reconnects:**
-  - Someone who joins mid-round becomes a cop.
-  - A cop who reconnects comes back near the road where they left.
+  - Someone who joins after the round's car is picked spectates until the round ends (see Spectators and Sit out). Before that, during the pick, they still play.
+  - A cop who reconnects comes back near the road where they left (also when they left in prep or the countdown).
   - The mod's own move of their car into the round is never a teleport, an illegal reset or a crash: the server holds those checks until their game reports the car placed, and for 3 s after (at most 1 minute without a report).
+
+## Spectators and Sit out
+
+- **Sit out:** a button on the lobby card ("Sit out", reading "Play" while on) and on the spectating card. It is kept per player on the server for the session; leaving the server clears it. In the lobby it applies to the next round; once a round is set up a change counts from the next round, with a notice saying so. The lobby line reads "You're sitting out".
+- **Who spectates:** everyone with Sit out on when a round is started, and a new player who joins after the round's car is picked. A player who left mid-round and comes back still plays on in their role.
+- **Not in the round:** spectators have no role and no rule counts them: catching, sight, the nearest cop, the helicopter's guidance, resets, penalties, the leaderboard and the traffic note's player count. The lobby's online count still includes them. Practice rounds are unchanged.
+- **The sitting-out player's car:** when the round is set up, their own game notes each of their cars (model, configuration, paint and where it stood, upright) and removes it, so BeamMP removes it for everyone. Their own AI traffic and a walking character are removed too and don't come back. When the round ends or is cancelled the cars come back where they stood and the player is put in the first one; a car the game can't spawn then gets the notice "Your car could not be put back". On a map change or leaving they are forgotten (BeamMP removes every car then). A spectator can't spawn a car until the round ends ("You can't spawn a car while spectating").
+- **Watching:** the game's own switch-car keys (Tab and Ctrl+Tab by default) go through the round players' cars, the runner's included; a press that would land on a traffic car moves on to the next player's car, and from free camera the camera goes to the car. Free camera (Shift+C by default) works. Spectators never drive: BeamMP keeps another player's car on that player's inputs. The rest of the round's locks stay (teleporting, the vehicle menu, walking, the parts menu and so on).
+- **HUD:** "SPECTATING · Bob" with the watched player's name or "free camera", the countdowns, the round clock with the time limit and the helicopter, as a cop sees them, and buttons for Sit out or Play, How to play, Leaderboard and Host panel. No reset, penalty or role lines. The sky, the helicopter's light and sound and New sky follow the round, and the result card shows at the end. How to play and the Leaderboard stay open while spectating.
 
 ## Police helicopter and hiding
 

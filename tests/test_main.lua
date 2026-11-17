@@ -116,7 +116,11 @@ local function boot(opts)
     end,
     SendChatMessage = function(pid, msg) env.chats[#env.chats + 1] = { pid, msg } end,
     TriggerClientEvent = function(pid, ev, data) env.sent[#env.sent + 1] = { pid = pid, ev = ev, data = data } end,
-    GetPlayers = function() return env.names and { [1] = env.names[1], [2] = env.names[2] } or { [1] = "Reinder", [2] = "Bob" } end,
+    GetPlayers = function()
+      local t = {}
+      for pid, name in pairs(env.names or { "Reinder", "Bob" }) do t[pid] = name end
+      return t
+    end,
     GetPlayerName = function(pid) return (env.names or { "Reinder", "Bob" })[pid] end,
     GetPlayerIdentifiers = function(pid) return (env.ids or {})[pid] or {} end,
     GetPlayerVehicles = function(pid) return env.vehicles[pid] end,
@@ -971,16 +975,16 @@ test("a recorded run sends the top 3 for the map", function()
   env.cleanup()
 end)
 
-test("a mid-chase join gets chaseElapsed in its setup", function()
+test("a mid-chase rejoin gets chaseElapsed in its setup", function()
   local env = boot()
   env.startRound(); env.go()
   env.positions[1], env.positions[2] = 0, 900
   for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
   env.sent = {}
-  env.names = { "Reinder", "Bob", "Cid" }
-  env.call("onPlayerJoin", 3)
+  env.call("onPlayerDisconnect", 2)
+  env.call("onPlayerJoin", 2)
   local setup = env.lastSent("cnr_roundSetup")
-  assertEq(setup.pid, 3)
+  assertEq(setup.pid, 2)
   assertEq(setup.data:find('"chaseElapsed":5', 1, true) ~= nil, true)
   env.cleanup()
 end)
@@ -1127,14 +1131,14 @@ test("the round setup tells the client a practice round is practice, and a real 
   real.cleanup()
 end)
 
-test("a mid-chase join gets clockSeconds", function()
+test("a mid-chase rejoin gets clockSeconds", function()
   local env = boot()
   env.startRound(); env.go()
   env.positions[1], env.positions[2] = 0, 900
   for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
   local before = decodeJson(env.lastSent("cnr_roundSetup").data).sky
-  env.names = { "Reinder", "Bob", "Cid" }
-  env.call("onPlayerJoin", 3)
+  env.call("onPlayerDisconnect", 2)
+  env.call("onPlayerJoin", 2)
   local joined = decodeJson(env.lastSent("cnr_roundSetup").data).sky
   assertNear(joined.clockSeconds, 15, 0.01)
   assertEq(joined.month, before.month); assertEq(joined.day, before.day); assertEq(joined.daySeconds, 1800)
@@ -1718,18 +1722,17 @@ test("a car report from before the rebuild doesn't make a player ready", functio
   env.cleanup()
 end)
 
-test("a player who joins while applying gets the rebuild id with his setup", function()
+test("a player who rejoins while applying gets the rebuild id with his setup", function()
   local env = boot()
   evolving(env); newBuild(env)
   env.panel(2, "start rein")
   env.call("cnr_panel", 1, '{"action":"apply"}')
   env.call("cnr_setup", 1, '{"parts":{"pickup_engine":"v8_60"},"vars":{},"changes":[]}')
   local id = rebuildId(env)
-  env.names = { "Reinder", "Bob", "Cid" }
-  env.vehicles[3] = { [0] = "x" }
-  env.call("onPlayerJoin", 3)
+  env.call("onPlayerDisconnect", 2)
+  env.call("onPlayerJoin", 2)
   local setup = env.lastSent("cnr_roundSetup")
-  assertEq(setup.pid, 3)
+  assertEq(setup.pid, 2)
   assertEq(setup.data:find('"rebuild":' .. id, 1, true) ~= nil, true)
   env.cleanup()
 end)
@@ -1890,17 +1893,16 @@ test("in practice as cop, whoever started it applies", function()
   env.cleanup()
 end)
 
-test("someone joining during prep sees the runner's queued change", function()
+test("someone rejoining during prep sees the runner's queued change", function()
   local env = boot()
   evolving(env); newBuild(env)
   env.panel(2, "start rein")
   env.call("cnr_change", 1, '{"changes":[{"label":"Engine","from":"a","to":"b"}]}')
+  env.call("onPlayerDisconnect", 2)
   env.sent = {}
-  env.names = { "Reinder", "Bob", "Cid" }
-  env.vehicles[3] = { [0] = "x" }
-  env.call("onPlayerJoin", 3)
+  env.call("onPlayerJoin", 2)
   local q = env.lastSent("cnr_queued")
-  assertEq(q ~= nil and q.pid, 3)
+  assertEq(q ~= nil and q.pid, 2)
   env.cleanup()
 end)
 
@@ -2123,12 +2125,13 @@ test("a joiner gets rules, lobby and colour", function()
   env.cleanup()
 end)
 
-test("a mid-round joiner also gets them", function()
+test("a mid-round rejoiner also gets them", function()
   local env = boot()
   env.startRound()
   env.call("onVehicleSpawn", 1, 3, '1:Reinder:1-3:{"jbm":"etk800"}')
   env.go()
   for _ = 1, 40 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.call("onPlayerDisconnect", 2)
   env.call("onPlayerJoin", 2)
   assertEq(sentTo(env, "cnr_rules", 2) ~= nil, true)
   assertEq(sentTo(env, "cnr_lobby", 2):find('"active":true', 1, true) ~= nil, true)
@@ -2650,15 +2653,17 @@ test("a New car re-pick lets no extra car past the cap", function()
   env.cleanup()
 end)
 
-test("a mid-round joiner gets the round cars and its own go-ahead", function()
+test("a mid-round rejoiner gets the round cars and its own go-ahead", function()
   local env = trafficBoot()
   env.names = { "Reinder", "Bob", "Kim" }
-  env.vehicles[3] = { [0] = "x" }
   env.startRound()
   placed(env, 1); placed(env, 2)
   chase(env)
+  env.call("onPlayerDisconnect", 3)
+  env.sent = {}
   env.call("onPlayerJoin", 3)
   assertEq(sentTo(env, "cnr_roundCars", 3) ~= nil, true)
+  env.vehicles[3] = { [0] = "x" }
   env.call("cnr_myVehicle", 3, '{"vid":0}')
   assertEq(env.lastSent("cnr_trafficStart").pid, 3)
   env.cleanup()
@@ -2800,6 +2805,7 @@ local function midChaseJoin(env)
   placed(env, 1); placed(env, 2)
   env.positions[2] = 900
   chase(env)
+  env.call("onPlayerDisconnect", 3)
   env.call("onPlayerJoin", 3)
   for _ = 1, 24 do step(env) end
   assertEq(env.call("onVehicleSpawn", 3, 0, JOINER_SPAWN), 0)
@@ -2926,13 +2932,14 @@ test("a rejoin's setup is logged as resuming", function()
   env.cleanup()
 end)
 
-test("a joiner whose game already has a car when the setup arrives is replaced and placed without a teleport", function()
+test("a rejoiner whose game already has a car when the setup arrives is replaced and placed without a teleport", function()
   local env = boot()
   env.names = { "Reinder", "Bob", "Kim" }
   env.startRound()
   placed(env, 1); placed(env, 2)
   env.positions[2] = 900
   chase(env)
+  env.call("onPlayerDisconnect", 3)
   assertEq(env.call("onVehicleSpawn", 3, 0, '3:Kim:3-0:{"jbm":"etk800","vcf":{}}'), 0)
   env.vehicles[3] = { [0] = "x" }
   joinerAt(env, 600)
@@ -2983,5 +2990,251 @@ test("a refused car is logged at most once per 10 s per player", function()
   step(env)
   assertEq(env.call("onVehicleSpawn", 2, 7, spawnOf(2, 7, "etk800")), 1)
   assertEq(logCount(env, "Bob spawned etk800 (vid 7): refused"), 2)
+  env.cleanup()
+end)
+
+local PICK = '{"model":"pickup","config":"vehicles/pickup/base.pc"}'
+
+local function sitOut(env, pid, on)
+  env.call("cnr_sitOut", pid, on and '{"on":true}' or '{"on":false}')
+end
+
+local function threePlayers(opts)
+  local env = boot(opts)
+  env.names = { "Reinder", "Bob", "Kim" }
+  return env
+end
+
+test("Sit out is answered, stored per player and cleared on disconnect", function()
+  local env = threePlayers()
+  env.sent = {}
+  sitOut(env, 3, true)
+  assertEq(decodeJson(sentTo(env, "cnr_sitOut", 3)).on, true)
+  for _, bad in ipairs({ "{}", '{"on":"yes"}', "nope" }) do
+    env.sent = {}
+    env.call("cnr_sitOut", 3, bad)
+    assertEq(#env.sent, 0)
+  end
+  env.panel(2, "start rein")
+  env.call("cnr_vehiclePicked", 2, PICK)
+  assertEq(sentTo(env, "cnr_roundSetup", 3), nil)
+  assertEq(sentTo(env, "cnr_spectate", 3) ~= nil, true)
+  env.panel(1, "stop")
+  env.call("onPlayerDisconnect", 3)
+  env.sent = {}
+  env.panel(2, "start rein")
+  env.call("cnr_vehiclePicked", 2, PICK)
+  assertEq(sentTo(env, "cnr_roundSetup", 3) ~= nil, true)
+  assertEq(sentTo(env, "cnr_spectate", 3), nil)
+  env.cleanup()
+end)
+
+test("Start is refused only when everyone sits out", function()
+  local env = boot()
+  sitOut(env, 1, true)
+  sitOut(env, 2, true)
+  env.panel(2, "start next")
+  assertEq(env.replyHas("Everyone is sitting out"), true)
+  assertEq(env.lastSent("cnr_pickVehicle"), nil)
+  sitOut(env, 2, false)
+  env.panel(2, "start next")
+  assertEq(env.lastSent("cnr_pickVehicle") ~= nil, true)
+  env.call("cnr_vehiclePicked", 2, PICK)
+  assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 2)).role, "runner")
+  assertEq(sentTo(env, "cnr_spectate", 1) ~= nil, true)
+  env.cleanup()
+  local alone = boot()
+  alone.names = { "Reinder" }
+  alone.panel(1, "start next")
+  alone.call("cnr_vehiclePicked", 1, PICK)
+  assertEq(decodeJson(sentTo(alone, "cnr_roundSetup", 1)).role, "runner")
+  alone.cleanup()
+end)
+
+test("auto next round keeps going with one player who isn't sitting out", function()
+  local env = boot({ config = '{"autoNextRound": true, "autoNextDelaySeconds": 5}' })
+  sitOut(env, 1, true)
+  env.panel(2, "start next")
+  env.call("cnr_vehiclePicked", 2, PICK)
+  env.go()
+  for _ = 1, 50 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.panel(2, "end")
+  env.sent = {}
+  for _ = 1, 24 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  assertEq(env.lastSent("cnr_pickVehicle") ~= nil, true)
+  env.call("cnr_vehiclePicked", env.lastSent("cnr_pickVehicle").pid, PICK)
+  assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 2)).role, "runner")
+  env.cleanup()
+end)
+
+test("a sitting-out player is never the runner", function()
+  local env = boot()
+  env.names = { "Reinder", "Bob", "Ann" }
+  env.panel(2, "start =Ann")
+  env.call("cnr_vehiclePicked", 2, PICK)
+  env.panel(1, "stop")
+  sitOut(env, 3, true)
+  env.panel(2, "start ann")
+  assertEq(env.replyHas("Ann is sitting out"), true)
+  env.panel(2, "start =Ann")
+  assertEq(env.replyHas("Ann is sitting out"), true)
+  env.panel(2, "start again")
+  assertEq(env.replyHas("Ann is sitting out"), true)
+  env.panel(2, "start next")
+  env.call("cnr_vehiclePicked", 2, PICK)
+  assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 2)).runnerName, "Bob")
+  env.panel(1, "stop")
+  math.randomseed(7)
+  for _ = 1, 12 do
+    env.sent = {}
+    env.panel(2, "start random")
+    env.call("cnr_vehiclePicked", 2, PICK)
+    assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 2)).runnerId ~= 3, true)
+    env.panel(1, "stop")
+  end
+  env.cleanup()
+end)
+
+test("Sit out during a round applies to the next round and says so", function()
+  local env = threePlayers()
+  env.panel(2, "start rein")
+  env.sent = {}
+  sitOut(env, 3, true)
+  assertEq(env.noticeHas("You sit out from the next round"), true)
+  env.call("cnr_vehiclePicked", 2, PICK)
+  assertEq(sentTo(env, "cnr_roundSetup", 3) ~= nil, true)
+  assertEq(sentTo(env, "cnr_spectate", 3), nil)
+  env.panel(1, "stop")
+  for _ = 1, 2 do
+    env.sent = {}
+    env.panel(2, "start rein")
+    env.call("cnr_vehiclePicked", 2, PICK)
+    assertEq(sentTo(env, "cnr_roundSetup", 3), nil)
+    assertEq(sentTo(env, "cnr_spectate", 3) ~= nil, true)
+    if _ == 1 then env.panel(1, "stop") end
+  end
+  sitOut(env, 3, false)
+  assertEq(env.noticeHas("You play again from the next round"), true)
+  env.panel(1, "stop")
+  env.sent = {}
+  env.panel(2, "start rein")
+  env.call("cnr_vehiclePicked", 2, PICK)
+  assertEq(sentTo(env, "cnr_roundSetup", 3) ~= nil, true)
+  env.panel(1, "stop")
+  env.sent = {}
+  sitOut(env, 3, true)
+  assertEq(env.noticeHas("next round"), false)
+  env.cleanup()
+end)
+
+test("a sitting-out player gets cnr_spectate at the pick, with the round's sky", function()
+  local env = threePlayers({ config = '{"timeOfDay":"night","weather":"rain"}' })
+  sitOut(env, 3, true)
+  env.panel(2, "start rein")
+  env.call("cnr_vehiclePicked", 2, PICK)
+  local d = decodeJson(sentTo(env, "cnr_spectate", 3))
+  assertEq(d.phase, "prep"); assertEq(d.runnerId, 1); assertEq(d.runnerName, "Reinder")
+  assertEq(d.sky.time, "night"); assertEq(d.sky.weather, "rain")
+  assertEq(env.logHas("Kim spectates (prep)"), true)
+  env.cleanup()
+end)
+
+test("a mid-chase joiner gets cnr_spectate with the chase time, the sky clock and the round cars, and no setup or traffic", function()
+  local env = trafficBoot()
+  env.startRound()
+  placed(env, 1); placed(env, 2)
+  chase(env)
+  env.names = { "Reinder", "Bob", "Kim" }
+  env.sent = {}
+  env.call("onPlayerJoin", 3)
+  local d = decodeJson(sentTo(env, "cnr_spectate", 3))
+  assertEq(d.phase, "running"); assertNear(d.chaseElapsed, 1, 0.01); assertNear(d.sky.clockSeconds, 11, 0.01)
+  assertEq(sentTo(env, "cnr_roundSetup", 3), nil)
+  assertEq(sentTo(env, "cnr_roundCars", 3) ~= nil, true)
+  assertEq(sentTo(env, "cnr_lobby", 3):find('"active":true', 1, true) ~= nil, true)
+  env.vehicles[3] = { [0] = "x", [1] = "y" }
+  env.call("cnr_myVehicle", 3, '{"vid":0}')
+  assertEq(sentTo(env, "cnr_trafficStart", 3), nil)
+  assertEq(#env.removed, 0)
+  env.cleanup()
+end)
+
+test("a spectator can't spawn a car until the round ends", function()
+  local env = threePlayers()
+  sitOut(env, 3, true)
+  env.panel(2, "start rein")
+  assertEq(env.call("onVehicleSpawn", 3, 5, '3:Kim:3-5:{"jbm":"etk800","vcf":{}}'), 0)
+  env.call("cnr_vehiclePicked", 2, PICK)
+  env.sent = {}
+  assertEq(env.call("onVehicleSpawn", 3, 6, '3:Kim:3-6:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc"}}'), 1)
+  assertEq(env.noticeHas("You can't spawn a car while spectating"), true)
+  env.panel(1, "stop")
+  assertEq(env.call("onVehicleSpawn", 3, 7, '3:Kim:3-7:{"jbm":"etk800","vcf":{}}'), 0)
+  env.cleanup()
+  local joined = boot()
+  joined.startRound(); joined.go()
+  joined.names = { "Reinder", "Bob", "Kim" }
+  joined.call("onPlayerJoin", 3)
+  assertEq(joined.call("onVehicleSpawn", 3, 0, '3:Kim:3-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc"}}'), 1)
+  joined.call("onPlayerDisconnect", 3)
+  joined.call("onPlayerJoin", 3)
+  assertEq(joined.call("onVehicleSpawn", 3, 0, '3:Kim:3-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc"}}'), 1)
+  joined.panel(1, "stop")
+  assertEq(joined.call("onVehicleSpawn", 3, 1, '3:Kim:3-1:{"jbm":"etk800","vcf":{}}'), 0)
+  joined.cleanup()
+  local practice = boot()
+  practice.panel(1, "test runner")
+  practice.call("cnr_vehiclePicked", 1, PICK)
+  assertEq(practice.call("onVehicleSpawn", 2, 3, '2:Bob:2-3:{"jbm":"etk800","vcf":{}}'), 0)
+  practice.cleanup()
+end)
+
+test("New sky reaches spectators", function()
+  local env = threePlayers({ config = '{"weather":"random"}' })
+  sitOut(env, 3, true)
+  env.startRound()
+  env.sent = {}
+  env.panel(1, "sky")
+  assertEq(countSent(env, "cnr_sky", 1), 1); assertEq(countSent(env, "cnr_sky", 3), 1)
+  env.cleanup()
+end)
+
+test("the panel marks sitting-out players, Next skips them and the traffic note counts only players", function()
+  local env = trafficBoot()
+  env.names = { "Reinder", "Bob", "Ann" }
+  sitOut(env, 3, true)
+  env.call("cnr_panel", 1, '{"action":"open"}')
+  local st = decodeJson(env.lastSent("cnr_panelState").data)
+  local rows = {}
+  for _, row in ipairs(st.players) do rows[row.name] = row end
+  assertEq(rows.Ann.sitOut, true); assertEq(rows.Bob.sitOut, nil)
+  assertEq(st.nextRunner, "Bob")
+  assertEq(st.trafficNote, "5 each · 10 cars with 2 players")
+  env.cleanup()
+end)
+
+test("a name that fits several players still says so when one of them sits out", function()
+  local env = boot()
+  env.names = { "Reinder", "Ann", "Anna", "Andy" }
+  sitOut(env, 4, true)
+  env.panel(1, "start an")
+  assertEq(env.replyHas("matches several players: Ann, Anna"), true)
+  env.panel(1, "start and")
+  assertEq(env.replyHas("Andy is sitting out"), true)
+  env.cleanup()
+end)
+
+test("a player who joins in prep keeps spectating through New car, with spawns still refused", function()
+  local env = boot()
+  env.startRound()
+  env.names = { "Reinder", "Bob", "Kim" }
+  env.call("onPlayerJoin", 3)
+  env.panel(2, "reroll")
+  env.sent = {}
+  env.call("cnr_vehiclePicked", 2, '{"model":"etk800","config":"vehicles/etk800/base.pc"}')
+  assertEq(sentTo(env, "cnr_roundSetup", 3), nil)
+  assertEq(sentTo(env, "cnr_spectate", 3) ~= nil, true)
+  assertEq(sentTo(env, "cnr_roundSetup", 1) ~= nil, true)
+  assertEq(env.call("onVehicleSpawn", 3, 0, '3:Kim:3-0:{"jbm":"etk800","vcf":{"partConfigFilename":"vehicles/etk800/base.pc"}}'), 1)
   env.cleanup()
 end)

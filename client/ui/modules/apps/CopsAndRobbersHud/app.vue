@@ -5,7 +5,7 @@
         <HudNotices v-if="!settingsShown" :notices="hud.notices" />
         <template v-if="mode === 'lobby' && hud.lobby">
           <HudTab v-if="hud.lobby.hudHidden" :warnings="hud.lobby.warnings" @show="setHidden(false)" />
-          <HudLobby v-else v-show="!settingsOpen" :lobby="hud.lobby" @settings="openSettings" @help="openHelp" @toggle="toggleApp" @hide="setHidden(true)" />
+          <HudLobby v-else v-show="!settingsOpen" :lobby="hud.lobby" @settings="openSettings" @help="openHelp" @toggle="toggleApp" @hide="setHidden(true)" @sit-out="setSitOut" />
         </template>
         <template v-if="mode === 'round'">
           <HudChange v-if="hud.change" :change="hud.change" @apply="ui({ action: 'apply' })" />
@@ -13,6 +13,7 @@
             <HudPrep v-show="!settingsOpen" :prep="hud.prep" @settings="openSettings" @help="openHelp" @toggle="toggleApp" />
           </template>
           <HudChase v-if="chaseShown" :status="hud.status" :bar="hud.catch" />
+          <HudSpectate v-if="hud.spectate" :spectate="hud.spectate" @help="openHelp" @toggle="toggleApp" @sit-out="setSitOut" />
         </template>
         <HudSettings
           v-if="settingsShown"
@@ -39,6 +40,7 @@ import HudChange from "./HudChange.vue"
 import HudLobby from "./HudLobby.vue"
 import HudPrep from "./HudPrep.vue"
 import HudSettings from "./HudSettings.vue"
+import HudSpectate from "./HudSpectate.vue"
 import HudTab from "./HudTab.vue"
 
 const { hud, ui } = useCnrHud("hud")
@@ -82,6 +84,10 @@ function toggleApp(name) {
 
 function setHidden(value) {
   ui({ action: "setting", key: "hudHidden", value })
+}
+
+function setSitOut(on) {
+  ui({ action: "sitOut", on })
 }
 
 function openSettings() {

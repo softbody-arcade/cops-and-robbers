@@ -46,7 +46,7 @@ function M.playerRows(entries, nextName, lastName)
   for _, e in ipairs(entries or {}) do
     rows[#rows + 1] = {
       name = e.name, runs = e.runs or 0, next = e.name == nextName, last = e.name == lastName,
-      role = e.role, state = e.state, change = e.change, missing = e.missing,
+      role = e.role, state = e.state, change = e.change, missing = e.missing, sitOut = e.sitOut,
     }
   end
   table.sort(rows, function(a, b)
