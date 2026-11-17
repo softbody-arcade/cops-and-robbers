@@ -728,6 +728,25 @@ test("rain fades in over the change", function()
   assertEq(drops(fake), 3000)
 end)
 
+test("the curve write lands when the client's own clock reaches the turning point", function()
+  local sky, fake = load()
+  core_environment.getSolarTimeOfDayValue = function() return 0.01 end
+  sky.apply(changing())
+  sky.startClock(0)
+  local clockStart = fake.setStates[#fake.setStates].time
+  assertNear(clockStart, 0.01 - 1 / 24 + 1, 1e-9)
+  local count, at = #fake.setStates, nil
+  runFor(sky, 0, 400, 0.25, function(t)
+    for i = count + 1, #fake.setStates do
+      if fake.setStates[i].temperatureCurveOverrideC ~= nil and not at then at = t end
+    end
+    count = #fake.setStates
+  end)
+  local expected = (2 / 24 - (clockStart - 1)) * 1800
+  assertEq(at ~= nil, true)
+  assertEq(at >= expected and at <= expected + 0.5, true, tostring(at))
+end)
+
 test("the curve moves on only at a turning point, and the two curves agree there", function()
   local sky, fake = load()
   sky.apply(changing())
@@ -867,6 +886,10 @@ test("no step while the round sky blends in", function()
   assertEq(#fake.setStates > n, true)
   assertEq(fake.lerps[#fake.setStates], nil)
   assertEq(fake.locked, true)
+  t = runFor(sky, t + 1, 30, 0.1)
+  assertEq(drops(fake) < 3000, true)
+  runFor(sky, t, 17, 0.1)
+  assertEq(drops(fake), 3000)
 end)
 
 test("a failing step logs once and stays locked", function()
