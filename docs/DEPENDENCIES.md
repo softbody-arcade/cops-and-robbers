@@ -186,6 +186,7 @@ Then do the checks for whatever actually updated.
   - `electrics.set_lightbar_signal(1|0)`: light bar on with no siren. `1` means lights only.
   - `obj:setWind(x, y, z)`, sent to every car through `be:queueAllObjectLua` (the gusts of the sky code), and `electrics.setLightsState(1)` (headlights on practice AI cars at night).
   - `controller.setFreeze(1|0)`, `fire.explodeVehicle()`, `ai.setMode(...)`, `ai.setTargetObjectID(id)`.
+  - BeamMP doesn't sync a vehicle's fire or explosion, so with `explodeOnCatch` each game in the round queues `fire.explodeVehicle()` on its own copy of the runner's car: the runner's game on its own car, a cop's game on the runner's remote copy. Whether BeamMP's vehicle sync (position, damage) then undoes the explosion on a remote copy is an in-game check: a cop should see the caught car burst and stay wrecked.
   - We patch `recovery.startRecovering` / `stopRecovering` / `loadHome` (`VEHICLE_PATCH`) so that recovery buttons go through our rules.
   - The `beaconSpin` controller spins while `electrics.values.lightbar > 0` (`lua/vehicle/controller/beaconSpin.lua`).
 - **Jbeam loading:**

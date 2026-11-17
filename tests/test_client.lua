@@ -3068,3 +3068,64 @@ test("practice AI cars start along the player's heading, also after an Earth tel
   assertEq(#calls, 2)
   assertEq(calls[2].heading.x, -1)
 end)
+
+local EXPLODE = "fire.explodeVehicle()"
+
+local function queued(veh, cmd)
+  for _, c in ipairs(veh.commands) do if c == cmd then return true end end
+  return false
+end
+
+local function copWithRunnerCar(env)
+  startCop(env)
+  local runnerCar = env.addObject(300, vec3(0, 100, 0))
+  env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
+  env.fire("cnr_roundCars", { keys = { "2-0" } })
+  env.fire("cnr_release", {})
+  env.tick(0.2)
+  return runnerCar
+end
+
+test("a caught runner's car explodes on a cop's game too", function()
+  local env = bootClient()
+  local runnerCar = copWithRunnerCar(env)
+  env.fire("cnr_roundEnd", { reason = "caught", runnerName = "Bob", survivedSeconds = 75, catchers = { "Reinder" }, runnerId = 2, explode = true })
+  assertEq(queued(runnerCar, EXPLODE), true)
+  assertEq(queued(env.veh, EXPLODE), false)
+end)
+
+test("without explode a cop's game leaves the runner's car alone", function()
+  local env = bootClient()
+  local runnerCar = copWithRunnerCar(env)
+  env.fire("cnr_roundEnd", { reason = "caught", runnerName = "Bob", survivedSeconds = 75, catchers = { "Reinder" }, runnerId = 2 })
+  assertEq(queued(runnerCar, EXPLODE), false)
+end)
+
+test("the caught runner's own game explodes its own car", function()
+  local env = bootClient()
+  env.fire("cnr_roundSetup", { role = "runner", runnerId = 1, model = "pickup", config = "vehicles/pickup/base.pc", phase = "prep" })
+  env.tick(1)
+  env.fire("cnr_roundEnd", { reason = "caught", runnerName = "Reinder", survivedSeconds = 75, catchers = { "Bob" }, runnerId = 1, explode = true })
+  assertEq(queued(env.veh, EXPLODE), true)
+end)
+
+test("a game not in the round explodes nothing", function()
+  local env = bootClient()
+  local runnerCar = env.addObject(300, vec3(0, 100, 0))
+  env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
+  env.mpPlayers[2] = { activeVehicleID = "2-0" }
+  env.fire("cnr_roundEnd", { reason = "caught", runnerName = "Bob", survivedSeconds = 75, catchers = { "Ann" }, runnerId = 2, explode = true })
+  assertEq(queued(runnerCar, EXPLODE), false)
+  assertEq(queued(env.veh, EXPLODE), false)
+end)
+
+test("practice as a cop: the AI runner is removed at the round end, so nothing explodes", function()
+  local env = bootClient()
+  local aiRunner = practiceAsCop(env)
+  env.fire("cnr_release", {})
+  env.tick(0.2)
+  env.fire("cnr_roundEnd", { reason = "caught", runnerName = "AI runner", survivedSeconds = 30, catchers = { "Reinder" }, runnerId = AI_RUNNER, explode = true })
+  assertEq(queued(aiRunner, EXPLODE), false)
+  assertEq(queued(env.veh, EXPLODE), false)
+  assertEq(env.objects[aiRunner.id], nil)
+end)

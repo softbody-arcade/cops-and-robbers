@@ -103,7 +103,7 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `assistMinSightPercent` | 20 | Share of the chase a cop needs sight of the runner for an assist |
 | `roundTimeLimitSeconds` | 0 | Runner escapes after this long (0 = no limit) |
 | `excludedModels` | citybus, us_semi, md_series, percheron, rockbouncer | Never picked |
-| `explodeOnCatch` | false | Runner's car explodes when caught |
+| `explodeOnCatch` | false | Runner's car explodes when caught, for every player in the round |
 | `sirensAllowed` | true | Cops may use a siren (each cop turns it on in their settings) |
 | `includeModVehicles` | false | Also pick mod vehicles |
 | `autoNextRound` | false | Prepare the next round automatically (panel switch) |

@@ -534,14 +534,17 @@ local function onRoundEnd(data)
   local d = jsonDecode(data) or {}
   local wasRunner = MPConfig and MPConfig.getPlayerServerID() == d.runnerId
   local wasActive = active
+  local caughtCar
+  if d.explode and wasRunner then
+    caughtCar = ownVehicle()
+  elseif d.explode and wasActive and role == "cop" and not ai.runnerObject() then
+    caughtCar = runnerObject()
+  end
   endRound()
   local cancelled = d.reason == "cancelled" or not hudfeed.isResultReason(d.reason)
   if cancelled and not wasActive then return end
   hudfeed.showResult(d, clock)
-  if d.explode and wasRunner then
-    local veh = ownVehicle()
-    if veh then veh:queueLuaCommand("fire.explodeVehicle()") end
-  end
+  if caughtCar then caughtCar:queueLuaCommand("fire.explodeVehicle()") end
 end
 
 local function onTop(data)

@@ -277,7 +277,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | `autoNextRound` | false | Prepare the next round automatically |
 | `autoNextDelaySeconds` | 15 | Delay before the next round is prepared |
 | `excludedModels` | citybus, us_semi, md_series, percheron, rockbouncer | Models that are never picked |
-| `explodeOnCatch` | false | The runner's car explodes when caught |
+| `explodeOnCatch` | false | The runner's car explodes when caught, and every player in the round sees it explode (not the AI runner in practice, which is removed at once) |
 | `includeModVehicles` | false | Also pick mod vehicles |
 | `timeOfDay` | random | `sunrise`, `morning`, `noon`, `afternoon`, `sunset`, `night` or `random` |
 | `nightChancePercent` | 25 | Chance of night when Time of day is random |
