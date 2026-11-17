@@ -202,7 +202,7 @@ Then do the checks for whatever actually updated.
   - Compare against the game's `lua/ge/extensions/core/input/actions/*.json`.
   - Also check the `competitive` template in `core/input/actionFilter.lua`.
 - **Cop placement:** cops spawn on a road near the runner (map graph API), and the gas station list loads on West Coast. The server log shows `N gas stations loaded`.
-- **Car pool:** only stock cars and trucks are picked. If mod cars show up, the `Source` naming changed.
+- **Car pool:** only stock cars, trucks and heavy machinery are picked. If mod cars show up, the `Source` naming changed.
 
 ## BeamNG.drive: vehicle Lua and jbeam (cop lights, freeze, recovery)
 
