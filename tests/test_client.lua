@@ -4117,3 +4117,176 @@ test("recover keys are locked while spectating and freed after", function()
     for _, name in ipairs(recover) do assertEq(inLockGroup(env, name), false, name) end
   end)
 end)
+
+local function aiOnlySetup()
+  return { model = "pickup", config = "vehicles/pickup/base.pc", runnerId = -10, aiOnly = true, copSpawnMin = 50, copSpawnMax = 150, ai = {
+    { id = -10, role = "runner", index = 1, name = "AI runner" },
+    { id = -11, role = "cop", index = 2, name = "AI cop 1" },
+    { id = -12, role = "cop", index = 3, name = "AI cop 2" },
+  } }
+end
+
+local function watchPractice(env, over)
+  local d = { runnerId = -10, runnerName = "AI runner", practice = true }
+  for k, v in pairs(over or {}) do d[k] = v end
+  spectate(env, d)
+  env.fire("cnr_setupAI", aiOnlySetup())
+end
+
+local function spyRoads()
+  local roads = package.loaded["copsAndRobbers/roads"]
+  local find, near, calls = roads.findCopSpot, roads.nearestRoad, { cop = {}, road = {} }
+  roads.findCopSpot = function(center, minD, maxD, index, heading)
+    calls.cop[#calls.cop + 1] = { center = center, index = index, heading = heading }
+    return find(center, minD, maxD, index, heading)
+  end
+  roads.nearestRoad = function(pos, heading)
+    calls.road[#calls.road + 1] = { pos = pos, heading = heading }
+    return near(pos, heading)
+  end
+  return calls
+end
+
+local function targetsOf(veh)
+  local list = {}
+  for _, c in ipairs(veh.commands) do
+    local id = c:match("^ai%.setTargetObjectID%((%-?%d+)%)$")
+    if id then list[#list + 1] = tonumber(id) end
+  end
+  return list
+end
+
+test("watching AI practice: the runner starts on the road by your parked car and the cops around the runner", function()
+  withCamera(function(cam)
+    local env = bootClient()
+    env.veh.pos = vec3(0, 20, 0)
+    function env.veh:getDirectionVector() return vec3(1, 0, 0) end
+    local calls = spyRoads()
+    watchPractice(env)
+    assertEq(env.objects[100], nil); assertEq(cam.free, true)
+    assertEq(#env.spawned, 3)
+    assertEq(calls.road[1].pos.y, 20); assertEq(calls.road[1].heading.x, 1)
+    assertEq(env.spawned[1].opt.pos.y, 60); assertEq(env.spawned[1].opt.autoEnterVehicle, false)
+    assertEq(#calls.cop, 2)
+    assertEq(calls.cop[1].center.y, 60); assertEq(calls.cop[1].index, 1); assertEq(calls.cop[1].heading.x, 1)
+    assertEq(calls.cop[2].center.y, 60); assertEq(calls.cop[2].index, 2)
+  end)
+end)
+
+test("without a car of your own the AI practice starts where the camera is", function()
+  withCamera(function()
+    local saved = _G.core_camera
+    _G.core_camera = { getPosition = function() return vec3(5, 30, 40) end, getForward = function() return vec3(-1, 0, -0.5) end }
+    local ok, err = pcall(function()
+      local env = bootClient()
+      env.objects[100] = nil
+      local calls = spyRoads()
+      watchPractice(env)
+      assertEq(calls.road[1].pos.y, 30); assertEq(calls.road[1].heading.x, -1)
+      assertEq(#env.spawned, 3)
+      assertEq(calls.cop[1].center.y, 60)
+    end)
+    _G.core_camera = saved
+    if not ok then error(err, 0) end
+  end)
+end)
+
+test("the watched AI runner flees from the nearest AI cop, never from itself, and turns to a nearer one", function()
+  withCamera(function()
+    local env = bootClient()
+    MPVehicleGE.isOwn = function() return true end
+    watchPractice(env)
+    env.tick(0.2)
+    local runner, cop1, cop2 = env.spawned[1].veh, env.spawned[2].veh, env.spawned[3].veh
+    runner.pos, cop1.pos, cop2.pos = vec3(0, 0, 0), vec3(100, 0, 0), vec3(0, 60, 0)
+    env.player = runner
+    env.fire("cnr_runnerGo", { headStartSeconds = 7 })
+    assertEq(queued(runner, 'ai.setMode("flee")'), true)
+    assertEq(table.concat(targetsOf(runner), ","), tostring(cop2:getID()))
+    env.tick(2)
+    assertEq(#targetsOf(runner), 1)
+    cop1.pos = vec3(20, 0, 0)
+    env.tick(1.2)
+    assertEq(table.concat(targetsOf(runner), ","), cop2:getID() .. "," .. cop1:getID())
+    env.fire("cnr_release", {})
+    assertEq(queued(cop1, "ai.setTargetObjectID(" .. runner:getID() .. ")"), true)
+    assertEq(queued(cop1, 'ai.setMode("chase")'), true)
+    env.fire("cnr_roundEnd", { reason = "cancelled" })
+    local n = #targetsOf(runner)
+    env.tick(2)
+    assertEq(#targetsOf(runner), n)
+  end)
+  local env = bootClient()
+  local aiRunner = practiceAsCop(env)
+  env.fire("cnr_runnerGo", { headStartSeconds = 7 })
+  assertEq(table.concat(targetsOf(aiRunner), ","), "100")
+  env.tick(2)
+  assertEq(#targetsOf(aiRunner), 1)
+end)
+
+test("Tab goes through the AI cars and the card names the one watched", function()
+  withCamera(function()
+    local env = bootClient()
+    MPVehicleGE.isOwn = function() return true end
+    env.fire("cnr_mode", {})
+    env.mpPlayers[1] = { name = "Reinder" }
+    env.addObject(250, vec3(90, 0, 0))
+    watchPractice(env)
+    env.tick(0.2)
+    local ids = { env.spawned[1].veh:getID(), env.spawned[2].veh:getID(), env.spawned[3].veh:getID() }
+    env.player = env.objects[250]
+    env.M.onVehicleCycleSwitchPerformedByUser(1, 0, 250)
+    assertEq(env.player:getID(), ids[1])
+    env.tick(0.2)
+    assertEq(env.hud().spectate.name, "AI runner")
+    env.player = env.objects[250]
+    env.M.onVehicleCycleSwitchPerformedByUser(1, 0, 250)
+    assertEq(env.player:getID(), ids[2])
+    env.tick(0.2)
+    assertEq(env.hud().spectate.name, "AI cop 1")
+    local n = #env.entered
+    env.player = env.objects[ids[3]]
+    env.M.onVehicleCycleSwitchPerformedByUser(1, 0, ids[3])
+    assertEq(#env.entered, n)
+    env.tick(0.2)
+    assertEq(env.hud().spectate.name, "AI cop 2")
+    env.player = env.objects[250]
+    env.M.onVehicleCycleSwitchPerformedByUser(-1, 0, 250)
+    assertEq(env.player:getID(), ids[2])
+  end)
+end)
+
+test("New car in a watched practice keeps your parked car and puts the new AI cars by it again", function()
+  withCamera(function()
+    local env = bootClient()
+    MPVehicleGE.isOwn = function() return true end
+    env.veh.pos = vec3(0, 20, 0)
+    env.veh.model = "etk800"
+    local calls = spyRoads()
+    watchPractice(env)
+    local first = { env.spawned[1].veh:getID(), env.spawned[2].veh:getID(), env.spawned[3].veh:getID() }
+    env.player = env.spawned[2].veh
+    env.spawned[2].veh.pos = vec3(400, 0, 0)
+    watchPractice(env)
+    for _, id in ipairs(first) do assertEq(env.objects[id], nil) end
+    assertEq(#env.spawned, 6)
+    assertEq(calls.road[2].pos.y, 20)
+    env.fire("cnr_roundEnd", { reason = "cancelled" })
+    assertEq(#env.spawned, 7)
+    assertEq(env.spawned[7].model, "etk800"); assertEq(env.spawned[7].opt.pos.y, 20)
+    for i = 4, 6 do assertEq(env.objects[env.spawned[i].veh:getID()], nil) end
+  end)
+end)
+
+test("the AI cars get their lights while you watch", function()
+  withCamera(function()
+    local env = bootClient()
+    watchPractice(env, { sky = { time = "night", windDir = 0, windSeed = 1 } })
+    env.tick(6)
+    local runner, cop = env.spawned[1].veh, env.spawned[2].veh
+    assertEq(hasCommand(runner, "electrics.setLightsState(1)"), true)
+    assertEq(hasCommand(cop, "electrics.set_lightbar_signal(1)"), true)
+    assertEq(hasCommand(runner, "electrics.set_lightbar_signal(1)"), false)
+    assertEq(table.concat(cop.commands, "\n"):find("cnrLightSync", 1, true) ~= nil, true)
+  end)
+end)

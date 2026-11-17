@@ -9,8 +9,10 @@ local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
 local HEADLIGHTS_ON = "electrics.setLightsState(1)"
 local HEADLIGHTS_OFF = "electrics.setLightsState(0)"
 local REPLACE_MIN, REPLACE_MAX = 80, 200
+local FLEE_CHECK = 1
 
 local cars = {}
+local aiOnly = false
 local notify = function() end
 
 function M.setNotify(fn)
@@ -42,9 +44,37 @@ local function startChase(car)
   command(car, 'ai.setMode("chase")')
 end
 
+local function positionOf(car)
+  local obj = car.gameId and getObjectByID(car.gameId)
+  return obj and obj:getPosition()
+end
+
+local function nearestCop(runner)
+  local here = positionOf(runner)
+  if not here then return nil end
+  local best, bestDist
+  for _, car in pairs(cars) do
+    local at = car.role == "cop" and positionOf(car)
+    local d = at and at:distance(here)
+    if d and (not bestDist or d < bestDist) then best, bestDist = car.gameId, d end
+  end
+  return best
+end
+
+local function fleeFrom(car, target)
+  if not target or target == car.fleeFrom then return end
+  car.fleeFrom = target
+  command(car, "ai.setTargetObjectID(" .. target .. ")")
+end
+
 local function startFlee(car)
-  local veh = getPlayerVehicle(0)
-  if veh then command(car, "ai.setTargetObjectID(" .. veh:getID() .. ")") end
+  if aiOnly then
+    car.fleeing = true
+    fleeFrom(car, nearestCop(car))
+  else
+    local veh = getPlayerVehicle(0)
+    if veh then command(car, "ai.setTargetObjectID(" .. veh:getID() .. ")") end
+  end
   command(car, 'ai.setMode("flee")')
 end
 
@@ -57,6 +87,7 @@ function M.remove()
     end
   end
   cars = {}
+  aiOnly = false
 end
 
 local function spawnCar(model, config, a, pos, rot)
@@ -68,14 +99,24 @@ local function spawnCar(model, config, a, pos, rot)
   return veh
 end
 
-function M.setup(d)
+function M.setup(d, center, heading)
   M.remove()
-  local own = game.ownVehicle()
-  local center = own and own:getPosition()
-  local heading = own and own:getDirectionVector()
+  aiOnly = d.aiOnly == true
+  if not center then
+    local own = game.ownVehicle()
+    center = own and own:getPosition()
+    heading = own and own:getDirectionVector()
+  end
+  local copCenter, copIndex = center, 0
   for _, a in ipairs(d.ai or {}) do
     local pos, rot
-    if center then pos, rot = roads.findCopSpot(center, d.copSpawnMin or 50, d.copSpawnMax or 150, a.index or 1, heading) end
+    if center and aiOnly and a.role == "runner" then
+      pos, rot = roads.nearestRoad(center, heading)
+      copCenter = pos or center
+    elseif center then
+      copIndex = copIndex + 1
+      pos, rot = roads.findCopSpot(copCenter, d.copSpawnMin or 50, d.copSpawnMax or 150, aiOnly and copIndex or a.index or 1, heading)
+    end
     local veh = spawnCar(d.model, d.config, a, pos, rot)
     if veh then
       cars[a.id] = { id = a.id, role = a.role, name = a.name, color = a.color, gameId = veh:getID(), frozen = true, reported = false }
@@ -145,6 +186,10 @@ function M.tick(clock)
         car.lastFreeze = clock
         obj:queueLuaCommand("controller.setFreeze(1)")
       end
+      if car.fleeing and clock - (car.fleeCheckedAt or -math.huge) >= FLEE_CHECK then
+        car.fleeCheckedAt = clock
+        fleeFrom(car, nearestCop(car))
+      end
     end
   end
   return report
@@ -169,6 +214,13 @@ end
 function M.runnerObject()
   for _, car in pairs(cars) do
     if car.role == "runner" then return car.gameId and getObjectByID(car.gameId) end
+  end
+  return nil
+end
+
+function M.nameOf(gameId)
+  for _, car in pairs(cars) do
+    if gameId ~= nil and car.gameId == gameId then return car.name end
   end
   return nil
 end

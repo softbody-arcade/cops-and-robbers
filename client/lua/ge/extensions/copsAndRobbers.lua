@@ -128,8 +128,19 @@ local function startStatus()
   infoParts, infoTag, infoSeenAt = nil, nil, nil
 end
 
+local function watchCenter()
+  local pos, dir = spectator.spot()
+  if pos then return pos, dir end
+  local cam = rawget(_G, "core_camera")
+  local at = cam and cam.getPosition and cam.getPosition()
+  local forward = cam and cam.getForward and cam.getForward()
+  return at, forward and vec3(forward.x, forward.y, 0) or nil
+end
+
 local function onSetupAI(data)
-  ai.setup(jsonDecode(data) or {})
+  local center, heading
+  if spectating then center, heading = watchCenter() end
+  ai.setup(jsonDecode(data) or {}, center, heading)
   hidingBuiltAt = -math.huge
 end
 
@@ -750,8 +761,8 @@ local function updateModes()
 end
 
 local function updateLightsAndPatch()
-  if not active or not inputs.patchDue(clock) then return end
-  local veh = ownVehicle()
+  if not (active or spectating) or not inputs.patchDue(clock) then return end
+  local veh = active and ownVehicle()
   if veh then
     veh:queueLuaCommand(inputs.VEHICLE_PATCH)
     local n = ownLights.lightbarSignal(role, statusActive, prefs.siren, sirensAllowed)
@@ -774,11 +785,11 @@ local function updateOwnLights()
 end
 
 local function updateLightSync()
-  if not active or clock - lastLightSync < ownLights.SYNC_INTERVAL then return end
+  if not (active or spectating) or clock - lastLightSync < ownLights.SYNC_INTERVAL then return end
   lastLightSync = clock
   lightSyncCount = lightSyncCount + 1
   local cmd = ownLights.syncCommand(lightSyncCount)
-  local veh = ownVehicle()
+  local veh = active and ownVehicle()
   if veh then veh:queueLuaCommand(cmd) end
   for _, car in ipairs(ai.objects()) do car.obj:queueLuaCommand(cmd) end
   for _, obj in ipairs(traffic.objects()) do obj:queueLuaCommand(cmd) end
@@ -970,14 +981,17 @@ local function onUpdate(dtReal)
     active = active, role = role, chaseStart = statusActive and chaseStart or nil,
     resetAllowed = resetAllowed, resetHint = lastHint, penalty = penaltyActive, infoParts = infoParts, infoSeenAt = infoSeenAt, infoTag = infoTag,
     timer = timerEnd and { label = timerLabel, endsAt = timerEnd } or nil,
-    spectate = spectating and { name = spectator.watchedName() } or nil,
+    spectate = spectating and { name = spectator.watchedName(ai.nameOf) } or nil,
     forecast = sky.forecast(heliOn),
   })
 end
 
 local function roundCarIds()
   local vehicles = MPVehicleGE and MPVehicleGE.getVehicles and MPVehicleGE.getVehicles() or {}
-  return spectator.carIds(traffic.roundCarOwners(), vehicles, function(id) return getObjectByID(id) ~= nil end)
+  local ids = spectator.carIds(traffic.roundCarOwners(), vehicles, function(id) return getObjectByID(id) ~= nil end)
+  for _, car in ipairs(ai.objects()) do ids[#ids + 1] = car.obj:getID() end
+  table.sort(ids)
+  return ids
 end
 
 local function onVehicleCycleSwitchPerformedByUser(dir, player, vehId)
