@@ -10,6 +10,7 @@ local HEADLIGHTS_ON = "electrics.setLightsState(1)"
 local HEADLIGHTS_OFF = "electrics.setLightsState(0)"
 local REPLACE_MIN, REPLACE_MAX = 80, 200
 local FLEE_CHECK = 1
+local HOLD_INPUTS = "if input and input.setAllowedInputSource then for _, t in ipairs({ 'steering', 'throttle', 'brake', 'parkingbrake', 'clutch' }) do input.setAllowedInputSource(t, 'ai', true) input.setAllowedInputSource(t, 'local', false) end end"
 
 local cars = {}
 local aiOnly = false
@@ -52,13 +53,14 @@ end
 local function nearestCop(runner)
   local here = positionOf(runner)
   if not here then return nil end
-  local best, bestDist
+  local best, bestDist, held, heldDist
   for _, car in pairs(cars) do
     local at = car.role == "cop" and positionOf(car)
     local d = at and at:distance(here)
-    if d and (not bestDist or d < bestDist) then best, bestDist = car.gameId, d end
+    if d and (not heldDist or d < heldDist) then held, heldDist = car.gameId, d end
+    if d and not car.frozen and (not bestDist or d < bestDist) then best, bestDist = car.gameId, d end
   end
-  return best
+  return best or held
 end
 
 local function fleeFrom(car, target)
@@ -96,6 +98,7 @@ local function spawnCar(model, config, a, pos, rot)
   opt.pos, opt.rot = pos, rot
   local veh = core_vehicles.spawnNewVehicle(model, opt)
   if not veh then notify("Could not spawn " .. tostring(a.name) .. ", is MaxCars high enough?", "warn") end
+  if veh and aiOnly then veh:queueLuaCommand(HOLD_INPUTS) end
   return veh
 end
 
@@ -136,6 +139,11 @@ function M.rebuild(model, config)
       car.reported, car.lastFreeze = false, nil
     end
   end
+end
+
+function M.holdInputs()
+  if not aiOnly then return end
+  for _, car in pairs(cars) do command(car, HOLD_INPUTS) end
 end
 
 function M.releaseRunner()

@@ -138,9 +138,18 @@ local function watchCenter()
 end
 
 local function onSetupAI(data)
+  local d = jsonDecode(data) or {}
   local center, heading
-  if spectating then center, heading = watchCenter() end
-  ai.setup(jsonDecode(data) or {}, center, heading)
+  if spectating then
+    center, heading = watchCenter()
+    if d.aiOnly == true then
+      inputs.lock(true, requestReset, true, true, true)
+      local watched = getPlayerVehicle(0)
+      local cmds = rawget(_G, "commands")
+      if watched and ai.nameOf(watched:getID()) and cmds and cmds.setFreeCamera then cmds.setFreeCamera() end
+    end
+  end
+  ai.setup(d, center, heading)
   hidingBuiltAt = -math.huge
 end
 
@@ -566,6 +575,7 @@ end
 local function endRound(leaving)
   spectating = false
   watchedId = nil
+  ai.remove()
   if leaving then
     spectator.drop()
   elseif not spectator.restore() then
@@ -595,7 +605,6 @@ local function endRound(leaving)
   buildBaselineAt, buildBaseline, lastChangeKey, lastChanges = nil, nil, "", {}
   geo.clearRoute()
   routeDrawn = false
-  ai.remove()
   penaltyActive = false
   timerEnd = nil
   roundModel, roundConfig, roundColor = nil, nil, nil
@@ -771,6 +780,7 @@ local function updateLightsAndPatch()
     elseif n then veh:queueLuaCommand(n == 2 and ownLights.SIREN_ON or ownLights.LIGHTS_ONLY) end
   end
   ai.lightsOn(sky.isNight() or sky.isBadWeather(traffic.weather()))
+  ai.holdInputs()
 end
 
 local function updateOwnLights()

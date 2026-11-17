@@ -4307,3 +4307,113 @@ test("the panel knows you sit out, so it can offer watching the AI practise", fu
   env.fire("cnr_panelState", { phase = "idle" })
   assertEq(env.lastTrigger("CnRPanel").sitOut, nil)
 end)
+
+local AI_CONTROLS = { "accelerate", "brake", "accelerate_brake", "steer_left", "steer_right", "steering", "clutch",
+  "parkingbrake", "parkingbrake_toggle", "shiftUp", "shiftDown", "gearR", "gearN", "gear1", "toggleShifterMode",
+  "activateStarterMotor", "setIgnitionLevel0", "toggleESCMode", "nextESCMode", "previousESCMode", "toggle_headlights",
+  "toggle_hazard_signal", "horn", "toggleRadialMenuMulti", "toggleRadialMenuPlayerVehicle" }
+
+test("watching AI practice locks the keys that drive a car, and only then", function()
+  withCamera(function()
+    local env = bootClient()
+    watchPractice(env)
+    assertEq(env.actionFilter.cnr_locked, true)
+    for _, a in ipairs(AI_CONTROLS) do assertEq(inLockGroup(env, a), true, a) end
+    for _, open in ipairs({ "toggleCamera", "switch_next_vehicle", "switch_previous_vehicle" }) do assertEq(inLockGroup(env, open), false, open) end
+    env.fire("cnr_roundEnd", { reason = "cancelled" })
+    assertEq(env.actionFilter.cnr_locked, false)
+    for _, a in ipairs(AI_CONTROLS) do assertEq(inLockGroup(env, a), false, a) end
+  end)
+  withCamera(function()
+    local env = bootClient()
+    spectate(env)
+    for _, a in ipairs(AI_CONTROLS) do assertEq(inLockGroup(env, a), false, a) end
+  end)
+  local env = bootClient()
+  practiceAsCop(env)
+  for _, a in ipairs({ "accelerate", "steering", "shiftUp", "horn" }) do assertEq(inLockGroup(env, a), false, a) end
+end)
+
+local AI_INPUTS = "if input and input.setAllowedInputSource then for _, t in ipairs({ 'steering', 'throttle', 'brake', 'parkingbrake', 'clutch' }) do input.setAllowedInputSource(t, 'ai', true) input.setAllowedInputSource(t, 'local', false) end end"
+
+local function countOf(veh, cmd)
+  local n = 0
+  for _, c in ipairs(veh.commands) do if c == cmd then n = n + 1 end end
+  return n
+end
+
+test("the AI cars you watch take no local driving input, from spawn on and again every 2 s", function()
+  withCamera(function()
+    local env = bootClient()
+    watchPractice(env)
+    for i = 1, 3 do assertEq(countOf(env.spawned[i].veh, AI_INPUTS), 1, i) end
+    env.tick(4.2)
+    for i = 1, 3 do assertEq(countOf(env.spawned[i].veh, AI_INPUTS) >= 2, true, i) end
+  end)
+  local env = bootClient()
+  local aiRunner = practiceAsCop(env)
+  env.tick(4.2)
+  assertEq(countOf(aiRunner, AI_INPUTS), 0)
+end)
+
+test("the round end removes the AI cars before your car comes back", function()
+  withCamera(function()
+    local env = bootClient()
+    env.veh.pos = vec3(0, 20, 0)
+    watchPractice(env)
+    local ids = { env.spawned[1].veh:getID(), env.spawned[2].veh:getID(), env.spawned[3].veh:getID() }
+    local spawn, aliveAtRestore = core_vehicles.spawnNewVehicle, nil
+    core_vehicles.spawnNewVehicle = function(model, opt)
+      aliveAtRestore = 0
+      for _, id in ipairs(ids) do if env.objects[id] then aliveAtRestore = aliveAtRestore + 1 end end
+      return spawn(model, opt)
+    end
+    env.fire("cnr_roundEnd", { reason = "cancelled" })
+    assertEq(aliveAtRestore, 0)
+    assertEq(env.spawned[4].opt.pos.y, 20)
+  end)
+end)
+
+test("the AI runner doesn't flee from a cop serving a crash penalty, unless every cop is held", function()
+  withCamera(function()
+    local env = bootClient()
+    watchPractice(env)
+    env.tick(0.2)
+    local runner, cop1, cop2 = env.spawned[1].veh, env.spawned[2].veh, env.spawned[3].veh
+    runner.pos, cop1.pos, cop2.pos = vec3(0, 0, 0), vec3(20, 0, 0), vec3(0, 90, 0)
+    env.fire("cnr_runnerGo", { headStartSeconds = 7 })
+    assertEq(table.concat(targetsOf(runner), ","), tostring(cop1:getID()))
+    env.fire("cnr_release", {})
+    env.fire("cnr_penalty", { seconds = 10, aiId = -11 })
+    env.tick(1.2)
+    assertEq(table.concat(targetsOf(runner), ","), cop1:getID() .. "," .. cop2:getID())
+    env.fire("cnr_penaltyEnd", { aiId = -11 })
+    env.tick(1.2)
+    assertEq(table.concat(targetsOf(runner), ","), cop1:getID() .. "," .. cop2:getID() .. "," .. cop1:getID())
+  end)
+end)
+
+test("New car while watching an AI car goes to free camera first, not to some other car", function()
+  withCamera(function(cam)
+    local env = bootClient()
+    env.addObject(250, vec3(90, 0, 0))
+    watchPractice(env)
+    env.player = env.spawned[2].veh
+    cam.free = false
+    watchPractice(env)
+    assertEq(cam.free, true)
+    env.player = env.objects[250]
+    cam.free = false
+    watchPractice(env)
+    assertEq(cam.free, false)
+  end)
+  withCamera(function(cam)
+    local env = bootClient()
+    local d = copy(SETUP); d.role, d.runnerId, d.inPlace = "runner", 1, true
+    env.fire("cnr_roundSetup", d)
+    env.fire("cnr_setupAI", { model = "pickup", config = "vehicles/pickup/base.pc", runnerId = 1, ai = { { id = -10, role = "cop", index = 1, name = "AI cop 1" } } })
+    env.player = env.spawned[1].veh
+    env.fire("cnr_setupAI", { model = "pickup", config = "vehicles/pickup/base.pc", runnerId = 1, ai = { { id = -10, role = "cop", index = 1, name = "AI cop 1" } } })
+    assertEq(cam.free, false)
+  end)
+end)
