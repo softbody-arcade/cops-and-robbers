@@ -84,8 +84,8 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `catchHoldSeconds` | 7 | Time the runner must be held |
 | `catchRadiusMeters` | 10 | Cop distance (centre to centre) that counts as holding |
 | `catchMaxSpeedKmh` | 3 | Runner speed below which they count as held |
-| `resetWaitSeconds` | 7 | Stand still this long to reset anywhere |
-| `stillMaxSpeedKmh` | 1 | "Standing still" threshold |
+| `resetWaitSeconds` | 7 | Stand still this long to reset anywhere; rocking in place (within 3 m) still counts |
+| `stillMaxSpeedKmh` | 1 | "Standing still" threshold; it only sets where the wait starts, after that staying within 3 m counts |
 | `gasStationRadiusMeters` | 25 | Gas station reset area |
 | `copResetMinDistanceMeters` | 1000 | Cops this far from the runner may reset any time and get no crash penalty |
 | `copSpawnMinMeters` / `copSpawnMaxMeters` | 50 / 150 | Cop start distance from the runner, by road |
