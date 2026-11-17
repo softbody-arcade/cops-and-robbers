@@ -2607,6 +2607,55 @@ test("a fly-away that resumes into a road search keeps its drift in the aim", fu
   c = drive(c, c + 3, vec3(10, 0, 0), opts, g.check, true)
 end)
 
+local function junctionOpts()
+  local points, edges = {}, {}
+  for i = -9, 40 do points[i] = { (i - 1) * 100, 0, 0 } end
+  for i = -9, 39 do edges[#edges + 1] = { i, i + 1 } end
+  for k = 1, 20 do points["b" .. k] = { 300, k * 100, 0 } end
+  edges[#edges + 1] = { 4, "b1" }
+  for k = 1, 19 do edges[#edges + 1] = { "b" .. k, "b" .. (k + 1) } end
+  local g = roads(points, edges)
+  return { roads = function() return g end }
+end
+
+local function finite(p, msg)
+  for _, n in ipairs({ p.x, p.y, p.z }) do
+    assertEq(n == n and n ~= math.huge and n ~= -math.huge, true, msg)
+  end
+end
+
+test("a night road search never jumps the aim at a route change, and aims within range while it waits", function()
+  load()
+  state.random = seeded(56)
+  pos = vec3(0, 0, 0)
+  local opts = junctionOpts()
+  local c = loseDriving(0, vec3(10, 0, 0), opts, nil, true)
+  local run, f = state.search.run, state.flight
+  assertEq(state.search.mode, "road")
+  assertEq(#run.routes, 3)
+  local g = aimGuard(c)
+  g.speed = 76.5
+  local index, changes, waits = 1, 0, 0
+  nightRun(c, c + 240, opts, function(t)
+    g.check(t)
+    finite(state.aimPos, tostring(t))
+    finite(f.pos, tostring(t))
+    finite(f.vel, tostring(t))
+    if state.search.mode ~= "road" then return end
+    finiteLead(f)
+    if run.index ~= index then index, changes = run.index, changes + 1 end
+    if run.waiting then
+      waits = waits + 1
+      local d = dist3(state.aimPos, state.lightPos)
+      assertEq(d <= heli.RANGE_MAX, true, string.format("%.2f: the aim is %.1f m from the light", t, d))
+    end
+  end)
+  assertEq(changes, 2)
+  assertEq(waits > 100, true, tostring(waits))
+  assertEq(state.search.mode, "contain")
+  assertEq(g.switches >= 2 * changes + 1, true, tostring(g.switches))
+end)
+
 test("a runner under 5 m/s gets containment at the car", function()
   load()
   state.random = seeded(41)

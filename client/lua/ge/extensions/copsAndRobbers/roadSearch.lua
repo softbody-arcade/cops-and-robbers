@@ -229,11 +229,20 @@ function M.step(run, heliPos, dt)
   return vec3(x, y, z), vec3(ux * sp, uy * sp, uz * sp)
 end
 
-function M.aimPoint(run, t)
+function M.aimPoint(run, t, from)
   local route = run.routes[run.index] or run.routes[#run.routes]
   if route == nil then return nil end
-  local s = run.routes[run.index] and run.s or route.length
-  local x, y, z, ux, uy = pointAt(route, math.min(route.length, s + M.AIM_AHEAD))
+  local x, y, z, ux, uy
+  if run.waiting and from ~= nil then
+    local start = route.points[1]
+    ux, uy = start.x - from.x, start.y - from.y
+    local d = math.sqrt(ux * ux + uy * uy)
+    local k = d > 0 and math.min(d, M.AIM_AHEAD) / d or 0
+    x, y, z = from.x + ux * k, from.y + uy * k, from.z
+  else
+    local s = run.routes[run.index] and run.s or route.length
+    x, y, z, ux, uy = pointAt(route, math.min(route.length, s + M.AIM_AHEAD))
+  end
   local side = M.AIM_SIDE * math.sin(2 * math.pi * t / M.AIM_PERIOD)
   local len = math.sqrt(ux * ux + uy * uy)
   if len > 0 then
