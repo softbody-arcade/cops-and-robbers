@@ -19,6 +19,7 @@
         <span>Host panel</span>
         <span v-if="apps.panel" class="open-mark"></span>
       </BngButton>
+      <BngButton class="cnr-btn" :accent="ACCENTS.secondary" :icon="icons.arrowSmallDown" @click="emit('hide')">Hide</BngButton>
     </template>
   </CnrCard>
 </template>
@@ -31,7 +32,7 @@ import CnrCard from "../../copsAndRobbers/CnrCard.vue"
 const props = defineProps({
   lobby: { type: Object, required: true },
 })
-const emit = defineEmits(["settings", "help", "toggle"])
+const emit = defineEmits(["settings", "help", "toggle", "hide"])
 
 const warnings = computed(() => (Array.isArray(props.lobby.warnings) ? props.lobby.warnings : []))
 const apps = computed(() => props.lobby.apps || {})

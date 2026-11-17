@@ -4,7 +4,8 @@
       <template v-if="hud.visible">
         <HudNotices v-if="!settingsShown" :notices="hud.notices" />
         <template v-if="mode === 'lobby' && hud.lobby">
-          <HudLobby v-show="!settingsOpen" :lobby="hud.lobby" @settings="openSettings" @help="openHelp" @toggle="toggleApp" />
+          <HudTab v-if="hud.lobby.hudHidden" @show="setHidden(false)" />
+          <HudLobby v-else v-show="!settingsOpen" :lobby="hud.lobby" @settings="openSettings" @help="openHelp" @toggle="toggleApp" @hide="setHidden(true)" />
         </template>
         <template v-if="mode === 'round'">
           <HudChange v-if="hud.change" :change="hud.change" @apply="ui({ action: 'apply' })" />
@@ -38,6 +39,7 @@ import HudChange from "./HudChange.vue"
 import HudLobby from "./HudLobby.vue"
 import HudPrep from "./HudPrep.vue"
 import HudSettings from "./HudSettings.vue"
+import HudTab from "./HudTab.vue"
 
 const { hud, ui } = useCnrHud("hud")
 const box = ref(null)
@@ -50,7 +52,7 @@ const settingsOpen = ref(false)
 const colorDraft = ref("")
 const mode = computed(() => hud.value.mode)
 const chaseShown = computed(() => !!(hud.value.status || (hud.value.catch && hud.value.catch.visible)))
-const settingsAllowed = computed(() => !!(hud.value.visible && ((mode.value === "lobby" && hud.value.lobby) || (mode.value === "round" && hud.value.prep))))
+const settingsAllowed = computed(() => !!(hud.value.visible && ((mode.value === "lobby" && hud.value.lobby && !hud.value.lobby.hudHidden) || (mode.value === "round" && hud.value.prep))))
 
 const settingsShown = computed(() => settingsOpen.value && settingsAllowed.value)
 
@@ -76,6 +78,10 @@ function openHelp() {
 
 function toggleApp(name) {
   ui({ action: "toggleApp", name })
+}
+
+function setHidden(value) {
+  ui({ action: "setting", key: "hudHidden", value })
 }
 
 function openSettings() {
