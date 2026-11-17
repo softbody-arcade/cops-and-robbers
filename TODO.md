@@ -4,6 +4,7 @@ The shared ledger for every agent and worktree. Edit this file only on main (in 
 
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
+- [ ] Slower weather (the user, 2026-11-17: one minute felt too quick) on branch `fixes-11` (worktree): a change takes 3 minutes (clouds, fog, rain, wind, grip getting wet), roads dry over 8 minutes, the time between changes defaults to 4-10 minutes and can't be set below 3
 
 ## In-game checks
 Things only a player in the game can confirm, each with what to look for. Add them here when work is merged or deployed without the check; delete a line once it is checked, and turn anything that fails into an Issue.
