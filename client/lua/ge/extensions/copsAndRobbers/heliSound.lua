@@ -53,9 +53,15 @@ end
 local function create(p)
   local obj = createObject("SFXEmitter")
   if Sim and Sim.upcast then obj = Sim.upcast(obj) end
-  for _, f in ipairs(FIELDS) do obj:setField(f[1], 0, f[2]) end
-  obj.canSave = false
-  obj:registerObject(M.NAME)
+  local ok, err = pcall(function()
+    for _, f in ipairs(FIELDS) do obj:setField(f[1], 0, f[2]) end
+    obj.canSave = false
+    obj:registerObject(M.NAME)
+  end)
+  if not ok then
+    pcall(function() obj:delete() end)
+    error(err, 0)
+  end
   if not scenetree.findObject(M.NAME) then
     obj:delete()
     error("rotor sound did not register", 0)
