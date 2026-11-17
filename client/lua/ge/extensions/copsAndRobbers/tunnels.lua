@@ -88,8 +88,11 @@ function M.exit(carPos, dirX, dirY, roads, roofedAt, seed)
   if #exits == 0 then return nil end
   table.sort(exits, function(a, b) return tostring(a) < tostring(b) end)
   local pick = 1
-  if isNumber(seed) then pick = math.floor(seed) % #exits + 1 end
+  if isNumber(seed) and seed > -math.huge and seed < math.huge then
+    pick = math.floor(seed) % #exits + 1
+  end
   local ex, ey, ez = nodePos(nodes, exits[pick])
+  if ex == nil then return nil end
   return vec3(ex, ey, ez)
 end
 

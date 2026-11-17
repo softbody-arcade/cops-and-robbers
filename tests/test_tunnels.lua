@@ -116,7 +116,8 @@ test("a ring of 250 roofed nodes is stopped by the node cap", function()
     links[j][i] = {}
   end
   local roads = roadsOf(nodes, links, 1, 2, 2)
-  assertEq(tunnels.exit(v(10, 0, 0), 1, 0, roads, allRoofed), nil)
+  local roofed = function(pos) return pos.x ~= 2300 end
+  assertEq(tunnels.exit(v(10, 0, 0), 1, 0, roads, roofed), nil)
 end)
 
 test("lengths come from node positions, not link len", function()
@@ -201,4 +202,20 @@ test("the node behind the car is never visited", function()
     return pos.x >= 100 and pos.x <= 300
   end)
   assertEq(visited[100], nil)
+end)
+
+test("a tunnel just under 3 km still gives its exit", function()
+  local nodes, links = line(32, 99)
+  local roads = roadsOf(nodes, links, 1, 2, 2)
+  local p = tunnels.exit(v(0, 0, 0), 1, 0, roads, roofedRange(nodes, 1, 31))
+  assertEq(p.x, 31 * 99)
+end)
+
+test("a non-finite seed picks the first exit", function()
+  local nodes, links = fork()
+  local roads = roadsOf(nodes, links, 1, 2, 2)
+  local roofed = roofedRange(nodes, 1, 2)
+  assertEq(tunnels.exit(v(0, 0, 0), 1, 0, roads, roofed, math.huge).y, 50)
+  assertEq(tunnels.exit(v(0, 0, 0), 1, 0, roads, roofed, -math.huge).y, 50)
+  assertEq(tunnels.exit(v(0, 0, 0), 1, 0, roads, roofed, 0 / 0).y, 50)
 end)
