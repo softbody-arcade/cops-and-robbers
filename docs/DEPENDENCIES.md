@@ -247,7 +247,7 @@ Then do the checks for whatever actually updated.
 - **Shared kit** (verified in game): `client/ui/modules/copsAndRobbers/` (`CnrRoot.vue`, `CnrCard.vue`, `RoleChip.vue`, `hud.js`, `fit.js`, `format.js`) is imported by relative path from an app, e.g. `../../copsAndRobbers/CnrCard.vue`. Relative imports also work between files of one app.
 - **`BngColorPicker`:** the model is `{hue, saturation, luminosity}`, all 0..1; `view="compact_luminosity"` works (the `luminosity` view shows only the saturation slider in simple-menu mode).
 - **Game internals the leaderboard and panel rely on** (not documented API, so check them after an update):
-  - `BngTabs` reads each tab's `tab-heading` from the vnode props.
+  - `BngTabs` reads each tab's `tab-heading` from the vnode props. Its `change` event carries the active tab's `heading`; the Leaderboard keys its filters off that (`onTab`), so after an update check the payload still has `heading`, or the filters never hide on the player and round detail views.
   - The `#after-tab-list` slot of `BngTabs` renders between the tab list and the content (the leaderboard's filter row).
   - The CSS variable `--bng-tabs-content-overflow` controls the tab content's overflow.
   - `BngDropdown`'s `#display` slot shows the selected value (real map names, build names).
