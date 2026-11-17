@@ -1,0 +1,122 @@
+local climate = require("cnr.climate")
+
+local M = {}
+
+M.DAY_SECONDS = { fast = 900, moderate = 1800, slow = 7200, realtime = 86400 }
+M.KEY_TIME = { sunrise = 0.775, morning = 0.825, noon = 0, afternoon = 0.175, sunset = 0.245, night = 0.5 }
+M.START_LEAD = 1 / 24
+M.LEAD_SECONDS = 75
+M.HORIZON_SECONDS = 10800
+
+local HIGH_AT = 2 / 24
+local LOW_AT = 0.75
+
+function M.seeded(seed)
+  local n = tonumber(seed) or 1
+  if n ~= n or n == math.huge or n == -math.huge then n = 1 end
+  n = math.floor(n)
+  if n < 1 or n > 2147483646 then n = n % 2147483646 + 1 end
+  local x = n
+  return function()
+    x = x * 16807 % 2147483647
+    return x / 2147483647
+  end
+end
+
+function M.releaseAt(cfg)
+  return cfg.runnerCountdownSeconds + cfg.headStartSeconds
+end
+
+function M.endAt(cfg)
+  local limit = cfg.roundTimeLimitSeconds
+  return M.releaseAt(cfg) + ((limit and limit > 0) and limit or M.HORIZON_SECONDS)
+end
+
+function M.gameStart(s, cfg)
+  local key = M.KEY_TIME[s.time]
+  if not key then return nil end
+  local ds = M.DAY_SECONDS[cfg.dayLength]
+  local lead = 0
+  if ds then lead = math.min(M.START_LEAD, M.LEAD_SECONDS / ds) end
+  return (key - lead) % 1
+end
+
+local function lastAtOrBefore(at, start)
+  local a = (at - start) % 1
+  if a > 1e-12 then a = a - 1 end
+  return a
+end
+
+local function clamp(v, lo, hi)
+  return math.max(lo, math.min(hi, v))
+end
+
+function M.climate(s, cfg, random)
+  if not s or not s.time or not s.weather or not climate.normal(s.month) then return nil end
+  local start = M.gameStart(s, cfg)
+  if not start then return nil end
+  local ds = M.DAY_SECONDS[cfg.dayLength]
+  local c = { gameStart = start, daySeconds = ds, month = s.month, start = s.weather, points = {} }
+  local points = c.points
+
+  local tHigh = lastAtOrBefore(HIGH_AT, start)
+  local tLow = lastAtOrBefore(LOW_AT, start)
+  local hour, t = 14, tHigh
+  if tLow > tHigh then hour, t = 6, tLow end
+  local limit = ds and (M.endAt(cfg) / ds + 0.25) or nil
+  local n = 0
+  while true do
+    n = n + 1
+    local day = 0
+    if n > 2 then day = points[n - 1].day + (hour == 6 and 1 or 0) end
+    points[n] = { t = t, hour = hour, day = day }
+    if n >= 2 and (not limit or t >= limit) then break end
+    if hour == 6 then
+      hour, t = 14, t + 1 / 3
+    else
+      hour, t = 6, t + 2 / 3
+    end
+  end
+
+  local shifts = {}
+  shifts[0] = -4 + 8 * random()
+  if s.weather == "snow" then shifts[0] = math.min(shifts[0], 0) end
+  for d = 1, points[n].day do
+    shifts[d] = clamp(shifts[d - 1] - 3 + 6 * random(), -6, 6)
+  end
+  c.shifts = shifts
+
+  local low, high = climate.range(s.weather, s.month)
+  if not low then return nil end
+  for j = 1, 2 do
+    local p = points[j]
+    p.c = (p.hour == 6 and low or high) + shifts[0]
+  end
+  return c
+end
+
+function M.fill(c, j, before)
+  local p = c.points[j]
+  local nLow, nHigh = climate.normal(c.month)
+  local oLow, oHigh = climate.offset(before)
+  local shift = c.shifts[p.day]
+  if p.hour == 6 then return nLow + oLow + shift end
+  return math.max(nHigh + oHigh + shift, c.points[j - 1].c + 2)
+end
+
+function M.temperature(points, daySeconds, seconds)
+  local u = daySeconds and (seconds / daySeconds) or 0
+  local prev
+  for _, p in ipairs(points) do
+    if p.c ~= nil then
+      if u <= p.t then
+        if not prev then return p.c end
+        return prev.c + (p.c - prev.c) * (u - prev.t) / (p.t - prev.t)
+      end
+      prev = p
+    end
+  end
+  return prev and prev.c or nil
+end
+
+return M

@@ -1,6 +1,8 @@
+local weather = require("cnr.weather")
+
 local M = {}
 
-M.DAY_SECONDS = { fast = 900, moderate = 1800, slow = 7200, realtime = 86400 }
+M.DAY_SECONDS = weather.DAY_SECONDS
 
 local DAY = { "sunrise", "morning", "noon", "afternoon", "sunset" }
 local CALM = { "clear", "cloudy" }
