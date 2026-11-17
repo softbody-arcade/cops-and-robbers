@@ -15,10 +15,10 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | Head start | Cops stay frozen for 7 s and see a countdown. |
 | Chase | Cops are released and the survival clock starts. A status line shows `time \| reset status \| distance info`. |
 | End | The round ends when the runner is caught, on End chase, when the time limit runs out, or when the runner disconnects. The run is recorded and the result card shows the time, who caught the runner and the map's top 3. |
-| Automatic next round | Optional (panel switch). The next round is prepared with whoever has run least. It still waits for GO. |
+| Automatic next round | Optional (panel switch). The next round is prepared with the next runner (see below). It still waits for GO. |
 
 ### Choosing the runner
-- The Round tab's player list is the runner picker: Next (whoever has run least this session, preselected; only rounds that really end count as a run, not a cancelled round or a practice), the last runner (marked "last"), Random, or any player by name (sent as an exact name, so names like "next" work).
+- The Round tab's player list is the runner picker: Next (drawn at random among the players with the fewest runs this session, never the previous runner while another can go, and only the previous runner if they are the sole candidate; the draw is kept, so the panel's "next" mark and the runner Start gets are the same player, and it is drawn again only when that player leaves, sits out or no longer has the fewest runs, or after a round; preselected; only rounds that really end count as a run, not a cancelled round or a practice), the last runner (marked "last"), Random, or any player by name (sent as an exact name, so names like "next" work).
 - A player sitting out is marked "sitting out" in the list and is never the runner: Next and Random skip them, and picking them by name or with Again says "Bob is sitting out".
 
 ## Evolving car mode
@@ -256,7 +256,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
   - **Prep:** the runner and the car's name (or build step), the players with their role and state (ready, changing, missing parts; display only), **GO** (disabled with the reason, for example "Waiting for Bob to apply the change"), New car (random mode) and Cancel round.
   - **Countdown, head start, chase:** the panel folds into a bar with the phase, the runner, **End chase** and **Cancel** (a second click during the chase), and ▾ to open it. It folds by itself on GO and opens again when the round ends.
   - **Someone's practice round:** the practice's own controls, plus the runner picker and **Start round with Bob** under "Start a real round" (starting one ends the practice).
-  - **After a round:** the result line ("Bob caught after 8:41"), and with automatic rounds on, "Next round in 12 s with Kim (fewest runs)" with **Start now** and **Stop automatic rounds**.
+  - **After a round:** the result line ("Bob caught after 8:41"), and with automatic rounds on, "Next round in 12 s with Kim" with **Start now** and **Stop automatic rounds**.
   - A reply line shows the server's answer to every click, in yellow when it refuses ("Stop the round first", "Only the runner can apply the change", "Not available from the panel"). Nothing goes to chat.
 - **Car tab:** a Random car / Evolving build switch. In evolving mode a summary (car, build step, last change and who made it), New build (choose a car, or random; a second click when a build exists) and Reset build (a second click). For both modes: Include mod cars and the excluded cars. Locked during a round.
 - **Map tab:** "West Coast USA · 10 gas stations", **Add station here**, **Remove nearest** (disabled with "No station within 50 m to remove") and the nearest stations with their distance (flat distance on BeamNG.Earth, updated every 2 s while the tab is open). Works on BeamNG.Earth, where stations are also discovered automatically.
