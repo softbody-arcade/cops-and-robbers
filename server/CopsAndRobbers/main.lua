@@ -554,12 +554,12 @@ local function applyEffects(effects)
         sky = sky.payload(current.sky, cfg, current.countdownStartedAt and math.max(0, now() - current.countdownStartedAt) or nil),
       })
     elseif e.kind == "spectate" then
-      spectators[e.pid] = true
+      if not current.test then spectators[e.pid] = true end
       log(string.format("%s spectates (%s)", MP.GetPlayerName(e.pid) or tostring(e.pid), tostring(e.phase)))
       send(e.pid, "cnr_spectate", {
         runnerId = current.runnerId, runnerName = current:runnerName(), phase = e.phase,
         countdownRemaining = e.countdownRemaining, headStartRemaining = e.headStartRemaining, chaseElapsed = e.chaseElapsed,
-        heli = e.heli,
+        heli = e.heli, practice = current.test or nil,
         sky = sky.payload(current.sky, cfg, current.countdownStartedAt and math.max(0, now() - current.countdownStartedAt) or nil),
       })
     elseif e.kind == "setupAI" then
@@ -570,6 +570,7 @@ local function applyEffects(effects)
       send(e.pid, "cnr_setupAI", {
         model = current.vehicle.model, config = current.vehicle.config, ai = list,
         runnerId = current.runnerId, copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
+        aiOnly = e.aiOnly,
       })
     elseif e.kind == "countdown" then
       send(e.to or -1, "cnr_countdown", { seconds = e.seconds })
@@ -780,7 +781,7 @@ function handlers.test(pid, cmd)
   aiVid = {}
   local role = cmd.args[1] and cmd.args[1]:lower()
   if cfg.carMode == "evolving" and not currentBuild then return refuse(pid, "Start a new build first") end
-  local opts = { test = true, role = role, build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random, geoMode) }
+  local opts = { test = true, role = role, aiOnly = sitOut[pid] == true, build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random, geoMode) }
   applyEffects(current:start(now(), nil, pid, MP.GetPlayers() or {}, opts))
 end
 
@@ -793,7 +794,7 @@ local function lobbyState()
   local online = 0
   for _ in pairs(players) do online = online + 1 end
   local practice
-  if current:isActive() and current.test then practice = current.players[current.issuerId] or "someone" end
+  if current:isActive() and current.test then practice = current.players[current.issuerId] or MP.GetPlayerName(current.issuerId) or "someone" end
   return { online = online, practice = practice, active = current:isActive() and not current.test or false }
 end
 
@@ -858,9 +859,8 @@ function handlers.sky(pid)
   end
   current.sky = picked
   local data = sky.payload(current.sky, cfg, nil)
-  for p in pairs(current.test and current.players or MP.GetPlayers() or {}) do
-    if not round.isAI(p) then send(p, "cnr_sky", data) end
-  end
+  local targets = current.test and { [current.issuerId] = true } or MP.GetPlayers() or {}
+  for p in pairs(targets) do send(p, "cnr_sky", data) end
 end
 
 
