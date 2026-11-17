@@ -51,6 +51,7 @@ Things only a player in the game can confirm, each with what to look for. Add th
 - [ ] Cop sight that follows visibility: the sight range is worked out from what the game knows (fog thickness, how dark it is, street lights near the runner, whether the runner's lights are on, rain). Comes after night and weather rounds
 
 ## Issues
+- [ ] The client's 5 s `PLACEMENT_TIMEOUT` (`copsAndRobbers.lua`) starts before the round car spawns: if the first spawn freezes the game for 5 s or more, the placement is dropped with no report, so the joiner stays at the spawn point, gets no traffic and isn't in the round cars (unproven; found while debugging the mid-round join, fixes-7)
 - [ ] README says "Everything is clickable with the mouse cursor shown" without saying how a player shows the cursor. The game's own controls have no show-cursor action (checked 2026-11-17); ask the user which key they use
 - [ ] The game's Vehicle Radar app shows hidden cars nearby (about 30 m, up to about 54 m ahead with its offset slider): it walks `be:getObject(i)` directly (`vehicleRadarApp.lua:187`), so the hiding can't filter it. The user accepted this (2026-11-17); fix only if an easy way turns up
 - [ ] Very slow rocking still escapes the catch: rocking ±1.5 m at 5 km/h peaks is caught only after about 15 s, and with a slow drift (0.25 m/s) not at all (`catch.lua`, `ROCK_FACTOR = 2`, `STUCK_WINDOW_SECONDS = 4`). If players use it, lower `ROCK_FACTOR` to about 1.5
