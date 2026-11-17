@@ -171,12 +171,31 @@ test("at starts on the target point with the car's velocity", function()
   assertNear(horiz(slow.pos, car), 30, 1e-9)
 end)
 
-test("arrive starts in follow above 6 m/s and circles below", function()
+test("arrive circles without a velocity and follows from 6 m/s", function()
   local car = vec3(0, 0, 0)
   assertEq(flight.arrive(car, seeded(1)).mode, "circle")
+  assertEq(flight.arrive(car, seeded(1), vec3(5.9, 0, 0)).mode, "circle")
+  assertEq(flight.arrive(car, seeded(1), vec3(6, 0, 0)).mode, "follow")
+  assertEq(flight.arrive(car, seeded(1), vec3(0, 20, 0)).mode, "follow")
   local f = flight.arrive(car, seeded(1))
   assertNear(math.cos(f.orbit), f.pos.x / 300, 1e-9)
   assertNear(math.sin(f.orbit), f.pos.y / 300, 1e-9)
+end)
+
+test("at follows from exactly 6 m/s and circles at 5.9 m/s", function()
+  local car = vec3(0, 0, 0)
+  assertEq(flight.at(car, vec3(5.9, 0, 0), seeded(1)).mode, "circle")
+  assertEq(flight.at(car, vec3(6, 0, 0), seeded(1)).mode, "follow")
+end)
+
+test("target keeps the heading below 1 m/s like step", function()
+  local car = vec3(0, 0, 0)
+  local f = flight.at(car, vec3(30, 0, 0), seeded(2))
+  flight.step(f, car, vec3(30, 0, 0), DT)
+  local a = flight.target(f, car, vec3(0.5, 0.5, 0))
+  local b = flight.target(f, car, vec3(0, 0, 0))
+  assertNear(a.x, b.x, 1e-9)
+  assertNear(a.y, b.y, 1e-9)
 end)
 
 test("speeds between slow and fast keep the mode", function()
@@ -226,9 +245,8 @@ end)
 test("a 50 m car jump does not speed the helicopter up", function()
   local car = vec3(0, 0, 0)
   local f = flight.at(car, vec3(30, 0, 0), seeded(8))
-  local before = f.vel.x
   flight.step(f, vec3(0, 0, 0), vec3(30, 0, 0), DT)
-  before = f.vel.x
+  local before = f.vel.x
   flight.step(f, vec3(50, 0, 0), vec3(30, 0, 0), DT)
   assertEq(f.vel.x <= before + 1e-9, true)
 end)
@@ -238,7 +256,7 @@ test("dt of zero or less changes nothing and makes no NaN", function()
   local f = flight.arrive(car, seeded(12))
   flight.step(f, car, vec3(0, 0, 0), DT)
   local px, py, pz, vx, vy, vz, orbit = f.pos.x, f.pos.y, f.pos.z, f.vel.x, f.vel.y, f.vel.z, f.orbit
-  for _, dt in ipairs({ 0, -1 }) do
+  for _, dt in ipairs({ 0, -1, 0 / 0 }) do
     flight.step(f, vec3(500, 0, 0), vec3(9, 9, 0), dt)
     assertEq(f.pos.x, px)
     assertEq(f.pos.y, py)

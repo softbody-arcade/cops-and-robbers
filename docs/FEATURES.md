@@ -100,7 +100,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 
 ## Police helicopter and hiding
 
-- **A tracking rule, not a model:** the game ships no helicopter, so there is nothing to see in the air. On by default (`helicopter`).
+- **A tracking rule, not a model:** the game ships no helicopter model, but at night you see its searchlight, the beam in the air and the glare. On by default (`helicopter`).
 - **Phases:** it arrives `helicopterArrivalSeconds` (60 s) after the cops are released, flies for `helicopterUpSeconds` (120 s), then refuels for `helicopterRefuelSeconds` (90 s) and comes back, until the chase ends. With refuel 0 it stays up once it has arrived.
 - **Tracking:** while it is up and the runner is in the open, every cop gets the runner's live position, like cop sight. With sight Off it still sends them.
 - **Cover:** the runner's game checks 4 times a second whether anything is overhead (tunnels, bridges, garages, canopies). After 2 s under cover in a row the helicopter loses the runner and searches, so driving under a bridge doesn't lose them. Back in the open it tracks them again at once, in any weather. If no cop sees the runner either, one last-seen ping goes out where the runner went under.

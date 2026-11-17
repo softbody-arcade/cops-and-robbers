@@ -170,7 +170,8 @@ local function setBrightness(state, factor)
 end
 
 local function writeFlare(state, bright)
-  if state.flareScale and math.abs(bright - state.flareScale) <= M.FLARE_STEP then return end
+  local edge = bright >= 1 or bright <= 0
+  if state.flareScale and math.abs(bright - state.flareScale) <= M.FLARE_STEP and not (edge and bright ~= state.flareScale) then return end
   if pcall(applyField, state.light, "flareScale", tostring(bright)) then state.flareScale = bright end
 end
 
@@ -261,7 +262,7 @@ local function advance(state, car, clock)
     local p = math.min(1, elapsed / M.DEPART_SECONDS)
     local e = p * p
     local d = fx.dir
-    bright = fx.fromBright * (M.DEPART_SECONDS - elapsed) / M.DEPART_FADE_SECONDS
+    bright = fx.fromBright * math.min(1, (M.DEPART_SECONDS - elapsed) / M.DEPART_FADE_SECONDS)
     extra = { x = d.x * M.DEPART_AIM_DRIFT * e, y = d.y * M.DEPART_AIM_DRIFT * e }
     fx.extra = extra
     if p >= 1 then return false end
@@ -304,12 +305,12 @@ local function carVelocity(state, target, car, dt)
   local v
   if target.getVelocity then
     local tv = target:getVelocity()
-    v = vec3(tv.x, tv.y, tv.z)
-  elseif last and dt > 0 then
-    v = vec3((car.x - last.x) / dt, (car.y - last.y) / dt, (car.z - last.z) / dt)
-  else
-    v = vec3(0, 0, 0)
+    if tv then v = vec3(tv.x, tv.y, tv.z) end
   end
+  if not v and last and dt > 0 then
+    v = vec3((car.x - last.x) / dt, (car.y - last.y) / dt, (car.z - last.z) / dt)
+  end
+  v = v or vec3(0, 0, 0)
   state.carVel = v
   return v
 end
@@ -325,7 +326,7 @@ local function fly(state, phase, last, car, carVel, dt, clock, random)
   if phase == "tracking" or phase == "searching" then
     if not f then
       if last == "arriving" or last == "refuelling" then
-        state.flight = flight.arrive(car, random)
+        state.flight = flight.arrive(car, random, carVel)
       else
         state.flight = flight.at(car, carVel, random)
       end

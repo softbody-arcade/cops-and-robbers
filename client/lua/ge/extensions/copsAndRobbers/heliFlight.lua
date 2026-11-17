@@ -34,7 +34,7 @@ end
 
 local function headingOf(carVel, fallbackX, fallbackY)
   local speed = horizontalSpeed(carVel)
-  if speed > 1e-6 then return carVel.x / speed, carVel.y / speed end
+  if speed > 1 then return carVel.x / speed, carVel.y / speed end
   return fallbackX, fallbackY
 end
 
@@ -55,7 +55,7 @@ function M.target(f, carPos, carVel)
     carPos.z + M.HELI_HEIGHT)
 end
 
-local function startMode(f, carPos, carVel, bearing)
+local function startMode(f, carVel, bearing)
   if horizontalSpeed(carVel) >= M.START_FOLLOW_SPEED then
     f.mode = "follow"
   else
@@ -64,7 +64,7 @@ local function startMode(f, carPos, carVel, bearing)
   f.orbit = bearing
 end
 
-function M.arrive(carPos, random)
+function M.arrive(carPos, random, carVel)
   random = random or math.random
   local heading = random() * 2 * math.pi
   local f = {
@@ -78,7 +78,7 @@ function M.arrive(carPos, random)
     headingY = 0,
     lastCar = vec3(carPos.x, carPos.y, carPos.z),
   }
-  startMode(f, carPos, vec3(0, 0, 0), heading)
+  startMode(f, carVel or vec3(0, 0, 0), heading)
   return f
 end
 
@@ -91,7 +91,7 @@ function M.at(carPos, carVel, random)
     headingY = 0,
     lastCar = vec3(carPos.x, carPos.y, carPos.z),
   }
-  startMode(f, carPos, carVel, random() * 2 * math.pi)
+  startMode(f, carVel, random() * 2 * math.pi)
   local p = M.target(f, carPos, carVel)
   f.pos = p
   return f
@@ -113,7 +113,7 @@ function M.resume(f)
 end
 
 function M.step(f, carPos, carVel, dt)
-  if not dt or dt <= 0 then return end
+  if not dt or not (dt > 0) then return end
   if dt > M.MAX_STEP then dt = M.MAX_STEP end
 
   local last = f.lastCar
@@ -129,7 +129,7 @@ function M.step(f, carPos, carVel, dt)
   f.lastCar = vec3(carPos.x, carPos.y, carPos.z)
 
   local speed = horizontalSpeed(carVel)
-  if speed > 1 then f.headingX, f.headingY = carVel.x / speed, carVel.y / speed end
+  f.headingX, f.headingY = headingOf(carVel, f.headingX, f.headingY)
   if f.mode == "circle" then
     if speed > M.FAST_SPEED then f.mode = "follow" end
   elseif speed < M.SLOW_SPEED then

@@ -1,6 +1,7 @@
 local M = {}
 
 M.STRENGTH = { clear = 0.06, cloudy = 0.12, rain = 0.2 }
+M.FRONT = 1
 M.DEFAULT_STRENGTH = 0.06
 M.LAYERS = 5
 M.SEGMENTS = 10
@@ -109,7 +110,7 @@ local function facesAway(a, b, c, d, camPos)
   local ex, ey, ez = c.x - a.x, c.y - a.y, c.z - a.z
   local fx, fy, fz = d.x - b.x, d.y - b.y, d.z - b.z
   local nx, ny, nz = ey * fz - ez * fy, ez * fx - ex * fz, ex * fy - ey * fx
-  return (camPos.x - a.x) * nx + (camPos.y - a.y) * ny + (camPos.z - a.z) * nz > 0
+  return ((camPos.x - a.x) * nx + (camPos.y - a.y) * ny + (camPos.z - a.z) * nz) * M.FRONT > 0
 end
 
 local function addQuads(out, n, strength, camPos)

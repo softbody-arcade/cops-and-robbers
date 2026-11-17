@@ -1019,3 +1019,48 @@ test("the glare's scale follows the light's brightness through the fly-in", func
   end
   assertEq(tonumber(obj.fields.flareScale) > 0.94, true, obj.fields.flareScale)
 end)
+
+test("a refuel during the fly-in never raises the brightness on any fly-away frame", function()
+  load()
+  state.random = seeded(2)
+  night(0, "arriving")
+  night(1, "tracking")
+  local c = run(1, 3, 0.05)
+  local prev = state.fx.bright
+  assertEq(prev > 0 and prev < 1, true, tostring(prev))
+  c = c + 0.05
+  night(c, "refuelling")
+  assertEq(state.fx.bright <= prev + 1e-9, true, tostring(state.fx.bright))
+  prev = state.fx.bright
+  while fake.objects[LIGHT] do
+    c = c + 0.05
+    heli.lightTick(state, target, true, c)
+    if fake.objects[LIGHT] then
+      assertEq(state.fx.bright <= prev + 1e-9, true, c .. " " .. state.fx.bright .. " " .. prev)
+      prev = state.fx.bright
+    end
+  end
+end)
+
+test("a target whose getVelocity returns nil falls back to the position delta", function()
+  load()
+  state.random = seeded(5)
+  local nilVel = { getPosition = function() return pos end, getVelocity = function() return nil end }
+  heli.set(state, { phase = "tracking" }, 0)
+  heli.lightTick(state, nilVel, true, 0)
+  pos = vec3(pos.x + 1.5, pos.y, pos.z)
+  heli.lightTick(state, nilVel, true, 0.05)
+  assertNear(state.carVel.x, 30, 1e-6)
+  assertEq(state.flight ~= nil, true)
+end)
+
+test("the glare's scale is exactly 1 at full brightness after the fly-in", function()
+  load()
+  state.random = seeded(2)
+  night(0, "arriving")
+  night(1, "tracking")
+  local obj = fake.objects[LIGHT]
+  run(1, 1 + heli.APPROACH_SECONDS + 1, 0.05)
+  assertEq(state.fx.bright, 1)
+  assertEq(tonumber(obj.fields.flareScale), 1)
+end)

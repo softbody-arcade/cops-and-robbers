@@ -1,5 +1,4 @@
 dofile("tests/env_stubs.lua")
-math.atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
 _G.vec3 = _G.vec3 or function(x, y, z) return { x = x or 0, y = y or 0, z = z or 0 } end
 package.loaded["copsAndRobbers/beam"] = nil
 local beam = require("copsAndRobbers/beam")
@@ -76,8 +75,29 @@ test("with a camera every quad winds clockwise as seen from the camera, the side
     local fx, fy, fz = q.d.x - q.b.x, q.d.y - q.b.y, q.d.z - q.b.z
     local nx, ny, nz = ey * fz - ez * fy, ez * fx - ex * fz, ex * fy - ey * fx
     local toCam = (cam.x - q.a.x) * nx + (cam.y - q.a.y) * ny + (cam.z - q.a.z) * nz
-    assertEq(toCam <= 0, true, tostring(i))
+    assertEq(toCam * beam.FRONT <= 0, true, tostring(i))
   end
+end)
+
+test("with FRONT = -1 every drawn quad faces the other way", function()
+  local light, aim = slanted(45, 50)
+  local cam = vec3(aim.x - 30, aim.y + 80, aim.z + 10)
+  beam.FRONT = -1
+  local ok, err = pcall(function()
+    local out = {}
+    local n = beam.quads(light, aim, STRENGTH, nil, cam, out)
+    assertEq(n > 0, true)
+    for i = 1, n do
+      local q = out[i]
+      local ex, ey, ez = q.c.x - q.a.x, q.c.y - q.a.y, q.c.z - q.a.z
+      local fx, fy, fz = q.d.x - q.b.x, q.d.y - q.b.y, q.d.z - q.b.z
+      local nx, ny, nz = ey * fz - ez * fy, ez * fx - ex * fz, ex * fy - ey * fx
+      local toCam = (cam.x - q.a.x) * nx + (cam.y - q.a.y) * ny + (cam.z - q.a.z) * nz
+      assertEq(toCam >= 0, true, tostring(i))
+    end
+  end)
+  beam.FRONT = 1
+  if not ok then error(err, 0) end
 end)
 
 test("a vertical beam draws only finite vertices", function()
@@ -118,17 +138,6 @@ test("a low beam ends within twice the axis length", function()
   local worst = farthest(out, n, light)
   assertEq(worst <= 2 * axis(light, aim) + 1e-6, true, tostring(worst))
   assertEq(worst > 1.5 * axis(light, aim), true, tostring(worst))
-end)
-
-test("no drawn quad has a vertex within 6 m of the camera", function()
-  local light, aim = slanted(60, 50)
-  local out = {}
-  local n = beam.quads(light, aim, STRENGTH, nil, aim, out)
-  assertEq(n > 0, true)
-  eachVertex(out, n, function(v)
-    assertEq(dist(v, aim) >= beam.NEAR, true, tostring(dist(v, aim)))
-  end)
-  assertEq(n < beam.LAYERS * beam.SEGMENTS * beam.SIDES, true)
 end)
 
 local function triangleDist2(p, a, b, c)
@@ -183,6 +192,14 @@ local function nearestDrawn(light, aim, cam, out)
   end
   return nearest, n
 end
+
+test("no drawn quad's surface comes within 6 m of a camera at the aim point", function()
+  local light, aim = slanted(60, 50)
+  local nearest, n = nearestDrawn(light, aim, aim, {})
+  assertEq(n > 0, true)
+  assertEq(nearest >= beam.NEAR, true, tostring(nearest))
+  assertEq(n < beam.LAYERS * beam.SEGMENTS * beam.SIDES, true)
+end)
 
 local function centre(q)
   return vec3((q.a.x + q.b.x + q.c.x + q.d.x) / 4, (q.a.y + q.b.y + q.c.y + q.d.y) / 4, (q.a.z + q.b.z + q.c.z + q.d.z) / 4)
