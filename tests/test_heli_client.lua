@@ -3047,6 +3047,27 @@ test("the road out of the last candidate heads along its last edge, or away from
   samePos(last, vec3(-1000, 0, 0), 1e-9)
 end)
 
+test("the road out of the last candidate passes the node its tunnel walk came from", function()
+  load()
+  state.random = seeded(58)
+  pos = vec3(129, 0, 0)
+  local opts = tunnelOpts()
+  local roadSearch = require("copsAndRobbers/roadSearch")
+  local real, seen = roadSearch.routes, {}
+  roadSearch.routes = function(a, b, c, d, e, noBack, blocked)
+    seen[#seen + 1] = { noBack = noBack, blocked = blocked }
+    return real(a, b, c, d, e, noBack, blocked)
+  end
+  local c0 = loseDriving(0, vec3(20, 0, 0), opts)
+  local last = state.search.list[#state.search.list]
+  flyTo(c0, c0 + 40, opts)
+  roadSearch.routes = real
+  assertEq(#seen, 1)
+  assertEq(seen[1].noBack, true)
+  assertEq(last.from ~= nil, true)
+  assertEq(seen[1].blocked, last.from)
+end)
+
 test("the road out of the last candidate never flies back into the tunnel", function()
   load()
   state.random = seeded(58)

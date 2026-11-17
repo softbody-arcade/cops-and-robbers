@@ -272,7 +272,7 @@ end)
 test("noBack never walks into the road behind the origin when closest is a side road", function()
   local g = graph()
   g.node("t0", -200, 0)
-  g.node("t1", -30, 0)
+  g.node("t1", -100, 0)
   g.node("p", 0, 0)
   g.node("s1", 10, -50)
   g.node("s2", 10, 50)
@@ -280,7 +280,7 @@ test("noBack never walks into the road behind the origin when closest is a side 
   g.link("t1", "p")
   g.link("p", "s1")
   g.link("s1", "s2")
-  local routes = roadSearch.routes(v(0, 0, 0), 1, 0, roadsOf(g, "s1", "s2", 5), 0, true)
+  local routes = roadSearch.routes(v(0, 0, 0), 1, 0, roadsOf(g, "s1", "s2", 5), 0, true, "t1")
   assertEq(#routes > 0, true)
   for _, route in ipairs(routes) do
     for _, p in ipairs(route.points) do assertEq(p.x >= -1, true, "x " .. tostring(p.x)) end
@@ -296,7 +296,7 @@ end)
 test("noBack still follows a hairpin that curves back past the origin's plane", function()
   local g = graph()
   g.node("t0", -200, 0)
-  g.node("t1", -30, 0)
+  g.node("t1", -100, 0)
   g.node("p", 0, 0)
   g.node("a", 100, 0)
   g.node("b", 100, 60)
@@ -308,7 +308,7 @@ test("noBack still follows a hairpin that curves back past the origin's plane", 
   g.link("a", "b")
   g.link("b", "c")
   g.link("c", "d")
-  local routes = roadSearch.routes(v(0, 0, 0), 1, 0, roadsOf(g, "p", "a", 0), 0, true)
+  local routes = roadSearch.routes(v(0, 0, 0), 1, 0, roadsOf(g, "p", "a", 0), 0, true, "t1")
   local hairpin = false
   for _, route in ipairs(routes) do
     for _, p in ipairs(route.points) do

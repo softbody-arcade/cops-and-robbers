@@ -12,8 +12,6 @@ M.AIM_AHEAD = 60
 M.AIM_SIDE = 15
 M.AIM_PERIOD = 3
 M.MIN_ROUTE = 1
-M.BEHIND_MARGIN = 1
-M.BEHIND_RADIUS = 40
 
 local TIE = 1e-6
 local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
@@ -118,7 +116,7 @@ local function walk(roads, route, start, from, visited, dx, dy, cap, seed, junct
   end
 end
 
-function M.routes(origin, dirX, dirY, roads, seed, noBack)
+function M.routes(origin, dirX, dirY, roads, seed, noBack, blocked)
   local out = {}
   if origin == nil or roads == nil or roads.closest == nil or roads.links == nil or roads.nodes == nil then return out end
   local ox, oy, oz = origin.x, origin.y, origin.z
@@ -144,22 +142,9 @@ function M.routes(origin, dirX, dirY, roads, seed, noBack)
     return dx, dy
   end
 
-  local blocked = {}
-  if noBack then
-    local len = math.sqrt(dirX * dirX + dirY * dirY)
-    if len > 0 then
-      for id in pairs(nodes) do
-        local x, y = nodePos(nodes, id)
-        if x ~= nil and ((x - ox) * dirX + (y - oy) * dirY) / len < -M.BEHIND_MARGIN
-          and (x - ox) ^ 2 + (y - oy) ^ 2 <= M.BEHIND_RADIUS ^ 2 then
-          blocked[id] = true
-        end
-      end
-    end
-  end
   local function fresh()
     local set = {}
-    for id in pairs(blocked) do set[id] = true end
+    if blocked ~= nil then set[blocked] = true end
     return set
   end
 
