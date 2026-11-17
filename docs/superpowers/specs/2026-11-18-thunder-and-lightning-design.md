@@ -92,7 +92,15 @@ It is a new weather key, `thunderstorm`, labelled "Thunderstorm" and named "a th
 
 The user: "it should be possible for the same weather to chain so clear -> clear and then the forecast just shows nothing for that cycle".
 
-**How a planned change picks:** each planned change slot (every `weatherChangeMinMinutes`–`weatherChangeMaxMinutes`) now picks with weights from the allowed options plus "stay". "Stay" is the current weather, with weight 1, and is always allowed.
+**How a planned change picks:** each planned change slot (every `weatherChangeMinMinutes`–`weatherChangeMaxMinutes`) picks from the allowed options plus "stay". "Stay" is the current weather, with weight 1, and is always allowed. The pick has two steps, so the existing "Bad weather chance" (`badWeatherChancePercent`, default 25) decides every roll that can lead to bad weather. The user: "I want to reuse badWeatherChancePercent for everything that normally is bad weather in the roll that uses that".
+1. **Group.** Split the allowed options (including "stay") into calm (clear, cloudy) and bad (rain, storm, fog, snow, thunderstorm: the server's `BAD` list). If both groups have options, roll the bad group with `badWeatherChancePercent` and the calm group otherwise. If only one group has options, use that one.
+2. **Weather.** Pick inside the group by the weights in the table below.
+
+Over a long round, about `badWeatherChancePercent` of the time is then bad weather, the same share as for the starting weather. At 25%:
+- From cloudy on a cool day: 75% stays calm (cloudy again or clear), 25% turns bad (rain, snow or fog, as the temperature allows).
+- From rain: 25% stays bad (rain again, storm, snow or thunderstorm), 75% clears to cloudy.
+
+The panel shows "Bad weather chance" when Weather is Random (as today) and also when "Weather changes" is on (`settings.js` `when`). Its help text then says it covers the starting weather and the changes.
 
 **When it stays:**
 - Nothing is added to the change list: no change, no notice, no forecast.
@@ -103,7 +111,7 @@ The user: "it should be possible for the same weather to chain so clear -> clear
 - `weather.build` stays deterministic from `weatherSeed`.
 - The 3-hour horizon cap stays.
 
-**The pick becomes weighted** (`pick` in `weather.lua`). Each `NEXT` option takes an optional weight, defaulting to 1. The options with weights:
+**The pick becomes weighted** (`pick` in `weather.lua`). Each `NEXT` option takes an optional weight, defaulting to 1, used inside its group. The options with weights:
 
 | From | Options (weight) |
 |---|---|
@@ -115,7 +123,7 @@ The user: "it should be possible for the same weather to chain so clear -> clear
 | fog | stay (1), cloudy (1), clear (1) |
 | thunderstorm | stay (1), rain (1), cloudy (1) |
 
-On average, every weather now lasts longer, since about a third to a half of the planned slots keep it. The existing schedule property tests need updating, and a new test pins that a "stay" adds no change and no forecast.
+With "stay", a weather can last over several slots. How long bad spells last follows the bad weather chance: they are short at low settings and long at high ones. The existing schedule property tests need updating, and a new test pins that a "stay" adds no change and no forecast.
 
 ## The design
 
