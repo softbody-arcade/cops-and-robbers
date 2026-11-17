@@ -31,7 +31,7 @@ The mod talks to players only through five apps. It sends no chat messages or po
 | **Cops and Robbers Panel** | The Host panel button on the lobby card or the prep line, or Esc > UI Apps. |
 | **Cops and Robbers Leaderboard** | The Leaderboard button on the lobby card, or Esc > UI Apps. |
 
-Announcements and the HUD can be moved and resized in the layout editor; if removed, they come back by themselves. Every app is removed from the layout again on leaving the server. The Panel and the Leaderboard show a ✕ to close them, and the Leaderboard and How to play hide themselves during a round.
+Announcements and the HUD can be moved and resized in the layout editor; if removed, they come back by themselves. To put the HUD away between rounds, use Hide on the lobby card. Every app is removed from the layout again on leaving the server. The Panel and the Leaderboard show a ✕ to close them, and the Leaderboard and How to play hide themselves during a round.
 
 ## Evolving car mode
 
@@ -48,13 +48,14 @@ Switch "Evolving car" on in the panel. Instead of a random car each round, every
 
 ## HUD
 
-- **Lobby card** (between rounds): who is online, a line saying whether a round is waiting, buttons for Settings, How to play, Leaderboard and Host panel, and a yellow line for a standing problem (no reset button bound, an outdated copy, BeamNG.Earth too old).
+- **Lobby card** (between rounds): who is online, a line saying whether a round is waiting, buttons for Settings, How to play, Leaderboard, Host panel and Hide, and a yellow line for a standing problem (no reset button bound, an outdated copy, BeamNG.Earth too old).
+- **Hide:** folds the lobby card into a small "Cops and Robbers" tab at the same place; click the tab to bring the card back. The yellow warning lines still show above the tab. Your choice is saved in your own game. Your rounds always show the full HUD, and the lobby after them goes back to your choice.
 - **Player settings:** the Settings button opens a card with your car colour, four switches and a choice: **Auto headlights** (on by default; low beam at night and in rain, storm, fog and snow, and off again at sunrise in clear weather; the mod only acts when something changes, so your own light key still works), **Siren** (off by default; as a cop, the light bar runs with siren once cops are released; the host can turn Cop sirens off for everyone), **Searchlight beam** (on by default; off removes the helicopter's beam in the air, which helps the frame rate; the light and its glare stay) and **Helicopter sound** (on by default; the police helicopter's rotor, heard from far off, day and night; off fades it out on your game). The choice is **Route to the runner** (as a cop: Always, Out of sight or Never; Out of sight by default). They are saved in your own game and apply on every server. Distances and speeds on the chase line and in How to play follow the game's unit setting (metric or imperial); the Host panel stays metric.
 - **Colour:** a colour picker with a hex field, "No colour" and Done. The colour is used for every round car, repaints at once in prep and otherwise applies from the next round.
 - **Prep:** the centre shows your role ("YOU'RE THE RUNNER" or "YOU'RE A COP", and for cops the runner's name). The bottom shows "Waiting for the host to press GO" with the Settings, How to play and Host panel buttons. In evolving mode it shows the runner's queued change instead, with Apply change for the runner.
 - **Countdowns:** "RUNNER STARTS IN", "COPS RELEASED IN" and "CRASH PENALTY", then "GO!" or "PENALTY OVER".
 - **Chase:** role, time (with the time limit when there is one), SPOTTED or HIDDEN for the runner, IN SIGHT or live and last-seen positions for cops, the distance, and the reset status. A catch bar shows while the catch timer runs: red "BEING CAUGHT" for the runner, blue "HOLDING RUNNER" for cops.
-- **Notices:** rule breaks (illegal resets, teleports, parts changes, crash penalties), build changes and personal warnings appear as short lines above the chase line or the lobby card, at most two at a time.
+- **Notices:** rule breaks (illegal resets, teleports, parts changes, crash penalties), build changes and personal warnings appear as short lines above the chase line or the lobby card (or its tab), at most two at a time.
 - **Result:** the title, the runner's time and who caught them, the map's top 3 and "Next round in N" with automatic rounds.
 
 ## How to play
