@@ -31,6 +31,7 @@ local CHANGE_CHECK_INTERVAL = 1
 local BASELINE_DELAY = 1.5
 local MODES_INTERVAL = 3
 local MODES_SETTLE = 2.5
+local RESET_LOCK = 2
 local HELP_FILE = "settings/cnr_help_seen.json"
 local BINDING_WARNING = "Bind a reset or recover button to reset during rounds"
 
@@ -41,6 +42,8 @@ local active = false
 local role
 local frozen = false
 local resetAllowed = false
+local serverResetAllowed = false
+local resetLockUntil
 local lastHint
 local timerEnd, timerLabel
 local roundModel, roundConfig, roundColor
@@ -190,7 +193,7 @@ local function onRoundSetup(data)
   sightState = sight.new()
   roundModel, roundColor = d.model, d.color
   roundConfig = d.role == "cop" and vehicles.copConfig(d.model, d.config) or d.config
-  resetAllowed = false
+  resetAllowed, serverResetAllowed, resetLockUntil = false, false, nil
   lastHint = nil
   lastPose = nil
   inputs.lock(true, requestReset, d.practice == true)
@@ -469,12 +472,18 @@ local function onRelease()
   if role == "runner" then infoParts = runnerInfo() end
 end
 
-local function onState(data)
-  local d = jsonDecode(data) or {}
-  if d.resetAllowed ~= resetAllowed then
-    resetAllowed = d.resetAllowed and true or false
+local function setResetAllowed(allowed)
+  if allowed ~= resetAllowed then
+    resetAllowed = allowed
     inputs.setResetKey()
   end
+end
+
+local function onState(data)
+  local d = jsonDecode(data) or {}
+  serverResetAllowed = d.resetAllowed and true or false
+  resetLockUntil = nil
+  setResetAllowed(serverResetAllowed)
   if d.resetHint then lastHint = d.resetHint end
   local p = tonumber(d.catchProgress) or 0
   hudfeed.catchSample(clock, p)
@@ -508,7 +517,7 @@ local function endRound(leaving)
   timerEnd = nil
   roundModel, roundConfig, roundColor = nil, nil, nil
   pendingPlacement = nil
-  resetAllowed = false
+  resetAllowed, serverResetAllowed, resetLockUntil = false, false, nil
   lastPose = nil
   if frozen then setFreeze(false) end
   inputs.unlockAll()
@@ -633,6 +642,12 @@ local function updatePendingPlacement()
   elseif clock >= p.deadline then
     pendingPlacement = nil
   end
+end
+
+local function updateResetLock()
+  if not resetLockUntil or clock < resetLockUntil then return end
+  resetLockUntil = nil
+  setResetAllowed(serverResetAllowed)
 end
 
 local function updateOwnCar()
@@ -821,6 +836,7 @@ local function onUpdate(dtReal)
   clock = clock + (dtReal or 0)
   sky.update(dtReal or 0)
   updatePendingPlacement()
+  updateResetLock()
   updateOwnCar()
   local report = ai.tick(clock)
   if #report > 0 then sendServer("cnr_aiVehicles", { ai = report }) end
@@ -867,6 +883,7 @@ requestReset = function(kind)
     return
   end
   resetAllowed = false
+  resetLockUntil = clock + RESET_LOCK
   local pos, rot = veh:getPosition(), game.uprightRotation(veh)
   if kind == "road" and role == "cop" then
     local roadPos, roadRot = roads.nearestRoad(pos)
