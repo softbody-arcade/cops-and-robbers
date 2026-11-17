@@ -62,6 +62,8 @@ local pendingResetVerdicts = {}
 local REFUSAL_LOG_SECONDS = 10
 local refusalLoggedAt = {}
 local colorStore = {}
+local sitOut = {}
+local spectators = {}
 local serverClock = MP.CreateTimer()
 
 math.randomseed(os.time())
@@ -243,6 +245,17 @@ end
 
 local function roundCarActive()
   return current.vehicle ~= nil and current.state ~= "idle" and current.state ~= "picking"
+end
+
+local function playing(players)
+  local list, count = {}, 0
+  for pid, name in pairs(players) do
+    if not sitOut[pid] then
+      list[pid] = name
+      count = count + 1
+    end
+  end
+  return list, count
 end
 
 local function stationsPath() return stationsDir .. mapName .. ".json" end
@@ -537,6 +550,15 @@ local function applyEffects(effects)
         evolving = current.evolving or nil, rebuild = current.rebuildId, practice = current.test or nil,
         sky = sky.payload(current.sky, cfg, current.countdownStartedAt and math.max(0, now() - current.countdownStartedAt) or nil),
       })
+    elseif e.kind == "spectate" then
+      spectators[e.pid] = true
+      log(string.format("%s spectates (%s)", MP.GetPlayerName(e.pid) or tostring(e.pid), tostring(e.phase)))
+      send(e.pid, "cnr_spectate", {
+        runnerId = current.runnerId, runnerName = current:runnerName(), phase = e.phase,
+        countdownRemaining = e.countdownRemaining, headStartRemaining = e.headStartRemaining, chaseElapsed = e.chaseElapsed,
+        heli = e.heli,
+        sky = sky.payload(current.sky, cfg, current.countdownStartedAt and math.max(0, now() - current.countdownStartedAt) or nil),
+      })
     elseif e.kind == "setupAI" then
       local list = {}
       for _, a in ipairs(e.ai) do
@@ -579,6 +601,7 @@ local function applyEffects(effects)
       activeVid = {}
       trafficOpen = {}
       trafficVids = {}
+      spectators = {}
       clearRoundCars()
       partsBaseline = {}
       missingCount = {}
@@ -695,6 +718,8 @@ function handlers.start(pid, cmd)
   autoNextAt = nil
   lastIssuer = pid
   local players = MP.GetPlayers() or {}
+  local candidates, count = playing(players)
+  if count < 2 then return refuse(pid, "Need two players who aren't sitting out") end
   local query = cmd.rest
   local runnerId, err
   if query and query:lower() == "again" then
@@ -702,10 +727,15 @@ function handlers.start(pid, cmd)
     if not runnerId then return refuse(pid, "No previous runner online") end
   else
     local countsByName = {}
-    for p, name in pairs(players) do countsByName[name] = runCounts[playerKey(p)] or 0 end
-    runnerId, err = commands.matchPlayer(query, players, nil, countsByName)
+    for p, name in pairs(candidates) do countsByName[name] = runCounts[playerKey(p)] or 0 end
+    runnerId, err = commands.matchPlayer(query, candidates, nil, countsByName)
+    if not runnerId then
+      local anyone = commands.matchPlayer(query, players)
+      if anyone and sitOut[anyone] then runnerId = anyone end
+    end
   end
   if not runnerId then return refuse(pid, err) end
+  if sitOut[runnerId] then return refuse(pid, string.format("%s is sitting out", players[runnerId] or tostring(runnerId))) end
   requestStations(pid)
   activeVid = {}
   trafficOpen = {}
@@ -713,7 +743,9 @@ function handlers.start(pid, cmd)
   partsBaseline = {}
   missingCount = {}
   lastResult = nil
-  applyEffects(current:start(now(), runnerId, pid, players, { build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random, geoMode), traffic = traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), geoMode, false), trafficRunnerOnly = cfg.trafficRunnerOnly == true }))
+  local sittingOut = {}
+  for p in pairs(sitOut) do sittingOut[p] = true end
+  applyEffects(current:start(now(), runnerId, pid, players, { build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random, geoMode), traffic = traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), geoMode, false), trafficRunnerOnly = cfg.trafficRunnerOnly == true, sittingOut = sittingOut }))
 end
 
 function handlers.test(pid, cmd)
@@ -804,7 +836,7 @@ function handlers.sky(pid)
   end
   current.sky = picked
   local data = sky.payload(current.sky, cfg, nil)
-  for p in pairs(current.players) do
+  for p in pairs(current.test and current.players or MP.GetPlayers() or {}) do
     if not round.isAI(p) then send(p, "cnr_sky", data) end
   end
 end
@@ -881,7 +913,7 @@ end
 local function playerEntries(players, realRound)
   local entries, loading = {}, 0
   for pid, name in pairs(players) do
-    local entry = { name = name, runs = runCounts[playerKey(pid)] or 0 }
+    local entry = { name = name, runs = runCounts[playerKey(pid)] or 0, sitOut = sitOut[pid] or nil }
     if realRound and current.players[pid] ~= nil then
       local isRunner = pid == current.runnerId
       entry.role = isRunner and "runner" or "cop"
@@ -906,11 +938,10 @@ end
 local function panelState()
   local running = current.state == "running"
   local players = MP.GetPlayers() or {}
-  local online = 0
-  for _ in pairs(players) do online = online + 1 end
+  local candidates, count = playing(players)
   local realRound = current:isActive() and not current.test
   local entries, loading = playerEntries(players, realRound)
-  local nextName = not realRound and nextRunnerName(players) or nil
+  local nextName = not realRound and nextRunnerName(candidates) or nil
   local lastPid = lastRunnerKey and pidForKey(lastRunnerKey)
   local autoNext
   if autoNextAt and not realRound then
@@ -933,7 +964,7 @@ local function panelState()
     loading = loading, autoNext = autoNext, lastResult = lastResult,
     stationCount = #(geoMode and geoStations or stations), geo = geoMode,
     skyRandom = not geoMode and sky.hasRandom(cfg),
-    trafficNote = traffic.note(cfg.trafficPerPlayer, maxCars(), geoMode, online, cfg.trafficRunnerOnly == true),
+    trafficNote = traffic.note(cfg.trafficPerPlayer, maxCars(), geoMode, count, cfg.trafficRunnerOnly == true),
   })
 end
 
@@ -1164,6 +1195,11 @@ local function logVehicle(pid, action, vid, allowed, decoded)
 end
 
 function cnrOnVehicleSpawn(pid, vid, data)
+  if spectators[pid] then
+    logVehicle(pid, "spawned", vid, false, parseVehicleData(data))
+    refuse(pid, "You can't spawn a car while spectating")
+    return 1
+  end
   local allowed, decoded = vehicleAllowed(pid, vid, data, true)
   logVehicle(pid, "spawned", vid, allowed, decoded)
   if not allowed then
@@ -1227,6 +1263,16 @@ function cnrOnColor(pid, data)
   end
 end
 
+function cnrOnSitOut(pid, data)
+  local ok, d = pcall(Util.JsonDecode, data)
+  if not ok or type(d) ~= "table" or type(d.on) ~= "boolean" then return end
+  sitOut[pid] = d.on or nil
+  send(pid, "cnr_sitOut", { on = d.on })
+  if current:isActive() and not current.test then
+    notify(pid, d.on and "You sit out from the next round" or "You play again from the next round")
+  end
+end
+
 function cnrOnPlayerJoin(pid)
   send(pid, "cnr_mode", { geo = geoMode, version = VERSION })
   sendMyColor(pid)
@@ -1243,6 +1289,8 @@ end
 function cnrOnPlayerDisconnect(pid)
   stationsRequested[pid] = nil
   refusalLoggedAt[pid] = nil
+  sitOut[pid] = nil
+  spectators[pid] = nil
   panelSubs[pid] = nil
   boardSubs[pid] = nil
   local name = MP.GetPlayerName(pid)
@@ -1264,7 +1312,7 @@ end
 function cnrOnMyVehicle(pid, data)
   local ok, decoded = pcall(Util.JsonDecode, data)
   local vid = ok and type(decoded) == "table" and tonumber(decoded.vid)
-  if not vid or not current:isActive() then return end
+  if not vid or not current:isActive() or current.players[pid] == nil then return end
   activeVid[pid] = vid
   placed(pid)
   log(string.format("%s placed the round car (vid %s)", MP.GetPlayerName(pid) or tostring(pid), tostring(vid)))
@@ -1484,6 +1532,7 @@ MP.RegisterEvent("cnr_geo", "cnrOnGeo")
 MP.RegisterEvent("cnr_relocated", "cnrOnRelocated")
 MP.RegisterEvent("cnr_panel", "cnrOnPanel")
 MP.RegisterEvent("cnr_color", "cnrOnColor")
+MP.RegisterEvent("cnr_sitOut", "cnrOnSitOut")
 MP.RegisterEvent("cnr_sight", "cnrOnSight")
 MP.RegisterEvent("cnr_cover", "cnrOnCover")
 MP.RegisterEvent("cnr_board", "cnrOnBoard")

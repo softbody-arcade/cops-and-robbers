@@ -151,3 +151,8 @@ end)
 test("snapshot passes the traffic note", function()
   assertEq(panel.snapshot({ trafficNote = "x" }).trafficNote, "x")
 end)
+
+test("player rows say who sits out", function()
+  local rows = panel.playerRows({ { name = "Ann", runs = 0, sitOut = true }, { name = "Bob", runs = 1 } })
+  assertEq(rows[1].sitOut, true); assertEq(rows[2].sitOut, nil)
+end)
