@@ -49,8 +49,12 @@ local PART_EDITS = {
 }
 local PAINT_EDITS = { { "core_vehicle_partmgmt", "setConfigPaints" }, { "core_vehicle_colors", "setVehicleColor" }, { "core_vehicle_colors", "setVehiclePaint" } }
 local LOCK_MESSAGE = "Parts and paint are locked during a round. Use Settings for your car colour"
+local SPAWN_EDITS = { "spawnNewVehicle", "replaceVehicle", "cloneCurrent", "spawnDefault" }
+local SPAWN_MESSAGE = "You can't spawn a car while watching the AI"
+local REMOVE_MESSAGE = "You can't remove a car while watching the AI"
 
 local editMode
+local spawnsLocked = false
 local notify = function() end
 
 function M.setNotify(fn)
@@ -62,21 +66,30 @@ local function blocker()
   notify(LOCK_MESSAGE, "warn")
 end
 
-local function wrap(moduleName, name)
+local function spawnBlocker()
+  notify(SPAWN_MESSAGE, "warn")
+end
+
+local function removeBlocker()
+  notify(REMOVE_MESSAGE, "warn")
+end
+
+local function wrap(moduleName, name, block)
+  block = block or blocker
   local key = moduleName .. "." .. name
   local tbl = rawget(_G, moduleName)
   if type(tbl) ~= "table" or type(tbl[name]) ~= "function" then return end
   local w = wrapped[key]
-  if w and w.tbl == tbl and tbl[name] == blocker then return end
-  wrapped[key] = { tbl = tbl, name = name, fn = tbl[name] }
-  tbl[name] = blocker
+  if w and w.tbl == tbl and tbl[name] == block then return end
+  wrapped[key] = { tbl = tbl, name = name, fn = tbl[name], block = block }
+  tbl[name] = block
 end
 
 local function restore(moduleName, name)
   local key = moduleName .. "." .. name
   local w = wrapped[key]
   if not w then return end
-  if w.tbl[name] == blocker then w.tbl[name] = w.fn end
+  if w.tbl[name] == w.block then w.tbl[name] = w.fn end
   wrapped[key] = nil
 end
 
@@ -89,6 +102,15 @@ function M.enforceEditLock()
   for _, e in ipairs(PAINT_EDITS) do
     if lockPaint then wrap(e[1], e[2]) else restore(e[1], e[2]) end
   end
+  for _, name in ipairs(SPAWN_EDITS) do
+    if spawnsLocked then wrap("core_vehicles", name, spawnBlocker) else restore("core_vehicles", name) end
+  end
+  if spawnsLocked then wrap("core_vehicles", "removeCurrent", removeBlocker) else restore("core_vehicles", "removeCurrent") end
+end
+
+function M.lockSpawns(on)
+  spawnsLocked = on == true
+  M.enforceEditLock()
 end
 
 function M.lockEditing(mode)
@@ -191,6 +213,7 @@ function M.setLightbarKeys(locked)
 end
 
 function M.unlockAll()
+  spawnsLocked = false
   M.lock(false)
   M.setResetKey()
   M.setPartsMenu(true)

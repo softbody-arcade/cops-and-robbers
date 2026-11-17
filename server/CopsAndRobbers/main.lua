@@ -65,6 +65,8 @@ local refusalLoggedAt = {}
 local colorStore = {}
 local sitOut = {}
 local spectators = {}
+local aiSpawnsLeft = 0
+local WATCHING_AI = "You can't spawn a car while watching the AI"
 local serverClock = MP.CreateTimer()
 
 math.randomseed(os.time())
@@ -567,6 +569,7 @@ local function applyEffects(effects)
       for _, a in ipairs(e.ai) do
         list[#list + 1] = { id = a.id, role = a.role, index = a.index, name = a.name, color = colorTable((colors.parseHex(a.colorHex))) }
       end
+      aiSpawnsLeft = e.aiOnly and #list or 0
       send(e.pid, "cnr_setupAI", {
         model = current.vehicle.model, config = current.vehicle.config, ai = list,
         runnerId = current.runnerId, copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
@@ -606,6 +609,7 @@ local function applyEffects(effects)
       trafficOpen = {}
       trafficVids = {}
       spectators = {}
+      aiSpawnsLeft = 0
       clearRoundCars()
       partsBaseline = {}
       missingCount = {}
@@ -1161,6 +1165,14 @@ function cnrOnChatMessage(pid, name, msg)
 end
 
 local function vehicleAllowed(pid, vid, data, isSpawn)
+  if current:isActive() and current.aiOnly and pid == current.issuerId then
+    local decoded = parseVehicleData(data)
+    local model = current.vehicle and current.vehicle.model
+    local roundModel = model ~= nil and decoded ~= nil and decoded.jbm == model
+    if not roundModel or (isSpawn and aiSpawnsLeft <= 0) then return false, decoded, WATCHING_AI end
+    if isSpawn then aiSpawnsLeft = aiSpawnsLeft - 1 end
+    return true, decoded
+  end
   local own = activeVid[pid]
   if current:isActive() and trafficOpen[pid] and current.players[pid] ~= nil and vid ~= own then
     if current.test and pid == current.issuerId then return true end
@@ -1220,10 +1232,10 @@ function cnrOnVehicleSpawn(pid, vid, data)
     refuse(pid, "You can't spawn a car while spectating")
     return 1
   end
-  local allowed, decoded = vehicleAllowed(pid, vid, data, true)
+  local allowed, decoded, why = vehicleAllowed(pid, vid, data, true)
   logVehicle(pid, "spawned", vid, allowed, decoded)
   if not allowed then
-    refuse(pid, "Only the round car is allowed")
+    refuse(pid, why or "Only the round car is allowed")
     return 1
   end
   if tracksActive(pid) and not trafficOpen[pid] then activeVid[pid] = vid end
@@ -1231,10 +1243,10 @@ function cnrOnVehicleSpawn(pid, vid, data)
 end
 
 function cnrOnVehicleEdited(pid, vid, data)
-  local allowed, decoded = vehicleAllowed(pid, vid, data, false)
+  local allowed, decoded, why = vehicleAllowed(pid, vid, data, false)
   logVehicle(pid, "edited", vid, allowed, decoded)
   if not allowed then
-    refuse(pid, "Only the round car is allowed")
+    refuse(pid, why or "Only the round car is allowed")
     return 1
   end
   local notOwn = vid ~= activeVid[pid] and (current.test or trafficOpen[pid])

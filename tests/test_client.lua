@@ -4382,14 +4382,15 @@ test("the round end removes the AI cars before your car comes back", function()
   withCamera(function()
     local env = bootClient()
     env.veh.pos = vec3(0, 20, 0)
-    watchPractice(env)
-    local ids = { env.spawned[1].veh:getID(), env.spawned[2].veh:getID(), env.spawned[3].veh:getID() }
     local spawn, aliveAtRestore = core_vehicles.spawnNewVehicle, nil
     core_vehicles.spawnNewVehicle = function(model, opt)
-      aliveAtRestore = 0
-      for _, id in ipairs(ids) do if env.objects[id] then aliveAtRestore = aliveAtRestore + 1 end end
+      if #env.spawned == 3 then
+        aliveAtRestore = 0
+        for i = 1, 3 do if env.objects[env.spawned[i].veh:getID()] then aliveAtRestore = aliveAtRestore + 1 end end
+      end
       return spawn(model, opt)
     end
+    watchPractice(env)
     env.fire("cnr_roundEnd", { reason = "cancelled" })
     assertEq(aliveAtRestore, 0)
     assertEq(env.spawned[4].opt.pos.y, 20)
@@ -4437,5 +4438,71 @@ test("New car while watching an AI car goes to free camera first, not to some ot
     env.player = env.spawned[1].veh
     env.fire("cnr_setupAI", { model = "pickup", config = "vehicles/pickup/base.pc", runnerId = 1, ai = { { id = -10, role = "cop", index = 1, name = "AI cop 1" } } })
     assertEq(cam.free, false)
+  end)
+end)
+
+local WATCH_SPAWN = "You can't spawn a car while watching the AI"
+local WATCH_REMOVE = "You can't remove a car while watching the AI"
+
+test("while you watch AI practice the game can't spawn, replace, clone or remove a car", function()
+  withCamera(function()
+    local env = bootClient()
+    env.fire("cnr_mode", {})
+    local own = {}
+    core_vehicles.cloneCurrent = function() own.clone = (own.clone or 0) + 1 return true end
+    core_vehicles.spawnDefault = function() own.default = (own.default or 0) + 1 return true end
+    core_vehicles.removeCurrent = function() own.remove = (own.remove or 0) + 1 end
+    local spawnSeen, removeSeen = countEvents(env, WATCH_SPAWN), countEvents(env, WATCH_REMOVE)
+    watchPractice(env)
+    assertEq(#env.spawned, 3)
+    assertEq(core_vehicles.spawnNewVehicle("etk800", {}), nil)
+    assertEq(core_vehicles.replaceVehicle("etk800", {}), nil)
+    core_vehicles.cloneCurrent(); core_vehicles.spawnDefault(); core_vehicles.removeCurrent()
+    assertEq(#env.spawned, 3); assertEq(#env.replaced, 0)
+    assertEq(own.clone, nil); assertEq(own.default, nil); assertEq(own.remove, nil)
+    assertEq(spawnSeen.n, 4); assertEq(removeSeen.n, 1)
+    local rewrapped = function() own.rewrapped = true end
+    core_vehicles.spawnNewVehicle = rewrapped
+    env.tick(0.2)
+    core_vehicles.spawnNewVehicle("etk800", {})
+    assertEq(own.rewrapped, nil)
+  end)
+end)
+
+test("the AI cars still spawn on New car, your car still comes back, and the game spawns again after", function()
+  withCamera(function()
+    local env = bootClient()
+    env.veh.model = "etk800"
+    watchPractice(env)
+    watchPractice(env)
+    assertEq(#env.spawned, 6)
+    assertEq(core_vehicles.spawnNewVehicle("pickup", {}), nil)
+    assertEq(#env.spawned, 6)
+    env.fire("cnr_roundEnd", { reason = "cancelled" })
+    assertEq(#env.spawned, 7); assertEq(env.spawned[7].model, "etk800")
+    core_vehicles.spawnNewVehicle("pickup", {})
+    core_vehicles.replaceVehicle("pickup", {})
+    assertEq(#env.spawned, 8); assertEq(#env.replaced, 1)
+  end)
+  withCamera(function()
+    local env = bootClient()
+    watchPractice(env)
+    env.M.onBeamMPServerLeave()
+    core_vehicles.spawnNewVehicle("pickup", {})
+    assertEq(#env.spawned, 4)
+  end)
+end)
+
+test("practice where you drive, and spectating a real round, leave the game's spawning alone", function()
+  local env = bootClient()
+  practiceAsCop(env)
+  local n = #env.spawned
+  core_vehicles.spawnNewVehicle("etk800", {})
+  assertEq(#env.spawned, n + 1)
+  withCamera(function()
+    local spec = bootClient()
+    spectate(spec)
+    core_vehicles.spawnNewVehicle("etk800", {})
+    assertEq(#spec.spawned, 1)
   end)
 end)

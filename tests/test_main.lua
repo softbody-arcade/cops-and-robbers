@@ -3391,3 +3391,25 @@ test("the lobby names whoever watches the AI practise, and their leaving ends it
   assertEq(env.lastSent("cnr_lobby").data:find('"practice"', 1, true), nil)
   env.cleanup()
 end)
+
+test("a watched practice refuses the issuer's own spawns and model changes, but not the AI cars or the restore after", function()
+  local env = boot()
+  sitOut(env, 1, true)
+  env.panel(1, "test cop")
+  env.call("cnr_vehiclePicked", 1, PICK)
+  env.sent = {}
+  for vid = 1, 3 do assertEq(env.call("onVehicleSpawn", 1, vid, string.format(AI_SPAWN, vid)), 0, vid) end
+  assertEq(env.call("onVehicleSpawn", 1, 4, string.format(AI_SPAWN, 4)), 1)
+  assertEq(env.noticeHas("You can't spawn a car while watching the AI", "warn"), true)
+  assertEq(env.call("onVehicleSpawn", 1, 5, 'USER:Reinder:1-5:{"jbm":"etk800","vcf":{}}'), 1)
+  assertEq(env.call("onVehicleEdited", 1, 2, 'USER:Reinder:1-2:{"jbm":"etk800","vcf":{}}'), 1)
+  assertEq(env.call("onVehicleEdited", 1, 2, string.format(AI_SPAWN, 2)), 0)
+  assertEq(env.call("onVehicleSpawn", 2, 7, '2:Bob:2-7:{"jbm":"etk800","vcf":{}}'), 0)
+  env.panel(1, "reroll")
+  env.call("cnr_vehiclePicked", 1, PICK)
+  for vid = 8, 10 do assertEq(env.call("onVehicleSpawn", 1, vid, string.format(AI_SPAWN, vid)), 0, vid) end
+  assertEq(env.call("onVehicleSpawn", 1, 11, string.format(AI_SPAWN, 11)), 1)
+  env.panel(1, "stop")
+  assertEq(env.call("onVehicleSpawn", 1, 12, 'USER:Reinder:1-12:{"jbm":"etk800","vcf":{}}'), 0)
+  env.cleanup()
+end)

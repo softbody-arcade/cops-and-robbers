@@ -140,6 +140,7 @@ end
 local function onSetupAI(data)
   local d = jsonDecode(data) or {}
   local center, heading
+  local watchingAI = spectating and d.aiOnly == true
   if spectating then
     center, heading = watchCenter()
     if d.aiOnly == true then
@@ -149,7 +150,9 @@ local function onSetupAI(data)
       if watched and ai.nameOf(watched:getID()) and cmds and cmds.setFreeCamera then cmds.setFreeCamera() end
     end
   end
+  inputs.lockSpawns(false)
   ai.setup(d, center, heading)
+  inputs.lockSpawns(watchingAI)
   hidingBuiltAt = -math.huge
 end
 
@@ -576,6 +579,7 @@ local function endRound(leaving)
   spectating = false
   watchedId = nil
   ai.remove()
+  inputs.lockSpawns(false)
   if leaving then
     spectator.drop()
   elseif not spectator.restore() then
