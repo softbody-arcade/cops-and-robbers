@@ -403,7 +403,7 @@
   - `updateHeli` calls `heliSound.tick(soundState, heliState.flight and heliState.flight.pos, prefs.sound ~= false and heli.soundLevel(heliState, clock) or 0, clock, camPos, castRayStatic)`, with `camPos` from `core_camera.getPosition()` when it exists. While not active it calls it with `nil` and 0, so fades end and leftovers go.
   - `endRound` calls `heliSound.clear`; the round's end, a cancel, leaving, a map change and unload all go through it.
 
-- [ ] **Step 0 (the controller, before dispatching): the volume call.** The user is checking in game whether `setVolumePitchCT` changes a playing `fileName` emitter's volume. Record the answer here: **Volume call: _to be filled in_ (`setVolumePitchCT`, or `setField("volume")` + `postApply()`, or the call the check found).**
+- [ ] **Step 0 (the controller, before dispatching): the volume call.** The user is checking in game whether `setVolumePitchCT` changes a playing `fileName` emitter's volume. Record the answer here: **Volume call: `setVolumePitchCT(v, 1, 0, 0)`.** The user chose to assume it works (2026-11-17, while playing with friends) and to check it in game afterwards; if it doesn't change a playing `fileName` emitter, switch to `setField("volume")` + `postApply()` then.
 - [ ] **Step 1: Copy the sound file and write the failing tests.**
   - Copy `/tmp/claude-1000/cnr-sound/heli_rotor.ogg` to `client/art/sound/cnr/heli_rotor.ogg`.
   - **`tests/test_heli_sound.lua`,** with stubbed `createObject`, `scenetree`, `Sim.upcast` and the volume call:
