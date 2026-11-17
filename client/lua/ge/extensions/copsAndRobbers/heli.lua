@@ -413,6 +413,10 @@ local function isUp(phase)
   return phase == "tracking" or phase == "searching"
 end
 
+local function flyingAway(phase)
+  return phase == "refuelling" or phase == "grounded"
+end
+
 local function tickLight(state, target, phase, last, night, clock, opts)
   if state.light and not scenetree.findObject(M.LIGHT_NAME) then forgetLight(state) end
   if not target then
@@ -426,9 +430,9 @@ local function tickLight(state, target, phase, last, night, clock, opts)
     if isUp(phase) and (last == "arriving" or last == "refuelling") then
       if desired then startApproach(state, clock) end
     elseif state.light then
-      if phase == "refuelling" and isUp(last) and f and state.fx.mode ~= "fade" then
+      if flyingAway(phase) and isUp(last) and f and state.fx.mode ~= "fade" then
         startDepart(state, f.spot or f.lead or car, clock)
-      elseif not (state.fx.mode == "depart" and phase == "refuelling") then
+      elseif not (state.fx.mode == "depart" and flyingAway(phase)) then
         removeLight(state)
       end
     end

@@ -97,7 +97,7 @@ local function fly(state, phase, last, car, carVel, dt, clock, random)
       flight.resume(f)
       state.leftAt = nil
     end
-  elseif phase == "refuelling" then
+  elseif phase == "refuelling" or phase == "grounded" then
     if f and not f.leaving then
       flight.leave(f, f.spot or f.lead or car, state.flightRandom or random)
       state.leftAt = clock
@@ -335,14 +335,14 @@ end
 function M.tick(state, target, phase, last, clock, opts)
   if not target then
     state.missingSince = state.missingSince or clock
-    if phase == "refuelling" then state.lightPhase = phase end
+    if phase == "refuelling" or phase == "grounded" then state.lightPhase = phase end
     local f = state.flight
     local ref = f and (f.spot or f.lead or state.lastCar)
-    if phase == "refuelling" and ref and not f.leaving then
+    if (phase == "refuelling" or phase == "grounded") and ref and not f.leaving then
       flight.leave(f, ref, state.flightRandom or state.random or math.random)
       state.leftAt = clock
     end
-    local up = phase == "tracking" or phase == "searching" or phase == "refuelling"
+    local up = phase == "tracking" or phase == "searching" or phase == "refuelling" or phase == "grounded"
     if state.flight and (not up or (state.leftAt and clock - state.leftAt >= flight.DEPART_SECONDS)) then
       M.drop(state)
     end
