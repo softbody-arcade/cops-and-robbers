@@ -160,16 +160,30 @@ local function applyField(obj, name, value)
   obj:setField(name, 0, value)
 end
 
-local function createLight(state)
-  local obj = createObject("SpotLight")
-  if not obj then return false end
+local function lightError(state, msg)
+  if state.lightLogged then return end
+  state.lightLogged = true
+  log("E", "cnr_heli", msg)
+end
+
+local function setUpLight(obj)
   for _, f in ipairs(FIELDS) do obj:setField(f[1], 0, tostring(f[2])) end
   pcall(applyField, obj, "flareType", M.FLARE_TYPE)
   obj.canSave = false
   obj:registerObject(M.LIGHT_NAME)
+end
+
+local function createLight(state)
+  local obj = createObject("SpotLight")
+  if not obj then return false end
+  local ok, err = pcall(setUpLight, obj)
+  if not ok then
+    pcall(function() obj:delete() end)
+    error(err, 0)
+  end
   if not scenetree.findObject(M.LIGHT_NAME) then
     obj:delete()
-    log("E", "cnr_heli", "searchlight did not register")
+    lightError(state, "searchlight did not register")
     return false
   end
   scenetree.MissionGroup:addObject(obj)
@@ -483,6 +497,7 @@ end
 local function flightTick(state, target, phase, last, clock, opts)
   if not target then
     state.missingSince = state.missingSince or clock
+    if phase == "refuelling" then state.lightPhase = phase end
     local f = state.flight
     local ref = f and (f.spot or state.lastCar)
     if phase == "refuelling" and ref and not f.leaving then
@@ -608,10 +623,7 @@ function M.lightTick(state, target, night, clock, opts)
     if not ok then
       pcall(removeLight, state)
       state.failed = true
-      if not state.lightLogged then
-        state.lightLogged = true
-        log("E", "cnr_heli", "searchlight stopped: " .. tostring(err))
-      end
+      lightError(state, "searchlight stopped: " .. tostring(err))
     end
   end
   if target then state.lightPhase = phase end

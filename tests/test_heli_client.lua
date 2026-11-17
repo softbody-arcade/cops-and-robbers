@@ -2138,6 +2138,99 @@ test("a light error is logged once per round", function()
   if not ok then error(err, 0) end
 end)
 
+test("a light whose field setup throws is deleted before it is registered, and handled as a failed light", function()
+  load()
+  local make, made = _G.createObject, {}
+  _G.createObject = function(class)
+    local obj = make(class)
+    if class == "SpotLight" then
+      made[#made + 1] = obj
+      function obj:setField() error("bad field") end
+      function obj:delete() self.gone = true end
+    end
+    return obj
+  end
+  local saved, lines = _G.log, {}
+  _G.log = function(_, _, msg)
+    if tostring(msg):find("searchlight", 1, true) then lines[#lines + 1] = msg end
+  end
+  local ok, err = pcall(function()
+    for i = 0, 3 do
+      heli.set(state, { phase = "tracking" }, i)
+      heli.lightTick(state, target, true, i)
+      assertEq(state.failed, true)
+      assertEq(state.light, nil)
+      assertEq(state.flight ~= nil, true)
+    end
+    assertEq(#made, 4)
+    for i, obj in ipairs(made) do assertEq(obj.gone, true, tostring(i)) end
+    assertEq(fake.objects[LIGHT], nil)
+    assertEq(#lines, 1)
+    assertEq(lines[1]:find("searchlight stopped: ", 1, true) ~= nil, true, lines[1])
+    assertEq(lines[1]:find("bad field", 1, true) ~= nil, true, lines[1])
+  end)
+  _G.log = saved
+  if not ok then error(err, 0) end
+end)
+
+test("a light that doesn't register is logged once per round over every retry", function()
+  load()
+  local make = _G.createObject
+  _G.createObject = function(class)
+    local obj = make(class)
+    if class == "SpotLight" then function obj:registerObject() end end
+    return obj
+  end
+  local saved, lines = _G.log, {}
+  _G.log = function(_, _, msg)
+    if tostring(msg):find("searchlight", 1, true) then lines[#lines + 1] = msg end
+  end
+  local ok, err = pcall(function()
+    for i = 0, 5 do
+      heli.set(state, { phase = i % 2 == 0 and "tracking" or "searching", guided = i > 2 }, i)
+      heli.lightTick(state, target, true, i)
+      assertEq(state.failed, true)
+    end
+    assertEq(#lines, 1)
+    assertEq(lines[1], "searchlight did not register")
+    heli.clear(state)
+    heli.set(state, { phase = "tracking" }, 10)
+    heli.lightTick(state, target, true, 10)
+    assertEq(#lines, 2)
+  end)
+  _G.log = saved
+  if not ok then error(err, 0) end
+end)
+
+test("a car missing for a whole refuel makes the next flight fly in with the light from 0", function()
+  load()
+  state.random = seeded(5)
+  night(0, "tracking")
+  local c = run(0, 2, 0.05)
+  assertEq(fake.objects[LIGHT] ~= nil, true)
+  c = c + 0.05
+  heli.set(state, { phase = "refuelling" }, c)
+  heli.lightTick(state, nil, true, c)
+  local back = c + heli.DEPART_SECONDS + 5
+  while c < back - 1e-9 do
+    c = c + 0.05
+    heli.lightTick(state, nil, true, c)
+  end
+  assertEq(state.flight, nil)
+  assertEq(fake.objects[LIGHT], nil)
+  c = c + 0.05
+  night(c, "searching")
+  local f = state.flight
+  assertEq(f ~= nil, true)
+  assertNear(horiz(f.pos, f.spot), heli.APPROACH_DISTANCE, 1e-6)
+  assertNear(f.pos.z - f.spot.z, heli.APPROACH_HEIGHT, 1e-6)
+  local obj = fake.objects[LIGHT]
+  assertEq(obj ~= nil, true)
+  assertEq(state.fx.mode, "approach")
+  assertEq(tonumber(obj.fields.brightness), 0)
+  atFlight(obj)
+end)
+
 test("a 2 km car jump on a guided tick leaves the spot and the last known position on the car", function()
   load()
   state.random = seeded(7)
