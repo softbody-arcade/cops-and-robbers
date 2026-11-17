@@ -76,9 +76,31 @@ function M.buildFrom(path)
   return { model = model, name = game.carName(model), parts = pc.parts, vars = type(pc.vars) == "table" and pc.vars or {} }
 end
 
+local function hasLivery(parts)
+  for slot, part in pairs(parts) do
+    if type(slot) == "string" and slot:find("paint_design", 1, true) and type(part) == "string" and part ~= "" then return true end
+  end
+  return false
+end
+
+local function withoutLivery(config)
+  local base = config
+  if type(config) == "string" then
+    local ok, read = pcall(jsonReadFile, "/" .. config:gsub("^/", ""))
+    base = ok and read or nil
+  end
+  if type(base) ~= "table" or type(base.parts) ~= "table" or not hasLivery(base.parts) then return config end
+  local cfg = deepcopy(base)
+  for slot, part in pairs(cfg.parts) do
+    if type(slot) == "string" and slot:find("paint_design", 1, true) and type(part) == "string" and part ~= "" then cfg.parts[slot] = "" end
+  end
+  return cfg
+end
+
 function M.options(config, color)
   local opt = { config = config }
   if color and color.r then
+    opt.config = withoutLivery(config)
     opt.paint = createVehiclePaint({ x = color.r, y = color.g, z = color.b, w = 1 })
   end
   return opt
