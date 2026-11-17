@@ -76,9 +76,9 @@ end)
 
 local function moving(x, vxKmh) return car(x, vxKmh / 3.6) end
 
-test("a stuck runner rocking 1.5 m each way at up to 15 km/h is caught once 2 s of rocking count as held", function()
+test("a stuck runner rocking 1.5 m each way at up to 10 km/h is caught once 4 s of rocking count as held", function()
   local t = catch.new(cfg)
-  local w = 15 / 3.6 / 1.5
+  local w = 10 / 3.6 / 1.5
   local caughtAt
   for i = 0, 60 do
     local now = i * 0.25
@@ -88,7 +88,7 @@ test("a stuck runner rocking 1.5 m each way at up to 15 km/h is caught once 2 s 
   end
   assert(caughtAt, "never caught")
   assertEq(caughtAt >= cfg.catchHoldSeconds, true, "caught at " .. caughtAt)
-  assertEq(caughtAt <= cfg.catchHoldSeconds + 2.5, true, "caught at " .. caughtAt)
+  assertEq(caughtAt <= cfg.catchHoldSeconds + 4.5, true, "caught at " .. caughtAt)
 end)
 
 test("a runner driving away at 20 km/h is never held, even with a cop alongside", function()
@@ -111,9 +111,9 @@ test("a runner creeping straight at 4 km/h with a cop alongside is never held", 
   end
 end)
 
-test("a runner rocking 1.5 m each way while drifting 0.5 m per 2 s is still held", function()
+test("a runner rocking 1.5 m each way while drifting 1 m per 4 s is still held", function()
   local t = catch.new(cfg)
-  local w = 15 / 3.6 / 1.5
+  local w = 10 / 3.6 / 1.5
   local caughtAt
   for i = 0, 80 do
     local now = i * 0.25
@@ -122,6 +122,16 @@ test("a runner rocking 1.5 m each way while drifting 0.5 m per 2 s is still held
     if c and not caughtAt then caughtAt = now end
   end
   assert(caughtAt, "never caught")
+end)
+
+test("a runner creeping straight at 3.5 km/h with a cop alongside is never held", function()
+  local t = catch.new(cfg)
+  for i = 0, 80 do
+    local x = i * 0.25 * 3.5 / 3.6
+    local p, c = t:update(i * 0.25, moving(x, 3.5), { moving(x + 3, 3.5) })
+    assertEq(p, 0, "at " .. i * 0.25)
+    assertEq(c, false)
+  end
 end)
 
 test("a runner at a steady 6 km/h with a cop alongside is never held", function()
@@ -147,19 +157,19 @@ test("reset clears the movement history", function()
   for i = 0, 20 do t:update(i * 0.25, car(0, 10 / 3.6), { car(5) }) end
   t:reset()
   local p
-  for i = 21, 27 do p = t:update(i * 0.25, car(0, 10 / 3.6), { car(5) }) end
+  for i = 21, 36 do p = t:update(i * 0.25, car(0, 10 / 3.6), { car(5) }) end
   assertEq(p, 0)
-  p = t:update(7.25, car(0, 10 / 3.6), { car(5) })
+  p = t:update(9.25, car(0, 10 / 3.6), { car(5) })
   assertEq(p > 0, true)
 end)
 
-test("the movement history stays bounded and works with ticks that never land 2 s apart", function()
+test("the movement history stays bounded and works with ticks that never land 4 s apart", function()
   local t = catch.new(cfg)
   local p
-  for i = 0, 6 do p = t:update(i * 0.3, car(0, 10 / 3.6), { car(5) }) end
+  for i = 0, 13 do p = t:update(i * 0.3, car(0, 10 / 3.6), { car(5) }) end
   assertEq(p, 0)
-  p = t:update(2.1, car(0, 10 / 3.6), { car(5) })
+  p = t:update(4.2, car(0, 10 / 3.6), { car(5) })
   assertEq(p > 0, true)
-  for i = 8, 200 do t:update(i * 0.3, car(0, 10 / 3.6), { car(5) }) end
-  assertEq(#t.history <= 9, true, "history " .. #t.history)
+  for i = 15, 200 do t:update(i * 0.3, car(0, 10 / 3.6), { car(5) }) end
+  assertEq(#t.history <= 16, true, "history " .. #t.history)
 end)
