@@ -46,7 +46,7 @@ end
 
 function M.endAt(cfg)
   local limit = cfg.roundTimeLimitSeconds
-  return M.releaseAt(cfg) + ((limit and limit > 0) and limit or M.HORIZON_SECONDS)
+  return M.releaseAt(cfg) + math.min((limit and limit > 0) and limit or M.HORIZON_SECONDS, M.HORIZON_SECONDS)
 end
 
 function M.gameStart(s, cfg)

@@ -27,6 +27,14 @@ test("the release and end of a round", function()
   assertEq(weather.endAt(c), 610)
 end)
 
+test("a time limit beyond the horizon schedules no further than no limit", function()
+  local s = { time = "noon", weather = "clear", month = 4, weatherSeed = 5 }
+  local week = cfg({ roundTimeLimitSeconds = 7 * 86400 })
+  local none = cfg({ roundTimeLimitSeconds = 0 })
+  assertEq(weather.endAt(week), weather.endAt(none))
+  assertEq(#weather.build(s, week).changes, #weather.build(s, none).changes)
+end)
+
 test("turning points fall at 06:00 and 14:00 from the start on", function()
   local c = weather.climate({ time = "sunrise", weather = "clear", month = 1 }, cfg({ dayLength = "moderate" }), script({}, 0.5))
   local p = c.points
@@ -393,4 +401,47 @@ test("grounded while a grounding weather is in effect or still clearing", functi
   assertEq(weather.groundedAt({ weather = "clear" }, 0), nil)
   assertEq(weather.groundedAt({}, 0), nil)
   assertEq(weather.groundedAt(nil, 0), nil)
+end)
+
+test("no missed crossing: a fitted weather fits until the next change, and a crossing comes when it stops fitting", function()
+  local list = {}
+  for seed = 1, 6 do
+    for _, month in ipairs({ 1, 4, 7, 10 }) do
+      local dayLength = (seed % 2 == 0) and "fast" or "moderate"
+      local lo = (seed % 7) + 1
+      local c = cfg({ roundTimeLimitSeconds = 1800, dayLength = dayLength, weatherChangeMinMinutes = lo, weatherChangeMaxMinutes = lo })
+      local s = { time = TIMES[seed], weather = WEATHERS[seed], month = month }
+      list[#list + 1] = { r = weather.build(s, c, weather.seeded(seed)), ds = weather.DAY_SECONDS[dayLength], c = c, s = s }
+    end
+  end
+  for _, k in ipairs(list) do
+    local r, ds = k.r, k.ds
+    local from, to = r.releaseAt, weather.endAt(k.c)
+    local ci, cur, fitted, runUntil = 1, k.s.weather, false, nil
+    local function fit(w, t)
+      local T = weather.temperature(r.temps, ds, t)
+      local tod = (r.gameStart + t / ds) % 1
+      if w == "fog" then return T <= 12 and (tod >= 0.25 and tod < 0.875) end
+      if w == "snow" then return T < 2 end
+      if w == "rain" or w == "storm" then return T > 1 end
+      return true
+    end
+    for t = from, to - 1 do
+      while r.changes[ci] and r.changes[ci].at <= t + 1e-9 do
+        local ch = r.changes[ci]
+        if ch.cross then
+          assertEq(fit(cur, ch.at - 1e-3) and fit(cur, ch.at + 1e-3), false)
+        end
+        cur, fitted, runUntil = ch.to, false, ch.at + weather.CHANGE_SECONDS
+        ci = ci + 1
+      end
+      if runUntil and t >= runUntil then runUntil, fitted = nil, fit(cur, t) end
+      if not runUntil then
+        if fitted then
+          local nxt = r.changes[ci]
+          if not (nxt and nxt.at <= t + 1) then assertEq(fit(cur, t), true) end
+        elseif fit(cur, t) then fitted = true end
+      end
+    end
+  end
 end)
