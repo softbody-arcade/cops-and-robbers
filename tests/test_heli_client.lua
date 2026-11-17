@@ -2607,6 +2607,65 @@ test("a fly-away that resumes into a road search keeps its drift in the aim", fu
   c = drive(c, c + 3, vec3(10, 0, 0), opts, g.check, true)
 end)
 
+local function junctionOpts()
+  local points, edges = {}, {}
+  for i = -9, 40 do points[i] = { (i - 1) * 100, 0, 0 } end
+  for i = -9, 39 do edges[#edges + 1] = { i, i + 1 } end
+  for k = 1, 20 do points["b" .. k] = { 300, k * 100, 0 } end
+  edges[#edges + 1] = { 4, "b1" }
+  for k = 1, 19 do edges[#edges + 1] = { "b" .. k, "b" .. (k + 1) } end
+  local g = roads(points, edges)
+  return { roads = function() return g end }
+end
+
+local function finite(p, msg)
+  for _, n in ipairs({ p.x, p.y, p.z }) do
+    assertEq(n == n and n ~= math.huge and n ~= -math.huge, true, msg)
+  end
+end
+
+test("a night road search never jumps the aim at a route change, and aims within range while it waits", function()
+  load()
+  state.random = seeded(56)
+  pos = vec3(0, 0, 0)
+  local opts = junctionOpts()
+  local c = loseDriving(0, vec3(10, 0, 0), opts, nil, true)
+  local run, f = state.search.run, state.flight
+  assertEq(state.search.mode, "road")
+  assertEq(#run.routes, 3)
+  local g = aimGuard(c)
+  g.speed = 76.5
+  local index, changes, waits = 1, 0, 0
+  nightRun(c, c + 240, opts, function(t)
+    g.check(t)
+    finite(state.aimPos, tostring(t))
+    finite(f.pos, tostring(t))
+    finite(f.vel, tostring(t))
+    if state.search.mode ~= "road" then return end
+    finiteLead(f)
+    if run.index ~= index then index, changes = run.index, changes + 1 end
+    if run.waiting then
+      waits = waits + 1
+      local d = dist3(state.aimPos, state.lightPos)
+      assertEq(d <= heli.RANGE_MAX, true, string.format("%.2f: the aim is %.1f m from the light", t, d))
+    end
+  end)
+  assertEq(changes, 2)
+  assertEq(waits > 100, true, tostring(waits))
+  assertEq(state.search.mode, "contain")
+  assertEq(g.switches >= 2 * changes + 1, true, tostring(g.switches))
+end)
+
+test("on a road search without an aim point the light aims at the search point, never at the car", function()
+  local c, opts = roadNight(57)
+  c = drive(c, c + 6 * heli.AIM_SWITCH_SECONDS, vec3(10, 0, 0), opts, nil, true)
+  require("copsAndRobbers/heliSearch").roadAim = function() return nil end
+  drive(c, c + 0.05, vec3(10, 0, 0), opts, nil, true)
+  local f = state.flight
+  assertEq(horiz(state.aimPos, f.lead) < 1, true, tostring(horiz(state.aimPos, f.lead)))
+  assertEq(horiz(state.aimPos, pos) > 30, true, tostring(horiz(state.aimPos, pos)))
+end)
+
 test("a runner under 5 m/s gets containment at the car", function()
   load()
   state.random = seeded(41)
@@ -2806,7 +2865,7 @@ test("after the last route it contains at the origin", function()
   assertEq(state.search.mode, "road")
   assertEq(#state.search.run.routes, 2)
   local containAt
-  flyTo(c, c + 60, opts, nil, nil, function(t)
+  drive(c, c + 60, vec3(0, 10, 0), opts, function(t)
     if state.search.mode == "contain" then
       containAt = containAt or t
       assertEq(f.lead, nil)
@@ -2818,6 +2877,33 @@ test("after the last route it contains at the origin", function()
   end)
   assertEq(containAt ~= nil, true)
   assertEq(state.retargetAt, containAt)
+  assertEq(horiz(f.spot, pos) > 500, true, tostring(horiz(f.spot, pos)))
+end)
+
+test("a tunnel's road out with no routes keeps the last candidate, never the car", function()
+  load()
+  state.random = seeded(59)
+  pos = vec3(129, 0, 0)
+  local g = straight(1, 20)
+  local opts = { roads = function() return g end, roofedAt = inTunnel }
+  local c0 = loseDriving(0, vec3(20, 0, 0), opts)
+  local s = state.search
+  assertEq(s.mode, "tunnel")
+  assertEq(#s.list, 2)
+  samePos(s.list[2].pos, vec3(0, 0, 0), 1e-9)
+  local f, contained = state.flight, false
+  drive(c0, c0 + 60, vec3(0, 20, 0), opts, function(t)
+    if state.search.mode == "contain" then
+      contained = true
+      samePos(f.spot, vec3(0, 0, 0), 1e-9, tostring(t))
+    end
+    assertEq(f.spot ~= nil, true, tostring(t))
+    assertEq(horiz(f.spot, pos) > 1, true, tostring(t))
+  end)
+  assertEq(contained, true)
+  assertEq(state.tunnelLogged, nil)
+  assertEq(state.search.run, nil)
+  samePos(state.search.origin, vec3(0, 0, 0), 1e-9)
 end)
 
 test("a 2 km car jump shifts the road search with the car", function()
@@ -2956,6 +3042,22 @@ test("the road out of the last candidate heads along its last edge, or away from
   local function entrance(p) return p.x > 90 and p.x < 350 and math.abs(p.y) < 1 end
   last = roadOut(straight(-9, 20), entrance, vec3(74, 0, 0))
   samePos(last, vec3(-1000, 0, 0), 1e-9)
+end)
+
+test("the road out of the last candidate never flies back into the tunnel", function()
+  load()
+  state.random = seeded(58)
+  pos = vec3(129, 0, 0)
+  local opts = tunnelOpts()
+  local c0 = loseDriving(0, vec3(20, 0, 0), opts)
+  flyTo(c0, c0 + 40, opts)
+  local s = state.search
+  assertEq(s.mode, "road")
+  samePos(s.origin, vec3(0, 0, 0), 1e-9)
+  assertEq(#s.run.routes, 1)
+  for _, route in ipairs(s.run.routes) do
+    for _, p in ipairs(route.points) do assertEq(inTunnel(p), false, tostring(p.x)) end
+  end
 end)
 
 local function guidedCar(v)
@@ -3149,6 +3251,23 @@ test("an exit that appears and goes restarts the circle, the sweep and the retar
   v.vel = vec3(5, 0, 0)
   c = guidedDrive(c, c + 1.1, v, car, opts)
   samePos(f.spot, pos, 1e-9)
+end)
+
+test("a 2 km car jump while guided in a tunnel moves the exit with the car", function()
+  local opts = tunnelOpts()
+  local v, car, c = guidedStart(71, vec3(150, 0, 0), vec3(10, 0, 0), opts)
+  local f = state.flight
+  c = guidedDrive(c, c + 1.5, v, car, opts)
+  samePos(f.spot, vec3(400, 0, 0), 1e-9)
+  local retarget = state.retargetAt
+  pos = vec3(pos.x + 2000, pos.y, pos.z)
+  local exit = vec3(400 + 2000 + 10 * 0.05, 0, 0)
+  guidedDrive(c, c + 0.3, v, car, opts, function(t)
+    samePos(f.spot, exit, 1e-9, tostring(t))
+    samePos(state.guidedExit, exit, 1e-9, tostring(t))
+    samePos(state.guidedList[1].pos, exit, 1e-9, tostring(t))
+    assertEq(state.retargetAt, retarget, tostring(t))
+  end)
 end)
 
 test("guidance ending inside starts the timed watch from that moment", function()

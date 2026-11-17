@@ -21,7 +21,7 @@ local hiding = require("copsAndRobbers/hiding")
 local playerSettings = require("copsAndRobbers/playerSettings")
 local ownLights = require("copsAndRobbers/ownLights")
 
-local CLIENT_VERSION = "2.9.5"
+local CLIENT_VERSION = "2.10.0"
 local LIGHTS_OFF = "electrics.set_lightbar_signal(0)"
 local SETUP_DELAY = 0.5
 local PLACEMENT_TIMEOUT = 5
@@ -57,6 +57,7 @@ local lastGeoSent = 0
 local chaseStart
 local lastStatusAt = 0
 local infoParts
+local infoSeenAt
 local pendingPlacement
 local rebuildId
 local suppressResetUntil = 0
@@ -120,7 +121,7 @@ local function startStatus()
   statusActive = true
   chaseStart = clock
   lastStatusAt = 0
-  infoParts, infoTag = nil, nil
+  infoParts, infoTag, infoSeenAt = nil, nil, nil
 end
 
 local function onSetupAI(data)
@@ -145,8 +146,16 @@ local function setupPosition(d)
     if not pos then return resume, nil end
     return pos, rot
   end
-  if role ~= "cop" or d.inPlace then return nil end
+  if d.inPlace then return nil end
   local own = ownVehicle()
+  if role == "runner" then
+    local at = own and own:getPosition()
+    if not at then return nil end
+    local pos, rot = roads.nearestRoad(at, own:getDirectionVector())
+    if not pos then hudfeed.event("No road found nearby, you start where you are", clock, "warn") end
+    return pos, rot
+  end
+  if role ~= "cop" then return nil end
   local runner = d.runnerGeo and geo.toGame(d.runnerGeo) or (d.runnerPos and vec3(d.runnerPos.x, d.runnerPos.y, d.runnerPos.z))
   local center = runner or (own and own:getPosition())
   local runnerCar = runner and not d.geo and runnerObject()
@@ -386,6 +395,7 @@ local function onLastSeen(data)
   local d = jsonDecode(data) or {}
   local never, always = prefs.route == "never", prefs.route == "always"
   infoTag = d.live and "LIVE" or nil
+  infoSeenAt = nil
   if never then
     if routeDrawn then
       geo.clearRoute()
@@ -398,7 +408,7 @@ local function onLastSeen(data)
       geo.clearRoute()
       routeDrawn = false
     end
-    infoTag, infoParts = "IN SIGHT", nil
+    infoTag, infoParts, infoSeenAt = "IN SIGHT", nil, nil
     return
   end
   if inSight then infoTag = "IN SIGHT" end
@@ -409,6 +419,7 @@ local function onLastSeen(data)
       routeDrawn = true
       local info = geo.gpsInfo()
       infoParts = info or infoParts
+      infoSeenAt = not d.live and info and clock or nil
       return
     end
     if core_groundMarkers then
@@ -421,6 +432,7 @@ local function onLastSeen(data)
     local here = veh:getPosition()
     local meters = math.floor(here:distance(target) + 0.5)
     infoParts = { before = d.live and "Runner" or "Runner seen", meters = meters, after = geo.compass(here, target) }
+    infoSeenAt = not d.live and clock or nil
   end
 end
 
@@ -517,6 +529,7 @@ local function endRound(leaving)
   statusActive = false
   infoParts = nil
   infoTag = nil
+  infoSeenAt = nil
   spotted, nearestParts = nil, nil
   runnerId = nil
   evolving = false
@@ -898,7 +911,7 @@ local function onUpdate(dtReal)
   updateGpsInfo()
   hudfeed.update(clock, {
     active = active, role = role, chaseStart = statusActive and chaseStart or nil,
-    resetAllowed = resetAllowed, resetHint = lastHint, penalty = penaltyActive, infoParts = infoParts, infoTag = infoTag,
+    resetAllowed = resetAllowed, resetHint = lastHint, penalty = penaltyActive, infoParts = infoParts, infoSeenAt = infoSeenAt, infoTag = infoTag,
     timer = timerEnd and { label = timerLabel, endsAt = timerEnd } or nil,
   })
 end

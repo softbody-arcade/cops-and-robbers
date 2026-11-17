@@ -194,7 +194,7 @@ local function push(clock, info)
   end
   guihooks.trigger("CnRHud", hud.payload(state, clock, {
     active = info.active, role = info.role, chaseStart = info.chaseStart,
-    resetAllowed = info.resetAllowed, resetHint = info.resetHint, penalty = info.penalty, infoParts = info.infoParts, units = units.read(), infoTag = info.infoTag,
+    resetAllowed = info.resetAllowed, resetHint = info.resetHint, penalty = info.penalty, infoParts = info.infoParts, infoSeenAt = info.infoSeenAt, units = units.read(), infoTag = info.infoTag,
     timer = info.timer, flash = flash, prep = prep, events = events, resetFlashUntil = resetFlashUntil,
     change = change, applying = applying, releaseAt = releaseAt, heli = heli,
     result = result, rules = rules, lobby = lobby, color = color, settings = prefs, warnings = M.warnings(), apps = appsOpen, helpOpen = helpOpen,

@@ -1,4 +1,4 @@
-# Cops and Robbers 2.9.5: features
+# Cops and Robbers 2.10.0: features
 
 A BeamMP server plugin with a client mod that BeamMP downloads automatically. The mod enforces the group's cops-and-robbers rules. It is one mod for every map, and it switches to geo mode on BeamNG.Earth by itself.
 
@@ -8,7 +8,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 
 | Step | What happens |
 |---|---|
-| Start round | Picks a random car (a car model first, each equally likely, then one of its configs; with mod vehicles on, only mod cars the server provides) or the evolving build. Everyone gets the same one. Cops are placed on a road 50–150 m by road from the runner, facing toward the runner. Everyone is frozen. |
+| Start round | Picks a random car (a car model first, each equally likely, then one of its configs; with mod vehicles on, only mod cars the server provides) or the evolving build. Everyone gets the same one. Cops are placed on a road 50–150 m by road from the runner, facing toward the runner, and the runner is moved to the nearest road, facing the way their car was pointing (in practice they stay where they are). Everyone is frozen. |
 | Prep | No time limit. Everyone sees only their role (and cops the runner's name) and "Waiting for the host to press GO". Colors come from the Settings card only: the game's parts and paint menu is closed for everyone (except the runner in evolving mode, for their one change). A parts change the mod didn't make is shown to everyone as a notice (with the slots that changed), but not undone. New car picks another car (random mode). Once a player's car is placed, their game spawns its traffic (see Traffic), which stands still until GO. |
 | Apply change (evolving only, the runner's HUD button) | Locks in the runner's change and rebuilds every car; the screen shows APPLYING CHANGES until everyone has loaded (at most 20 s). |
 | GO | "Runner starts in 3", then the runner is released. |
@@ -41,7 +41,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 ### Resets
 - **When a reset is allowed:**
   - at a gas station, when standing still
-  - after standing still for 7 s anywhere
+  - after standing still for 7 s anywhere; rocking in place (within 3 m, such as on your side) still counts
   - for a cop who is 1 km or more from the runner, at any time
   - for the runner, once, right after a cop crashes into them (the cop at fault): a free reset without standing still, while that cop serves the crash penalty. It isn't allowed while the runner is being caught, and using it (or any reset) ends it. The HUD shows "Free reset (cop crashed into you)".
 - **When a reset is not allowed:**
@@ -61,6 +61,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Server checks:**
   - a reset that slips through anyway is shown to everyone as "reset illegally" (with 1.5 s of grace for latency)
   - any position jump that no allowed reset explains is shown as "teleported"
+  - the server log notes each round setup sent, each refused car with its model and vid (at most once per 10 s per player), each spawn and edit of a car that is being placed, each placement report, each teleport with its distance and each crash penalty
 
 ### Crash penalty (cops)
 - A cop who loses 50 km/h within 0.5 s (about 2.8 G on average) gets frozen for 10 s.
@@ -92,13 +93,15 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Line of sight:** each cop's game checks 4 times a second whether it can see the runner: rays from eye height to the runner's car, blocked by terrain and buildings (not by other cars), up to `sightMaxMeters` (400 m), mirrors included.
   - While any cop sees the runner, every cop gets the runner's position live (every second, every 3 s on BeamNG.Earth): "Runner 640 m NE · live".
   - A cop who sees the runner and is within their own speed × 5 s (at least 50 m) gets no route and reads "IN SIGHT". This is the Out of sight default: a cop's Route to the runner setting can keep the route while in sight (Always) or turn it off (Never).
-  - When the runner stops being spotted (no cop has sight and the helicopter isn't tracking, after a 1.5 s grace), one "last seen" ping goes out at that spot: a route line on the road and minimap with "Runner seen 640 m NE", or on BeamNG.Earth a destination in its own GPS ("Runner last seen"). There are no other pings.
+  - When the runner stops being spotted (no cop has sight and the helicopter isn't tracking, after a 1.5 s grace), one "last seen" ping goes out at that spot: a route line on the road and minimap with "Runner seen 640 m NE · 12 s ago" (the age counts up, in minutes after the first minute), or on BeamNG.Earth a destination in its own GPS ("Runner last seen"). There are no other pings.
   - The client log notes each change ("runner in sight (120 m)"), handy to check what blocks sight on BeamNG.Earth.
 - **Runner:** sees "SPOTTED" or "HIDDEN" plus "Nearest cop 1.2 km", which updates every 30 s and with every live update. The runner never sees the cops on the minimap or by name tag for the whole round (a cop car that turns up mid-round is hidden within a second; the minimap part is skipped on BeamNG.Earth); cops still see each other.
 - **Cop placement:** cops start a short drive from the runner (by road, following one-way roads), facing toward the runner, and spread out so they do not overlap. The search widens until it covers at least 2 km by road. On a divided road with a narrow median (up to 5 m), the runner counts as being on the carriageway its car points along, even when the other one is a little closer. A runner on a piece of road that isn't connected to the rest gets cops placed by straight-line distance, still at least the minimum start distance away and never on a gated road or a private road behind one. If no road is found at all, the cop gets a notice and starts where they are.
+- **Runner placement:** at round start the runner's new car is placed on the nearest road, facing the direction of that road closest to the way their car was heading, so nobody starts stuck on a wall or a rock or turned around. Practice rounds keep the runner where they are. If no road is found, the runner gets a notice ("No road found nearby, you start where you are") and starts where they are.
 - **Late joiners and reconnects:**
   - Someone who joins mid-round becomes a cop.
   - A cop who reconnects comes back near the road where they left.
+  - The mod's own move of their car into the round is never a teleport, an illegal reset or a crash: the server holds those checks until their game reports the car placed, and for 3 s after (at most 1 minute without a report).
 
 ## Police helicopter and hiding
 
@@ -107,18 +110,21 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Tracking:** while it is up and sees the runner, every cop gets the runner's live position, like cop sight. With sight Off it still sends them.
 - **Cover:** the runner's game checks 4 times a second what the helicopter can see, up to 400 m away. The runner is lost after 2 s out of its sight in a row: behind buildings and hills, in tunnels and under covers, more than 400 m away, and while it flies in low. Then it searches. Before it arrives and while it refuels, nothing sees the runner. The moment it sees them again it tracks them at once, in any weather. If no cop sees the runner either, one last-seen ping goes out where the runner is when it gives up, about 2.5 s after they left its sight.
 - **Searching:** every flight starts searching. It finds the runner only by seeing them itself, within 400 m.
-  - It circles where it last knew the runner was, 60 m out and 50 m up: at arrival, where they were when it went up; after a refuel, where it last tracked them or the cops last guided it; when it loses them, where they were then.
-  - Lost in a tunnel, it waits at the exit ahead. Each game follows the road from the car in its direction of travel to where the road leaves the roof, up to 3 km. Turning around in the tunnel dodges it.
+  - **A moving runner** (5 m/s or more, not under a roof) gets a road search, at arrival, after a refuel and when it loses them. A search point flies at 45 m/s along the road ahead of where the runner was (2500 m), then along the best other branch at the first junction within 500 m (1500 m), then back (1000 m), and the helicopter follows it. At night the light sweeps across the road 60 m ahead of the point, 15 m to each side every 3 s; while the helicopter flies to the next road's start, it sweeps the ground 60 m ahead of the helicopter, toward that start. When the search is done it circles where it started.
+  - **Over a stopped runner** (under 5 m/s) it contains instead: it circles the spot.
+  - It starts at arrival where the runner was when it went up; after a refuel, where it last tracked them or the cops last guided it; when it loses them, where they were then.
+  - **Lost in a tunnel,** it watches each way out in turn for a set time: the straightest exit ahead first, then the others, then the entrance. Each watch lasts the way's length divided by the runner's speed (at least 10 m/s) times 1.5, from 15 s to 90 s. After the last one it does a road search out of the tunnel, ahead and along the best other branch but not back into it. Each game follows the road from the car through the tunnel up to 3 km.
+  - **Guided in a tunnel:** while a cop sees the runner inside a tunnel, it waits at the exit ahead, and follows U-turns and branches the cops see.
   - While any cop sees the runner, it flies to them and circles them. It still says SEARCHING until it sees them itself. AI cops don't guide it.
   - At night its light keeps sweeping: a spiral around the spot, out to 150 m and back in, on the ground.
 - **Weather:** grounded for the whole round in storm, fog and snow, read from the round's sky when the cops are released. It never arrives then. Rain doesn't affect it.
 - **HUD:** everyone sees its state: "HELICOPTER IN 0:45", "HELICOPTER 1:20" or "HELICOPTER SEARCHING 1:20" (no time when refuel is 0), "HELICOPTER REFUELLING 0:30" or "HELICOPTER GROUNDED (FOG)".
-- **Searchlight (night only):** while it is up at night, a searchlight hangs from the helicopter. While it tracks, the light keeps its spot on the runner's car with small corrections, as an operator would. While it searches, the light sweeps around the spot. The helicopter really flies, in every game: it trails a moving car about 25 m behind, 15 m to one side and 50 m up, swings wide on turns, circles a stopped car at 30 m, flies in from 300 m out and flies away on refuel. The light casts shadows, so a bridge deck or tunnel roof blocks it. It stays on while the helicopter searches, and when the helicopter finds or loses the runner the spot swings over smoothly.
+- **Searchlight (night only):** while it is up at night, a searchlight hangs from the helicopter. While it tracks, the light keeps its spot on the runner's car with small corrections, as an operator would. While it searches, the light sweeps around the spot. The helicopter really flies, in every game: it trails a moving car 40 m behind, 60 m to one side and 100 m up, swings wide on turns, circles a stopped car at 80 m, flies in from 300 m out and flies away on refuel. The light casts shadows, so a bridge deck or tunnel roof blocks it. It stays on while the helicopter searches, and when the helicopter finds or loses the runner the spot swings over smoothly.
   - **Beam in the air:** a soft, see-through cone from the light down to the lit spot, drawn with the game's debug drawer. It is faint on a clear night (strength 0.06), stronger in cloud (0.12) and clearest in rain (0.2), and it fades in and out with the light. A bridge deck or tunnel roof over the lit spot ends it, and it fades out near the camera so you never see a sheet up close.
   - **Glare:** the light has a soft halo, so you see where the helicopter is when you look up.
   - **Setting:** Searchlight beam in the player settings, on by default. Off removes the beam in the air on your game; the light and its glare stay.
   - There is no minimap ring or icon.
-- **Sound (day and night):** the rotor plays from the flying helicopter on every game, as a looping 3D sound, so you hear it long before you see it. The game's 3D audio fades it with distance (reference distance 40 m, maximum distance 800 m), so the fly-in and the fly-away get louder and quieter by themselves.
+- **Sound (day and night):** the rotor plays from the flying helicopter on every game, as a looping 3D sound, so you hear it long before you see it. The game's 3D audio fades it with distance (reference distance 130 m, maximum distance 1500 m), so the fly-in and the fly-away get louder and quieter by themselves.
   - It never jumps up or cuts off: every rise is eased over 1 s (a new flight, joining mid-round, the setting turned on, a short refuel bringing it back). It fades out over the fly-away's last 3 s, and over 1 s whenever it stops otherwise. The round's end, a cancel, leaving and a map change remove it at once, and nothing is left after them or after a Lua reload.
   - On a cop's game, if the runner's car is missing for more than 2 s, it fades out, and back in when the car is back.
   - When something solid is between your camera and the helicopter, it is muffled to half over 0.5 s, and comes back when the view is clear.
@@ -223,7 +229,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Lobby card** (between rounds): "Cops and Robbers", the number online, "Waiting for the host to start a round" or "Practice round: Bob", and the buttons Settings, How to play, Leaderboard, Host panel and Hide (Leaderboard and Host panel open and close those apps and show when they are open). Standing problems show as a yellow line.
 - **Hide:** for players just driving between rounds. It folds the lobby card into a small "Cops and Robbers" tab with an up arrow at the same place, and clicking the tab brings the card back. Notices and the yellow warning lines still show above the tab, an open Leaderboard or Host panel stays open, and Settings opens only from the full card. The choice is saved with the personal settings (`hudHidden` in `settings/cnr_settings.json`), so it lasts over a restart and a rejoin. Prep, the chase and the result (also of your own practice round) always show in full, and the lobby after them goes back to your choice.
 - **Prep:** the role in the centre ("YOU'RE THE RUNNER" in red, "YOU'RE A COP" in blue, with "Bob is the runner" for cops) and the car's name, no rule text. At the bottom "Waiting for the host to press GO" with Settings, How to play and Host panel buttons.
-- **Chase line:** role chip, survival time (`3:12 / 10:00` with a time limit), SPOTTED or HIDDEN for the runner (IN SIGHT, live or last seen for cops), the nearest cop or the cop's distance and direction, and the reset status ("Reset ready", "Stay still 4 s to reset", "Can't reset while being caught"). The distance is shown in the mono font. No key is named, because players use different reset buttons. Pressing reset when it is not allowed briefly highlights the line.
+- **Chase line:** role chip, survival time (`3:12 / 10:00` with a time limit), SPOTTED or HIDDEN for the runner (IN SIGHT, live or last seen for cops), the nearest cop or the cop's distance and direction (for a last-seen point also how long ago it was seen), and the reset status ("Reset ready", "Stay still 4 s to reset", "Can't reset while being caught"). The distance is shown in the mono font. No key is named, because players use different reset buttons. Pressing reset when it is not allowed briefly highlights the line.
 - **Catch bar:** shown while the catch timer is running. It is red with "BEING CAUGHT" for the runner and blue with "HOLDING RUNNER" for cops, uses 1% steps, and moves smoothly between server updates.
 - **Countdowns:** "RUNNER STARTS IN", "COPS RELEASED IN" and "CRASH PENALTY" over a large number; then "GO! RUN!" (runner), "GO!" (cops) and "PENALTY OVER", each for 2 s. During the head start the runner's chase line shows "Cops released in N".
 - **Notices:** an icon and one line above the chase line (or the lobby card or its tab), 4 s each, at most 2 at once. Yellow for rule breaks and personal warnings ("Bob: crash penalty 10s", "Ann reset illegally", "Ann teleported", "Ann changed parts during the round: engine, intake", "Only the round car is allowed", no road found, could not spawn AI, no vehicles), white for information (build changes).
@@ -266,8 +272,8 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | `catchHoldSeconds` | 7 | How long the runner must be held |
 | `catchRadiusMeters` | 10 | Distance at which a cop is holding the runner |
 | `catchMaxSpeedKmh` | 3 | Runner speed below which they count as held |
-| `resetWaitSeconds` | 7 | Stand still this long to reset anywhere |
-| `stillMaxSpeedKmh` | 1 | "Standing still" threshold |
+| `resetWaitSeconds` | 7 | Stand still this long to reset anywhere; rocking in place (within 3 m) still counts |
+| `stillMaxSpeedKmh` | 1 | "Standing still" threshold; it only sets where the 7 s wait starts, after that staying within 3 m counts |
 | `gasStationRadiusMeters` | 25 | Gas station reset area |
 | `copResetMinDistanceMeters` | 1000 | Cops this far from the runner may always reset and get no crash penalty |
 | `copSpawnMinMeters` / `copSpawnMaxMeters` | 50 / 150 | Cop start distance from the runner, by road |

@@ -2,8 +2,8 @@ local M = {}
 
 M.NAME = "cnr_heli_sound"
 M.FILE = "/art/sound/cnr/heli_rotor.ogg"
-M.REF_DISTANCE = 40
-M.MAX_DISTANCE = 800
+M.REF_DISTANCE = 130
+M.MAX_DISTANCE = 1500
 M.FADE_IN_SECONDS = 1
 M.FADE_OUT_SECONDS = 1
 M.MUFFLED = 0.5
@@ -53,9 +53,15 @@ end
 local function create(p)
   local obj = createObject("SFXEmitter")
   if Sim and Sim.upcast then obj = Sim.upcast(obj) end
-  for _, f in ipairs(FIELDS) do obj:setField(f[1], 0, f[2]) end
-  obj.canSave = false
-  obj:registerObject(M.NAME)
+  local ok, err = pcall(function()
+    for _, f in ipairs(FIELDS) do obj:setField(f[1], 0, f[2]) end
+    obj.canSave = false
+    obj:registerObject(M.NAME)
+  end)
+  if not ok then
+    pcall(function() obj:delete() end)
+    error(err, 0)
+  end
   if not scenetree.findObject(M.NAME) then
     obj:delete()
     error("rotor sound did not register", 0)

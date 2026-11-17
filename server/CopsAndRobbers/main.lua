@@ -15,7 +15,7 @@ local panel = require("cnr.panel")
 local sky = require("cnr.sky")
 local traffic = require("cnr.traffic")
 
-local VERSION = "2.9.5"
+local VERSION = "2.10.0"
 local PREFIX = "[CnR] "
 local dataDir = pluginDir .. "data/"
 local stationsDir = dataDir .. "stations/"
@@ -59,6 +59,8 @@ local GEO_RESET_VERDICT_DELAY = 1
 local GEO_LIVE_MIN_SECONDS = 3
 local lastLiveSentAt = -math.huge
 local pendingResetVerdicts = {}
+local REFUSAL_LOG_SECONDS = 10
+local refusalLoggedAt = {}
 local colorStore = {}
 local serverClock = MP.CreateTimer()
 
@@ -504,6 +506,7 @@ local function applyEffects(effects)
     if e.kind == "reply" then
       reply(e.pid, e.msg, e.tone)
     elseif e.kind == "broadcast" then
+      if e.meters then log(string.format("%s %.0f m", e.msg, e.meters)) end
       if e.to then notify(e.to, e.msg, e.tone) else broadcast(e.msg, e.tone) end
     elseif e.kind == "pickVehicle" then
       send(e.pid, "cnr_pickVehicle", { includeMods = cfg.includeModVehicles, excludedModels = cfg.excludedModels })
@@ -517,6 +520,7 @@ local function applyEffects(effects)
       local resumeGeo
       if geoMode and e.resumePos then resumeGeo = lastGeoByName[MP.GetPlayerName(e.pid) or ""] end
       placing(e.pid)
+      log(string.format("setup sent to %s: %s, %s%s", MP.GetPlayerName(e.pid) or tostring(e.pid), e.role, tostring(e.phase), e.resumePos and ", resuming" or ""))
       send(e.pid, "cnr_roundSetup", {
         geo = geoMode, runnerGeo = geoMode and geoPoint(geoOf(current.runnerId)) or nil,
         resumeGeo = resumeGeo,
@@ -547,7 +551,9 @@ local function applyEffects(effects)
     elseif e.kind == "runnerGo" then
       send(e.to or -1, "cnr_runnerGo", { headStartSeconds = e.headStartSeconds })
     elseif e.kind == "penalty" then
-      send(current.test and current.issuerId or -1, "cnr_notice", { msg = string.format("%s: crash penalty %gs%s", tostring(e.name), e.seconds, e.cause == "traffic" and " (traffic)" or ""), tone = "warn", about = e.pid })
+      local msg = string.format("%s: crash penalty %gs%s", tostring(e.name), e.seconds, e.cause == "traffic" and " (traffic)" or "")
+      log(msg)
+      send(current.test and current.issuerId or -1, "cnr_notice", { msg = msg, tone = "warn", about = e.pid })
       if round.isAI(e.pid) then
         send(current.issuerId, "cnr_penalty", { seconds = e.seconds, aiId = e.pid })
       else
@@ -1113,10 +1119,10 @@ local function vehicleAllowed(pid, vid, data, isSpawn)
   end
   if not roundCarActive() or not current.players[pid] then return true end
   local decoded = parseVehicleData(data)
-  if not decoded or decoded.jbm ~= current.vehicle.model then return false end
+  if not decoded or decoded.jbm ~= current.vehicle.model then return false, decoded end
   local pcFile = type(decoded.vcf) == "table" and decoded.vcf.partConfigFilename
-  if pcFile and not current.evolving and normalizeConfig(pcFile) ~= normalizeConfig(current.vehicle.config) then return false end
-  if isSpawn and not trafficOpen[pid] and firstVid(pid) and not (current.test and pid == current.issuerId) then return false end
+  if pcFile and not current.evolving and normalizeConfig(pcFile) ~= normalizeConfig(current.vehicle.config) then return false, decoded end
+  if isSpawn and not trafficOpen[pid] and firstVid(pid) and not (current.test and pid == current.issuerId) then return false, decoded end
   return true, decoded
 end
 
@@ -1145,8 +1151,22 @@ local function tracksActive(pid)
   return current:isActive() and not (current.test and pid == current.issuerId)
 end
 
+local function logVehicle(pid, action, vid, allowed, decoded)
+  if allowed then
+    if not decoded or not current:isPlacing(now(), pid) then return end
+  else
+    local last = refusalLoggedAt[pid]
+    if last and now() - last < REFUSAL_LOG_SECONDS then return end
+    refusalLoggedAt[pid] = now()
+  end
+  log(string.format("%s %s %s (vid %s): %s", MP.GetPlayerName(pid) or tostring(pid), action,
+    tostring(decoded and decoded.jbm or "?"), tostring(vid), allowed and "allowed" or "refused"))
+end
+
 function cnrOnVehicleSpawn(pid, vid, data)
-  if not vehicleAllowed(pid, vid, data, true) then
+  local allowed, decoded = vehicleAllowed(pid, vid, data, true)
+  logVehicle(pid, "spawned", vid, allowed, decoded)
+  if not allowed then
     refuse(pid, "Only the round car is allowed")
     return 1
   end
@@ -1156,6 +1176,7 @@ end
 
 function cnrOnVehicleEdited(pid, vid, data)
   local allowed, decoded = vehicleAllowed(pid, vid, data, false)
+  logVehicle(pid, "edited", vid, allowed, decoded)
   if not allowed then
     refuse(pid, "Only the round car is allowed")
     return 1
@@ -1221,6 +1242,7 @@ end
 
 function cnrOnPlayerDisconnect(pid)
   stationsRequested[pid] = nil
+  refusalLoggedAt[pid] = nil
   panelSubs[pid] = nil
   boardSubs[pid] = nil
   local name = MP.GetPlayerName(pid)
@@ -1245,6 +1267,8 @@ function cnrOnMyVehicle(pid, data)
   if not vid or not current:isActive() then return end
   activeVid[pid] = vid
   placed(pid)
+  log(string.format("%s placed the round car (vid %s)", MP.GetPlayerName(pid) or tostring(pid), tostring(vid)))
+  applyEffects(current:vehiclePlaced(now(), pid))
   applyEffects(current:vehicleReady(now(), pid, tonumber(decoded.rebuild)))
   if not current.test and not trafficOpen[pid] then
     local vehicles = MP.GetPlayerVehicles(pid)

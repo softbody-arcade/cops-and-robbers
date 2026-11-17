@@ -52,6 +52,8 @@ local function carVelocity(state, target, car, dt, clock)
     local k = state.lastKnown
     if k then state.lastKnown = moved(k, jx, jy, jz) end
     shiftSearch(state.search, jx, jy, jz)
+    if state.guidedExit then state.guidedExit = moved(state.guidedExit, jx, jy, jz) end
+    for _, c in ipairs(state.guidedList or {}) do c.pos = moved(c.pos, jx, jy, jz) end
     state.jumpAt = clock
   end
   state.lastCar = vec3(car.x, car.y, car.z)
@@ -170,7 +172,7 @@ local function roadOut(state, s, here, opts)
     local dx, dy = b.pos.x - a.pos.x, b.pos.y - a.pos.y
     if dx ~= 0 or dy ~= 0 then dirX, dirY = dx, dy end
   end
-  local run = roadSearch.newRun(roadSearch.routes(here.pos, dirX, dirY, roads, state.seed))
+  local run = roadSearch.newRun(roadSearch.routes(here.pos, dirX, dirY, roads, state.seed, true))
   if #run.routes > 0 then return run end
 end
 
@@ -198,7 +200,10 @@ local function watchTick(state, f, s, clock, opts)
 end
 
 local function roadTick(state, f, s, dt, clock)
-  local p, v = roadSearch.step(s.run, f.pos, dt)
+  local run = s.run
+  local index, waiting = run.index, run.waiting
+  local p, v = roadSearch.step(run, f.pos, dt)
+  if run.index ~= index or run.waiting ~= waiting then state.sweepAt, state.retargetAt = clock, clock end
   if p then
     flight.lead(f, p, v)
     return
@@ -360,9 +365,10 @@ function M.tick(state, target, phase, last, clock, opts)
 end
 
 function M.roadAim(state, clock)
-  local s = state.search
-  if not (s and s.mode == "road" and s.run and s.run.routes[s.run.index]) then return nil end
-  return roadSearch.aimPoint(s.run, clock - (state.sweepAt or clock))
+  local s, f = state.search, state.flight
+  if not (f and s and s.mode == "road" and s.run and s.run.routes[s.run.index]) then return nil end
+  local p = f.pos
+  return roadSearch.aimPoint(s.run, clock - (state.sweepAt or clock), vec3(p.x, p.y, p.z - flight.HELI_HEIGHT))
 end
 
 function M.soundLevel(state, clock)

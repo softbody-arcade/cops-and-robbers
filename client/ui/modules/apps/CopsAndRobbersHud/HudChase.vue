@@ -22,7 +22,7 @@
       </span>
       <span v-if="status.info" class="item info">
         <BngIcon :type="role === 'runner' ? icons.carChase01 : icons.mapPoint" />
-        <span class="info-text"><span v-if="status.info.before">{{ status.info.before }}</span><span v-if="status.info.dist" class="mono">{{ status.info.before ? ' ' : '' }}{{ status.info.dist }}</span><span v-if="status.info.after">{{ status.info.before || status.info.dist ? ' ' : '' }}{{ status.info.after }}</span></span>
+        <span class="info-text"><span v-if="status.info.before">{{ status.info.before }}</span><span v-if="status.info.dist" class="mono">{{ status.info.before ? ' ' : '' }}{{ status.info.dist }}</span><span v-if="status.info.after">{{ status.info.before || status.info.dist ? ' ' : '' }}{{ status.info.after }}</span><span v-if="status.info.age">{{ ' · ' + status.info.age }}</span></span>
       </span>
     </div>
     <div v-if="bar && bar.visible" class="chase-catch" :class="'tone-' + barTone">

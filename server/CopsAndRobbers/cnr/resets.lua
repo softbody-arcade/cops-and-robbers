@@ -6,6 +6,7 @@ Tracker.__index = Tracker
 
 local GRACE_SECONDS = 1.5
 local FOLLOW_UP_SECONDS = 1
+local STILL_METERS = 3
 
 function M.atStation(pos, stations, cfg)
   for _, s in ipairs(stations or {}) do
@@ -16,7 +17,7 @@ function M.atStation(pos, stations, cfg)
 end
 
 function M.new(cfg)
-  return setmetatable({ cfg = cfg, stillSince = nil, lastAllowedAt = nil }, Tracker)
+  return setmetatable({ cfg = cfg, stillSince = nil, anchor = nil, lastAllowedAt = nil }, Tracker)
 end
 
 function Tracker:block(untilTime)
@@ -27,10 +28,12 @@ function Tracker:evaluate(now, car, ctx)
   local cfg = self.cfg
   if self.blockedUntil and now < self.blockedUntil then
     self.stillSince = nil
+    self.anchor = nil
     return false, string.format("Crash penalty %ds", math.ceil(self.blockedUntil - now - 1e-9))
   end
   if not car or not car.pos or not car.vel then
     self.stillSince = nil
+    self.anchor = nil
     return false, "Stop to reset"
   end
   if ctx.beingCaught then
@@ -42,11 +45,17 @@ function Tracker:evaluate(now, car, ctx)
   if ctx.role == "cop" and ctx.runnerPos and vec.dist(car.pos, ctx.runnerPos) >= cfg.copResetMinDistanceMeters then
     return true, "Reset available (far from runner)"
   end
-  if vec.speedKmh(car.vel) >= cfg.stillMaxSpeedKmh then
+  if self.anchor and vec.dist(car.pos, self.anchor) >= STILL_METERS then
     self.stillSince = nil
-    return false, "Stop to reset"
+    self.anchor = nil
   end
-  self.stillSince = self.stillSince or now
+  if not self.anchor then
+    if vec.speedKmh(car.vel) >= cfg.stillMaxSpeedKmh then
+      return false, "Stop to reset"
+    end
+    self.anchor = { x = car.pos.x, y = car.pos.y, z = car.pos.z }
+    self.stillSince = now
+  end
   if M.atStation(car.pos, ctx.stations, cfg) then
     return true, "Reset available (gas station)"
   end
@@ -81,6 +90,7 @@ function Tracker:consume(now)
     or (self.lastAllowedAt ~= nil and now - self.lastAllowedAt <= GRACE_SECONDS)
   self.lastAllowedAt = nil
   self.stillSince = nil
+  self.anchor = nil
   if legal then self.graceUntil = math.max(self.graceUntil or now, now + FOLLOW_UP_SECONDS) end
   return legal
 end

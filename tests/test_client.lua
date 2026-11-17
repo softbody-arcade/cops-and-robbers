@@ -549,6 +549,45 @@ test("a live update without route shows IN SIGHT, with route the live distance",
   assertEq(i2.before, "Runner seen"); assertEq(i2.dist, "640 m"); assertEq(i2.after, "N")
 end)
 
+test("a last-seen route point shows its age, counting up without a new ping", function()
+  local env = bootClient()
+  copInChase(env)
+  env.veh.pos = vec3(0, 0, 0)
+  env.fire("cnr_lastSeen", { pos = { x = 0, y = 640, z = 0 } })
+  env.tick(0.2)
+  assertEq(env.hud().status.info.age, "0 s ago")
+  env.tick(12)
+  assertEq(env.hud().status.info.age, "12 s ago")
+  env.fire("cnr_lastSeen", { pos = { x = 0, y = 640, z = 0 } })
+  env.tick(0.2)
+  assertEq(env.hud().status.info.age, "0 s ago")
+  env.tick(125)
+  assertEq(env.hud().status.info.age, "2 min ago")
+end)
+
+test("a live route point and an ended round show no age", function()
+  local env = bootClient()
+  copInChase(env)
+  env.veh.pos = vec3(0, 0, 0)
+  env.fire("cnr_lastSeen", { live = true, route = true, pos = { x = 0, y = 640, z = 0 } })
+  env.tick(0.2)
+  assertEq(env.hud().status.info.age, nil)
+  env.fire("cnr_lastSeen", { pos = { x = 0, y = 640, z = 0 } })
+  env.tick(0.2)
+  assertEq(env.hud().status.info.age, "0 s ago")
+  env.fire("cnr_lastSeen", { live = true, route = true, pos = { x = 0, y = 640, z = 0 } })
+  env.tick(5)
+  assertEq(env.hud().status.info.age, nil)
+  env.fire("cnr_lastSeen", { pos = { x = 0, y = 640, z = 0 } })
+  env.tick(0.2)
+  env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 3, runnerId = 2 })
+  env.tick(0.2)
+  assertEq(env.hud().status, nil)
+  copInChase(env)
+  env.tick(0.2)
+  assertEq(env.hud().status.info, nil)
+end)
+
 local function trackPaths(env)
   env.paths = {}
   _G.core_groundMarkers = { setPath = function(t) env.paths[#env.paths + 1] = t or false end }
@@ -2179,6 +2218,55 @@ test("a cop with no road near the runner is told they start where they are", fun
   }
   startCop(env)
   assertEq(noticeShown(env, "No road found near the runner, you start where you are"), true)
+end)
+
+local function runnerSetup(env)
+  local d = copy(SETUP); d.role = "runner"; d.runnerId = 1; d.runnerPos = nil
+  env.fire("cnr_roundSetup", d)
+  env.tick(1)
+end
+
+test("the runner starts on the nearest road", function()
+  local env = bootClient()
+  env.veh.pos = vec3(6, 100, 0)
+  runnerSetup(env)
+  assertEq(env.teleported, 1)
+  assertEq(env.veh.pos.x, 0)
+  assertEq(env.veh.pos.y, 60)
+end)
+
+test("the runner faces the way they were heading", function()
+  for _, case in ipairs({ { -1, -1 }, { 1, 1 } }) do
+    local env = bootClient()
+    local faced
+    _G.spawn.safeTeleport = function(veh, pos, rot) veh.pos = pos faced = rot end
+    env.veh.pos = vec3(6, 100, 0)
+    env.veh.getDirectionVector = function() return vec3(0, case[1], 0) end
+    runnerSetup(env)
+    assertEq(faced ~= nil and faced.dir.y * case[2] > 0.99, true)
+  end
+end)
+
+test("a runner far from any road stays in place with a notice", function()
+  local env = bootClient()
+  _G.map = {
+    getMap = function() return { nodes = {} } end,
+    getGraphpath = function() return { graph = {} } end,
+    findClosestRoad = function() return nil end,
+  }
+  env.veh.pos = vec3(500, 500, 0)
+  runnerSetup(env)
+  assertEq(env.veh.pos.x, 500)
+  assertEq(noticeShown(env, "No road found nearby, you start where you are"), true)
+end)
+
+test("a runner placed in place is not moved to a road", function()
+  local env = bootClient()
+  env.veh.pos = vec3(6, 100, 0)
+  local d = copy(SETUP); d.role = "runner"; d.runnerId = 1; d.inPlace = true
+  env.fire("cnr_roundSetup", d)
+  env.tick(1)
+  assertEq(env.veh.pos.y, 100)
 end)
 
 test("a car pick with no vehicles available gets a notice", function()

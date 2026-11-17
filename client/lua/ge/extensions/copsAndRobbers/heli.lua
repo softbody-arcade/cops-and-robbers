@@ -28,7 +28,6 @@ M.DEPART_FADE_SECONDS = flight.DEPART_FADE_SECONDS
 M.DEPART_AIM_DRIFT = 60
 M.FADE_SECONDS = 1.5
 M.FADEIN_SECONDS = 1
-M.JUMP_METERS = flight.JUMP_METERS
 M.MAX_STEP = flight.MAX_STEP
 M.LEFTOVER_INTERVAL = 1
 M.FLARE_TYPE = "BNG_LightFlare_1"
@@ -301,6 +300,8 @@ local function aimAt(state, f, carAim, extra, clock)
   elseif f.spot then
     local p = M.sweepPoint(f.spot, clock - (state.sweepAt or clock))
     x, y, z = groundedAim(state, p.x, p.y, f.spot.z, clock)
+  elseif f.lead then
+    x, y, z = groundedAim(state, f.lead.x, f.lead.y, f.lead.z, clock)
   else
     x, y, z = carAim.x, carAim.y, carAim.z
   end

@@ -54,7 +54,7 @@ Switch "Evolving car" on in the panel. Instead of a random car each round, every
 - **Colour:** a colour picker with a hex field, "No colour" and Done. The colour is used for every round car, repaints at once in prep and otherwise applies from the next round.
 - **Prep:** the centre shows your role ("YOU'RE THE RUNNER" or "YOU'RE A COP", and for cops the runner's name). The bottom shows "Waiting for the host to press GO" with the Settings, How to play and Host panel buttons. In evolving mode it shows the runner's queued change instead, with Apply change for the runner.
 - **Countdowns:** "RUNNER STARTS IN", "COPS RELEASED IN" and "CRASH PENALTY", then "GO!" or "PENALTY OVER".
-- **Chase:** role, time (with the time limit when there is one), SPOTTED or HIDDEN for the runner, IN SIGHT or live and last-seen positions for cops, the distance, and the reset status. A catch bar shows while the catch timer runs: red "BEING CAUGHT" for the runner, blue "HOLDING RUNNER" for cops.
+- **Chase:** role, time (with the time limit when there is one), SPOTTED or HIDDEN for the runner, IN SIGHT or live and last-seen positions for cops (with how long ago a last-seen point was), the distance, and the reset status. A catch bar shows while the catch timer runs: red "BEING CAUGHT" for the runner, blue "HOLDING RUNNER" for cops.
 - **Notices:** rule breaks (illegal resets, teleports, parts changes, crash penalties), build changes and personal warnings appear as short lines above the chase line or the lobby card (or its tab), at most two at a time.
 - **Result:** the title, the runner's time and who caught them, the map's top 3 and "Next round in N" with automatic rounds.
 
@@ -84,8 +84,8 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `catchHoldSeconds` | 7 | Time the runner must be held |
 | `catchRadiusMeters` | 10 | Cop distance (centre to centre) that counts as holding |
 | `catchMaxSpeedKmh` | 3 | Runner speed below which they count as held |
-| `resetWaitSeconds` | 7 | Stand still this long to reset anywhere |
-| `stillMaxSpeedKmh` | 1 | "Standing still" threshold |
+| `resetWaitSeconds` | 7 | Stand still this long to reset anywhere; rocking in place (within 3 m) still counts |
+| `stillMaxSpeedKmh` | 1 | "Standing still" threshold; it only sets where the wait starts, after that staying within 3 m counts |
 | `gasStationRadiusMeters` | 25 | Gas station reset area |
 | `copResetMinDistanceMeters` | 1000 | Cops this far from the runner may reset any time and get no crash penalty |
 | `copSpawnMinMeters` / `copSpawnMaxMeters` | 50 / 150 | Cop start distance from the runner, by road |
@@ -146,7 +146,7 @@ looked up and remembered by the server as they drive. Players need a BeamNG.Eart
 ## Credits
 
 The helicopter's rotor sound is "Helicopter Rotor Loop" by qubodup, https://freesound.org/people/qubodup/sounds/187681/, CC0
-(shipped as a mono OGG in `client/art/sound/cnr/heli_rotor.ogg`).
+(shipped as a mono OGG in `client/art/sound/cnr/heli_rotor.ogg`, made louder by +6 dB with a limiter).
 
 ## Development
 
