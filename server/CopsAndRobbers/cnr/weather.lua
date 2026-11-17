@@ -200,6 +200,9 @@ local function schedule(c, cfg, random, releaseAt, endAt)
 
   local function crossAt(x)
     add(x, CROSS[cur] or pick(random, LIFT), true)
+    if nextFill > 3 and points[nextFill - 2].t * ds >= x - 1e-9 then
+      points[nextFill - 1].c = M.fill(c, nextFill - 1, cur)
+    end
   end
 
   local function slotAt(x)

@@ -116,7 +116,7 @@ local function walk(roads, route, start, from, visited, dx, dy, cap, seed, junct
   end
 end
 
-function M.routes(origin, dirX, dirY, roads, seed, noBack)
+function M.routes(origin, dirX, dirY, roads, seed, noBack, blocked)
   local out = {}
   if origin == nil or roads == nil or roads.closest == nil or roads.links == nil or roads.nodes == nil then return out end
   local ox, oy, oz = origin.x, origin.y, origin.z
@@ -142,8 +142,15 @@ function M.routes(origin, dirX, dirY, roads, seed, noBack)
     return dx, dy
   end
 
+  local function fresh()
+    local set = {}
+    if blocked ~= nil then set[blocked] = true end
+    return set
+  end
+
   local junctions = {}
-  local visited = { [forward] = true }
+  local visited = fresh()
+  visited[forward] = true
   if other ~= nil then visited[other] = true end
   local ahead = newRoute(ox, oy, oz)
   local dx, dy = heading(forward)
@@ -156,7 +163,8 @@ function M.routes(origin, dirX, dirY, roads, seed, noBack)
       local alt = newRoute(junction.x, junction.y, junction.z)
       local pick = junction.list[2]
       local ax, ay = nodePos(nodes, pick.id)
-      local altVisited = { [junction.id] = true }
+      local altVisited = fresh()
+      altVisited[junction.id] = true
       if junction.from ~= nil then altVisited[junction.from] = true end
       walk(roads, alt, pick.id, junction.id, altVisited, ax - junction.x, ay - junction.y, M.ALT_LENGTH, seed)
       out[#out + 1] = alt

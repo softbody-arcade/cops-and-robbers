@@ -266,6 +266,28 @@ test("picking a vehicle sends an official car config", function()
   assertEq(s.model, "pickup"); assertEq(s.config, "vehicles/pickup/base.pc")
 end)
 
+local TYPE_CONFIGS = {
+  { model_key = "dumptruck", key = "a", Configuration = "A", Source = "BeamNG - Official", Type = "Heavy Machinery", pcFilename = "/vehicles/dumptruck/a.pc" },
+  { model_key = "flatbed", key = "t", Configuration = "T", Source = "BeamNG - Official", Type = "Trailer", pcFilename = "/vehicles/flatbed/t.pc" },
+  { model_key = "barrels", key = "p", Configuration = "P", Source = "BeamNG - Official", Type = "Prop", pcFilename = "/vehicles/barrels/p.pc" },
+}
+
+test("picking a vehicle allows heavy machinery, never props or trailers", function()
+  local env = bootClient({ configs = TYPE_CONFIGS })
+  for _ = 1, 20 do
+    env.fire("cnr_pickVehicle", { includeMods = false, excludedModels = {} })
+    assertEq(env.lastSent("cnr_vehiclePicked").model, "dumptruck")
+  end
+end)
+
+test("the build car list allows heavy machinery, never props or trailers", function()
+  local env = bootClient({ configs = TYPE_CONFIGS })
+  env.M.configs({ includeMods = false, excludedModels = {} })
+  local list = env.lastTrigger("CnRConfigs")
+  assertEq(#list, 1)
+  assertEq(list[1].model, "dumptruck")
+end)
+
 local function pickWith(configs, origins, data, randoms)
   local env = bootClient({ configs = configs, origins = origins })
   local calls, i = {}, 0
