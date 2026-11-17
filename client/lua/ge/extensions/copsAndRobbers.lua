@@ -225,6 +225,7 @@ local function onRoundSetup(data)
   inputs.setResetKey()
   local mayChange = d.phase == "prep" and evolving and role == "runner"
   inputs.setPartsMenu(mayChange)
+  inputs.setLightbarKeys(role == "runner")
   inputs.lockEditing(mayChange and "paint" or "all")
   checkBinding(true)
 
@@ -753,7 +754,8 @@ local function updateLightsAndPatch()
   if veh then
     veh:queueLuaCommand(inputs.VEHICLE_PATCH)
     local n = ownLights.lightbarSignal(role, statusActive, prefs.siren, sirensAllowed)
-    if n then veh:queueLuaCommand(n == 2 and ownLights.SIREN_ON or ownLights.LIGHTS_ONLY) end
+    if n == 0 then veh:queueLuaCommand(ownLights.LIGHTBAR_OFF)
+    elseif n then veh:queueLuaCommand(n == 2 and ownLights.SIREN_ON or ownLights.LIGHTS_ONLY) end
   end
   ai.lightsOn(sky.isNight())
 end
