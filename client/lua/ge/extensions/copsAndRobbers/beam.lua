@@ -17,7 +17,9 @@ M.RAY_INTERVAL = 0.25
 M.COLOR = { 217, 235, 255 }
 
 local ringX, ringY, ringZ = {}, {}, {}
-local verts, edgeDist, rungDist = {}, {}, {}
+local startX, startY, startZ, dirX, dirY, dirZ = {}, {}, {}, {}, {}, {}
+local normX, normY, normZ, planeDist, between = {}, {}, {}, {}, {}
+local verts, edgeDist, rungDist, rungSide = {}, {}, {}, {}
 
 function M.strength(weather, bright)
   return (M.STRENGTH[weather] or M.DEFAULT_STRENGTH) * math.max(0, math.min(1, bright))
@@ -43,6 +45,23 @@ local function sideLineDistances(camPos, sx, sy, sz, dx, dy, dz, tEnd, side)
   end
 end
 
+local function sidePlanes(camPos)
+  local sides = M.SIDES
+  for side = 1, sides do
+    local o = side % sides + 1
+    local ax, ay, az, bx, by, bz = dirX[side], dirY[side], dirZ[side], dirX[o], dirY[o], dirZ[o]
+    local nx, ny, nz = ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx
+    local ex, ey, ez = camPos.x - startX[side], camPos.y - startY[side], camPos.z - startZ[side]
+    local fx, fy, fz = camPos.x - startX[o], camPos.y - startY[o], camPos.z - startZ[o]
+    local off = nx * ex + ny * ey + nz * ez
+    planeDist[side] = off * off / (nx * nx + ny * ny + nz * nz)
+    local insideA = nx * (ay * ez - az * ey) + ny * (az * ex - ax * ez) + nz * (ax * ey - ay * ex)
+    local insideB = nx * (fy * bz - fz * by) + ny * (fz * bx - fx * bz) + nz * (fx * by - fy * bx)
+    between[side] = insideA > 0 and insideB > 0
+    normX[side], normY[side], normZ[side] = nx, ny, nz
+  end
+end
+
 local function rungDistances(camPos)
   local sides = M.SIDES
   for j = 0, M.SEGMENTS do
@@ -52,6 +71,7 @@ local function rungDistances(camPos)
       local ux, uy, uz = b.x - a.x, b.y - a.y, b.z - a.z
       local ex, ey, ez = camPos.x - a.x, camPos.y - a.y, camPos.z - a.z
       local l2 = ux * ux + uy * uy + uz * uz
+      rungSide[i] = normX[side] * (ey * uz - ez * uy) + normY[side] * (ez * ux - ex * uz) + normZ[side] * (ex * uy - ey * ux)
       local t = l2 > 0 and math.max(0, math.min(1, (ex * ux + ey * uy + ez * uz) / l2)) or 0
       ex, ey, ez = ex - ux * t, ey - uy * t, ez - uz * t
       rungDist[i] = ex * ex + ey * ey + ez * ez
@@ -76,9 +96,13 @@ local function buildLayer(light, aimZ, wx, wy, wz, lamp, tan, reach, camPos)
       local t = tEnd * j / segments
       verts[j * sides + side] = vec3(sx + dx * t, sy + dy * t, sz + dz * t)
     end
+    startX[side], startY[side], startZ[side], dirX[side], dirY[side], dirZ[side] = sx, sy, sz, dx, dy, dz
     if camPos then sideLineDistances(camPos, sx, sy, sz, dx, dy, dz, tEnd, side) end
   end
-  if camPos then rungDistances(camPos) end
+  if camPos then
+    sidePlanes(camPos)
+    rungDistances(camPos)
+  end
 end
 
 local function facesAway(a, b, c, d, camPos)
@@ -98,7 +122,12 @@ local function addQuads(out, n, strength, camPos)
       local ic, id = ib + sides, ia + sides
       local near = 1
       if camPos then
-        local m2 = math.min(edgeDist[ia], edgeDist[ib], rungDist[ia], rungDist[id])
+        local m2
+        if between[side] and rungSide[ia] > 0 and rungSide[id] < 0 then
+          m2 = planeDist[side]
+        else
+          m2 = math.min(edgeDist[ia], edgeDist[ib], rungDist[ia], rungDist[id])
+        end
         if m2 < far2 then near = math.max(0, (math.sqrt(m2) - M.NEAR) / span) end
       end
       local alpha = math.floor(full * near + 0.5)

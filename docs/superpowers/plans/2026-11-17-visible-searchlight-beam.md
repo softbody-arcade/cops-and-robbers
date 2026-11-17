@@ -187,8 +187,9 @@
     - D ≤ 1 m gives count 0 (the light at or inside something)
   - Alpha per quad: round(255 × strength × (1 − (1 − `GROUND`) × u) × near / `LAYERS`), where:
     - u is the quad's mid position along its side line, 0 to 1
-    - near = clamp((the camera's distance to the nearest of the quad's 4 edges − `NEAR`) / (`FAR` − `NEAR`), 0, 1), or 1 without a camera. The edges are its two side-line segments and its two rungs (ring segments).
-    - side lines: the camera is projected once per side line, and the parameter is clamped per segment; rungs: once per ring segment; squared distances, with a square root only for the nearest edge within `FAR`
+    - near = clamp((the camera's distance to the quad's surface − `NEAR`) / (`FAR` − `NEAR`), 0, 1), or 1 without a camera
+    - the distance is the in-plane one when the camera projects inside the quad, otherwise the nearest of its 4 edges (two side-line segments, two rungs). The quads between two neighbouring side lines share one plane through the cone's apex.
+    - per side pair: the plane normal, the camera's squared plane distance and side-line signs. Per side line: one projection, clamped per segment. Per rung: the distance and the in-plane sign. Squared distances, with a square root only for the nearest distance within `FAR`.
   - Quads with alpha < 1 are left out.
   - `both` is true without a camera. With a camera the winding is chosen so the quad faces the camera (one dot product), and `a..d` are in that order.
   - A zero-length axis gives an empty list.
@@ -216,7 +217,9 @@
     - **far ring:** for a 60° beam, every far-ring vertex has z = `aimPos.z` ± 1e-6
     - **low beam:** at 11° elevation, no vertex lies further than 2 × the axis length + 1e-6 from the light (straight-line distance)
     - **near camera:** with the camera at the aim point, no drawn quad has a vertex within 6 m of it
-    - **near edges:** for an 11° beam and an 8° beam at a 400 m slant, with the camera 0.5 m above the centre of the near-ground quad whose nearest vertex is farthest from its centre, and 0.5 m above the middle of the longest side-line segment: no drawn quad has an edge within 6 m, and the camera's own quad isn't drawn
+    - **near surface:** no drawn quad's surface (two triangles) comes within 6 m − 1e-6 of the camera:
+      - for an 11° beam and an 8° beam at a 400 m slant, with the camera 0.5 m above the centre of the near-ground quad whose nearest vertex is farthest from its centre, and 0.5 m above the middle of the longest side-line segment
+      - for 13°/h 80, 18°/h 80, 16°/h 70, 11.3°/h 78 and a 60° beam, with a grid of cameras 0.5 m and 2 m above the road over the footprint, up to about 380 m past the lit spot
     - **occlusion:** `hitDist` = half the axis puts no vertex further than half the axis + 1e-6 from the light, for 60°, 30° and 11° beams
     - **nothing:** strength 0 gives an empty list; light == aim gives an empty list without error
     - **colours:** at most 11 distinct `colorFn` calls in one `draw`

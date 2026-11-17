@@ -131,17 +131,57 @@ test("no drawn quad has a vertex within 6 m of the camera", function()
   assertEq(n < beam.LAYERS * beam.SEGMENTS * beam.SIDES, true)
 end)
 
-local function segmentDist(p, a, b)
-  local ux, uy, uz = b.x - a.x, b.y - a.y, b.z - a.z
-  local l2 = ux * ux + uy * uy + uz * uz
-  local t = math.max(0, math.min(1, ((p.x - a.x) * ux + (p.y - a.y) * uy + (p.z - a.z) * uz) / l2))
-  return dist(p, vec3(a.x + ux * t, a.y + uy * t, a.z + uz * t))
+local function triangleDist2(p, a, b, c)
+  local abx, aby, abz = b.x - a.x, b.y - a.y, b.z - a.z
+  local acx, acy, acz = c.x - a.x, c.y - a.y, c.z - a.z
+  local function at(v, w)
+    local x, y, z = a.x + abx * v + acx * w - p.x, a.y + aby * v + acy * w - p.y, a.z + abz * v + acz * w - p.z
+    return x * x + y * y + z * z
+  end
+  local apx, apy, apz = p.x - a.x, p.y - a.y, p.z - a.z
+  local d1, d2 = abx * apx + aby * apy + abz * apz, acx * apx + acy * apy + acz * apz
+  if d1 <= 0 and d2 <= 0 then return at(0, 0) end
+  local bpx, bpy, bpz = p.x - b.x, p.y - b.y, p.z - b.z
+  local d3, d4 = abx * bpx + aby * bpy + abz * bpz, acx * bpx + acy * bpy + acz * bpz
+  if d3 >= 0 and d4 <= d3 then return at(1, 0) end
+  local vc = d1 * d4 - d3 * d2
+  if vc <= 0 and d1 >= 0 and d3 <= 0 then return at(d1 / (d1 - d3), 0) end
+  local cpx, cpy, cpz = p.x - c.x, p.y - c.y, p.z - c.z
+  local d5, d6 = abx * cpx + aby * cpy + abz * cpz, acx * cpx + acy * cpy + acz * cpz
+  if d6 >= 0 and d5 <= d6 then return at(0, 1) end
+  local vb = d5 * d2 - d1 * d6
+  if vb <= 0 and d2 >= 0 and d6 <= 0 then return at(0, d2 / (d2 - d6)) end
+  local va = d3 * d6 - d5 * d4
+  if va <= 0 and d4 - d3 >= 0 and d5 - d6 >= 0 then
+    local w = (d4 - d3) / ((d4 - d3) + (d5 - d6))
+    return at(1 - w, w)
+  end
+  local sum = va + vb + vc
+  return at(vb / sum, vc / sum)
 end
 
-local function quadKey(q)
-  local keys = { key(q.a), key(q.b), key(q.c), key(q.d) }
-  table.sort(keys)
-  return table.concat(keys, "|")
+local function surfaceDist(p, q)
+  return math.sqrt(math.min(triangleDist2(p, q.a, q.b, q.c), triangleDist2(p, q.a, q.c, q.d)))
+end
+
+local function boxReaches(p, q, r)
+  local a, b, c, d = q.a, q.b, q.c, q.d
+  local lo, hi = p.z - r, p.z + r
+  if (a.z > hi and b.z > hi and c.z > hi and d.z > hi) or (a.z < lo and b.z < lo and c.z < lo and d.z < lo) then return false end
+  lo, hi = p.x - r, p.x + r
+  if (a.x > hi and b.x > hi and c.x > hi and d.x > hi) or (a.x < lo and b.x < lo and c.x < lo and d.x < lo) then return false end
+  lo, hi = p.y - r, p.y + r
+  return not ((a.y > hi and b.y > hi and c.y > hi and d.y > hi) or (a.y < lo and b.y < lo and c.y < lo and d.y < lo))
+end
+
+local function nearestDrawn(light, aim, cam, out)
+  local n = beam.quads(light, aim, STRENGTH, nil, cam, out)
+  local nearest = math.huge
+  for i = 1, n do
+    local q = out[i]
+    if boxReaches(cam, q, beam.NEAR) then nearest = math.min(nearest, surfaceDist(cam, q)) end
+  end
+  return nearest, n
 end
 
 local function centre(q)
@@ -170,7 +210,7 @@ local function longestSideLine(out, n)
   return found, best
 end
 
-test("no drawn quad has an edge within 6 m of the camera, even on long or sheared low-beam quads", function()
+test("no drawn quad's surface comes within 6 m of a camera inside a long or sheared low-beam quad", function()
   for _, beamCase in ipairs({ { 11, 60 }, { 8, 400 * math.sin(math.rad(8)) } }) do
     local light, aim = slanted(beamCase[1], beamCase[2])
     local plain = {}
@@ -180,19 +220,40 @@ test("no drawn quad has an edge within 6 m of the camera, even on long or sheare
     assertEq(wideReach > 18 and longReach > 36, true, beamCase[1] .. " " .. wideReach .. " " .. longReach)
     local wc = centre(wide)
     local la, ld = long.a, long.d
-    for _, probe in ipairs({
-      { cam = vec3(wc.x, wc.y, wc.z + 0.5), quad = quadKey(wide) },
-      { cam = vec3((la.x + ld.x) / 2, (la.y + ld.y) / 2, (la.z + ld.z) / 2 + 0.5), quad = quadKey(long) },
+    for _, cam in ipairs({
+      vec3(wc.x, wc.y, wc.z + 0.5),
+      vec3((la.x + ld.x) / 2, (la.y + ld.y) / 2, (la.z + ld.z) / 2 + 0.5),
     }) do
-      local out = {}
-      local n = beam.quads(light, aim, STRENGTH, nil, probe.cam, out)
+      local nearest, n = nearestDrawn(light, aim, cam, {})
       assertEq(n > 0, true)
-      for i = 1, n do
-        local q = out[i]
-        local m = math.min(segmentDist(probe.cam, q.a, q.b), segmentDist(probe.cam, q.b, q.c),
-          segmentDist(probe.cam, q.c, q.d), segmentDist(probe.cam, q.d, q.a))
-        assertEq(m >= beam.NEAR, true, beamCase[1] .. " " .. m)
-        assertEq(quadKey(q) ~= probe.quad, true, tostring(beamCase[1]))
+      assertEq(nearest >= beam.NEAR - 1e-6, true, beamCase[1] .. " " .. nearest)
+    end
+  end
+end)
+
+test("no drawn quad's surface comes within 6 m of a camera on the road anywhere under the beam, up to 380 m past the spot", function()
+  local grid = 16
+  for _, beamCase in ipairs({ { 13, 80 }, { 18, 80 }, { 16, 70 }, { 11.3, 78 }, { 60, 50 } }) do
+    local light, aim = slanted(beamCase[1], beamCase[2])
+    local plain = {}
+    local all = beam.quads(light, aim, STRENGTH, nil, nil, plain)
+    local minX, maxX, minY, maxY = math.huge, -math.huge, math.huge, -math.huge
+    eachVertex(plain, all, function(v)
+      if v.z < aim.z + 1e-6 then
+        minX, maxX = math.min(minX, v.x), math.max(maxX, v.x)
+        minY, maxY = math.min(minY, v.y), math.max(maxY, v.y)
+      end
+    end)
+    if beamCase[1] < 20 then assertEq(maxX - aim.x > 200, true, beamCase[1] .. " " .. (maxX - aim.x)) end
+    local out = {}
+    for _, height in ipairs({ 0.5, 2 }) do
+      for gx = 0, grid do
+        for gy = 0, grid do
+          local cam = vec3(minX + (maxX - minX) * gx / grid, minY + (maxY - minY) * gy / grid, aim.z + height)
+          local nearest = nearestDrawn(light, aim, cam, out)
+          assertEq(nearest >= beam.NEAR - 1e-6, true,
+            string.format("%s/%s at (%.1f, %.1f, %.1f): %.2f", beamCase[1], beamCase[2], cam.x, cam.y, cam.z, nearest))
+        end
       end
     end
   end
