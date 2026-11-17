@@ -73,9 +73,9 @@ end
 
 local function createSound()
   local snd = createObject("SFXEmitter")
-  if Sim and Sim.upcast then snd = Sim.upcast(snd) end
+  snd = Sim.upcast(snd)
   snd:setField("track", 0, "amb_rain_medium")
-  if MatrixF then snd:setTransform(MatrixF(true)) end
+  snd:setTransform(MatrixF(true))
   snd.canSave = false
   snd:registerObject(M.SOUND)
   if not scenetree.findObject(M.SOUND) then
