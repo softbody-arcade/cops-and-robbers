@@ -158,8 +158,12 @@ function M.tick(state, target, phase, last, clock, opts)
     end
     return
   end
-  state.missingSince = nil
   local car = target:getPosition()
+  if state.missingSince then
+    state.lastCar = nil
+    if state.flight then state.flight.lastCar = vec3(car.x, car.y, car.z) end
+  end
+  state.missingSince = nil
   local dt = state.lastClock and clock - state.lastClock or 0
   state.lastClock = clock
   local carVel = carVelocity(state, target, car, dt, clock)

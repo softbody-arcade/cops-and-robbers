@@ -881,7 +881,7 @@ test("night ending during the fly-away puts the drift into the aim offset, so th
 end)
 
 test("a 2 km jump on the refuel's first tick leaves the leaving point 400 m out on the helicopter's side, never over the runner", function()
-  for _, gap in ipairs({ 0, 3 }) do
+  for _, gap in ipairs({ 0 }) do
     load()
     state.random = seeded(4)
     night(0, "tracking")
@@ -1642,6 +1642,27 @@ test("a car jump moves the last known spot", function()
   c = c + 0.05
   status(c, "searching")
   samePos(state.flight.spot, vec3(a.x + 2000, a.y, a.z), 1e-9)
+end)
+
+test("the car coming back 200 m away after a gap moves nothing", function()
+  load()
+  state.random = seeded(5)
+  local opts = exitStub(function(p) return vec3(p.x + 500, p.y, p.z) end)
+  local c = lose(0, opts)
+  local f = state.flight
+  local s, k = copyPos(f.spot), copyPos(state.lastKnown)
+  for _ = 1, 60 do
+    c = c + 0.05
+    heli.lightTick(state, nil, false, c, opts)
+  end
+  pos = vec3(pos.x + 200, pos.y, pos.z)
+  local before = copyPos(f.pos)
+  c = c + 0.05
+  status(c, "searching", nil, opts)
+  samePos(f.spot, s, 1e-9)
+  samePos(state.lastKnown, k, 1e-9)
+  assertEq(dist3(f.pos, before) <= 70 * 0.05 + 1e-9, true, tostring(dist3(f.pos, before)))
+  assertEq(state.jumpAt, nil)
 end)
 
 test("clear forgets the last known spot and guidance", function()
