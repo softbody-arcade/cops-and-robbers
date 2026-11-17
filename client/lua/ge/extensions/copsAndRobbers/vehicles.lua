@@ -3,7 +3,7 @@ local game = require("copsAndRobbers/game")
 
 local M = {}
 
-local ALLOWED_TYPES = { Car = true, Truck = true }
+local ALLOWED_TYPES = { Car = true, Truck = true, ["Heavy Machinery"] = true }
 
 local function vehicleType(config)
   if config.Type then return config.Type end
