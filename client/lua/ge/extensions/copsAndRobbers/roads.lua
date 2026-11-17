@@ -35,6 +35,16 @@ local function sortSpots(list)
   return list
 end
 
+local function gated(link)
+  return (link.gated or 0) > 0
+end
+
+local function private(n, other, id, linkId)
+  local a = n.links and n.links[linkId]
+  local b = other.links and other.links[id]
+  return (a and a.type == "private") or (b and b.type == "private") or false
+end
+
 local function lineSpots(center, minD, maxD)
   local links, nodes = graph()
   local candidates = {}
@@ -42,7 +52,7 @@ local function lineSpots(center, minD, maxD)
   for id, neighbours in pairs(links) do
     for linkId, link in pairs(neighbours) do
       local n, other = nodes[id], nodes[linkId]
-      if n and other and tostring(id) < tostring(linkId) then
+      if n and other and tostring(id) < tostring(linkId) and not gated(link) and not private(n, other, id, linkId) then
         local delta = other.pos - n.pos
         local len = delta:length()
         if len > 1e-3 then
@@ -95,10 +105,6 @@ local function heapPop(heap)
     end
   end
   return top[1], top[2], top[3]
-end
-
-local function gated(link)
-  return (link.gated or 0) > 0
 end
 
 local function walk(links, nodes, seeds, limit, runnerPoint)
@@ -237,12 +243,12 @@ local function pickSpot(candidates, lo, hi, index)
   return nil
 end
 
-local function rings(minD, maxD, keepMin)
+local function rings(minD, maxD)
   local list = { { minD, maxD } }
   local hi = math.max(maxD, 1)
   while hi < MAX_SPAWN_RING do
     hi = hi * 2
-    list[#list + 1] = { keepMin and minD or 0, hi }
+    list[#list + 1] = { minD, hi }
   end
   return list
 end
@@ -256,14 +262,14 @@ local function pickFrom(candidates, ringList, index)
 end
 
 function M.findCopSpot(center, minD, maxD, index, heading)
-  local byRoad = rings(minD, maxD, true)
-  local spots = roadSpots(center, byRoad[#byRoad][2], heading)
+  local ringList = rings(minD, maxD)
+  local limit = ringList[#ringList][2]
+  local spots = roadSpots(center, limit, heading)
   if spots then
-    local pos, rot = pickFrom(spots, byRoad, index)
+    local pos, rot = pickFrom(spots, ringList, index)
     if pos then return pos, rot end
   end
-  local straight = rings(minD, maxD, false)
-  return pickFrom(lineSpots(center, 0, straight[#straight][2]), straight, index)
+  return pickFrom(lineSpots(center, minD, limit), ringList, index)
 end
 
 local function closestNodeFallback(pos)

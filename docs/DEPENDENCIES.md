@@ -110,9 +110,10 @@ Then do the checks for whatever actually updated.
   - On update, check: the beam still draws as a soft cone ending on the road, it fades near the camera, a deck over the car ends it, and the glare shows when you look up at the light.
 - **Placement and roads** (`roads.lua`):
   - `map.getMap().nodes[id].pos` and `map.findClosestRoad(pos, radius)` (two node ids; the nearest edge by straight distance, whatever its direction, so next to a narrow median it can be the other carriageway. We check it against the runner car's `getDirectionVector()` and, if it points the wrong way, take a fitting edge at most 5 m further, `MEDIAN_WIDTH`).
-  - `map.getGraphpath().graph[a][b].{oneWay,inNode,gated}`: every link from both ends. Its `len` is a routing cost (length divided by drivability, plus 10 km on gated roads), so lengths come from node positions.
+  - `map.getGraphpath().graph[a][b].{oneWay,inNode,gated}`: every link from both ends. Its `len` is a routing cost (length divided by drivability, plus 10 km on gated roads), so lengths come from node positions. Only the link where a private road meets a public one is gated (`processPrivateRoads` and `createTrafficExclusionArea` in `lua/ge/map.lua`); the private roads behind it have `gated` 0.
+  - `map.getMap().nodes[a].links[b].type == "private"` (one-sided, so we look from both ends) marks those private roads. Only the straight-line fallback reads it, so a cop is never placed behind a gate; the search by road never crosses a gated link anyway.
   - `spawn.safeTeleport(veh, pos, rot)`, `vec3`, `quatFromDir`.
-  - On update, check: `getMap().nodes[].links` is still one-sided (`convertToSingleSided` in `lua/ge/map.lua`; we no longer read it), the graph fields above keep their names, and in game cops start a short drive from the runner, facing it.
+  - On update, check: `getMap().nodes[].links` is still one-sided (`convertToSingleSided` in `lua/ge/map.lua`; we read only its `type`, from both ends), the graph fields above keep their names, and in game cops start a short drive from the runner, facing it.
 - **Inputs** (`inputs.lua`):
   - `core_input_actionFilter.getActionTemplates().competitive`, `setGroup` and `addAction`.
   - `core_input_bindings.bindings[].contents.bindings[].action`.

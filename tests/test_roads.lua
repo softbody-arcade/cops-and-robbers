@@ -40,7 +40,7 @@ function useMap(nodeList, links, opts)
   for _, l in ipairs(links) do
     local from, to = l[1], l[2]
     local data = { inNode = from, outNode = to, oneWay = l.oneWay or false, gated = l.gated or 0, len = 1 }
-    nodes[to].links[from] = data
+    nodes[to].links[from] = { inNode = from, outNode = to, oneWay = l.oneWay or false, type = l.type or "public" }
     graph[from][to] = data
     graph[to][from] = data
   end
@@ -394,4 +394,32 @@ test("a heading straight up or missing leaves the closest road", function()
   carriageways(8)
   assertEq(roads.findCopSpot(vec3(5, 10, 0), 50, 150, 1, vec3(0, 0, 1)).x, 8)
   assertEq(roads.findCopSpot(vec3(5, 10, 0), 50, 150, 1).x, 8)
+end)
+
+test("the straight-line search keeps the minimum distance", function()
+  local nodes, links = {}, {}
+  road(nodes, links, "i", { { 0, 0 }, { 5, 0 } })
+  road(nodes, links, "c", { { -40, 10 }, { 40, 10 } })
+  road(nodes, links, "f", line(-500, 500, 200))
+  useMap(nodes, links, { closest = { "i1", "i2" } })
+  for i = 1, 4 do
+    local pos = roads.findCopSpot(vec3(0, 0, 0), 50, 150, i)
+    assertEq(pos:distance(vec3(0, 0, 0)) >= 50, true, "spot " .. i .. " at " .. pos.x .. "," .. pos.y)
+  end
+end)
+
+test("the straight-line search skips gated roads and the private roads behind them", function()
+  local nodes, links = {}, {}
+  road(nodes, links, "i", { { 0, 0 }, { 5, 0 } })
+  local public = road(nodes, links, "p", line(-500, 500, 200))
+  nodes.g = { 0, 60 }
+  links[#links + 1] = { public[6], "g", gated = 10000 }
+  road(nodes, links, "h", { { -300, 70 }, { 300, 70 } })
+  links[#links].type = "private"
+  links[#links + 1] = { "g", "h1", type = "private" }
+  useMap(nodes, links, { closest = { "i1", "i2" } })
+  for i = 1, 4 do
+    local pos = roads.findCopSpot(vec3(0, 0, 0), 50, 150, i)
+    assertEq(pos.y, 200, "spot " .. i .. " at " .. pos.x .. "," .. pos.y)
+  end
 end)
