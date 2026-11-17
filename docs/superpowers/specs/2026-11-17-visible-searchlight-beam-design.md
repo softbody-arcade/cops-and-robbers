@@ -1,6 +1,6 @@
 # Visible searchlight beam and a flying helicopter
 
-Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and plan review. After the first in-game test the same day, two parts were added: cover from the helicopter's line of sight (approved) and a helicopter sound (proposed). It builds on the police helicopter (`docs/superpowers/specs/2026-11-16-police-helicopter-design.md`). The light now hangs from a helicopter that really flies, so the beam's angle and the light's sway come from the helicopter's own motion.
+Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and plan review. After the first in-game tests the same day, more was added at the user's call, all approved for 2.9.1: cover from the helicopter's line of sight, searching (it searches where it lost the runner, also tunnel exits, guided by the cops' sight, with the light never cut), and a helicopter sound. It builds on the police helicopter (`docs/superpowers/specs/2026-11-16-police-helicopter-design.md`). The light now hangs from a helicopter that really flies, so the beam's angle and the light's sway come from the helicopter's own motion.
 
 ## Why
 - **No beam in the air:** BeamNG lights only light the surfaces they hit; the engine renders only clouds as volumes. So the 2.9.0 searchlight is a bright spot on the road with no shaft in the air. In real life the beam is visible from the side and from below: faintly on a clear night, and clearly in haze, cloud or rain.
@@ -49,15 +49,14 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - **Fly-in sweep:** the aim starts 15 m off the car (`AIM_SWEEP_OFFSET`) and is pulled in.
   - **Fly-away drift:** the aim drifts off the car towards the direction of travel (`DEPART_AIM_DRIFT`), up to 60 m by 8 s.
     - When a fly-away ends early (a short refuel, night ending into a fade, or night returning), the current drift is added to the aim's offset. The spring then pulls the spot back over a few seconds instead of snapping 40+ m in one frame. The offset cap is max(6, the current offset), as in 2.9.0.
-  - **Refound:** the aim starts 8 m off the car (`REFOUND_AIM_OFFSET`).
+  - **Refound** (2.9.0, removed with searching): the light was cut while searching and came back 8 m off the car. Now the light stays on and swings between the car and the search sweep (see Searching).
   - **Hover drift removed:** `HOVER_DRIFT` and the sine waves on the light's position go; the real flight replaces them.
 - **Brightness effects**, on the light's brightness factor `fx.bright`:
   - fly-in: rising to full over `APPROACH_SECONDS` 8 s, from 0 for a new light, or from the current factor when the light already exists
   - fly-away: full, then fading to 0 over the last `DEPART_FADE_SECONDS` 3 s of the 8 s; then the light is removed, after that frame's update
   - night ending: a 1.5 s fade
   - night returning: a 1 s fade-in
-  - refound: at once, at full brightness
-  - going under cover still cuts the light at once
+  - searching never cuts or dims the light (see Searching)
 - **Range:** max(120, slant distance to the car + 30), rounded to whole metres and capped at 400.
   - It's written when the light is created, and again whenever it differs from the last written value by more than 5 m.
   - The spot grows when the helicopter is further off (cone 16°), as a real one would.
@@ -107,20 +106,20 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - Budget: at most 0.5 ms a frame for the beam (an in-game check).
   - With the slant distance over the 400 m range cap, there's no beam.
 - **Safety:** the beam, both working out its quads and drawing them, runs in its own `pcall`. An error stops the beam for the rest of the round (`beamFailed`), but never removes the light.
-  - The beam also needs `debugDrawer` and `color` to exist.
+  - The beam also needs `color` and the game's `utils/debugDraw` module; a failing `require` stops the beam like any other beam error.
 - **The player setting:** "Searchlight beam" in the HUD settings card, on by default. Off removes the beam, the cone in the air, on that player's game. The light and its glare stay.
 
 ## Line of sight (added after the first in-game test, approved 2026-11-17)
 - **Why:** cover was a roof check: rays straight up from the car. A building between the helicopter and the car never counted, so the light could be blocked on screen while the server still said "tracking". Now the helicopter has a position, so cover can be what the helicopter sees.
-- **The check:** on the game that reports cover today (the runner's, or the issuer's in practice), every 0.25 s while that game's helicopter flight exists:
+- **The check:** on the game that reports cover today (the runner's, or the issuer's in practice), every 0.25 s while that game's helicopter flight exists (it steps in its own protected call, so a light error never stops it):
   - `castRayStatic` from the flight's position to three points on the runner's car: the middle at 1.5 m above the car's position, and 2 m ahead and 2 m behind it along the car's direction, at the same height
   - a point is seen when the ray reaches within 0.5 m of it
+  - only points within 400 m (straight-line distance) of the helicopter can be seen (`SIGHT_RANGE`)
   - the car is covered when no point is seen
-- **Before the helicopter exists** (head start, the arrival countdown, a refuel after the fly-away): the roof check as today, so the head-start hiding and the state at arrival still work.
+- **Without a helicopter** (head start, the arrival countdown, a refuel after the fly-away): the car counts as covered, since nothing can see it. The roof check is no longer used for cover; it stays for the rain. (Changed with Searching: each flight now starts searching, so the state at arrival no longer comes from a roof check.)
 - **Unchanged:**
   - the client needs the same reading twice in a row (about 0.5 s) before it reports a change, and the server needs 2 s of cover before "searching"
   - tracking again the moment a point is seen
-  - the light is cut while searching
   - the beam's own blocking ray
 - **The same helicopter on every game:**
   - The server picks a new random seed each time the helicopter goes up (from "arriving" or "refuelling") and sends it in the helicopter status it already sends (`cnr_heli` and the round setup's `heli`).
@@ -128,10 +127,39 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - A game joining mid-round (`at`) draws from the same seed in the same order, so it takes the same side and bearing.
   - Positions still differ a little between games: network lag on the runner's car, and a joiner starts on its target point instead of mid-fly-in.
   - A short refuel resumes the existing flight and ignores the new seed.
-- **Gameplay:** the runner loses the helicopter behind buildings, in valleys and while it flies in low from 300 m. That is intended. The height (50 m) and side offset (15 m) become balance values, tuned in game.
+- **Gameplay:** the runner loses the helicopter behind buildings, in valleys and in tunnels, and is free once out of its 400 m sight. That is intended. The height (50 m) and side offset (15 m) become balance values, tuned in game.
 - **Trees:** whatever `castRayStatic` hits counts. The game's drone camera uses the same call for line of sight. Whether trees block it is an in-game check.
 
-## Helicopter sound (proposed 2026-11-17)
+## Searching (added after the second in-game test, approved 2026-11-17)
+- **Why:** in 2.9.0 and the first line-of-sight build, "searching" only changed the status: every game's helicopter kept flying after the runner's real position and the light was cut. Searching should look and play like a search: the helicopter goes where it last knew the runner was, and the light keeps sweeping so everyone can read where it's looking.
+- **Every flight starts searching:**
+  - The server's helicopter enters its up phase as "searching", at arrival and after every refuel; it never starts "tracking" on its own.
+  - It turns to "tracking" the first time the runner's game reports the car not covered, which needs that game's helicopter to see the car (Line of sight). Losing the runner still takes 2 s of cover.
+- **The search spot** (each game works it out itself from the runner's car, so it needs no network message and works on BeamNG.Earth; games may differ by a few metres of network lag):
+  - **At arrival:** the runner's position when the helicopter goes up (where the cops called it in).
+  - **After a refuel:** the last known position: where this game's helicopter last tracked the runner, or where the cops last guided it (below). Without one (a game that joined during the refuel), the runner's position at that moment.
+  - **When it loses the runner** ("tracking" → "searching"), and when the cops lose sight while guiding it: the runner's position then, or a tunnel exit (below).
+  - **A game joining mid-round** whose first status is "searching": the runner's position at that moment.
+  - The spot moves with a car jump over 30 m (a BeamNG.Earth origin shift or a reset), like the helicopter itself.
+- **Tunnel exits:**
+  - When the spot is set because the runner was lost, and the runner's car is under a roof (the same roof check as the rain), the game follows the road from the car in its direction of travel, using the game's road map (`map.findClosestRoad`, `map.getMap().nodes` and their `links`, as `roads.lua` already does).
+  - It walks through road nodes that are roofed (the roof check at 1.5 m above each node) and collects the first unroofed node on each branch: the exits.
+  - The way back (the edge's node behind the car) is never walked, so turning around in a tunnel dodges the helicopter.
+  - It stops after 3 km of road or 200 nodes. With no exit found, or no road data (likely on BeamNG.Earth), the spot is where the runner was lost.
+  - With several exits, they are ordered by node id and the seed picks one (`exits[seed % #exits + 1]`), so every game picks the same one without drawing from the flight's generator.
+- **Cops guide it:**
+  - While any cop sees the runner (the server's existing sight), the helicopter status carries `guided = true`, sent when it changes. The flag is only sent while the helicopter is up.
+  - While guided and searching, every game's search spot is the runner's live position, so the helicopter flies to the runner and circles them. It still says "searching" until it sees the runner itself (a cop can see into a tunnel where the helicopter can't).
+  - When guidance ends while still searching, the spot is worked out again as for a loss (tunnel exit included), from the runner's position and direction at that moment.
+- **The search flight:** the helicopter circles the spot at 60 m (`SEARCH_RADIUS`), 50 m up, once every 40 s (`SEARCH_PERIOD`), in the direction of its side, with the same speed and acceleration limits. The fly-in after arrival or a refuel starts 300 m out from the spot, not from the car. When it finds the runner it goes back to trailing them.
+- **The light while searching** (at night, as always):
+  - It stays on: searching never cuts or dims it. It only goes with the helicopter at refuel (the fly-away fade) and at daybreak.
+  - It sweeps a widening spiral around the spot: out to 150 m (`SWEEP_RADIUS`) over 40 s (`SWEEP_PERIOD`), one turn every 8 s (`SWEEP_TURN`), then from the spot again.
+  - Switching between the car and the sweep (found, lost, guided) never jumps: the aim point moves towards its new target with a time constant of about 0.5 s.
+  - A refuel while searching flies away with the light, like one while tracking.
+- **Gameplay:** hiding behind a building near the spot is found within seconds as it circles; a tunnel or garage hides you; a long tunnel with the helicopter waiting at the other end can be dodged by turning back; once you are more than 400 m from it, you have escaped until the cops spot you again.
+
+## Helicopter sound (approved 2026-11-17)
 - **Why:** you hear a police helicopter long before you see it, and the runner hearing it is part of the chase.
 - **The sound:** one looping 3D `SFXEmitter` named `cnr_heli_sound` at the simulated helicopter, on every game, moved with it every frame.
   - It plays day and night while the flight exists, and is removed with it: on the drop after the fly-away, `clear`, the round's end, a cancel, leaving, a map change and unload. No emitter is left behind.
@@ -139,8 +167,8 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - It fades in over 1 s when the flight starts close (a game joining mid-round) and fades out over the fly-away's last 3 s, so it never cuts off.
   - **Muffled when hidden:** one ray every 0.25 s from the camera to the helicopter. When it's blocked, the volume eases down to half over 0.5 s, and back up when it's clear.
   - **A player setting** "Helicopter sound", on by default, next to "Searchlight beam".
-- **The file:** one mono OGG loop of a helicopter's rotor heard from a distance, shipped in the mod at `art/sound/cnr/heli_rotor.ogg` (the client zip gains its `art` folder). Its licence and credit go in `docs/DEPENDENCIES.md` and `README.md`. A CC BY-NC sound is fine for this free mod, credited; it would have to be replaced if the mod or the server were ever sold.
-- **First, a quick in-game probe:** an emitter made from Lua with `fileName` pointing into the mod's zip plays 3D, loops and follows `setPosition`.
+- **The file:** "Helicopter Rotor Loop" by qubodup (freesound.org/people/qubodup/sounds/187681/, CC0, cut from a US government video, marked loopable), converted to a mono OGG (Vorbis q5, 48 kHz, 6.3 s, 64 KB) and shipped in the mod at `art/sound/cnr/heli_rotor.ogg` (the client zip gains its `art` folder). CC0 needs no credit; the author asks for a link, so `docs/DEPENDENCIES.md` and `README.md` name it.
+- **Probe-verified in game (2026-11-17):** an `SFXEmitter` made from Lua with `fileName`, `is3D`, `isLooping`, `referenceDistance`, `maxDistance` and `volume` set with `setField`, registered, added to the mission group and moved with `setPosition`, plays the file in 3D and loops.
 - **Not doing:** Doppler, and a separate close-up sound.
 
 ## Code
@@ -229,6 +257,14 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - looking up
   - it follows the fly-in and fly-away
   - whether the spot dims when the helicopter's position is hidden from the camera (flares can change their light)
+- **Searching:**
+  - the fly-in says "searching" until it sees you, then tracks
+  - lost behind a building: it circles where it lost you, the light sweeping, and finds you within seconds
+  - into a tunnel: it flies to the exit ahead; turning around in the tunnel dodges it
+  - a cop seeing you while it searches: it flies to you
+  - after a refuel it comes back to where it last knew you were
+  - the light is never cut; the sweep is readable from a cop's car and from the runner's
+- **Sound:** heard from far off, louder overhead, quieter behind buildings, the switch turns it off, nothing left after the round
 - **Line of sight:**
   - "SEARCHING" shows about 2.5 s after a building is between the helicopter and the car
   - trees
@@ -240,7 +276,8 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
 - **Range cap:** 400 m, with no beam beyond it.
 - **Beam blocking:** a ray every 0.25 s, so the beam ends at a bridge or a roof.
 - **Glare:** its scale follows the light's brightness. The beam setting turns off only the cone; the glare stays with the light, since it costs nothing and is part of how a real light looks.
-- **Each game simulates its own helicopter.** Since the line-of-sight change, the server's seed makes them take the same side and directions; positions are not synced.
+- **Each game simulates its own helicopter.** Since the line-of-sight change, the server's seed makes them take the same side and directions, and each game works out the search spot from the runner's car; positions are not synced.
+- **Search numbers:** a 60 m circle every 40 s around the spot, a sweep out to 150 m over 40 s turning every 8 s, sight 400 m, the tunnel walk capped at 3 km or 200 nodes. To be tuned in game.
 
 ## Left to the builder
 - The test stubs for the debug drawer, `color`, the camera position and `getVelocity`.
