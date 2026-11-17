@@ -565,6 +565,20 @@ test("a rejoining cop gets runnerShown and heli in setup", function()
   env.cleanup()
 end)
 
+test("cnr_heli carries the seed while up", function()
+  local env = boot({ config = '{"helicopterArrivalSeconds": 0, "weather": "clear"}' })
+  runToChase(env)
+  local last
+  for _, m in ipairs(env.sent) do if m.ev == "cnr_heli" then last = decodeJson(m.data) end end
+  assertEq(type(last.seed), "number")
+  env.call("onPlayerDisconnect", 2)
+  env.sent = {}
+  env.call("onPlayerJoin", 2)
+  local setup = env.lastSent("cnr_roundSetup")
+  assertEq(type(decodeJson(setup.data).heli.seed), "number")
+  env.cleanup()
+end)
+
 test("cnr_cover from the runner reaches the round", function()
   local env = boot({ config = '{"helicopterArrivalSeconds": 0, "helicopterUpSeconds": 200, "weather": "clear"}' })
   runToChase(env)
@@ -1028,6 +1042,19 @@ test("a practice round gets a sky too", function()
   env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
   assertEq(decodeJson(env.lastSent("cnr_roundSetup").data).sky.weather, "snow")
   env.cleanup()
+end)
+
+test("the round setup tells the client a practice round is practice, and a real round is not", function()
+  local env = boot({ vehicles = { [1] = { [0] = "x" } } })
+  env.panel(1, "test runner")
+  env.positions[1] = 0
+  env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  assertEq(decodeJson(env.lastSent("cnr_roundSetup").data).practice, true)
+  env.cleanup()
+  local real = boot()
+  real.startRound()
+  assertEq(decodeJson(real.lastSent("cnr_roundSetup").data).practice, nil)
+  real.cleanup()
 end)
 
 test("a mid-chase join gets clockSeconds", function()

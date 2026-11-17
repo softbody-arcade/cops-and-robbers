@@ -193,7 +193,7 @@ local function onRoundSetup(data)
   resetAllowed = false
   lastHint = nil
   lastPose = nil
-  inputs.lock(true, requestReset)
+  inputs.lock(true, requestReset, d.practice == true)
   inputs.setResetKey()
   local mayChange = d.phase == "prep" and evolving and role == "runner"
   inputs.setPartsMenu(mayChange)
@@ -792,17 +792,26 @@ local function castUp(pos, range)
   return castRayStatic(pos, vec3(0, 0, 1), range)
 end
 
+local coverFailed = false
+
 local function updateHeli(runnerObj)
   if runnerOut and castRayStatic then
     local car = role == "runner" and ownVehicle() or ai.runnerObject()
     if car then
-      local c = heli.coverTick(heliState, clock, car, castUp)
-      if c ~= nil then sendServer("cnr_cover", { covered = c }) end
+      local ok, c = pcall(heli.coverTick, heliState, clock, car, castUp, castRayStatic)
+      if not ok then
+        if not coverFailed then
+          coverFailed = true
+          log("E", "cnr_heli", "cover check failed: " .. tostring(c))
+        end
+      elseif c ~= nil then
+        sendServer("cnr_cover", { covered = c })
+      end
     end
   end
   if active then
     local target = role == "runner" and ownVehicle() or runnerObj
-    heli.lightTick(heliState, target, heli.wantsNight(heliState) and sky.isNight(), clock)
+    heli.lightTick(heliState, target, heli.wantsNight(heliState) and sky.isNight(), clock, { weather = traffic.weather(), beam = prefs.beam ~= false })
   else
     heli.lightTick(heliState, nil, false, clock)
   end

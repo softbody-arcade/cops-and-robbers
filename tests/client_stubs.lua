@@ -95,9 +95,10 @@ function bootClient(opts)
       { model_key = "fullsize", key = "police", Source = "BeamNG - Official", ["Config Type"] = "Police", Name = "Police" },
     } } end,
   }
+  env.actionGroups = {}
   _G.core_input_actionFilter = {
-    getActionTemplates = function() return { competitive = {} } end,
-    setGroup = function() end,
+    getActionTemplates = function() return { competitive = { "toggleCamera", "dropCameraAtPlayer", "dropPlayerAtCamera" } } end,
+    setGroup = function(group, list) env.actionGroups[group] = list end,
     addAction = function(_, group, blocked) env.actionFilter[group] = blocked end,
   }
   _G.core_input_bindings = { bindings = { { contents = { bindings = { { action = "reset_physics" } } } } } }

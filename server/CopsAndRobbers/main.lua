@@ -529,7 +529,7 @@ local function applyEffects(effects)
         copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
         sightMaxMeters = cfg.sightMaxMeters,
         runnerShown = e.runnerShown, heli = e.heli,
-        evolving = current.evolving or nil, rebuild = current.rebuildId,
+        evolving = current.evolving or nil, rebuild = current.rebuildId, practice = current.test or nil,
         sky = sky.payload(current.sky, cfg, current.countdownStartedAt and math.max(0, now() - current.countdownStartedAt) or nil),
       })
     elseif e.kind == "setupAI" then
@@ -625,7 +625,7 @@ local function applyEffects(effects)
         send(current.runnerId, "cnr_nearestCop", { dist = e.nearestCop })
       end
     elseif e.kind == "heli" then
-      send(e.to or -1, "cnr_heli", { phase = e.phase, seconds = e.seconds, reason = e.reason })
+      send(e.to or -1, "cnr_heli", { phase = e.phase, seconds = e.seconds, reason = e.reason, seed = e.seed })
     elseif e.kind == "runnerShown" then
       for pid in pairs(current.players) do
         if pid ~= current.runnerId and not round.isAI(pid) then

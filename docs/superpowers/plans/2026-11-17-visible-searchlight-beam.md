@@ -187,8 +187,9 @@
     - D ≤ 1 m gives count 0 (the light at or inside something)
   - Alpha per quad: round(255 × strength × (1 − (1 − `GROUND`) × u) × near / `LAYERS`), where:
     - u is the quad's mid position along its side line, 0 to 1
-    - near = clamp((the smallest |vertex − camPos| of its 4 vertices − `NEAR`) / (`FAR` − `NEAR`), 0, 1), or 1 without a camera
-    - each vertex's camera distance is worked out once per call
+    - near = clamp((the camera's distance to the quad's surface − `NEAR`) / (`FAR` − `NEAR`), 0, 1), or 1 without a camera
+    - the distance is the in-plane one when the camera projects inside the quad, otherwise the nearest of its 4 edges (two side-line segments, two rungs). The quads between two neighbouring side lines share one plane through the cone's apex.
+    - per side pair: the plane normal, the camera's squared plane distance and side-line signs. Per side line: one projection, clamped per segment. Per rung: the distance and the in-plane sign. Squared distances, with a square root only for the nearest distance within `FAR`.
   - Quads with alpha < 1 are left out.
   - `both` is true without a camera. With a camera the winding is chosen so the quad faces the camera (one dot product), and `a..d` are in that order.
   - A zero-length axis gives an empty list.
@@ -198,8 +199,8 @@
 - **`heli.lua`:**
   - `M.lightTick(state, target, night, clock, opts)`, with `opts = { weather, beam }` (nil `opts` means beam on).
   - The occlusion ray: every `RAY_INTERVAL`, when `castRayStatic` exists, `castRayStatic(lightPos, the normalized direction to the aim point, axisLen)`.
-    - A returned d < axisLen − 2 sets `state.beamHit = d`.
-    - Otherwise, including hits within 2 m of the aim point, `state.beamHit` is nil.
+    - A returned d < axisLen − 2, with the hit point's height (lightPos.z + dirZ·d) above aimPos.z + 2, sets `state.beamHit = d`.
+    - Otherwise `state.beamHit` is nil. That covers hits within 2 m of the aim point along the ray, and the road at the lit spot on a low beam.
   - `state.beamQuads = state.beamQuads or {}` before the beam step (or create it in `M.new()`).
   - After the light is placed, when `opts.beam ~= false` and `state.light`, `debugDrawer`, `color` and `core_camera` exist, the slant is ≤ 400 and `state.beamFailed` isn't set, it runs `pcall(function() local n = beam.quads(lightPos, state.aimPos, strength, state.beamHit, camPos, state.beamQuads) beam.draw(state.beamQuads, n, drawQuad, color) end)`, with `drawQuad = function(a, b, c, d, clr) debugDrawer:drawQuadSolid(a, b, c, d, clr) end`.
     - Any error in working out the quads or drawing them sets `state.beamFailed`.
@@ -216,6 +217,9 @@
     - **far ring:** for a 60° beam, every far-ring vertex has z = `aimPos.z` ± 1e-6
     - **low beam:** at 11° elevation, no vertex lies further than 2 × the axis length + 1e-6 from the light (straight-line distance)
     - **near camera:** with the camera at the aim point, no drawn quad has a vertex within 6 m of it
+    - **near surface:** no drawn quad's surface (two triangles) comes within 6 m − 1e-6 of the camera:
+      - for an 11° beam and an 8° beam at a 400 m slant, with the camera 0.5 m above the centre of the near-ground quad whose nearest vertex is farthest from its centre, and 0.5 m above the middle of the longest side-line segment
+      - for 13°/h 80, 18°/h 80, 16°/h 70, 11.3°/h 78 and a 60° beam, with a grid of cameras 0.5 m and 2 m above the road over the footprint, up to about 380 m past the lit spot
     - **occlusion:** `hitDist` = half the axis puts no vertex further than half the axis + 1e-6 from the light, for 60°, 30° and 11° beams
     - **nothing:** strength 0 gives an empty list; light == aim gives an empty list without error
     - **colours:** at most 11 distinct `colorFn` calls in one `draw`
@@ -228,6 +232,7 @@
     - **drawer error:** `drawQuadSolid` erroring sets `state.beamFailed`, and the light stays
     - **quads error:** `beam.quads` erroring (stub it to raise) sets `state.beamFailed`; the light stays and `state.failed` stays nil
     - **ray:** a stub `castRayStatic` hit at half the axis ends the beam there; a hit 1 m short of the aim point is ignored
+    - **road at the spot:** at about 11°, a hit 2.6 m short of the aim point (below aimPos.z + 2) leaves `beamHit` nil; a deck 5 m above the spot ends the beam
     - **flare scale:** `flareScale` follows `fx.bright` during the fly-in
 - [ ] **Step 2: Run them to make sure they fail**
   Run: `make test 2>&1 | grep -E 'FAIL|passed'`. Expected: the new tests fail.

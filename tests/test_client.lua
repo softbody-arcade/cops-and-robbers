@@ -2527,18 +2527,56 @@ end
 
 local function near(a, b, eps) return math.abs(a - b) <= eps end
 
-test("at night the searchlight shines over the runner's car: the runner's own, a cop's runnerObject", function()
+local function horizontal(a, b) return math.sqrt((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) end
+
+test("at night the searchlight hangs from the helicopter circling the runner's car: the runner's own, a cop's runnerObject", function()
   local cop = nightTracking("cop")
   local light = cop.sky.objects[HELI_LIGHT]
   assertEq(light ~= nil, true)
-  assertEq(near(light.pos.x, 1000, 3) and near(light.pos.y, 1000, 3), true)
-  assertEq(near(light.pos.z, 50, 1e-6), true)
+  assertEq(near(horizontal(light.pos, vec3(1000, 1000, 10)), 30, 3), true, tostring(horizontal(light.pos, vec3(1000, 1000, 10))))
+  assertEq(near(light.pos.z, 60, 1e-6), true, tostring(light.pos.z))
   local runner = nightTracking("runner")
   light = runner.sky.objects[HELI_LIGHT]
   assertEq(light ~= nil, true)
   local own = runner.veh:getPosition()
-  assertEq(near(light.pos.x, own.x, 3) and near(light.pos.y, own.y, 3), true)
-  assertEq(near(light.pos.z, own.z + 40, 1e-6), true)
+  assertEq(near(horizontal(light.pos, own), 30, 3), true, tostring(horizontal(light.pos, own)))
+  assertEq(near(light.pos.z, own.z + 50, 1e-6), true, tostring(light.pos.z))
+end)
+
+test("turning the beam off stops the quads while the light and its glare stay", function()
+  local saved = { _G.color, _G.core_camera, _G.castRayStatic, package.loaded["utils/debugDraw"] }
+  local quads = 0
+  package.loaded["utils/debugDraw"] = { drawTriSolid = function(_, _, _, clr)
+    if type(clr) ~= "number" then error("expect number colour, got " .. type(clr)) end
+    quads = quads + 0.5
+  end }
+  _G.color = function(r, g, b, a) return r * 16777216 + g * 65536 + b * 256 + (a or 255) end
+  _G.core_camera = { getPosition = function() return vec3(1100, 1100, 10) end }
+  _G.castRayStatic = nil
+  local ok, err = pcall(function()
+    local env = nightTracking("cop")
+    env.tick(0.5)
+    assertEq(quads > 0, true, tostring(quads))
+    local light = env.sky.objects[HELI_LIGHT]
+    assertEq(light ~= nil, true)
+    local glare = tonumber(light.fields.flareScale)
+    assertEq(glare ~= nil and glare > 0, true, tostring(light.fields.flareScale))
+    env.M.ui({ action = "setting", key = "beam", value = false })
+    quads = 0
+    env.tick(0.1)
+    assertEq(quads, 0)
+    assertEq(env.written["settings/cnr_settings.json"].beam, false)
+    env.tick(1)
+    assertEq(quads, 0)
+    assertEq(light.fields.flareType, "BNG_LightFlare_1")
+    assertEq(tonumber(light.fields.flareScale) >= glare - 1e-9, true, tostring(light.fields.flareScale))
+    env.M.ui({ action = "setting", key = "beam", value = true })
+    env.tick(1)
+    assertEq(quads > 0, true, tostring(quads))
+  end)
+  _G.color, _G.core_camera, _G.castRayStatic = saved[1], saved[2], saved[3]
+  package.loaded["utils/debugDraw"] = saved[4]
+  if not ok then error(err, 0) end
 end)
 
 test("no searchlight by day or while the helicopter searches", function()
@@ -2576,6 +2614,71 @@ test("the searchlight is gone after the round, a cancel, leaving, a map change a
       end
     end
   end
+end)
+
+local function inLockGroup(env, action)
+  for _, name in ipairs(env.actionGroups.cnr_locked or {}) do
+    if name == action then return true end
+  end
+  return false
+end
+
+test("free cam stays locked in a real round", function()
+  local env = bootClient()
+  env.fire("cnr_roundSetup", copy(SETUP))
+  assertEq(env.actionFilter.cnr_locked, true)
+  assertEq(inLockGroup(env, "toggleCamera"), true)
+  assertEq(inLockGroup(env, "dropCameraAtPlayer"), true)
+  assertEq(inLockGroup(env, "dropPlayerAtCamera"), true)
+end)
+
+test("free cam is open in practice, while moving the car to the camera stays locked", function()
+  local env = bootClient()
+  local d = copy(SETUP)
+  d.practice = true
+  env.fire("cnr_roundSetup", d)
+  assertEq(env.actionFilter.cnr_locked, true)
+  assertEq(inLockGroup(env, "toggleCamera"), false)
+  assertEq(inLockGroup(env, "dropCameraAtPlayer"), false)
+  assertEq(inLockGroup(env, "dropPlayerAtCamera"), true)
+  assertEq(inLockGroup(env, "switch_next_vehicle"), true)
+end)
+
+local function withCommands(stub, fn)
+  local saved = _G.commands
+  _G.commands = stub
+  local ok, err = pcall(fn)
+  _G.commands = saved
+  if not ok then error(err, 0) end
+end
+
+test("a practice round followed by a real one locks free cam again", function()
+  local env = bootClient()
+  local d = copy(SETUP)
+  d.practice = true
+  env.fire("cnr_roundSetup", d)
+  assertEq(inLockGroup(env, "toggleCamera"), false)
+  env.fire("cnr_roundSetup", copy(SETUP))
+  assertEq(inLockGroup(env, "toggleCamera"), true)
+end)
+
+test("a real round leaves free cam, a practice round does not", function()
+  local calls = 0
+  withCommands({ isFreeCamera = function() return true end, setGameCamera = function() calls = calls + 1 end }, function()
+    local env = bootClient()
+    local d = copy(SETUP)
+    d.practice = true
+    env.fire("cnr_roundSetup", d)
+    assertEq(calls, 0)
+    env.fire("cnr_roundSetup", copy(SETUP))
+    assertEq(calls, 1)
+  end)
+  calls = 0
+  withCommands({ isFreeCamera = function() return false end, setGameCamera = function() calls = calls + 1 end }, function()
+    local env = bootClient()
+    env.fire("cnr_roundSetup", copy(SETUP))
+    assertEq(calls, 0)
+  end)
 end)
 
 local AI_RUNNER = -10
@@ -2626,6 +2729,49 @@ test("practice as a cop: the AI runner's game id is the one skipped on the minim
     env.M.onExtensionUnloaded()
   end)
   _G.activeVehiclesIterator, _G.ui_apps_minimap_vehicles = saved.iter, saved.minimap
+  if not ok then error(err, 0) end
+end)
+
+test("the runner's game reports cover from the helicopter's view", function()
+  local saved = _G.castRayStatic
+  local slanted
+  local function lastCover(blocked)
+    local env = nightTracking("runner")
+    slanted = 0
+    _G.castRayStatic = function(origin, dir, len)
+      if dir.z == 1 then return len + 100 end
+      slanted = slanted + 1
+      if blocked then return 1 end
+      return len + 100
+    end
+    for _ = 1, 8 do env.tick(0.3) end
+    return env.lastSent("cnr_cover")
+  end
+  local ok, err = pcall(function()
+    assertEq(lastCover(true).covered, true)
+    assertEq(slanted > 0, true)
+    assertEq(lastCover(false).covered, false)
+    assertEq(slanted > 0, true)
+  end)
+  _G.castRayStatic = saved
+  if not ok then error(err, 0) end
+end)
+
+test("an error in the cover check is logged once and the game keeps running", function()
+  local savedCast, savedLog = _G.castRayStatic, _G.log
+  local env = nightTracking("runner")
+  local lines = {}
+  _G.log = function(level, tag, msg)
+    if tostring(msg):find("cover check failed", 1, true) then lines[#lines + 1] = msg end
+  end
+  _G.castRayStatic = function() error("ray failed") end
+  local sent = env.lastSent("cnr_cover")
+  local ok, err = pcall(function()
+    for _ = 1, 8 do env.tick(0.3) end
+    assertEq(#lines, 1)
+    assertEq(env.lastSent("cnr_cover"), sent)
+  end)
+  _G.castRayStatic, _G.log = savedCast, savedLog
   if not ok then error(err, 0) end
 end)
 

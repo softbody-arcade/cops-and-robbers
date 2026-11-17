@@ -15,6 +15,16 @@ test("the helicopter arrives, flies, refuels and flies again", function()
   assertEq(helicopter.status(h, 280).phase, "tracking"); assertEq(helicopter.status(h, 280).seconds, 120)
 end)
 
+test("one update across a whole refuel reports the new flight's seed", function()
+  local h = helicopter.new(std(), "clear", 10)
+  helicopter.update(h, 70, false)
+  local first = helicopter.status(h, 70).seed
+  h.random = function() return first + 1 end
+  assertEq(helicopter.update(h, 280, false), true)
+  assertEq(helicopter.status(h, 280).phase, "tracking")
+  assertEq(helicopter.status(h, 280).seed, first + 1)
+end)
+
 test("time up keeps counting while searching", function()
   local h = helicopter.new(std(), "clear", 10)
   helicopter.update(h, 70, false)
@@ -110,4 +120,29 @@ test("going up while the runner is covered starts searching at once", function()
   helicopter.update(h, 279, true)
   assertEq(helicopter.update(h, 280, true), true)
   assertEq(helicopter.status(h, 280).phase, "searching")
+end)
+
+test("each flight gets its own seed, sent only while up", function()
+  local picks = { 11, 22 }
+  local n = 0
+  local function random() n = n + 1; return picks[n] end
+  local h = helicopter.new(std(), "clear", 10, random)
+  assertEq(helicopter.status(h, 10).seed, nil)
+  helicopter.update(h, 70, false)
+  assertEq(helicopter.status(h, 70).seed, 11)
+  helicopter.update(h, 190, false)
+  assertEq(helicopter.status(h, 190).seed, nil)
+  helicopter.update(h, 280, false)
+  assertEq(helicopter.status(h, 280).seed, 22)
+  helicopter.update(h, 281, true)
+  helicopter.update(h, 284, true)
+  assertEq(helicopter.status(h, 284).phase, "searching")
+  assertEq(helicopter.status(h, 284).seed, 22)
+  helicopter.update(h, 285, false)
+  assertEq(helicopter.status(h, 285).seed, 22)
+  local d = helicopter.new(std(), "clear", 10)
+  helicopter.update(d, 70, false)
+  local s = helicopter.status(d, 70).seed
+  assertEq(math.type(s), "integer")
+  assertEq(s >= 1 and s <= 2147483646, true)
 end)

@@ -64,9 +64,10 @@
             and flies for <span class="v">{{ duration("helicopterUpSeconds") }}</span>.
             <template v-if="refuelNever">Then it stays up.</template>
             <template v-else>Then it refuels for <span class="v">{{ duration("helicopterRefuelSeconds") }}</span>.</template>
-            It tracks you in the open. It loses you after 2 s under cover: tunnels, garages, or stopping under a bridge;
-            driving under a bridge doesn't. The moment you're back in the open, the cops know where you are again.
+            It tracks you while it can see you. Buildings, hills, tunnels and garages hide you: it loses you after 2 s out of its sight.
+            The moment it sees you again, the cops know where you are.
             It stays grounded in storm, fog and snow.
+            At night its searchlight shines on the runner; you can turn its beam in the air off in your settings.
             <template v-if="sightOff">While it tracks you, cops see you live.</template>
           </span>
         </div>
@@ -121,9 +122,10 @@
             and flies for <span class="v">{{ duration("helicopterUpSeconds") }}</span>.
             <template v-if="refuelNever">Then it stays up.</template>
             <template v-else>Then it refuels for <span class="v">{{ duration("helicopterRefuelSeconds") }}</span>.</template>
-            While it tracks the runner in the open, every cop sees where they are. It loses them after 2 s under cover
-            (tunnels, garages, or stopping under a bridge) and finds them again the moment they're back in the open.
+            While it tracks the runner in the open, every cop sees where they are. It must see the runner: buildings, hills, tunnels and garages hide them. It loses them after 2 s out of its sight
+            and finds them again the moment it sees them.
             It stays grounded in storm, fog and snow.
+            At night its searchlight shines on the runner; you can turn its beam in the air off in your settings.
           </span>
         </div>
         <div class="li">
@@ -186,7 +188,7 @@
         <div class="li">
           <BngIcon :type="icons.lockClosed" />
           <span>
-            <b>Locked during a round:</b> teleporting and recovery, the parts, tuning and paint menus, switching cars, free camera,
+            <b>Locked during a round:</b> teleporting and recovery, the parts, tuning and paint menus, switching cars, free camera (open in practice),
             photo mode, walking, slow motion, the node grabber, the editor and AI traffic.
           </span>
         </div>
@@ -199,7 +201,7 @@
         <div class="li">
           <span class="swatch"></span>
           <span>
-            <b>Your settings:</b> use the Settings button for your car colour, auto headlights at night and in bad weather, and as a cop, <span v-if="r.sirensAllowed !== false">a siren and </span>how the route to the runner is shown (always, only out of sight, or never).
+            <b>Your settings:</b> use the Settings button for your car colour, auto headlights at night and in bad weather, the helicopter's searchlight beam in the air, and as a cop, <span v-if="r.sirensAllowed !== false">a siren and </span>how the route to the runner is shown (always, only out of sight, or never).
             A colour set in prep repaints your car straight away; otherwise it applies from the next round.
           </span>
         </div>
