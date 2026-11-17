@@ -32,6 +32,11 @@
           </div>
         </div>
         <p class="muted">Next round you might be the runner: whoever has run least goes next.</p>
+        <p class="muted">
+          Need a break? <b>Sit out</b> on the lobby card keeps you out of rounds until you press <b>Play</b>; your car leaves the map
+          for the round and comes back where it stood. Sitting out, or joining while a round runs, you spectate: the game's switch-car
+          keys (Tab and Ctrl+Tab by default) go through the players' cars, and free camera (Shift+C) works.
+        </p>
       </div>
 
       <div tab-heading="Runner" class="htp-tab">
@@ -196,7 +201,7 @@
         <div class="li">
           <BngIcon :type="icons.lockClosed" />
           <span>
-            <b>Locked during a round:</b> teleporting and recovery, the parts, tuning and paint menus, switching cars, free camera (open in practice),
+            <b>Locked during a round:</b> teleporting and recovery, the parts, tuning and paint menus, switching cars and free camera (open while spectating; free camera in practice too),
             photo mode, walking, slow motion, the node grabber, the editor and AI traffic.
           </span>
         </div>

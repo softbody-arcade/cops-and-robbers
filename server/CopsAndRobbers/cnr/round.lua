@@ -39,6 +39,14 @@ local function copy(t)
   return c
 end
 
+local function without(players, set, other)
+  local c = {}
+  for pid, name in pairs(players or {}) do
+    if not set[pid] and not (other and other[pid]) then c[pid] = name end
+  end
+  return c
+end
+
 local function sortedPids(players)
   local pids = {}
   for pid in pairs(players) do pids[#pids + 1] = pid end
@@ -74,6 +82,8 @@ function Round:clear()
   self.releasedAt = nil
   self.pickStartedAt = nil
   self.players = {}
+  self.sittingOut = {}
+  self.watching = {}
   self.resetTrackers = {}
   self.crashDetectors = {}
   self.penalties = {}
@@ -111,6 +121,19 @@ function Round:runnerName()
   return self.players[self.runnerId] or tostring(self.runnerId)
 end
 
+function Round:timing(now, e)
+  e.phase = self.state
+  e.heli = self.heli and helicopter.status(self.heli, now) or nil
+  if self.state == "countdown" then
+    e.countdownRemaining = math.max(0, self.countdownStartedAt + self.cfg.runnerCountdownSeconds - now)
+  elseif self.state == "headstart" then
+    e.headStartRemaining = math.max(0, self.startedAt + self.cfg.headStartSeconds - now)
+  elseif self.state == "running" then
+    e.chaseElapsed = math.max(0, now - self.releasedAt)
+  end
+  return e
+end
+
 function Round:setupFor(now, pid)
   local role, copIndex = "cop", 0
   if pid == self.runnerId then
@@ -122,17 +145,13 @@ function Round:setupFor(now, pid)
   self.resetTrackers[pid] = resets.new(self.cfg)
   self.resetTrackers[pid]:grant(now, SETUP_GRACE_SECONDS)
   self.crashDetectors[pid] = crash.new(self.cfg)
-  local e = { kind = "setup", pid = pid, role = role, copIndex = copIndex, phase = self.state }
+  local e = self:timing(now, { kind = "setup", pid = pid, role = role, copIndex = copIndex })
   e.runnerShown = self.shown
-  e.heli = self.heli and helicopter.status(self.heli, now) or nil
-  if self.state == "countdown" then
-    e.countdownRemaining = math.max(0, self.countdownStartedAt + self.cfg.runnerCountdownSeconds - now)
-  elseif self.state == "headstart" then
-    e.headStartRemaining = math.max(0, self.startedAt + self.cfg.headStartSeconds - now)
-  elseif self.state == "running" then
-    e.chaseElapsed = math.max(0, now - self.releasedAt)
-  end
   return e
+end
+
+function Round:spectateFor(now, pid)
+  return self:timing(now, { kind = "spectate", pid = pid })
 end
 
 function Round:note(now, kind, name, seconds, cause)
@@ -211,7 +230,8 @@ function Round:start(now, runnerId, issuerId, players, opts)
     end
   else
     self.runnerId = runnerId
-    self.players = copy(players)
+    self.sittingOut = copy(opts and opts.sittingOut)
+    self.players = without(players, self.sittingOut)
   end
   self.state = "picking"
   self.issuerId = issuerId
@@ -277,7 +297,7 @@ end
 
 function Round:vehiclePicked(now, pid, model, config, players)
   if self.state ~= "picking" or pid ~= self.issuerId then return {} end
-  if not self.test then self.players = copy(players) end
+  if not self.test then self.players = without(players, self.sittingOut, self.watching) end
   if not self.test and not self.players[self.runnerId] then
     return self:cancel(now, "Runner left, round cancelled")
   end
@@ -305,6 +325,9 @@ function Round:vehiclePicked(now, pid, model, config, players)
     fx[#fx + 1] = { kind = "setupAI", pid = pid, ai = ai }
   else
     for _, p in ipairs(sortedPids(self.players)) do fx[#fx + 1] = self:setupFor(now, p) end
+    for _, p in ipairs(sortedPids(players or {})) do
+      if self.players[p] == nil then fx[#fx + 1] = self:spectateFor(now, p) end
+    end
   end
   return fx
 end
@@ -480,12 +503,16 @@ end
 
 function Round:playerJoined(now, pid, name)
   if self.state == "idle" or self.test then return {} end
+  local left = self.leftPlayers[name]
+  if self.state ~= "picking" and not left then
+    self.watching[pid] = true
+    return { self:spectateFor(now, pid) }
+  end
   self.players[pid] = name
   if self.state == "picking" then return {} end
   local setup = self:setupFor(now, pid)
   self.placing[pid] = { untilTime = now + PLACE_TIMEOUT_SECONDS }
   local fx = { setup }
-  local left = self.leftPlayers[name]
   if left then
     self.leftPlayers[name] = nil
     setup.resumePos = left.pos
@@ -599,6 +626,8 @@ function Round:coverReport(now, pid, covered)
 end
 
 function Round:playerLeft(now, pid)
+  self.sittingOut[pid] = nil
+  self.watching[pid] = nil
   if self.state == "idle" or self.players[pid] == nil then return {} end
   sight.forget(self.sight, pid)
   if pid == self.runnerId then
@@ -610,7 +639,7 @@ function Round:playerLeft(now, pid)
   end
   local name = self.players[pid]
   local prev = self.prevCars[pid]
-  if self.state == "running" or self.state == "headstart" then
+  if self.state ~= "picking" then
     self.leftPlayers[name] = { pos = prev and prev.pos, penaltyUntil = self.penalties[pid], copSight = self.copSight[pid] }
   end
   self.copSight[pid] = nil

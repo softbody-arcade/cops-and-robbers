@@ -202,6 +202,10 @@ function M.start(n, hold, clock)
   lastHold, lastReport, lastLights, reportKey = -math.huge, -math.huge, -math.huge, nil
 end
 
+function M.removeOwn()
+  deleteTraffic()
+end
+
 function M.release()
   held = false
   if running then sendAll(trafficCars(), FREEZE_OFF) end

@@ -16,6 +16,9 @@
         <span>Host panel</span>
         <span v-if="apps.panel" class="open-mark"></span>
       </BngButton>
+      <BngButton class="cnr-btn" :accent="ACCENTS.secondary" :icon="lobby.sitOut ? icons.play : icons.pause" @click="emit('sitOut', !lobby.sitOut)">
+        {{ lobby.sitOut ? "Play" : "Sit out" }}
+      </BngButton>
       <BngButton class="cnr-btn" :accent="ACCENTS.secondary" :icon="icons.arrowSmallDown" @click="emit('hide')">Hide</BngButton>
     </template>
   </CnrCard>
@@ -30,7 +33,7 @@ import HudWarnings from "./HudWarnings.vue"
 const props = defineProps({
   lobby: { type: Object, required: true },
 })
-const emit = defineEmits(["settings", "help", "toggle", "hide"])
+const emit = defineEmits(["settings", "help", "toggle", "hide", "sitOut"])
 
 const apps = computed(() => props.lobby.apps || {})
 </script>
