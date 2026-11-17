@@ -1,10 +1,7 @@
 <template>
   <CnrCard class="hud-lobby" title="Cops and Robbers" :sub="`${lobby.online} online`">
     <div class="status">{{ lobby.status }}</div>
-    <div v-for="w in warnings" :key="w" class="warning">
-      <BngIcon :type="icons.caution" />
-      <span>{{ w }}</span>
-    </div>
+    <HudWarnings class="warnings" :warnings="lobby.warnings" />
     <template #actions>
       <BngButton class="cnr-btn" :accent="ACCENTS.secondary" @click="emit('settings')">
         <span class="cnr-swatch" :class="{ empty: !lobby.color }" :style="lobby.color ? { background: lobby.color } : null"></span>
@@ -19,21 +16,22 @@
         <span>Host panel</span>
         <span v-if="apps.panel" class="open-mark"></span>
       </BngButton>
+      <BngButton class="cnr-btn" :accent="ACCENTS.secondary" :icon="icons.arrowSmallDown" @click="emit('hide')">Hide</BngButton>
     </template>
   </CnrCard>
 </template>
 
 <script setup>
 import { computed } from "vue"
-import { BngButton, BngIcon, ACCENTS, icons } from "@/common/components/base"
+import { BngButton, ACCENTS, icons } from "@/common/components/base"
 import CnrCard from "../../copsAndRobbers/CnrCard.vue"
+import HudWarnings from "./HudWarnings.vue"
 
 const props = defineProps({
   lobby: { type: Object, required: true },
 })
-const emit = defineEmits(["settings", "help", "toggle"])
+const emit = defineEmits(["settings", "help", "toggle", "hide"])
 
-const warnings = computed(() => (Array.isArray(props.lobby.warnings) ? props.lobby.warnings : []))
 const apps = computed(() => props.lobby.apps || {})
 </script>
 
@@ -52,18 +50,13 @@ const apps = computed(() => props.lobby.apps || {})
 .status {
   font-size: 1rem;
 }
-.warning {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+.warnings {
   margin-top: 0.25rem;
-  font-size: 0.875rem;
-  font-weight: 700;
-  color: var(--cnr-warn);
-  --bng-icon-size: 1rem;
 }
 .hud-lobby .cnr-btn {
-  --bng-icon-size: 1.25rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  --bng-icon-size: 1rem;
 }
 .open-mark {
   position: absolute;

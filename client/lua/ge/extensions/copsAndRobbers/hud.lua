@@ -186,9 +186,11 @@ local function lobbyBlock(info)
     status = LOBBY_RUNNING
   end
   local apps = type(info.apps) == "table" and info.apps or {}
+  local prefs = type(info.settings) == "table" and info.settings or {}
   return {
     online = tonumber(lobby.online) or 1, status = status, color = info.color,
     warnings = info.warnings or {}, apps = { panel = apps.panel == true, board = apps.board == true },
+    hudHidden = prefs.hudHidden == true,
   }
 end
 
