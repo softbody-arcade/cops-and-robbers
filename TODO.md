@@ -4,8 +4,6 @@ The shared ledger for every agent and worktree. Edit this file only on main (in 
 
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
-- [ ] The helicopter van always drawn (the user, 2026-11-17: "I want the van to always stay, no render limit (except for refueling then it can go)"): the van gets `forceDetail` 0 so the game's detail culling never drops it at a distance; it still leaves on a refuel or grounding fly-away. On branch `fixes-16` (worktree)
-  - The Pigeon helicopter van disappears while the player is in free camera (the user, 2026-11-17; they'd like it to stay). Nothing in `heliVan.lua` or `updateHeli` looks at the camera mode, so the cause is unknown: next time, with the van gone in free camera, run in the console `local o=scenetree.findObject("cnr_heli_van"); local c=core_camera.getPosition(); if o then local p=o:getPosition(); print("van "..math.floor(math.sqrt((p.x-c.x)^2+(p.y-c.y)^2+(p.z-c.z)^2)).." m, hidden "..tostring(o:isHidden())) else print("no van") end` and note whether the searchlight and its sound are still there
 
 ## In-game checks
 Things only a player in the game can confirm, each with what to look for. Add them here when work is merged or deployed without the check; delete a line once it is checked, and turn anything that fails into an Issue.
