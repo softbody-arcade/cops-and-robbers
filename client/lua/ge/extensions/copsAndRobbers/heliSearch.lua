@@ -10,6 +10,7 @@ M.WATCH_MIN_SPEED = 10
 M.WATCH_FACTOR = 1.5
 M.WATCH_MIN = 15
 M.WATCH_MAX = 90
+M.GUIDED_CHECK_SECONDS = 1
 
 function M.watchSeconds(length, speed)
   local t = length / math.max(speed or 0, M.WATCH_MIN_SPEED) * M.WATCH_FACTOR
@@ -25,6 +26,7 @@ function M.clear(state)
   state.flightRandom, state.lastKnown, state.wasGuided, state.sweepAt, state.retargetAt = nil, nil, nil, nil, nil
   state.missingSince, state.tunnelLogged, state.flightFailed, state.jumpAt = nil, nil, nil, nil
   state.lastKnownVel, state.roofCache, state.search = nil, nil, nil
+  state.guidedCheckAt, state.guidedExit, state.guidedKey, state.guidedOn = nil, nil, nil, nil
 end
 
 local function copy(p)
@@ -115,7 +117,7 @@ local function circle(state, f, car, clock)
   state.sweepAt, state.retargetAt = clock, clock
 end
 
-local function decide(state, pos, vel, target, opts)
+local function heading(vel, target)
   local speed = math.sqrt(vel.x * vel.x + vel.y * vel.y)
   local dirX, dirY = 0, 0
   if speed > 1 then
@@ -124,6 +126,11 @@ local function decide(state, pos, vel, target, opts)
     local d = target:getDirectionVector()
     if d then dirX, dirY = d.x, d.y end
   end
+  return speed, dirX, dirY
+end
+
+local function decide(state, pos, vel, target, opts)
+  local speed, dirX, dirY = heading(vel, target)
   local roads = opts and opts.roads and opts.roads()
   state.roofCache = state.roofCache or {}
   local list = tunnels.watch(pos, dirX, dirY, roads, opts and opts.roofedAt, state.seed, state.roofCache)
@@ -201,6 +208,66 @@ local function roadTick(state, f, s, dt, clock)
   state.sweepAt, state.retargetAt = clock, clock
 end
 
+local function edgeKey(roads, car, dirX, dirY)
+  if not (roads and roads.closest and roads.nodes) then return "none" end
+  local n1, n2 = roads.closest(car)
+  if n1 == nil then return "none" end
+  if n2 == nil or n2 == n1 then return tostring(n1) end
+  local a, b = tostring(n1), tostring(n2)
+  local ida, idb = n1, n2
+  if b < a then a, b, ida, idb = b, a, n2, n1 end
+  local pa, pb = roads.nodes[ida], roads.nodes[idb]
+  local sign = 0
+  if pa and pb and pa.pos and pb.pos then
+    local dot = (pb.pos.x - pa.pos.x) * dirX + (pb.pos.y - pa.pos.y) * dirY
+    sign = dot > 0 and 1 or (dot < 0 and -1 or 0)
+  end
+  return a .. "|" .. b .. "|" .. sign
+end
+
+local function guidedCheck(state, car, vel, target, clock, opts)
+  local at = state.guidedCheckAt
+  if at and clock - at < M.GUIDED_CHECK_SECONDS then return end
+  state.guidedCheckAt = clock
+  local roofedAt = opts and opts.roofedAt
+  if not roofedAt or roofedAt(vec3(car.x, car.y, car.z + tunnels.ROOF_HEIGHT)) ~= true then
+    state.guidedExit, state.guidedKey = nil, nil
+    return
+  end
+  local _, dirX, dirY = heading(vel, target)
+  local roads = opts.roads and opts.roads()
+  local key = edgeKey(roads, car, dirX, dirY)
+  if key == state.guidedKey then return end
+  state.roofCache = state.roofCache or {}
+  local list = tunnels.watch(car, dirX, dirY, roads, roofedAt, state.seed, state.roofCache)
+  state.guidedExit = list and list[1] and copy(list[1].pos) or nil
+  state.guidedKey = key
+end
+
+local function guidedApply(state, f, car, carVel, target, clock, opts)
+  local ok, err = pcall(guidedCheck, state, car, carVel, target, clock, opts)
+  if not ok then
+    failed(state, err)
+    state.guidedExit, state.guidedKey = nil, nil
+  end
+  local exit = state.guidedExit
+  if exit then
+    local s = f.spot
+    if not (state.guidedOn and s and s.x == exit.x and s.y == exit.y and s.z == exit.z) then
+      flight.search(f, exit)
+      state.sweepAt, state.retargetAt = clock, clock
+    end
+    state.guidedOn = true
+    return
+  end
+  if state.guidedOn then
+    flight.search(f, car)
+    state.sweepAt, state.retargetAt = clock, clock
+    state.guidedOn = nil
+  end
+  f.spot, f.spotVel = copy(car), copy(carVel)
+end
+
 local function retarget(state, f, phase, last, car, target, carVel, dt, clock, opts)
   if phase == "tracking" then
     if f.spot or f.lead then
@@ -208,11 +275,15 @@ local function retarget(state, f, phase, last, car, target, carVel, dt, clock, o
       state.retargetAt = clock
     end
     state.search = nil
+    state.guidedCheckAt, state.guidedExit, state.guidedKey, state.guidedOn = nil, nil, nil, nil
     state.lastKnown, state.lastKnownVel = copy(car), copy(carVel)
     return
   end
   if phase ~= "searching" then return end
   local guided = state.guided
+  if not guided then
+    state.guidedCheckAt, state.guidedExit, state.guidedKey, state.guidedOn = nil, nil, nil, nil
+  end
   if last == "tracking" then
     if guided then
       circle(state, f, car, clock)
@@ -233,7 +304,7 @@ local function retarget(state, f, phase, last, car, target, carVel, dt, clock, o
   end
   if guided then
     state.search = nil
-    f.spot, f.spotVel = copy(car), copy(carVel)
+    guidedApply(state, f, car, carVel, target, clock, opts)
     state.lastKnown, state.lastKnownVel = copy(car), copy(carVel)
     return
   end

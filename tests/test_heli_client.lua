@@ -1666,7 +1666,8 @@ test("guidance starting restarts the circle and the sweep from the runner", func
   c = flyTo(c, c + 10, opts)
   assertEq(state.sweepAt < c, true)
   c = c + 0.05
-  status(c, "searching", { guided = true }, opts)
+  local open = { roads = opts.roads, roofedAt = function() return false end }
+  status(c, "searching", { guided = true }, open)
   assertEq(state.sweepAt, c)
   assertEq(state.retargetAt, c)
   samePos(f.spot, pos, 1e-9)
@@ -1675,7 +1676,8 @@ end)
 
 test("guided and lost in the same tick search the runner", function()
   load()
-  local opts = tunnelTo(pos, vec3(pos.x + 300, pos.y, pos.z))
+  local tun = tunnelTo(pos, vec3(pos.x + 300, pos.y, pos.z))
+  local opts = { roads = tun.roads, roofedAt = function() return false end }
   lose(0, opts, { guided = true })
   samePos(state.flight.spot, pos, 1e-9)
   assertEq(state.search, nil)
@@ -2875,4 +2877,204 @@ test("the road out of the last candidate heads along its last edge, or away from
   local function entrance(p) return p.x > 90 and p.x < 350 and math.abs(p.y) < 1 end
   last = roadOut(straight(-9, 20), entrance, vec3(74, 0, 0))
   samePos(last, vec3(-1000, 0, 0), 1e-9)
+end)
+
+local function guidedCar(v)
+  return {
+    getPosition = function() return pos end,
+    getVelocity = function() return v.vel end,
+    getDirectionVector = function() return vec3(1, 0, 0) end,
+  }
+end
+
+local preloaded = false
+
+local function guidedStart(seed, at, vel, opts)
+  if not preloaded then load() end
+  state.random = seeded(seed)
+  pos = at
+  local v = { vel = vel }
+  local car = guidedCar(v)
+  status(0, "tracking", nil, opts, car)
+  status(0.05, "searching", { guided = true }, opts, car)
+  return v, car, 0.05
+end
+
+local function guidedDrive(c, to, v, car, opts, each)
+  while c < to - 1e-9 do
+    c = c + 0.05
+    pos = vec3(pos.x + v.vel.x * 0.05, pos.y + v.vel.y * 0.05, pos.z + v.vel.z * 0.05)
+    heli.lightTick(state, car, false, c, opts)
+    if each then each(c) end
+  end
+  return c
+end
+
+local function countWatch(fn)
+  load()
+  preloaded = true
+  local tn = require("copsAndRobbers/tunnels")
+  local orig, n = tn.watch, 0
+  tn.watch = function(...) n = n + 1 return orig(...) end
+  local ok, err = pcall(fn, function() return n end)
+  tn.watch = orig
+  preloaded = false
+  if not ok then error(err, 0) end
+end
+
+test("guided in a tunnel goes to the exit ahead, not above the runner", function()
+  local opts = tunnelOpts()
+  local v, car, c = guidedStart(60, vec3(150, 0, 0), vec3(10, 0, 0), opts)
+  local f = state.flight
+  c = guidedDrive(c, c + 1, v, car, opts)
+  samePos(f.spot, vec3(400, 0, 0), 1e-9)
+  samePos(f.spotVel, vec3(0, 0, 0), 0)
+  guidedDrive(c, c + 5, v, car, opts, function(t)
+    samePos(f.spot, vec3(400, 0, 0), 1e-9, tostring(t))
+    assertEq(state.search, nil)
+  end)
+end)
+
+test("a U-turn the cop sees flips it to the other end", function()
+  local opts = tunnelOpts()
+  local v, car, c = guidedStart(61, vec3(150, 0, 0), vec3(10, 0, 0), opts)
+  local f = state.flight
+  c = guidedDrive(c, c + 1, v, car, opts)
+  samePos(f.spot, vec3(400, 0, 0), 1e-9)
+  v.vel = vec3(-10, 0, 0)
+  c = guidedDrive(c, c + 1.1, v, car, opts)
+  samePos(f.spot, vec3(0, 0, 0), 1e-9)
+end)
+
+test("a branch moves it to that branch's exit", function()
+  local g = roads({
+    [2] = { 100, 0, 0 }, [3] = { 200, 0, 0 }, [4] = { 300, 0, 0 }, [5] = { 400, 0, 0 },
+    b = { 200, -100, 0 }, c = { 200, -300, 0 },
+  }, { { 2, 3 }, { 3, 4 }, { 4, 5 }, { 3, "b" }, { "b", "c" } })
+  local function roofed(p)
+    return (p.x > 50 and p.x < 350 and math.abs(p.y) < 1) or (math.abs(p.x - 200) < 1 and p.y < 1 and p.y > -250)
+  end
+  local opts = { roads = function() return g end, roofedAt = roofed }
+  local v, car, c = guidedStart(62, vec3(150, 0, 0), vec3(10, 0, 0), opts)
+  local f = state.flight
+  c = guidedDrive(c, c + 1, v, car, opts)
+  samePos(f.spot, vec3(400, 0, 0), 1e-9)
+  c = guidedDrive(c, c + 4, v, car, opts)
+  v.vel = vec3(0, -10, 0)
+  c = guidedDrive(c, c + 7, v, car, opts)
+  assertEq(pos.y < -50, true)
+  samePos(f.spot, vec3(200, -300, 0), 1e-9)
+end)
+
+test("the walk runs at most once a second, and only on an edge or direction change", function()
+  local opts = tunnelOpts()
+  countWatch(function(calls)
+    local v, car, c = guidedStart(63, vec3(130, 0, 0), vec3(10, 0, 0), opts)
+    guidedDrive(c, c + 5, v, car, opts)
+    assertEq(calls(), 1)
+  end)
+  countWatch(function(calls)
+    local v, car, c = guidedStart(64, vec3(150, 0, 0), vec3(10, 0, 0), opts)
+    local flip = 1
+    for i = 1, 25 do
+      v.vel = vec3(10 * flip, 0, 0)
+      flip = -flip
+      c = guidedDrive(c, c + 0.2, v, car, opts)
+      pos = vec3(150, 0, 0)
+    end
+    assertEq(calls() >= 2, true)
+    assertEq(calls() <= 6, true)
+  end)
+end)
+
+test("a redone walk tests only the car's roof", function()
+  local g = straight(-9, 20)
+  local nodeCalls, carCalls = 0, 0
+  local opts = { roads = function() return g end, roofedAt = function(p)
+    if math.abs(p.y - 0.5) < 1e-6 then carCalls = carCalls + 1 else nodeCalls = nodeCalls + 1 end
+    return inTunnel(p)
+  end }
+  countWatch(function(calls)
+    local v, car, c = guidedStart(65, vec3(150, 0.5, 0), vec3(10, 0, 0), opts)
+    c = guidedDrive(c, c + 0.5, v, car, opts)
+    pos = vec3(150, 0.5, 0)
+    local nodes0, car0, walks0 = nodeCalls, carCalls, calls()
+    assertEq(walks0, 1)
+    local flip = -1
+    for i = 1, 5 do
+      v.vel = vec3(10 * flip, 0, 0)
+      flip = -flip
+      c = guidedDrive(c, c + 1.05, v, car, opts)
+      pos = vec3(150, 0.5, 0)
+    end
+    local walks = calls() - walks0
+    assertEq(walks >= 4, true)
+    assertEq(nodeCalls, nodes0)
+    local checks = carCalls - car0 - walks
+    assertEq(checks >= 4 and checks <= 6, true)
+  end)
+end)
+
+test("guidance flickering 10 times in the tunnel tests the nodes once", function()
+  local g = straight(-9, 20)
+  local nodeCalls = 0
+  local opts = { roads = function() return g end, roofedAt = function(p)
+    if math.abs(p.x - 150) >= 1e-6 then nodeCalls = nodeCalls + 1 end
+    return inTunnel(p)
+  end }
+  local v, car, c = guidedStart(66, vec3(150, 0, 0), vec3(10, 0, 0), opts)
+  local first = nodeCalls
+  assertEq(first > 0, true)
+  for i = 1, 10 do
+    c = c + 0.05
+    status(c, "searching", nil, opts, car)
+    c = c + 0.05
+    status(c, "searching", { guided = true }, opts, car)
+    pos = vec3(150, 0, 0)
+  end
+  assertEq(nodeCalls, first)
+end)
+
+test("back in the open it circles the live position, and so does a tunnel with no exit within the caps", function()
+  local opts = tunnelOpts()
+  local v, car, c = guidedStart(67, vec3(0, 0, 0), vec3(10, 0, 0), opts)
+  local f = state.flight
+  guidedDrive(c, c + 1, v, car, opts, function(t) samePos(f.spot, pos, 1e-9, tostring(t)) end)
+  local g = straight(-9, 40)
+  local all = { roads = function() return g end, roofedAt = function() return true end }
+  v, car, c = guidedStart(68, vec3(150, 0, 0), vec3(10, 0, 0), all)
+  f = state.flight
+  guidedDrive(c, c + 3, v, car, all, function(t) samePos(f.spot, pos, 1e-9, tostring(t)) end)
+end)
+
+test("an exit that appears and goes restarts the circle, the sweep and the retarget", function()
+  local opts = tunnelOpts()
+  local v, car, c = guidedStart(69, vec3(20, 0, 0), vec3(20, 0, 0), opts)
+  local f = state.flight
+  samePos(f.spot, pos, 1e-9)
+  local seen
+  c = guidedDrive(c, c + 3, v, car, opts, function(t)
+    if not seen and math.abs(f.spot.x - 400) < 1e-9 then seen = t; assertEq(state.sweepAt, t) end
+  end)
+  assertEq(seen ~= nil, true)
+  samePos(f.spot, vec3(400, 0, 0), 1e-9)
+  pos = vec3(450, 0, 0)
+  v.vel = vec3(5, 0, 0)
+  c = guidedDrive(c, c + 1.1, v, car, opts)
+  samePos(f.spot, pos, 1e-9)
+end)
+
+test("guidance ending inside starts the timed watch from that moment", function()
+  local opts = tunnelOpts()
+  local v, car, c = guidedStart(70, vec3(150, 0, 0), vec3(10, 0, 0), opts)
+  c = guidedDrive(c, c + 1, v, car, opts)
+  v.vel = vec3(-10, 0, 0)
+  c = guidedDrive(c, c + 1.1, v, car, opts)
+  c = c + 0.05
+  status(c, "searching", nil, opts, car)
+  local s = state.search
+  assertEq(s.mode, "tunnel")
+  assertEq(s.list[1].id, 1)
+  assertEq(s.since, c)
+  samePos(state.flight.spot, vec3(0, 0, 0), 1e-9)
 end)
