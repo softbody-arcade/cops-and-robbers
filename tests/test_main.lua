@@ -429,10 +429,13 @@ test("penalty is shown on everyone's screen", function()
   env.cleanup()
 end)
 
-local function runToChase(env)
+local function runToChase(env, reportUncovered)
   env.startRound()
   env.go()
-  for _ = 1, 44 do env.clock = env.clock + 0.25; env.positions[2] = 900; env.call("cnr_tick") end
+  for i = 1, 44 do
+    env.clock = env.clock + 0.25; env.positions[2] = 900; env.call("cnr_tick")
+    if reportUncovered and i == 20 then env.call("cnr_cover", 1, '{"covered":false}') end
+  end
 end
 
 test("test round events reach only the issuer", function()
@@ -515,7 +518,7 @@ end)
 
 test("heli phases reach every player", function()
   local env = boot({ config = '{"helicopterArrivalSeconds": 0, "weather": "clear"}' })
-  runToChase(env)
+  runToChase(env, true)
   local seen = {}
   for _, m in ipairs(env.sent) do if m.ev == "cnr_heli" then seen[m.pid] = decodeJson(m.data).phase end end
   assertEq(seen[-1], "tracking")
@@ -579,9 +582,32 @@ test("cnr_heli carries the seed while up", function()
   env.cleanup()
 end)
 
+test("cnr_heli carries guided when a cop sees the runner", function()
+  local env = boot({ config = '{"helicopterArrivalSeconds": 0, "weather": "clear"}' })
+  runToChase(env)
+  env.positions[2] = 300
+  env.sent = {}
+  env.call("cnr_sight", 2, '{"seen":true}')
+  for _ = 1, 2 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  local last
+  for _, m in ipairs(env.sent) do if m.ev == "cnr_heli" then last = decodeJson(m.data) end end
+  assertEq(last.guided, true)
+  env.sent = {}
+  env.call("cnr_sight", 2, '{"seen":false}')
+  for _ = 1, 9 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  last = nil
+  for _, m in ipairs(env.sent) do if m.ev == "cnr_heli" then last = decodeJson(m.data) end end
+  assertEq(last ~= nil, true)
+  assertEq(last.guided, nil)
+  env.cleanup()
+end)
+
 test("cnr_cover from the runner reaches the round", function()
   local env = boot({ config = '{"helicopterArrivalSeconds": 0, "helicopterUpSeconds": 200, "weather": "clear"}' })
-  runToChase(env)
+  runToChase(env, true)
+  local first
+  for _, m in ipairs(env.sent) do if m.ev == "cnr_heli" then first = first or decodeJson(m.data).phase end end
+  assertEq(first, "tracking")
   env.sent = {}
   env.call("cnr_cover", 1, '{"covered":true}')
   for _ = 1, 12 do env.clock = env.clock + 0.25; env.positions[2] = 900; env.call("cnr_tick") end

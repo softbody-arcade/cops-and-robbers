@@ -81,7 +81,7 @@ function Round:clear()
   self.liveAt = nil
   self.sightTickAt = nil
   self.heli = nil
-  self.runnerCovered = false
+  self.runnerCovered = true
   self.tracked = false
   self.shown = true
   self.nearestAt = nil
@@ -378,9 +378,9 @@ function Round:tick(now, cars, stations, traffic)
     end
     progress, caught = self.catchTracker:update(now, runnerCar, cops)
     if caught then self.catchers = self:copsNear(runnerCar, cars) end
-    if self.heli and not caught and (helicopter.update(self.heli, now, self.runnerCovered) or heliNew) then
+    if self.heli and not caught and (helicopter.update(self.heli, now, self.runnerCovered, self.inSight) or heliNew) then
       local s = helicopter.status(self.heli, now)
-      fx[#fx + 1] = { kind = "heli", phase = s.phase, seconds = s.seconds, reason = s.reason, seed = s.seed }
+      fx[#fx + 1] = { kind = "heli", phase = s.phase, seconds = s.seconds, reason = s.reason, seed = s.seed, guided = s.guided }
     end
     if not caught and runnerCar then
       local nearest = self:nearestCop(cars, runnerCar)

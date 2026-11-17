@@ -39,13 +39,17 @@ function M.status(h, now)
   elseif h.phaseEnd then
     s.seconds = math.max(0, h.phaseEnd - now)
   end
-  if h.phase == "up" then s.seed = h.seed end
+  if h.phase == "up" then
+    s.seed = h.seed
+    if h.guided then s.guided = true end
+  end
   return s
 end
 
-function M.update(h, now, covered)
+function M.update(h, now, covered, guided)
   if h.phase == "grounded" then return false end
-  local before, seedBefore = phaseName(h), h.seed
+  local before, seedBefore, guidedBefore = phaseName(h), h.seed, h.guided == true
+  h.guided = guided == true
   while h.phaseEnd and now >= h.phaseEnd do
     local ended = h.phaseEnd
     if h.phase == "up" then
@@ -69,7 +73,7 @@ function M.update(h, now, covered)
       end
     end
   end
-  return phaseName(h) ~= before or h.seed ~= seedBefore
+  return phaseName(h) ~= before or h.seed ~= seedBefore or (h.phase == "up" and h.guided ~= guidedBefore)
 end
 
 function M.tracking(h)
