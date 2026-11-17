@@ -720,7 +720,7 @@ function handlers.start(pid, cmd)
   lastIssuer = pid
   local players = MP.GetPlayers() or {}
   local candidates, count = playing(players)
-  if count < 2 then return refuse(pid, "Need two players who aren't sitting out") end
+  if count == 0 then return refuse(pid, "Everyone is sitting out") end
   local query = cmd.rest
   local runnerId, err
   if query and query:lower() == "again" then
