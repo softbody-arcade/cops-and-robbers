@@ -61,6 +61,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Server checks:**
   - a reset that slips through anyway is shown to everyone as "reset illegally" (with 1.5 s of grace for latency)
   - any position jump that no allowed reset explains is shown as "teleported"
+  - the server log notes each round setup sent, each car spawn and edit with its model, vid and verdict, each placement report, each teleport with its distance and each crash penalty
 
 ### Crash penalty (cops)
 - A cop who loses 50 km/h within 0.5 s (about 2.8 G on average) gets frozen for 10 s.
@@ -100,6 +101,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Late joiners and reconnects:**
   - Someone who joins mid-round becomes a cop.
   - A cop who reconnects comes back near the road where they left.
+  - The mod's own move of their car into the round is never a teleport, an illegal reset or a crash: the server holds those checks until their game reports the car placed, and for 3 s after (at most 1 minute without a report).
 
 ## Police helicopter and hiding
 
