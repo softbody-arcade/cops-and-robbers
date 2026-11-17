@@ -37,6 +37,7 @@ Things only a player in the game can confirm, each with what to look for. Add th
 - [ ] Cop sight that follows visibility: the sight range is worked out from what the game knows (fog thickness, how dark it is, street lights near the runner, whether the runner's lights are on, rain). Comes after night and weather rounds
 
 ## Issues
+- [ ] In evolving car mode, a practice with an AI runner (practice as cop, and practice with Sit out) gets stuck in prep: GO waits for "Apply change", but no screen offers it (found while building practice Sit out, 2026-11-17)
 - [ ] Trees sometimes hide the runner from the helicopter's line of sight; the user thinks that's fair with thermals for now (2026-11-17). Revisit if it feels unfair
 - [ ] A sitting-out player's coupled trailer comes back uncoupled after the round, and parked cars from the game's parking system are saved and brought back as the player's own cars (2.10.1 review, rare)
 - [ ] The end of a road search still aims far for about 18 s: containment at the origin (about 1 km behind after the back route) swings the light with the normal switch offset and keeps it beyond 400 m while the helicopter flies back (2.10.0 final review; the same treatment as the waiting aim, aiming near the helicopter, would fix any far spot)
