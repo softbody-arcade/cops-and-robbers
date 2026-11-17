@@ -171,7 +171,7 @@ local function boot(opts)
       env.logs[#env.logs + 1] = table.concat(parts, " ")
       if outer ~= realPrint then outer(...) end
     end
-    local results = table.pack(pcall(_G[env.events[ev]], ...))
+    local results = table.pack(xpcall(_G[env.events[ev]], debug.traceback, ...))
     print = outer
     if not results[1] then error(results[2], 0) end
     return table.unpack(results, 2, results.n)
@@ -2922,5 +2922,42 @@ test("a joiner whose game already has a car when the setup arrives is replaced a
   for _ = 1, 8 do step(env) end
   assertEq(env.noticeHas("Kim teleported"), false)
   assertEq(env.noticeHas("Kim reset illegally"), false)
+  env.cleanup()
+end)
+
+local function logCount(env, text)
+  local n = 0
+  for _, l in ipairs(env.logs) do if l:find(text, 1, true) then n = n + 1 end end
+  return n
+end
+
+test("allowed spawns and edits are logged only while the car is placed", function()
+  local env = trafficBoot()
+  midChaseJoin(env)
+  assertEq(env.call("onVehicleEdited", 2, 0, '2-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc"}}'), 0)
+  assertEq(env.logHas("Bob edited"), false)
+  joinerAt(env, 600)
+  step(env)
+  env.call("cnr_myVehicle", 3, '{"vid":0}')
+  for _ = 1, 16 do step(env) end
+  assertEq(env.call("onVehicleEdited", 3, 0, '3-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc"}}'), 0)
+  assertEq(env.logHas("Kim edited"), false)
+  assertEq(env.call("onVehicleSpawn", 3, 1, '3:Kim:3-1:{"jbm":"etk800","vcf":{}}'), 0)
+  assertEq(env.call("onVehicleEdited", 3, 1, '3-1:{"jbm":"etk800","vcf":{}}'), 0)
+  assertEq(env.logHas("etk800"), false)
+  env.cleanup()
+end)
+
+test("a refused car is logged at most once per 10 s per player", function()
+  local env = boot()
+  midChaseJoin(env)
+  for _ = 1, 3 do assertEq(env.call("onVehicleSpawn", 2, 7, spawnOf(2, 7, "etk800")), 1) end
+  assertEq(logCount(env, "Bob spawned etk800 (vid 7): refused"), 1)
+  for _ = 1, 39 do step(env) end
+  assertEq(env.call("onVehicleEdited", 2, 0, '2-0:{"jbm":"etk800","vcf":{}}'), 1)
+  assertEq(env.logHas("Bob edited etk800 (vid 0): refused"), false)
+  step(env)
+  assertEq(env.call("onVehicleSpawn", 2, 7, spawnOf(2, 7, "etk800")), 1)
+  assertEq(logCount(env, "Bob spawned etk800 (vid 7): refused"), 2)
   env.cleanup()
 end)

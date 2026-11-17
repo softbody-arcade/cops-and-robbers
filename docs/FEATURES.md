@@ -61,7 +61,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Server checks:**
   - a reset that slips through anyway is shown to everyone as "reset illegally" (with 1.5 s of grace for latency)
   - any position jump that no allowed reset explains is shown as "teleported"
-  - the server log notes each round setup sent, each car spawn and edit with its model, vid and verdict, each placement report, each teleport with its distance and each crash penalty
+  - the server log notes each round setup sent, each refused car with its model and vid (at most once per 10 s per player), each spawn and edit of a car that is being placed, each placement report, each teleport with its distance and each crash penalty
 
 ### Crash penalty (cops)
 - A cop who loses 50 km/h within 0.5 s (about 2.8 G on average) gets frozen for 10 s.
