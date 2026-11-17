@@ -76,6 +76,7 @@ local lastChangeKey, lastChanges, lastChangeCheck = "", {}, 0
 local modesState = modes.new()
 local modesHoldUntil, lastModesCapture = 0, 0
 local requestReset
+local runnerObject
 local helpSeen = false
 local prefs = playerSettings.load(nil)
 local sirensAllowed = true
@@ -146,9 +147,10 @@ local function setupPosition(d)
   local own = ownVehicle()
   local runner = d.runnerGeo and geo.toGame(d.runnerGeo) or (d.runnerPos and vec3(d.runnerPos.x, d.runnerPos.y, d.runnerPos.z))
   local center = runner or (own and own:getPosition())
+  local runnerCar = runner and not d.geo and runnerObject()
   local pos, rot
   if center then
-    pos, rot = roads.findCopSpot(center, d.copSpawnMin or 50, d.copSpawnMax or 150, math.max(d.copIndex or 1, 1))
+    pos, rot = roads.findCopSpot(center, d.copSpawnMin or 50, d.copSpawnMax or 150, math.max(d.copIndex or 1, 1), runnerCar and runnerCar:getDirectionVector())
   end
   if not pos then hudfeed.event("No road found near the runner, you start where you are", clock, "warn") end
   return pos, rot
@@ -728,7 +730,7 @@ local function updateGpsInfo()
   end
 end
 
-local function runnerObject()
+runnerObject = function()
   local aiRunner = ai.runnerObject()
   if aiRunner then return aiRunner end
   if not runnerId or not MPVehicleGE or not MPVehicleGE.getVehicles then return nil end
@@ -913,7 +915,7 @@ local function onBeamNGEarthRebased(info)
     return
   end
   local own = ownVehicle()
-  local ids = ai.relocate(own and own:getPosition())
+  local ids = ai.relocate(own and own:getPosition(), own and own:getDirectionVector())
   if #ids > 0 then sendServer("cnr_relocated", { ids = ids }) end
 end
 

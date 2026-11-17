@@ -3011,3 +3011,47 @@ test("practice as a runner: AI cops spawned mid-throttle are hidden on the next 
     env.M.onExtensionUnloaded()
   end)
 end)
+
+local function spyCopSpots()
+  local roads = package.loaded["copsAndRobbers/roads"]
+  local find, calls = roads.findCopSpot, {}
+  roads.findCopSpot = function(center, minD, maxD, index, heading)
+    calls[#calls + 1] = { center = center, heading = heading }
+    return find(center, minD, maxD, index, heading)
+  end
+  return calls
+end
+
+test("a cop's start spot is searched along the runner car's heading", function()
+  local env = bootClient()
+  local runnerCar = env.addObject(300, vec3(0, 0, 0))
+  function runnerCar:getDirectionVector() return vec3(1, 0, 0) end
+  env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
+  env.mpPlayers[2] = { activeVehicleID = "2-0" }
+  local calls = spyCopSpots()
+  startCop(env)
+  assertEq(#calls, 1)
+  assertEq(calls[1].heading.x, 1)
+end)
+
+test("a cop's start spot has no heading without the runner's car", function()
+  local env = bootClient()
+  local calls = spyCopSpots()
+  startCop(env)
+  assertEq(#calls, 1)
+  assertEq(calls[1].heading, nil)
+end)
+
+test("practice AI cars start along the player's heading, also after an Earth teleport", function()
+  local env = bootClient()
+  function env.veh:getDirectionVector() return vec3(-1, 0, 0) end
+  local calls = spyCopSpots()
+  env.fire("cnr_roundSetup", { role = "runner", runnerId = 1, model = "pickup", config = "vehicles/pickup/base.pc", phase = "prep" })
+  env.fire("cnr_setupAI", { model = "pickup", config = "vehicles/pickup/base.pc", runnerId = 1, ai = { { id = -10, role = "cop", name = "AI cop 1", index = 1 } } })
+  env.tick(1)
+  assertEq(#calls, 1)
+  assertEq(calls[1].heading.x, -1)
+  env.M.onBeamNGEarthRebased({ purpose = "teleport" })
+  assertEq(#calls, 2)
+  assertEq(calls[2].heading.x, -1)
+end)

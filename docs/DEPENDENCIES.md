@@ -109,7 +109,7 @@ Then do the checks for whatever actually updated.
   - `BNG_LightFlare_1` is a flare datablock in the game's `art/datablocks/lights.datablocks.json` (inside gameengine.zip). It is the light's `flareType` and gives the glare.
   - On update, check: the beam still draws as a soft cone ending on the road, it fades near the camera, a deck over the car ends it, and the glare shows when you look up at the light.
 - **Placement and roads** (`roads.lua`):
-  - `map.getMap().nodes[id].pos` and `map.findClosestRoad(pos, radius)` (two node ids).
+  - `map.getMap().nodes[id].pos` and `map.findClosestRoad(pos, radius)` (two node ids; the nearest edge by straight distance, whatever its direction, so next to a narrow median it can be the other carriageway. We check it against the runner car's `getDirectionVector()` and, if it points the wrong way, take a fitting edge at most 5 m further, `MEDIAN_WIDTH`).
   - `map.getGraphpath().graph[a][b].{oneWay,inNode,gated}`: every link from both ends. Its `len` is a routing cost (length divided by drivability, plus 10 km on gated roads), so lengths come from node positions.
   - `spawn.safeTeleport(veh, pos, rot)`, `vec3`, `quatFromDir`.
   - On update, check: `getMap().nodes[].links` is still one-sided (`convertToSingleSided` in `lua/ge/map.lua`; we no longer read it), the graph fields above keep their names, and in game cops start a short drive from the runner, facing it.
