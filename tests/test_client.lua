@@ -262,11 +262,10 @@ local function pickWith(configs, origins, data, randoms)
 end
 
 local function manyConfigs()
-  local list = {}
+  local list = { { model_key = "bmodel", key = "only", Source = "BeamNG - Official", Type = "Car", pcFilename = "/vehicles/bmodel/only.pc" } }
   for i = 1, 10 do
     list[#list + 1] = { model_key = "amodel", key = "c" .. i, Source = "BeamNG - Official", Type = "Car", pcFilename = "/vehicles/amodel/c" .. i .. ".pc" }
   end
-  list[#list + 1] = { model_key = "bmodel", key = "only", Source = "BeamNG - Official", Type = "Car", pcFilename = "/vehicles/bmodel/only.pc" }
   return list
 end
 
