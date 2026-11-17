@@ -35,7 +35,8 @@
         <p class="muted">
           Need a break? <b>Sit out</b> on the lobby card keeps you out of rounds until you press <b>Play</b>; your car leaves the map
           for the round and comes back where it stood. Sitting out, or joining while a round runs, you spectate: the game's switch-car
-          keys (Tab and Ctrl+Tab by default) go through the players' cars, and free camera (Shift+C) works.
+          keys (Tab and Ctrl+Tab by default) go through the players' cars, and free camera (Shift+C) works. With Sit out on,
+          practice in the Host panel lets you watch the AI: an AI runner against two AI cops, spectated the same way.
         </p>
       </div>
 
