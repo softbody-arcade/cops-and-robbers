@@ -413,6 +413,13 @@ test("payload settings carry the helicopter sound, on by default", function()
   assertEq(hud.payload(hud.new(), 0, { active = true, settings = { sound = false } }).settings.sound, false)
 end)
 
+test("payload settings carry the helicopter model, on by default", function()
+  assertEq(hud.payload(hud.new(), 0, { active = false, settings = {} }).settings.model, true)
+  assertEq(hud.payload(hud.new(), 0, { active = false, settings = { model = true } }).settings.model, true)
+  assertEq(hud.payload(hud.new(), 0, { active = false, settings = { model = false } }).settings.model, false)
+  assertEq(hud.payload(hud.new(), 0, { active = true, settings = { model = false } }).settings.model, false)
+end)
+
 test("a result payload has no settings", function()
   local p = hud.payload(hud.new(), 0, { settings = { headlights = true, siren = true },
     result = { title = "X", untilT = 10, shownAt = 0 } })

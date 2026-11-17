@@ -111,6 +111,12 @@ function fakeEnvironment(opts)
     function obj:setVolumePitchCT(v) self.volume = v end
     function obj:setTransform() end
     function obj:setPosition(p) self.pos = { x = p.x, y = p.y, z = p.z } end
+    function obj:setPosRot(x, y, z, qx, qy, qz, qw)
+      self.pos = { x = x, y = y, z = z }
+      self.rot = { x = qx, y = qy, z = qz, w = qw }
+      self.moves = (self.moves or 0) + 1
+    end
+    function obj:setScale(v) self.scale = { x = v.x, y = v.y, z = v.z } end
     function obj:registerObject(name) self.name = name; fake.objects[name] = self end
     function obj:delete()
       if self.name then
