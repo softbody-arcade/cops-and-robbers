@@ -178,7 +178,7 @@ events.on("CnRPanel", data => {
 events.on("CnRPanelReply", data => {
   if (!data || typeof data !== "object") return
   if (data.ok === undefined) {
-    reply.value = { text: data.text || "", tone: "" }
+    reply.value = { text: data.text || "", tone: data.tone === "warn" ? "warn" : "" }
     return
   }
   const r = store.onReply(data)

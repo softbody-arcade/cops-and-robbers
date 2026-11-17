@@ -122,6 +122,7 @@ function M.clear()
 end
 
 function M.target(spec, seconds)
+  if not M.active() then cover, sinceCover = shelter.new(), 0 end
   goal = spec
   if seconds <= 0 then
     if cur and not sameKind() then removeAll() end

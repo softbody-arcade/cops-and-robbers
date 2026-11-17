@@ -50,6 +50,39 @@ test("the round's date is set with the time", function()
   assertEq(s.year, 2026); assertEq(s.month, 12); assertEq(s.day, 14); assertEq(s.time, 0.775)
 end)
 
+test("with a moving clock the round starts an hour before the named time", function()
+  local sky, fake = load()
+  local p = {}
+  for k, v in pairs(WINTER) do p[k] = v end
+  p.daySeconds = 1800
+  sky.apply(p)
+  assertEq(math.abs(fake.setStates[1].time - (0.775 - 1 / 24)) < 1e-9, true, tostring(fake.setStates[1].time))
+  local sky2, fake2 = load()
+  sky2.apply({ time = "noon", weather = "clear", year = 2026, month = 6, day = 14, windDir = 0, windSeed = 1, daySeconds = 900 })
+  assertEq(math.abs(fake2.setStates[1].time - (1 - 1 / 24)) < 1e-9, true, tostring(fake2.setStates[1].time))
+end)
+
+test("on a slow clock the lead is at most 75 s of real time", function()
+  for _, daySeconds in ipairs({ 7200, 86400 }) do
+    local sky, fake = load()
+    local p = {}
+    for k, v in pairs(WINTER) do p[k] = v end
+    p.daySeconds = daySeconds
+    sky.apply(p)
+    local want = 0.775 - 75 / daySeconds
+    assertEq(math.abs(fake.setStates[1].time - want) < 1e-9, true, daySeconds .. ": " .. tostring(fake.setStates[1].time))
+  end
+end)
+
+test("with the clock stopped the round starts at the named time", function()
+  local sky, fake = load()
+  local p = {}
+  for k, v in pairs(WINTER) do p[k] = v end
+  p.daySeconds = 0
+  sky.apply(p)
+  assertEq(fake.setStates[1].time, 0.775)
+end)
+
 test("the named time is worked out against the round's date", function()
   local sky, fake = load()
   sky.apply(WINTER)
@@ -268,7 +301,7 @@ test("the clock starts at GO with the round's day length", function()
   sky.startClock(600)
   local s = fake.setStates[#fake.setStates]
   assertEq(s.play, true); assertEq(s.dayLength, 1440)
-  assertNear(s.time, (0.245 + 600 / 1440) % 1, 1e-9)
+  assertNear(s.time, (0.245 - 1 / 24 + 600 / 1440) % 1, 1e-9)
 end)
 
 test("drop forgets without applying", function()
@@ -348,8 +381,10 @@ test("rain keeps falling under a high bridge", function()
   withRoof(20, function()
     local sky, fake = load()
     sky.apply(RAIN_NIGHT)
-    for _ = 1, 4 do sky.update(0.25) end
-    assertEq(hidden(fake), false)
+    for _ = 1, 16 do
+      sky.update(0.25)
+      assertEq(hidden(fake), false)
+    end
   end)
 end)
 
@@ -393,6 +428,22 @@ test("GO during a blend lands the full sky and locks", function()
   assertEq(landed ~= nil, true)
   assertEq(fake.setStates[#fake.setStates].play, true)
   assertEq(fake.locked, true)
+end)
+
+test("GO during a blend with Day length Off lands the sky, locks and never starts the clock", function()
+  local sky, fake = load()
+  sky.apply({ time = "sunset", weather = "rain", daySeconds = 0, month = 4, day = 2, windDir = 0, windSeed = 1 })
+  local n = #fake.setStates
+  assertEq(fake.locked, false)
+  sky.startClock(0)
+  assertEq(#fake.setStates, n + 1)
+  local s = fake.setStates[n + 1]
+  assertEq(fake.lerps[n + 1], nil)
+  assertEq(s.cloudCover, 2.2); assertEq(s.time, 0.245); assertEq(s.play, false)
+  for i = 1, #fake.setStates do assertEq(fake.setStates[i].play ~= true, true) end
+  assertEq(fake.locked, true)
+  sky.update(5)
+  assertEq(#fake.setStates, n + 1); assertEq(fake.locked, true)
 end)
 
 test("GO after the blend only starts the clock", function()
@@ -458,6 +509,21 @@ test("a round starting during the restore blend saves the player's own sky", fun
   fake.state.cloudCover = 1.1
   sky.apply(RAIN_NIGHT); sky.update(4); sky.restore(); sky.update(4)
   assertEq(fake.state.cloudCover, 0.05)
+end)
+
+test("a round starting during the restore blend saves the player's own sky and lock", function()
+  local sky, fake = load({ locked = true })
+  fake.state.cloudCover = 0.05
+  sky.apply(RAIN_NIGHT); sky.update(4); sky.restore()
+  assertEq(fake.locked, false)
+  fake.state.cloudCover = 1.1
+  sky.apply(RAIN_NIGHT); sky.update(4)
+  assertEq(fake.locked, true)
+  sky.restore()
+  assertEq(fake.locked, false)
+  sky.update(4)
+  assertEq(fake.state.cloudCover, 0.05)
+  assertEq(fake.locked, true)
 end)
 
 test("drop cancels a pending lock timer", function()

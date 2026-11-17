@@ -26,6 +26,12 @@ local weather
 local roundCars, ownerCar = {}, {}
 local hidden = {}
 
+function M.label(n, runnerOnly)
+  n = tonumber(n)
+  if not n or n <= 0 then return nil end
+  return string.format("Traffic: %d %s", n, runnerOnly == true and "for the runner" or "per player")
+end
+
 function M.setNotify(fn)
   notify = fn
 end

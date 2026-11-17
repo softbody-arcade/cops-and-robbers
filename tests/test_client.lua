@@ -134,6 +134,48 @@ test("an allowed road reset puts a cop on the road", function()
   assertEq(env.veh.pos.y, 60)
 end)
 
+local function resetOnce(env)
+  startCop(env)
+  env.fire("cnr_release", {})
+  env.fire("cnr_state", { resetAllowed = true })
+  env.tick(0.2)
+  env.M.requestReset("place")
+  return env.teleported
+end
+
+test("with no state after a reset, the key comes back after 2 s when the server last allowed it", function()
+  local env = bootClient()
+  local after = resetOnce(env)
+  env.tick(1)
+  env.M.requestReset("place")
+  assertEq(env.teleported, after, "still locked at 1 s")
+  assertEq(env.hud().status.reset, "")
+  env.tick(1.2)
+  assertEq(env.hud().status.reset, "Reset ready")
+  env.M.requestReset("place")
+  assertEq(env.teleported, after + 1)
+end)
+
+test("after a reset, the key stays locked past 2 s when the server last refused it", function()
+  local env = bootClient()
+  local after = resetOnce(env)
+  env.tick(0.5)
+  env.fire("cnr_state", { resetAllowed = false, resetHint = "Reset in 7s" })
+  env.tick(2)
+  assertEq(env.hud().status.reset, "Reset in 7s")
+  env.M.requestReset("place")
+  assertEq(env.teleported, after)
+end)
+
+test("a state message inside the 2 s after a reset wins at once", function()
+  local env = bootClient()
+  local after = resetOnce(env)
+  env.tick(0.5)
+  env.fire("cnr_state", { resetAllowed = true })
+  env.M.requestReset("place")
+  assertEq(env.teleported, after + 1)
+end)
+
 test("an AI crash shows once in the event line", function()
   local env = bootClient()
   env.fire("cnr_roundSetup", { role = "runner", runnerId = 1, model = "pickup", config = "vehicles/pickup/base.pc", phase = "prep" })
@@ -202,6 +244,71 @@ test("picking a vehicle sends an official car config", function()
   env.fire("cnr_pickVehicle", { includeMods = false, excludedModels = {} })
   local s = env.lastSent("cnr_vehiclePicked")
   assertEq(s.model, "pickup"); assertEq(s.config, "vehicles/pickup/base.pc")
+end)
+
+local function pickWith(configs, origins, data, randoms)
+  local env = bootClient({ configs = configs, origins = origins })
+  local calls, i = {}, 0
+  local real = math.random
+  math.random = function(n)
+    i = i + 1
+    calls[#calls + 1] = n
+    return math.min(randoms[i] or 1, n)
+  end
+  local ok, err = pcall(env.fire, "cnr_pickVehicle", data)
+  math.random = real
+  if not ok then error(err, 0) end
+  return env.lastSent("cnr_vehiclePicked"), calls
+end
+
+local function manyConfigs()
+  local list = { { model_key = "bmodel", key = "only", Source = "BeamNG - Official", Type = "Car", pcFilename = "/vehicles/bmodel/only.pc" } }
+  for i = 1, 10 do
+    list[#list + 1] = { model_key = "amodel", key = "c" .. i, Source = "BeamNG - Official", Type = "Car", pcFilename = "/vehicles/amodel/c" .. i .. ".pc" }
+  end
+  return list
+end
+
+test("a random pick chooses the model first, then the config", function()
+  local s, calls = pickWith(manyConfigs(), nil, { includeMods = false, excludedModels = {} }, { 1, 7 })
+  assertEq(s.model, "amodel"); assertEq(s.config, "vehicles/amodel/c7.pc")
+  assertEq(calls[1], 2); assertEq(calls[2], 10)
+  s, calls = pickWith(manyConfigs(), nil, { includeMods = false, excludedModels = {} }, { 2, 1 })
+  assertEq(s.model, "bmodel"); assertEq(s.config, "vehicles/bmodel/only.pc")
+  assertEq(calls[2], 1)
+end)
+
+test("a random pick gives each model half the draws", function()
+  local a, b = 0, 0
+  for r = 1, 2 do
+    local s = pickWith(manyConfigs(), nil, { includeMods = false, excludedModels = {} }, { r, 1 })
+    if s.model == "amodel" then a = a + 1 else b = b + 1 end
+  end
+  assertEq(a, 1); assertEq(b, 1)
+end)
+
+test("a random pick with mods skips mod cars the server does not provide", function()
+  local configs = {
+    { model_key = "meocar", key = "drag", Source = "Meo", Type = "Car", pcFilename = "/vehicles/meocar/drag.pc" },
+    { model_key = "localcar", key = "x", Source = "Mine", Type = "Car", pcFilename = "/vehicles/localcar/x.pc" },
+  }
+  local origins = { ["/vehicles/meocar/drag.pc"] = "/mods/multiplayer/meo.zip", ["/vehicles/localcar/x.pc"] = "/mods/repo/mine.zip" }
+  local data = { includeMods = true, excludedModels = {} }
+  local s, calls = pickWith(configs, origins, data, { 1, 1 })
+  assertEq(s.model, "meocar"); assertEq(calls[1], 1)
+  s = pickWith(configs, origins, data, { 2, 1 })
+  assertEq(s.model, "meocar")
+  s = pickWith({ configs[2] }, origins, data, { 1, 1 })
+  assertEq(s, nil)
+  s = pickWith(configs, origins, { includeMods = false, excludedModels = {} }, { 1, 1 })
+  assertEq(s, nil)
+end)
+
+test("a random pick never takes an excluded model or the unicycle", function()
+  local configs = manyConfigs()
+  configs[#configs + 1] = { model_key = "unicycle", key = "u", Source = "BeamNG - Official", Type = "Car", pcFilename = "/vehicles/unicycle/u.pc" }
+  local s, calls = pickWith(configs, nil, { includeMods = false, excludedModels = { "amodel" } }, { 1, 1 })
+  assertEq(s.model, "bmodel"); assertEq(calls[1], 1)
 end)
 
 local function fakeLayouts()
@@ -967,6 +1074,7 @@ test("starting a build reads the chosen config and sends its parts", function()
   assertEq(msg.parts.pickup_engine, "v8"); assertEq(msg.vars.gear1, 3.1); assertEq(msg.name, "Gavril Pickup")
   env.M.newBuild({ config = "vehicles/pickup/missing.pc" })
   assertEq(env.lastTrigger("CnRPanelReply").text, "That car can't start a build")
+  assertEq(env.lastTrigger("CnRPanelReply").tone, "warn")
 end)
 
 test("an engine swap is sent as one change with the parts that came with it", function()
@@ -1750,7 +1858,7 @@ test("a mid-chase setup starts the clock at clockSeconds", function()
   local d = copy(SETUP); d.phase = "running"; d.chaseElapsed = 100
   d.sky = { time = "sunset", daySeconds = 1440, clockSeconds = 110, windDir = 0, windSeed = 1 }
   env.fire("cnr_roundSetup", d); env.tick(0.1)
-  assertNear(env.sky.state.time, (0.245 + 110 / 1440) % 1, 1e-6)
+  assertNear(env.sky.state.time, (0.245 - 1 / 24 + 110 / 1440) % 1, 1e-6)
 end)
 
 test("the round end gives the player's sky back, a map change only forgets it", function()
@@ -1761,12 +1869,25 @@ test("the round end gives the player's sky back, a map change only forgets it", 
   env.fire("cnr_roundEnd", { reason = "cancelled" })
   assertEq(env.sky.locked, false); assertEq(env.sky.state.cloudCover, 0.3)
   env.tick(5)
+  assertEq(env.sky.locked, false); assertEq(env.sky.state.cloudCover, 0.3)
   env.fire("cnr_roundSetup", d); env.tick(5)
   local n = #env.sky.setStates
   assertEq(env.sky.locked, true)
   env.M.onClientEndMission()
   assertEq(#env.sky.setStates, n)
   assertEq(env.sky.locked, false)
+end)
+
+test("the round end puts the player's own sky lock back", function()
+  local env = bootClient()
+  env.sky.locked = true
+  local d = copy(SETUP); d.sky = { weather = "storm", driving = true, windDir = 0, windSeed = 7 }
+  env.fire("cnr_roundSetup", d); env.tick(5)
+  assertEq(env.sky.locked, true); assertEq(env.sky.state.cloudCover ~= 0.3, true)
+  env.fire("cnr_roundEnd", { reason = "cancelled" })
+  assertEq(env.sky.locked, false)
+  env.tick(5)
+  assertEq(env.sky.locked, true); assertEq(env.sky.state.cloudCover, 0.3)
 end)
 
 test("leaving the server mid-rain removes the rain at once", function()
@@ -1822,6 +1943,19 @@ test("leaderboard round rows get a sky label", function()
   env.fire("cnr_boardState", { rounds = { { id = 1, model = "pickup", sky = { time = "night", weather = "rain", month = 12, day = 14 } }, { id = 2, model = "pickup" } } })
   local d = env.lastTrigger("CnRBoard")
   assertEq(d.rounds[1].skyLabel, "Night · Rain"); assertEq(d.rounds[2].skyLabel, nil)
+end)
+
+test("leaderboard round rows get a traffic label, for the runner only or per player", function()
+  local env = bootClient()
+  env.fire("cnr_boardState", { rounds = {
+    { id = 1, model = "pickup", traffic = 5, trafficRunnerOnly = true },
+    { id = 2, model = "pickup", traffic = 5 },
+    { id = 3, model = "pickup" },
+  } })
+  local d = env.lastTrigger("CnRBoard")
+  assertEq(d.rounds[1].trafficLabel, "Traffic: 5 for the runner")
+  assertEq(d.rounds[2].trafficLabel, "Traffic: 5 per player")
+  assertEq(d.rounds[3].trafficLabel, nil)
 end)
 
 local function trafficObjects(env)
@@ -2883,6 +3017,31 @@ test("leaving the server shows the cops to a runner again", function()
   assertEq(env.mpVehicles["4-0"].hideNametag, nil)
 end)
 
+test("a cop car that turns up mid-round is hidden from the runner within 1 s", function()
+  withMinimap({ 100, 300, 400, 500 }, function(draw)
+    local env = bootClient()
+    runnerWithCops(env)
+    env.fire("cnr_roundCars", { keys = { "1-0", "3-0", "4-0", "5-0" } })
+    env.tick(0.1)
+    env.mpVehicles["5-0"] = { gameVehicleID = 500, isSpawned = true }
+    env.tick(1)
+    assertEq(env.mpVehicles["5-0"].hideNametag, true)
+    assertEq(draw(), "100")
+    env.M.onExtensionUnloaded()
+  end)
+end)
+
+test("the runner's cop sets are rebuilt at most once a second, not every frame", function()
+  local env = bootClient()
+  runnerWithCops(env)
+  local traffic = package.loaded["copsAndRobbers/traffic"]
+  local real, calls = traffic.roundCarOwners, 0
+  traffic.roundCarOwners = function() calls = calls + 1 return real() end
+  env.tick(2)
+  traffic.roundCarOwners = real
+  assertEq(calls >= 1 and calls <= 2, true, "rebuilds in 20 frames: " .. calls)
+end)
+
 test("on BeamNG.Earth a runner's cops lose the name tag but stay on the minimap", function()
   withMinimap({ 100, 300, 400 }, function(draw)
     local env = bootClient()
@@ -2910,4 +3069,138 @@ test("practice as a runner: the AI cops are skipped on the minimap", function()
     assertEq(draw(), "100")
     env.M.onExtensionUnloaded()
   end)
+end)
+
+test("practice as a runner: AI cops spawned mid-throttle are hidden on the next frame, not up to 1 s later", function()
+  local env = bootClient()
+  local d = copy(SETUP)
+  d.role, d.runnerId, d.inPlace = "runner", 1, true
+  withMinimap({ 100, 201, 202 }, function(draw)
+    env.fire("cnr_roundSetup", d)
+    env.tick(0.1)
+    assertEq(draw(), "100,201,202")
+    env.fire("cnr_setupAI", { model = "pickup", config = "vehicles/pickup/base.pc", runnerId = 1, ai = {
+      { id = -10, role = "cop", index = 1, name = "AI cop 1" },
+      { id = -11, role = "cop", index = 2, name = "AI cop 2" },
+    } })
+    assertEq(env.spawned[1].veh:getID(), 201); assertEq(env.spawned[2].veh:getID(), 202)
+    env.tick(0.1)
+    assertEq(draw(), "100")
+    env.M.onExtensionUnloaded()
+  end)
+end)
+
+local function spyCopSpots()
+  local roads = package.loaded["copsAndRobbers/roads"]
+  local find, calls = roads.findCopSpot, {}
+  roads.findCopSpot = function(center, minD, maxD, index, heading)
+    calls[#calls + 1] = { center = center, heading = heading }
+    return find(center, minD, maxD, index, heading)
+  end
+  return calls
+end
+
+test("a cop's start spot is searched along the runner car's heading", function()
+  local env = bootClient()
+  local runnerCar = env.addObject(300, vec3(0, 0, 0))
+  function runnerCar:getDirectionVector() return vec3(1, 0, 0) end
+  env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
+  env.mpPlayers[2] = { activeVehicleID = "2-0" }
+  local calls = spyCopSpots()
+  startCop(env)
+  assertEq(#calls, 1)
+  assertEq(calls[1].heading.x, 1)
+end)
+
+test("a cop's start spot has no heading without the runner's car", function()
+  local env = bootClient()
+  local calls = spyCopSpots()
+  startCop(env)
+  assertEq(#calls, 1)
+  assertEq(calls[1].heading, nil)
+end)
+
+test("practice AI cars start along the player's heading, also after an Earth teleport", function()
+  local env = bootClient()
+  function env.veh:getDirectionVector() return vec3(-1, 0, 0) end
+  local calls = spyCopSpots()
+  env.fire("cnr_roundSetup", { role = "runner", runnerId = 1, model = "pickup", config = "vehicles/pickup/base.pc", phase = "prep" })
+  env.fire("cnr_setupAI", { model = "pickup", config = "vehicles/pickup/base.pc", runnerId = 1, ai = { { id = -10, role = "cop", name = "AI cop 1", index = 1 } } })
+  env.tick(1)
+  assertEq(#calls, 1)
+  assertEq(calls[1].heading.x, -1)
+  env.M.onBeamNGEarthRebased({ purpose = "teleport" })
+  assertEq(#calls, 2)
+  assertEq(calls[2].heading.x, -1)
+end)
+
+local EXPLODE = "fire.explodeVehicle()"
+
+local function queued(veh, cmd)
+  for _, c in ipairs(veh.commands) do if c == cmd then return true end end
+  return false
+end
+
+local function copWithRunnerCar(env)
+  startCop(env)
+  local runnerCar = env.addObject(300, vec3(0, 100, 0))
+  env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
+  env.fire("cnr_roundCars", { keys = { "2-0" } })
+  env.fire("cnr_release", {})
+  env.tick(0.2)
+  return runnerCar
+end
+
+test("a caught runner's car explodes on a cop's game too", function()
+  local env = bootClient()
+  local runnerCar = copWithRunnerCar(env)
+  env.fire("cnr_roundEnd", { reason = "caught", runnerName = "Bob", survivedSeconds = 75, catchers = { "Reinder" }, runnerId = 2, explode = true })
+  assertEq(queued(runnerCar, EXPLODE), true)
+  assertEq(queued(env.veh, EXPLODE), false)
+end)
+
+test("a cop's game without the runner's car at the explosion queues nothing and does not error", function()
+  local env = bootClient()
+  startCop(env)
+  env.fire("cnr_roundCars", { keys = { "2-0" } })
+  env.fire("cnr_release", {})
+  env.tick(0.2)
+  env.fire("cnr_roundEnd", { reason = "caught", runnerName = "Bob", survivedSeconds = 75, catchers = { "Reinder" }, runnerId = 2, explode = true })
+  assertEq(queued(env.veh, EXPLODE), false)
+end)
+
+test("without explode a cop's game leaves the runner's car alone", function()
+  local env = bootClient()
+  local runnerCar = copWithRunnerCar(env)
+  env.fire("cnr_roundEnd", { reason = "caught", runnerName = "Bob", survivedSeconds = 75, catchers = { "Reinder" }, runnerId = 2 })
+  assertEq(queued(runnerCar, EXPLODE), false)
+end)
+
+test("the caught runner's own game explodes its own car", function()
+  local env = bootClient()
+  env.fire("cnr_roundSetup", { role = "runner", runnerId = 1, model = "pickup", config = "vehicles/pickup/base.pc", phase = "prep" })
+  env.tick(1)
+  env.fire("cnr_roundEnd", { reason = "caught", runnerName = "Reinder", survivedSeconds = 75, catchers = { "Bob" }, runnerId = 1, explode = true })
+  assertEq(queued(env.veh, EXPLODE), true)
+end)
+
+test("a game not in the round explodes nothing", function()
+  local env = bootClient()
+  local runnerCar = env.addObject(300, vec3(0, 100, 0))
+  env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
+  env.mpPlayers[2] = { activeVehicleID = "2-0" }
+  env.fire("cnr_roundEnd", { reason = "caught", runnerName = "Bob", survivedSeconds = 75, catchers = { "Ann" }, runnerId = 2, explode = true })
+  assertEq(queued(runnerCar, EXPLODE), false)
+  assertEq(queued(env.veh, EXPLODE), false)
+end)
+
+test("practice as a cop: the AI runner is removed at the round end, so nothing explodes", function()
+  local env = bootClient()
+  local aiRunner = practiceAsCop(env)
+  env.fire("cnr_release", {})
+  env.tick(0.2)
+  env.fire("cnr_roundEnd", { reason = "caught", runnerName = "AI runner", survivedSeconds = 30, catchers = { "Reinder" }, runnerId = AI_RUNNER, explode = true })
+  assertEq(queued(aiRunner, EXPLODE), false)
+  assertEq(queued(env.veh, EXPLODE), false)
+  assertEq(env.objects[aiRunner.id], nil)
 end)

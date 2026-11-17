@@ -31,6 +31,8 @@ local CHANGE_CHECK_INTERVAL = 1
 local BASELINE_DELAY = 1.5
 local MODES_INTERVAL = 3
 local MODES_SETTLE = 2.5
+local RESET_LOCK = 2
+local HIDING_INTERVAL = 1
 local HELP_FILE = "settings/cnr_help_seen.json"
 local BINDING_WARNING = "Bind a reset or recover button to reset during rounds"
 
@@ -41,6 +43,8 @@ local active = false
 local role
 local frozen = false
 local resetAllowed = false
+local serverResetAllowed = false
+local resetLockUntil
 local lastHint
 local timerEnd, timerLabel
 local roundModel, roundConfig, roundColor
@@ -60,6 +64,7 @@ local runnerId
 local runnerOut = false
 local runnerShown = true
 local hidingTarget
+local hidingBuiltAt = -math.huge
 local evolving = false
 local sightMax = 0
 local sightState = sight.new()
@@ -71,6 +76,7 @@ local lastChangeKey, lastChanges, lastChangeCheck = "", {}, 0
 local modesState = modes.new()
 local modesHoldUntil, lastModesCapture = 0, 0
 local requestReset
+local runnerObject
 local helpSeen = false
 local prefs = playerSettings.load(nil)
 local sirensAllowed = true
@@ -117,6 +123,7 @@ end
 
 local function onSetupAI(data)
   ai.setup(jsonDecode(data) or {})
+  hidingBuiltAt = -math.huge
 end
 
 local function onPickVehicle(data)
@@ -140,9 +147,10 @@ local function setupPosition(d)
   local own = ownVehicle()
   local runner = d.runnerGeo and geo.toGame(d.runnerGeo) or (d.runnerPos and vec3(d.runnerPos.x, d.runnerPos.y, d.runnerPos.z))
   local center = runner or (own and own:getPosition())
+  local runnerCar = runner and not d.geo and runnerObject()
   local pos, rot
   if center then
-    pos, rot = roads.findCopSpot(center, d.copSpawnMin or 50, d.copSpawnMax or 150, math.max(d.copIndex or 1, 1))
+    pos, rot = roads.findCopSpot(center, d.copSpawnMin or 50, d.copSpawnMax or 150, math.max(d.copIndex or 1, 1), runnerCar and runnerCar:getDirectionVector())
   end
   if not pos then hudfeed.event("No road found near the runner, you start where you are", clock, "warn") end
   return pos, rot
@@ -182,6 +190,7 @@ local function onRoundSetup(data)
   role = d.role
   runnerId = d.runnerId
   runnerShown = d.runnerShown ~= false
+  hidingBuiltAt = -math.huge
   evolving = d.evolving == true
   rebuildId = tonumber(d.rebuild)
   buildBaseline, lastChangeKey, lastChanges = nil, nil, {}
@@ -190,7 +199,7 @@ local function onRoundSetup(data)
   sightState = sight.new()
   roundModel, roundColor = d.model, d.color
   roundConfig = d.role == "cop" and vehicles.copConfig(d.model, d.config) or d.config
-  resetAllowed = false
+  resetAllowed, serverResetAllowed, resetLockUntil = false, false, nil
   lastHint = nil
   lastPose = nil
   inputs.lock(true, requestReset, d.practice == true)
@@ -343,6 +352,7 @@ local function onRebuild(data)
   local veh = ownVehicle()
   placeVehicle(roundModel, roundConfig, veh and veh:getPosition(), veh and game.uprightRotation(veh), roundColor)
   ai.rebuild(roundModel, d.config)
+  hidingBuiltAt = -math.huge
   local missing = {}
   for _, part in pairs(type(d.config.parts) == "table" and d.config.parts or {}) do
     if not vehicles.hasPart(roundModel, part) then missing[#missing + 1] = part end
@@ -469,12 +479,18 @@ local function onRelease()
   if role == "runner" then infoParts = runnerInfo() end
 end
 
-local function onState(data)
-  local d = jsonDecode(data) or {}
-  if d.resetAllowed ~= resetAllowed then
-    resetAllowed = d.resetAllowed and true or false
+local function setResetAllowed(allowed)
+  if allowed ~= resetAllowed then
+    resetAllowed = allowed
     inputs.setResetKey()
   end
+end
+
+local function onState(data)
+  local d = jsonDecode(data) or {}
+  serverResetAllowed = d.resetAllowed and true or false
+  resetLockUntil = nil
+  setResetAllowed(serverResetAllowed)
   if d.resetHint then lastHint = d.resetHint end
   local p = tonumber(d.catchProgress) or 0
   hudfeed.catchSample(clock, p)
@@ -508,7 +524,7 @@ local function endRound(leaving)
   timerEnd = nil
   roundModel, roundConfig, roundColor = nil, nil, nil
   pendingPlacement = nil
-  resetAllowed = false
+  resetAllowed, serverResetAllowed, resetLockUntil = false, false, nil
   lastPose = nil
   if frozen then setFreeze(false) end
   inputs.unlockAll()
@@ -518,14 +534,17 @@ local function onRoundEnd(data)
   local d = jsonDecode(data) or {}
   local wasRunner = MPConfig and MPConfig.getPlayerServerID() == d.runnerId
   local wasActive = active
+  local caughtCar
+  if d.explode and wasRunner then
+    caughtCar = ownVehicle()
+  elseif d.explode and wasActive and role == "cop" and not ai.runnerObject() then
+    caughtCar = runnerObject()
+  end
   endRound()
   local cancelled = d.reason == "cancelled" or not hudfeed.isResultReason(d.reason)
   if cancelled and not wasActive then return end
   hudfeed.showResult(d, clock)
-  if d.explode and wasRunner then
-    local veh = ownVehicle()
-    if veh then veh:queueLuaCommand("fire.explodeVehicle()") end
-  end
+  if caughtCar then caughtCar:queueLuaCommand("fire.explodeVehicle()") end
 end
 
 local function onTop(data)
@@ -547,7 +566,10 @@ local function onBoardState(data)
   addCar(d.mine)
   for _, row in ipairs(type(d.rounds) == "table" and d.rounds or {}) do
     addCar(row)
-    if type(row) == "table" then row.skyLabel = sky.label(row.sky) end
+    if type(row) == "table" then
+      row.skyLabel = sky.label(row.sky)
+      row.trafficLabel = traffic.label(row.traffic, row.trafficRunnerOnly)
+    end
   end
   local names = {}
   local function name(id)
@@ -635,6 +657,12 @@ local function updatePendingPlacement()
   end
 end
 
+local function updateResetLock()
+  if not resetLockUntil or clock < resetLockUntil then return end
+  resetLockUntil = nil
+  setResetAllowed(serverResetAllowed)
+end
+
 local function updateOwnCar()
   if not active or pendingPlacement then return end
   local veh = ownVehicle()
@@ -708,7 +736,7 @@ local function updateGpsInfo()
   end
 end
 
-local function runnerObject()
+runnerObject = function()
   local aiRunner = ai.runnerObject()
   if aiRunner then return aiRunner end
   if not runnerId or not MPVehicleGE or not MPVehicleGE.getVehicles then return nil end
@@ -752,6 +780,8 @@ local function updateHiding(obj)
   if not active then return end
   local keys, vids
   if role == "runner" then
+    if hidingTarget and clock - hidingBuiltAt < HIDING_INTERVAL then return hiding.tick(clock) end
+    hidingBuiltAt = clock
     keys, vids = copHidingSets()
   elseif role == "cop" and not runnerShown then
     keys, vids = {}, {}
@@ -821,6 +851,7 @@ local function onUpdate(dtReal)
   clock = clock + (dtReal or 0)
   sky.update(dtReal or 0)
   updatePendingPlacement()
+  updateResetLock()
   updateOwnCar()
   local report = ai.tick(clock)
   if #report > 0 then sendServer("cnr_aiVehicles", { ai = report }) end
@@ -867,6 +898,7 @@ requestReset = function(kind)
     return
   end
   resetAllowed = false
+  resetLockUntil = clock + RESET_LOCK
   local pos, rot = veh:getPosition(), game.uprightRotation(veh)
   if kind == "road" and role == "cop" then
     local roadPos, roadRot = roads.nearestRoad(pos)
@@ -889,7 +921,7 @@ local function onBeamNGEarthRebased(info)
     return
   end
   local own = ownVehicle()
-  local ids = ai.relocate(own and own:getPosition())
+  local ids = ai.relocate(own and own:getPosition(), own and own:getDirectionVector())
   if #ids > 0 then sendServer("cnr_relocated", { ids = ids }) end
 end
 
@@ -933,6 +965,7 @@ local function onExtensionLoaded()
   end)
   AddEventHandler("cnr_roundCars", function(data)
     traffic.setRoundCars((jsonDecode(data) or {}).keys)
+    hidingBuiltAt = -math.huge
   end)
   AddEventHandler("cnr_runnerShown", function(data)
     runnerShown = (jsonDecode(data) or {}).shown ~= false
@@ -1016,7 +1049,7 @@ function M.newBuild(choice)
   else
     b = vehicles.buildFrom(path)
   end
-  if not b then return guihooks.trigger("CnRPanelReply", { text = "That car can't start a build" }) end
+  if not b then return guihooks.trigger("CnRPanelReply", { text = "That car can't start a build", tone = "warn" }) end
   M.panel({ action = "build", op = "new", model = b.model, name = b.name, parts = b.parts, vars = b.vars, from = choice.random and "random" or path })
 end
 

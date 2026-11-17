@@ -4,6 +4,8 @@ local COP_SPACING = 8
 local LINK_STEP = 15
 local MAX_SPAWN_RING = 2000
 local ROAD_SEARCH_MAX = 2000
+local MEDIAN_WIDTH = 5
+local HEADING_FIT = 0.7
 
 local function graph()
   local gp = map.getGraphpath and map.getGraphpath()
@@ -33,6 +35,16 @@ local function sortSpots(list)
   return list
 end
 
+local function gated(link)
+  return (link.gated or 0) > 0
+end
+
+local function private(n, other, id, linkId)
+  local a = n.links and n.links[linkId]
+  local b = other.links and other.links[id]
+  return (a and a.type == "private") or (b and b.type == "private") or false
+end
+
 local function lineSpots(center, minD, maxD)
   local links, nodes = graph()
   local candidates = {}
@@ -40,7 +52,7 @@ local function lineSpots(center, minD, maxD)
   for id, neighbours in pairs(links) do
     for linkId, link in pairs(neighbours) do
       local n, other = nodes[id], nodes[linkId]
-      if n and other and tostring(id) < tostring(linkId) then
+      if n and other and tostring(id) < tostring(linkId) and not gated(link) and not private(n, other, id, linkId) then
         local delta = other.pos - n.pos
         local len = delta:length()
         if len > 1e-3 then
@@ -95,10 +107,6 @@ local function heapPop(heap)
   return top[1], top[2], top[3]
 end
 
-local function gated(link)
-  return (link.gated or 0) > 0
-end
-
 local function walk(links, nodes, seeds, limit, runnerPoint)
   local dist, facing, heap = {}, {}, {}
   for _, s in ipairs(seeds) do heapPush(heap, s[1], s[2], false) end
@@ -124,17 +132,55 @@ local function walk(links, nodes, seeds, limit, runnerPoint)
   return dist, facing
 end
 
-local function roadSpots(center, limit)
+local function closestOn(p, a, b)
+  local ab = b - a
+  local len2 = dot(ab, ab)
+  local t = len2 > 0 and math.max(0, math.min(1, dot(p - a, ab) / len2)) or 0
+  return a + ab * t, t
+end
+
+local function flatDir(v)
+  local len = math.sqrt(v.x * v.x + v.y * v.y)
+  if len < 1e-3 then return nil end
+  return vec3(v.x / len, v.y / len, 0)
+end
+
+local function headingFit(link, nodes, u, v, heading)
+  local along = flatDir(nodes[v].pos - nodes[u].pos)
+  if not along then return -1 end
+  local c = dot(along, heading)
+  if not link.oneWay then return math.abs(c) end
+  return link.inNode == u and c or -c
+end
+
+local function fittingRoad(links, nodes, center, n1, n2, heading)
+  local h = heading and flatDir(heading)
+  if not h or headingFit(links[n1][n2], nodes, n1, n2, h) >= HEADING_FIT then return n1, n2 end
+  local reach = center:distance((closestOn(center, nodes[n1].pos, nodes[n2].pos))) + MEDIAN_WIDTH
+  local best, bestU, bestV
+  for u, neighbours in pairs(links) do
+    for v, link in pairs(neighbours) do
+      if tostring(u) < tostring(v) and nodes[u] and nodes[v] and not gated(link) and headingFit(link, nodes, u, v, h) >= HEADING_FIT then
+        local d = center:distance((closestOn(center, nodes[u].pos, nodes[v].pos)))
+        if d <= reach and (not best or d < best or (d == best and tostring(u) < tostring(bestU))) then
+          best, bestU, bestV = d, u, v
+        end
+      end
+    end
+  end
+  if bestU then return bestU, bestV end
+  return n1, n2
+end
+
+local function roadSpots(center, limit, heading)
   local links, nodes = graph()
   if not links then return nil end
   local n1, n2 = map.findClosestRoad(center, ROAD_SEARCH_MAX)
-  local own = n1 and links[n1] and links[n1][n2]
-  if not own or not nodes[n1] or not nodes[n2] then return nil end
+  if not (n1 and links[n1] and links[n1][n2] and nodes[n1] and nodes[n2]) then return nil end
+  n1, n2 = fittingRoad(links, nodes, center, n1, n2, heading)
+  local own = links[n1][n2]
   local a, b = nodes[n1].pos, nodes[n2].pos
-  local ab = b - a
-  local len2 = dot(ab, ab)
-  local t = len2 > 0 and math.max(0, math.min(1, dot(center - a, ab) / len2)) or 0
-  local runnerPoint = a + ab * t
+  local runnerPoint, t = closestOn(center, a, b)
   local seeds = {}
   if canDrive(own, n1) or t == 0 then seeds[#seeds + 1] = { runnerPoint:distance(a), n1 } end
   if canDrive(own, n2) or t == 1 then seeds[#seeds + 1] = { runnerPoint:distance(b), n2 } end
@@ -197,12 +243,12 @@ local function pickSpot(candidates, lo, hi, index)
   return nil
 end
 
-local function rings(minD, maxD, keepMin)
+local function rings(minD, maxD)
   local list = { { minD, maxD } }
   local hi = math.max(maxD, 1)
   while hi < MAX_SPAWN_RING do
     hi = hi * 2
-    list[#list + 1] = { keepMin and minD or 0, hi }
+    list[#list + 1] = { minD, hi }
   end
   return list
 end
@@ -215,15 +261,15 @@ local function pickFrom(candidates, ringList, index)
   return nil
 end
 
-function M.findCopSpot(center, minD, maxD, index)
-  local byRoad = rings(minD, maxD, true)
-  local spots = roadSpots(center, byRoad[#byRoad][2])
+function M.findCopSpot(center, minD, maxD, index, heading)
+  local ringList = rings(minD, maxD)
+  local limit = ringList[#ringList][2]
+  local spots = roadSpots(center, limit, heading)
   if spots then
-    local pos, rot = pickFrom(spots, byRoad, index)
+    local pos, rot = pickFrom(spots, ringList, index)
     if pos then return pos, rot end
   end
-  local straight = rings(minD, maxD, false)
-  return pickFrom(lineSpots(center, 0, straight[#straight][2]), straight, index)
+  return pickFrom(lineSpots(center, minD, limit), ringList, index)
 end
 
 local function closestNodeFallback(pos)

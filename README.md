@@ -86,10 +86,10 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `resetWaitSeconds` | 7 | Stand still this long to reset anywhere |
 | `stillMaxSpeedKmh` | 1 | "Standing still" threshold |
 | `gasStationRadiusMeters` | 25 | Gas station reset area |
-| `copResetMinDistanceMeters` | 1000 | Cops this far from the runner may reset any time |
+| `copResetMinDistanceMeters` | 1000 | Cops this far from the runner may reset any time and get no crash penalty |
 | `copSpawnMinMeters` / `copSpawnMaxMeters` | 50 / 150 | Cop start distance from the runner, by road |
 | `crashSpeedLossKmh` | 50 | Speed lost within 0.5 s that counts as a crash (~2.8 G) |
-| `crashPenaltySeconds` | 10 | Freeze for the cop at fault |
+| `crashPenaltySeconds` | 10 | Freeze for the cop at fault, within `copResetMinDistanceMeters` of the runner |
 | `helicopter` | true | Police helicopter that tracks the runner in the open |
 | `helicopterArrivalSeconds` | 60 | It arrives this long after the cops are released (0 = at release) |
 | `helicopterUpSeconds` | 120 | How long it flies before it refuels (more than 0) |
@@ -103,7 +103,7 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `assistMinSightPercent` | 20 | Share of the chase a cop needs sight of the runner for an assist |
 | `roundTimeLimitSeconds` | 0 | Runner escapes after this long (0 = no limit) |
 | `excludedModels` | citybus, us_semi, md_series, percheron, rockbouncer | Never picked |
-| `explodeOnCatch` | false | Runner's car explodes when caught |
+| `explodeOnCatch` | false | Runner's car explodes when caught, for every player in the round (the AI runner in practice as a cop is deleted at once) |
 | `sirensAllowed` | true | Cops may use a siren (each cop turns it on in their settings) |
 | `includeModVehicles` | false | Also pick mod vehicles |
 | `autoNextRound` | false | Prepare the next round automatically (panel switch) |
@@ -123,8 +123,8 @@ During a round every player's game runs a few AI traffic cars around itself (`tr
 off). With `trafficRunnerOnly` (panel: Traffic for the runner only) only the runner's game does, with the same count, for
 better performance; practice rounds keep their traffic either way. They spawn in prep, stand still until GO, and are removed when the round ends. There are no police or emergency
 vehicles among them, and they have no name tags, so every car with lights is a cop and every name tag is a player. A
-cop who drives into a traffic car gets the crash penalty ("crash penalty 10s (traffic)"); one who gets hit by traffic
-doesn't. In rain, storm, fog and snow rounds traffic drives with its headlights on; at night it follows the game's own
+cop who drives into a traffic car gets the crash penalty ("crash penalty 10s (traffic)"), as with any crash only within
+`copResetMinDistanceMeters` of the runner; one who gets hit by traffic doesn't. In rain, storm, fog and snow rounds traffic drives with its headlights on; at night it follows the game's own
 lights. Traffic is off on BeamNG.Earth for now.
 
 Every player's game simulates everyone's traffic. If that gets heavy, BeamMP's "Simplify remote vehicles" option makes
