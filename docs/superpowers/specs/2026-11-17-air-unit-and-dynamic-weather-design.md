@@ -1,6 +1,6 @@
 # The helicopter as a real air unit, and dynamic weather (2.10.0)
 
-Status: draft for the user's approval, 2026-11-17. Builds on 2.9.4. That release made the helicopter fly, search where it last knew the runner was, wait at tunnel exits, take guidance from the cops' sight, sweep its light and make a rotor sound (`2026-11-17-visible-searchlight-beam-design.md`). It also builds on the night and weather rounds (`2026-11-16-night-weather-design.md`, `2026-11-16-sky-transitions-design.md`).
+Status: for the user's approval, 2026-11-17, after a builder check. Builds on 2.9.4. That release made the helicopter fly, search where it last knew the runner was, wait at tunnel exits, take guidance from the cops' sight, sweep its light and make a rotor sound (`2026-11-17-visible-searchlight-beam-design.md`). It also builds on the night and weather rounds (`2026-11-16-night-weather-design.md`, `2026-11-16-sky-transitions-design.md`).
 
 ## Why
 - **The user's brief:** "most realism with gameplay balance in mind". Every helicopter behaviour should be what a real police air unit would do.
@@ -79,6 +79,10 @@ When the helicopter loses the runner, or the cops' guidance ends while searching
 - **Tunnel watch:** the car is under a roof (the roof check), and a tunnel walk finds at least one exit (`tunnels.lua`). See A3.
 - **Road search:** the car's horizontal speed is at least `SEARCH_MOVING_SPEED = 5` m/s and it is not in a tunnel. See A4.
 - **Containment:** otherwise (a stopped or slow runner, or no road data). The 2.9.4 behaviour: circle the spot at `SEARCH_RADIUS` and sweep the spiral.
+
+**At the first arrival of a round:**
+- The same choice, from the runner's car when the helicopter goes up: where dispatch says they are, which way they are heading, and how fast. A real crew gets "heading north on X road" from the ground units.
+- Balance: the arrival delay (`helicopterArrivalSeconds`, 60 s) is what the runner gets. In the open within 400 m it sees them at once anyway.
 
 **After a refuel:**
 - The same choice, made from the last known state. When this game last tracked the runner, or the cops last guided it, it stored the position, direction of travel and speed.
@@ -179,7 +183,8 @@ Unchanged, except that the schedule is rolled with the sky. Prep shows only the 
 - **The server:**
   - `helicopter.update` gets the current weather (B2 state). Grounded is no longer final.
   - `flew()` is true if it was ever up.
-  - "Time up" keeps counting only while it is up.
+  - **Time up:** each time it goes up, it gets a full `helicopterUpSeconds`, because the crew refuels while grounded. Time up only runs while it is up.
+  - A grounding during a refuel cancels the refuel. It comes back through "arriving" when the weather clears.
 - **HUD:** "HELICOPTER GROUNDED (STORM)" as now. When it is coming back: "HELICOPTER IN 1:00".
 
 ### B6. Records
@@ -220,6 +225,7 @@ Unchanged, except that the schedule is rolled with the sky. Prep shows only the 
   - the search point moves at 45 m/s
 - **Tunnel watch:** the candidate order (straightest exit first, then the others, then the entrance); the watch times; the switch to the next candidate; a road search after the last.
 - **Mode choice:**
+  - the same choice at the first arrival, from the runner's car when it goes up
   - moving ≥ 5 m/s gives a road search
   - slower gives containment
   - under a roof with an exit gives a tunnel watch
@@ -240,7 +246,12 @@ Unchanged, except that the schedule is rolled with the sky. Prep shows only the 
   - the traffic lights follow
   - the notice texts
   - a joiner mid-change gets the in-between values
-- **Helicopter and weather:** grounded at the start of a change to storm or fog, with a fly-away on every game; arriving at the end of a change away from storm or fog; `flew()`; time up only while up.
+- **Helicopter and weather:**
+  - grounded at the start of a change to storm or fog, with a fly-away on every game
+  - arriving at the end of a change away from storm or fog
+  - a full time up after each return
+  - a grounding during a refuel
+  - `flew()`
 - **Records:** the worst weather and `weatherStart`.
 - **Part C:** no behaviour change. The whole suite passes after the split, before Part A.
 
@@ -272,6 +283,8 @@ Unchanged, except that the schedule is rolled with the sky. Prep shows only the 
 - snow doesn't change
 - the recall at the start of a change to storm or fog, and the return at the end of a change away from them
 - records keep the worst weather plus the start weather
+- the first arrival uses the same mode choice as a loss, from the runner's car at that moment (the builder check asked)
+- a full time up after each return from a grounding (the builder check asked)
 
 ## Left to the builder
 - how the stepped blend interpolates (smoothstep) and the exact notice wording within the tone above
