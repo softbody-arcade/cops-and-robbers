@@ -2,7 +2,7 @@
   <CnrRoot class="cnr-board">
     <CnrCard v-if="!hidden" class="board-card" title="Leaderboard" closable @close="close">
       <div v-if="!connected" class="b-empty">Not on a Cops and Robbers server</div>
-      <BngTabs v-else v-model="tab" class="board-tabs" :show-arrows="false">
+      <BngTabs v-else v-model="tab" class="board-tabs" :show-arrows="false" @change="onTab">
         <template #after-tab-list>
           <div v-if="filtersShown" class="b-filters">
             <BngDropdown v-model="mapFilter" class="b-filter" :items="mapItems">
@@ -16,10 +16,10 @@
         </template>
         <BoardRunners tab-heading="Runners" :runners="runners" :mine="state.mine" :all-maps="allMaps" :map-label="mapLabel" />
         <BoardCops tab-heading="Cops" :cops="cops" />
-        <BoardPlayers v-model:selected="playerKey" tab-heading="Players" :players="players" :rounds="rounds" />
+        <BoardPlayers v-model:selected="playerKey" :tab-heading="PLAYERS_TAB" :players="players" :rounds="rounds" />
         <BoardRounds
           v-model:selected="roundId"
-          tab-heading="Rounds"
+          :tab-heading="ROUNDS_TAB"
           :rounds="rounds"
           :all-maps="allMaps"
           :map-label="mapLabel"
@@ -48,8 +48,8 @@ import BoardPlayers from "./BoardPlayers.vue"
 import BoardRounds from "./BoardRounds.vue"
 
 const OPEN_RETRY_MS = 2000
-const PLAYERS_TAB = 2
-const ROUNDS_TAB = 3
+const PLAYERS_TAB = "Players"
+const ROUNDS_TAB = "Rounds"
 const MODES = [
   { value: "all", label: "All car modes" },
   { value: "random", label: "Random car" },
@@ -67,6 +67,7 @@ const { hud, ui } = useCnrHud("board")
 
 const state = ref({})
 const tab = ref(0)
+const tabHeading = ref("")
 const playerKey = ref(null)
 const roundId = ref(null)
 let openTimer = null
@@ -80,12 +81,16 @@ const rounds = computed(() => list(state.value.rounds))
 const allMaps = computed(() => state.value.filter === "all")
 
 const filtersShown = computed(() => {
-  if (tab.value === PLAYERS_TAB && playerKey.value !== null) return false
-  if (tab.value === ROUNDS_TAB && roundId.value !== null) return false
+  if (tabHeading.value === PLAYERS_TAB && playerKey.value !== null) return false
+  if (tabHeading.value === ROUNDS_TAB && roundId.value !== null) return false
   return true
 })
 
 const moreShown = computed(() => state.value.moreRounds === true)
+
+function onTab(entry) {
+  tabHeading.value = entry && typeof entry.heading === "string" ? entry.heading : ""
+}
 
 function mapLabel(id) {
   const names = state.value.mapNames
