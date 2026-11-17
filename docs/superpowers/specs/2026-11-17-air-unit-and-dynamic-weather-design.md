@@ -25,7 +25,7 @@ Status: for the user's approval, 2026-11-17, after a builder check. Builds on 2.
 - Thunder and lightning (a separate Idea).
 - A leaderboard conditions filter (a separate Idea). Records gain the start weather so the filter can use it later.
 - BeamNG.Earth weather. The sky is off there, as now.
-- Changing time of day, the date or the temperature curve during a round.
+- Changing time of day or the date during a round. The temperature curve only moves on at its turning points (B2).
 
 ## Anti-goals (a failure even if it works)
 - Two players' helicopters doing visibly different things after the same loss, beyond network lag and tunnel-mouth timing (accepted in 2.9.4).
@@ -40,6 +40,8 @@ Status: for the user's approval, 2026-11-17, after a builder check. Builds on 2.
 - **Tunnels:** the timed tunnel watch as described below.
 - **Version:** this is 2.10.0, with dynamic weather folded in.
 - **Weather logic:** changes only when the day allows it, worked out in advance, with no limit on their number and a set minimum and maximum time between them; snow only when the day's temperatures allow it, and in the southern hemisphere in its own winter.
+- **Crossings and grip:** a temperature or fog crossing changes the weather at that moment, not at the next slot; grip changes gradually, and roads dry slower than they get wet.
+- **Temperatures by day:** each game day of a round gets its own low and high, so a next day can be colder or warmer.
 - **Forecast:** the next change only, with a rough 2-minute window, on the HUD and in prep. Chosen over an outlook in prep only and over an exact timeline.
 
 ## Approaches
@@ -144,12 +146,19 @@ See B5. A grounded helicopter flies away and drops its search. When it comes bac
 - **Precalculated:** at `pick` (round start and New sky), when `weatherChanges` is on and the sky has a weather, the server works out every change of the round in advance. It uses a new `weatherSeed` (1..2147483646) and a seeded generator (Park–Miller, as the flight seed). New sky re-rolls it.
 - **How many:** there is no fixed number. Each change comes uniform(`weatherChangeMinMinutes`, `weatherChangeMaxMinutes`) after the previous one; the first one after the cops' release. Changes are worked out up to the round's time limit, or 180 minutes without one.
 - **The round clock:** times are seconds on the round clock the clients already keep (seconds since the countdown started, the same as `clockSeconds`).
-- **The temperature at a change.** The server becomes the one source of the round's temperatures:
-  - The climate table (`LOW`, `HIGH` by month, `OFFSET` by weather; today `client/.../climate.lua`) moves to the server (`cnr/climate.lua`).
-  - The sky payload carries the round's `tempLow` and `tempHigh`: the start weather's range for the round's month. The client uses those for the prep label and the temperature curve instead of its own table, so the label, the curve and the weather logic agree.
-  - The server knows the game time of each change: the start time key's value (the game's table: sunrise 0.775, morning 0.825, noon 0, afternoon 0.175, sunset 0.245, night 0.5), minus the lead, plus the elapsed time divided by `daySeconds`.
-  - It estimates the temperature at that time from `tempLow` at sunrise (about 06:00) to `tempHigh` at about 14:00, on a smooth (cosine) curve. Sunrise and the afternoon high are approximations of the game's solar model. They're good enough for "is it cold enough to snow".
-- **Only logical changes.** At each change the next weather is drawn, with equal weights, from the neighbours the conditions allow. T is the temperature then; a day counts as warm when `tempHigh` ≥ 15 °C. Foggy conditions mean T ≤ 12 °C and the time between sunset and three hours after sunrise.
+- **Temperatures, day by day.** The server becomes the one source of the round's temperatures:
+  - **The table:** the climate table (`LOW`, `HIGH` by month, `OFFSET` by weather; today `client/.../climate.lua`) moves to the server (`cnr/climate.lua`).
+  - **Turning points:** each game day has its coldest moment at 06:00 and its warmest at 14:00. The server works out every turning point of the round in time order, from the start to the end of the schedule's horizon.
+  - **Normal:** the month's `LOW` for a low, `HIGH` for a high.
+  - **Day shift:** day 0 gets uniform(−4, 4) °C; each next day the previous day's shift plus uniform(−3, 3), kept within ±6 °C. Warm and cold spells last a few days, but a next day can be clearly different. A day starts at its 06:00 low.
+  - **Weather offset:** a low takes the `OFFSET` of the weather in effect at the high before it (a clear evening gives a cold night, a cloudy one a milder night), and a high takes the weather at the low before it. Snow uses cloudy's offsets.
+  - **The start:** the two turning points around the start use the start weather's range as now, plus day 0's shift. A snow start keeps its cold rule (its high at 0 °C or below), and its shift is never above 0.
+  - **Between turning points** the server interpolates the way the game interpolates the curve override (the builder checks whether that is linear or smooth).
+  - **Game time:** the server knows the game time of every moment on the round clock: the start time key's value (the game's table: sunrise 0.775, morning 0.825, noon 0, afternoon 0.175, sunset 0.245, night 0.5), minus the lead, plus the elapsed time divided by `daySeconds`. This approximates the game's solar sunrise, which moves with the date and latitude; good enough for "is it cold enough to snow".
+  - **The game's curve:** the payload carries the turning points in order (their game hour and °C). The client sets the curve override to the two turning points around the current game time, at the server's hours (06:00 and 14:00, not the solar sunrise), so the game's temperature and the server's logic agree. At each turning point it moves the curve on by one point. The old and the new curve meet there, so the temperature never jumps. That is one `setState({temperatureCurveOverrideC})` with the environment unlocked only for that call.
+  - **Prep label:** shows the low and the high around the start.
+  - **Ranges this gives (clear, current table):** a January round about −4 to 12 °C on its first day and down to about −6 °C on later cold nights; a July round about 16 to 35 °C. The swing within a day stays at about 11 °C at most, as now.
+- **Only logical changes.** At each change the next weather is drawn, with equal weights, from the neighbours the conditions allow. T is the temperature then; a day counts as warm when that day's high is 15 °C or more. Foggy conditions mean T ≤ 12 °C and the time between sunset and three hours after sunrise.
 
   | From | Allowed next |
   |---|---|
@@ -160,26 +169,35 @@ See B5. A grounded helicopter flies away and drops its search. When it comes bac
   | snow | cloudy; rain if T ≥ 2 °C |
   | fog | cloudy; clear |
 
-  - **Turning cold or warm:** a weather that has stopped fitting is replaced first. Rain at T ≤ 1 °C becomes snow, and snow at T ≥ 2 °C becomes rain. That's the change at that slot.
+  - **Crossings change it at once.** The server finds the exact moment a weather stops fitting and puts a change there, between the regular slots:
+    - snow becomes rain when the temperature reaches 2 °C
+    - rain becomes snow when it falls to 1 °C; a storm that gets that cold becomes rain first
+    - fog lifts (to cloudy or clear, equal odds) when the temperature rises above 12 °C or at 09:00, three hours after sunrise
+    - such a change counts as a normal change: it blends over 60 s, the forecast shows it, and the next regular change comes min to max after it
+    - a crossing that falls while a change is still blending happens when that change ends
   - **In-between temperatures:** between 1 and 2 °C both rain and snow hold.
   - **Always a neighbour:** every weather has at least one allowed neighbour, so each slot changes the weather.
 - **Season and start:**
   - The date is still chosen from the start weather's window (as now), so a winter round with a snow start is cold, and a summer round never sees snow.
   - The month the server picks is the season (northern months). On a map in the southern hemisphere the client already shows the date six months on (since 2.4.0), so a local July there is winter and can snow. The server needs no latitude: it works in seasons.
-  - A clear or cloudy start in winter can turn to snow only when the morning curve dips to 1 °C or below.
-- **Payload:** the sky payload gains `changes = { { at = seconds, to = weather, forecastFrom = seconds }, ... }` (possibly empty; `forecastFrom` is B8), plus `tempLow` and `tempHigh`. The base `weather` stays the start weather.
+  - A clear or cloudy start in winter can turn to snow only when the temperature drops to 1 °C or below: on a cold day, or late on a clear night.
+- **Payload:** the sky payload gains `changes = { { at = seconds, to = weather, forecastFrom = seconds }, ... }` (possibly empty; `forecastFrom` is B8), plus `temps`, the turning points in order (game hour, °C). The base `weather` stays the start weather.
 - **Server state:** the server keeps the schedule in `round.sky` and works out the current weather from its own round clock (B5, B6).
 
 ### B3. The change on the clients (client `sky.lua`, `rain.lua`, `surfaces.lua`, `wind.lua`)
 - **Driver:** `sky.update` runs the schedule from `roundTime`, the clock the wind gusts already use.
 - **Each change lasts `CHANGE_SECONDS = 60`:**
   - **Clouds and fog:** stepped twice a second from the old values to the new (smoothstep). Each step is an instant `setState({cloudCover, fogDensity})`, with the environment unlocked only around that one call.
-  - **Never touched:** time, `play`, `dayLength`, the date or the temperature curve.
+  - **Never touched:** time, `play`, `dayLength` or the date. The temperature curve moves on only at its turning points (B2).
   - **Rain and snow:** `rain.target(newSpec, CHANGE_SECONDS)`. Rain ↔ storm ramps the drops and volume. The drop size and speed switch at the halfway point, not at once.
   - **Wind:** the base wind speed and the gust table cross-fade over the change. The gust cache is keyed by weather, so blend the two outputs.
-- **Grip:**
-  - **Getting wetter:** wet surfaces when the precipitation passes half its target.
-  - **Drying:** dry surfaces `DRY_SECONDS = 60` after the precipitation has fully stopped, since roads stay wet for a while.
+- **Grip changes gradually**, the same on every game (worked out from the round clock):
+  - **Getting wetter or snowier:** the surfaces blend from the values in effect to the new weather's values over the 60 s change, so full wet grip comes with full rain.
+  - **Between wet kinds** (rain ↔ storm, rain ↔ snow): the same blend over the change; snow turning to rain goes from snowy to wet.
+  - **Drying:** toward dry over `DRY_SECONDS = 180` from the end of the change that stopped the precipitation. Roads dry slower than they get wet, and snow clears the same way.
+  - **How:** every field in the surface rules (`surfaces.lua`) is blended linearly between its dry and its target value; the multiplier rules (grass, rumble strips) scale with the blend too. It steps twice a second, on the clouds' tick, and pushes a model with `be:setGroundModel` only when its blend moved by at least 5 % of the way.
+  - **Never tried before:** surfaces have only ever changed at round start. If the steps cause a stutter or a felt jolt, fall back to fewer, larger steps (5 over a change).
+  - **Joiners** get the blend in effect at that moment.
   - **Driving off:** with `weatherDriving` off, grip never changes, as now.
 - **Lights:**
   - traffic headlights follow the current weather; today they never switch off when it clears
@@ -285,7 +303,10 @@ Unchanged, except that the schedule is rolled with the sky. Prep shows the start
   - rain turns to snow when it gets cold, and snow to rain when it warms
   - a summer-season round never sees snow
   - the temperature estimate at known times
-  - `tempLow`/`tempHigh` in the payload match the moved climate table
+  - the turning points: 06:00 and 14:00 each day; day 0's shift within ±4, later shifts a walk of ±3 within ±6, from the seed; the weather offsets taken from the turning point before; snow with cloudy's offsets; a snow start's high at 0 °C or below
+  - the interpolation between turning points matches the game's
+  - the crossings: snow to rain at 2 °C, rain to snow at 1 °C, a storm to rain first, fog lifting above 12 °C or at 09:00; each counts as a change; one during a blend waits for its end
+  - `temps` in the payload match the moved climate table
   - min ≤ max is enforced
   - off when `weatherChanges` is off or on BeamNG.Earth
   - New sky re-rolls it
@@ -300,7 +321,8 @@ Unchanged, except that the schedule is rolled with the sky. Prep shows the start
   - clouds and fog step twice a second and the environment is locked between steps
   - time, play, date and temperature are never touched
   - rain fades over 60 s
-  - grip goes wet at half and dry 60 s after
+  - grip blends over the change toward wetter or snowier, between wet kinds, and dries over 180 s after it; a model is pushed only when its blend moved 5 %
+  - the temperature curve moves on only at a turning point, and the old and new curves agree there
   - the wind cross-fades
   - the traffic lights follow
   - the notice texts
@@ -326,7 +348,8 @@ Unchanged, except that the schedule is rolled with the sky. Prep shows the start
 - **A weather change during a chase:**
   - the clouds and fog blend smoothly with no stepping, and no frame hitch at 2 steps a second
   - rain fades in or out, and the sound follows
-  - grip changes when expected
+  - grip changes gradually, with no stutter or felt steps (else the 5-step fallback)
+  - the temperature curve moves on at 06:00 and 14:00 without a jump
   - the environment menu stays unavailable
   - the notice shows
   - the forecast line is readable, counts down, and the change lands inside its window
@@ -339,10 +362,12 @@ Unchanged, except that the schedule is rolled with the sky. Prep shows the start
 - the route caps (2,500 / 1,500 / 1,000 m)
 - the light's sweep across the road: 60 m ahead, ±15 m, 3 s
 - the tunnel watch time clamp(len / max(v, 10) × 1.5, 15, 90)
-- `CHANGE_SECONDS` 60, `DRY_SECONDS` 60, two steps a second
+- `CHANGE_SECONDS` 60, `DRY_SECONDS` 180, two steps a second, a push at 5 % of the way
 - the weather logic: the thresholds 1 / 2 °C, warm day ≥ 15 °C, fog ≤ 12 °C between sunset and sunrise + 3 h; equal weights among allowed neighbours
+- the crossings: at once, not at the next slot; fog lifting at 09:00 or above 12 °C, to cloudy or clear
+- the temperatures by day: turning points at 06:00 and 14:00, the day shift ±4 then a walk of ±3 within ±6, the weather offsets from the turning point before, snow with cloudy's offsets
 - the default interval 3 to 8 minutes; the horizon 180 minutes without a time limit
-- the temperature estimate's sunrise about 06:00 and high about 14:00, approximating the game's solar model
+- the server's game-time estimate from the time keys' values, approximating the game's solar sunrise; the curve override at the server's hours, so the game and the server agree on the temperature
 - snow grounds the helicopter, as in 2.9.0
 - the forecast window 120 s, placed at random around the change; the helicopter hint lines
 - the recall at the start of a change to storm, fog or snow, and the return at the end of a change away from them
