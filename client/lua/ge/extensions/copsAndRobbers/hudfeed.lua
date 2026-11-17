@@ -17,6 +17,7 @@ local lastPush = 0
 local warningKeys, warningTexts = {}, {}
 local connected, helpOpen = false, false
 local rules, lobby, color, prefs
+local sitOut = false
 local appsOpen, appsCheckedAt = {}, -math.huge
 local lastClock, lastInfo = 0, {}
 local lobbyCheck
@@ -149,6 +150,10 @@ function M.settings(p)
   prefs = p
 end
 
+function M.sitOut(on)
+  sitOut = on == true
+end
+
 function M.help(open)
   helpOpen = open == true
 end
@@ -171,7 +176,7 @@ end
 function M.leave()
   events = {}
   warningKeys, warningTexts = {}, {}
-  rules, lobby, color, helpOpen = nil, nil, nil, false
+  rules, lobby, color, helpOpen, sitOut = nil, nil, nil, false, false
   appsOpen, appsCheckedAt = {}, -math.huge
   lastInfo = {}
 end
@@ -198,6 +203,7 @@ local function push(clock, info)
     timer = info.timer, flash = flash, prep = prep, events = events, resetFlashUntil = resetFlashUntil,
     change = change, applying = applying, releaseAt = releaseAt, heli = heli,
     result = result, rules = rules, lobby = lobby, color = color, settings = prefs, warnings = M.warnings(), apps = appsOpen, helpOpen = helpOpen,
+    spectate = info.spectate, sitOut = sitOut,
   }))
 end
 

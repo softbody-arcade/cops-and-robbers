@@ -209,6 +209,7 @@ function meta(p) {
   const tags = []
   if (p.next) tags.push("next")
   if (p.last) tags.push("last")
+  if (p.sitOut) tags.push("sitting out")
   tags.push(`${runs} ${runs === 1 ? "run" : "runs"}`)
   return tags.join(" · ")
 }

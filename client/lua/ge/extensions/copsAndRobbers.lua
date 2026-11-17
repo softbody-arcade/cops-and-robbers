@@ -459,6 +459,7 @@ end
 local function onMode(data)
   local d = jsonDecode(data) or {}
   geoMode = d.geo == true
+  hudfeed.sitOut(false)
   geo.resetPlaces()
   guihooks.trigger("CnRPanel", {})
   guihooks.trigger("CnRBoard", {})
@@ -1023,6 +1024,7 @@ local function onExtensionLoaded()
     checkBinding()
   end)
   AddEventHandler("cnr_myColor", onMyColor)
+  AddEventHandler("cnr_sitOut", function(data) hudfeed.sitOut((jsonDecode(data) or {}).on == true) end)
   AddEventHandler("cnr_lastSeen", onLastSeen)
   AddEventHandler("cnr_nearestCop", onNearestCop)
   AddEventHandler("cnr_spotted", onSpotted)
@@ -1097,6 +1099,10 @@ function M.ui(msg)
   local action = msg.action
   if action == "apply" then return M.applyChange() end
   if action == "color" then return sendServer("cnr_color", { hex = type(msg.hex) == "string" and msg.hex or nil }) end
+  if action == "sitOut" then
+    if type(msg.on) == "boolean" then sendServer("cnr_sitOut", { on = msg.on }) end
+    return
+  end
   if action == "setting" then
     if playerSettings.set(prefs, msg.key, msg.value) then
       pcall(jsonWriteFile, playerSettings.FILE, prefs, true)

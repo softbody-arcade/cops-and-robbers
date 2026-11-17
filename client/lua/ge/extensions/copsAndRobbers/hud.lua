@@ -11,6 +11,7 @@ local COUNTDOWNS = {
 }
 local WAITING_GO = "Waiting for the host to press GO"
 local LOBBY_WAITING, LOBBY_RUNNING = "Waiting for the host to start a round", "A round is running"
+local LOBBY_SITTING = "You're sitting out"
 
 function M.new()
   return { samples = {} }
@@ -159,6 +160,16 @@ function M.heliItem(heli, now)
   return { text = text, time = time }
 end
 
+local function limitText(info)
+  local limit = tonumber(type(info.rules) == "table" and info.rules.roundTimeLimitSeconds)
+  return limit and limit > 0 and M.formatTime(limit) or nil
+end
+
+local function appsOpen(info)
+  local apps = type(info.apps) == "table" and info.apps or {}
+  return { panel = apps.panel == true, board = apps.board == true }
+end
+
 local function statusBlock(info, now)
   local isRunner = info.role == "runner"
   local status
@@ -169,9 +180,8 @@ local function statusBlock(info, now)
   else
     return nil
   end
-  local limit = tonumber(type(info.rules) == "table" and info.rules.roundTimeLimitSeconds)
   status.role = isRunner and "runner" or "cop"
-  status.limit = limit and limit > 0 and M.formatTime(limit) or nil
+  status.limit = limitText(info)
   status.reset = resetText(info)
   status.resetFlash = type(info.resetFlashUntil) == "number" and now < info.resetFlashUntil
   local p = info.infoParts
@@ -184,6 +194,16 @@ local function statusBlock(info, now)
   return status
 end
 
+local function spectateBlock(info, now)
+  local block = { name = knownName(info.spectate.name) or "free camera", sitOut = info.sitOut == true, apps = appsOpen(info) }
+  if info.chaseStart then
+    block.time = M.formatTime(now - info.chaseStart)
+    block.limit = limitText(info)
+  end
+  block.heli = M.heliItem(info.heli, now)
+  return block
+end
+
 local function lobbyBlock(info)
   local lobby = type(info.lobby) == "table" and info.lobby or {}
   local status = LOBBY_WAITING
@@ -191,13 +211,14 @@ local function lobbyBlock(info)
     status = "Practice round: " .. lobby.practice
   elseif lobby.active then
     status = LOBBY_RUNNING
+  elseif info.sitOut then
+    status = LOBBY_SITTING
   end
-  local apps = type(info.apps) == "table" and info.apps or {}
   local prefs = type(info.settings) == "table" and info.settings or {}
   return {
     online = tonumber(lobby.online) or 1, status = status, color = info.color,
-    warnings = info.warnings or {}, apps = { panel = apps.panel == true, board = apps.board == true },
-    hudHidden = prefs.hudHidden == true,
+    warnings = info.warnings or {}, apps = appsOpen(info),
+    hudHidden = prefs.hudHidden == true, sitOut = info.sitOut == true,
   }
 end
 
@@ -231,11 +252,12 @@ function M.payload(state, now, info)
   info = info or {}
   local result = info.result
   local showResult = result and type(result.untilT) == "number" and now < result.untilT
-  local mode = showResult and "result" or (info.active and "round" or "lobby")
+  local spectating = type(info.spectate) == "table"
+  local mode = showResult and "result" or ((info.active or spectating) and "round" or "lobby")
   local payload = {
     visible = true,
     mode = mode,
-    driving = mode == "round" and info.prep == nil,
+    driving = mode == "round" and info.prep == nil and not spectating,
     catch = mode == "result" and { visible = false, percent = 0 } or catchBlock(state, now, info),
     notices = notices(info.events, now),
     help = helpBlock(info.helpOpen, info.rules, info.units),
@@ -255,6 +277,9 @@ function M.payload(state, now, info)
     payload.result = resultBlock(result, now)
   elseif mode == "lobby" then
     payload.lobby = lobbyBlock(info)
+  elseif spectating then
+    payload.center = center(info, now)
+    payload.spectate = spectateBlock(info, now)
   else
     payload.center = center(info, now)
     if info.prep then payload.prep = { waiting = waitingText(info.prep, info.applying), color = info.color } end
