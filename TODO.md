@@ -39,6 +39,7 @@ Things only a player in the game can confirm, each with what to look for. Add th
 - [ ] Cop sight that follows visibility: the sight range is worked out from what the game knows (fog thickness, how dark it is, street lights near the runner, whether the runner's lights are on, rain). Comes after night and weather rounds
 
 ## Issues
+- [ ] A stuck runner escapes the catch by rocking back and forth: the hold timer only runs while the runner's speed is under `catchMaxSpeedKmh` (3 km/h), and rocking a stuck car keeps it above that most of the time (`catch.lua`, reported by the user 2026-11-17). Judge "not getting away" by how far the runner gets instead, for example the distance moved over the last few seconds, or the net displacement staying within the catch radius
 - [ ] Cop spots next to a narrow median: the runner can be matched to the other carriageway, so cops are placed for that side (`roads.lua` uses `findClosestRoad`, not the runner's heading)
 - [ ] Cop spots on a road piece not connected to the rest: the straight-line fallback widens from 0 and ignores gates, so a cop can start right next to the runner or behind a gate (`roads.lua` `lineSpots`)
 - [ ] Leaderboard runs don't record Traffic for the runner only, so a runner-only round shows "Traffic: 5 per player" in the Rounds tab and counts the same as everyone-traffic in the traffic filter (`leaderboard.lua`, `BoardRounds.vue`)
