@@ -14,6 +14,7 @@ local modes = require("copsAndRobbers/modes")
 local nearby = require("copsAndRobbers/nearby")
 local sky = require("copsAndRobbers/sky")
 local heli = require("copsAndRobbers/heli")
+local heliSound = require("copsAndRobbers/heliSound")
 local shelter = require("copsAndRobbers/shelter")
 local tunnels = require("copsAndRobbers/tunnels")
 local traffic = require("copsAndRobbers/traffic")
@@ -163,6 +164,7 @@ local function playerName(id)
 end
 
 local heliState = heli.new()
+local soundState = heliSound.new()
 
 local function setHeli(h)
   heli.set(heliState, h, clock)
@@ -485,6 +487,7 @@ end
 local function endRound(leaving)
   hudfeed.clearRound()
   heli.clear(heliState)
+  heliSound.clear(soundState)
   lightsState = nil
   sky.restore(leaving)
   traffic.stop(clock)
@@ -831,8 +834,12 @@ local function updateHeli(runnerObj)
     local opts = { weather = traffic.weather(), beam = prefs.beam ~= false }
     if castRayStatic then opts.tunnelExit = tunnelExit end
     heli.lightTick(heliState, target, heli.wantsNight(heliState) and sky.isNight(), clock, opts)
+    local camPos = core_camera and core_camera.getPosition and core_camera.getPosition() or nil
+    local level = prefs.sound ~= false and heli.soundLevel(heliState, clock) or 0
+    heliSound.tick(soundState, heliState.flight and heliState.flight.pos, level, clock, camPos, castRayStatic)
   else
     heli.lightTick(heliState, nil, false, clock)
+    heliSound.tick(soundState, nil, 0, clock)
   end
 end
 

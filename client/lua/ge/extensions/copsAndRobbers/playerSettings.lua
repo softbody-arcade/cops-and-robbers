@@ -2,8 +2,8 @@ local M = {}
 
 M.FILE = "settings/cnr_settings.json"
 
-local KEYS = { "headlights", "siren", "beam" }
-local DEFAULTS = { headlights = true, siren = false, beam = true, route = "sight" }
+local KEYS = { "headlights", "siren", "beam", "sound" }
+local DEFAULTS = { headlights = true, siren = false, beam = true, sound = true, route = "sight" }
 local CHOICES = { route = { always = true, sight = true, never = true } }
 
 function M.load(decoded)

@@ -2663,6 +2663,128 @@ test("the searchlight is gone after the round, a cancel, leaving, a map change a
   end
 end)
 
+local HELI_SOUND = "cnr_heli_sound"
+
+local function samePlace(a, b, msg)
+  assertEq(a.x, b.x, msg); assertEq(a.y, b.y, msg); assertEq(a.z, b.z, msg)
+end
+
+test("the sound plays at the helicopter and is gone after the round", function()
+  for _, role in ipairs({ "cop", "runner" }) do
+    local env = nightTracking(role)
+    local snd, light = env.sky.objects[HELI_SOUND], env.sky.objects[HELI_LIGHT]
+    assertEq(snd ~= nil, true, role)
+    assertEq(snd:getField("fileName"), "/art/sound/cnr/heli_rotor.ogg", role)
+    assertEq(snd.playing, true, role)
+    samePlace(snd.pos, light.pos, role)
+    env.tick(1)
+    samePlace(snd.pos, light.pos, role)
+    assertNear(snd.volume, 1, 1e-9, role)
+  end
+  local day = bootClient()
+  local d = copy(SETUP)
+  d.phase, d.role, d.runnerId = "running", "runner", 1
+  d.sky = { time = "noon", windDir = 0, windSeed = 1 }
+  d.heli = { phase = "tracking", seconds = 100 }
+  day.fire("cnr_roundSetup", d)
+  day.tick(1)
+  assertEq(day.sky.objects[HELI_LIGHT], nil)
+  assertEq(day.sky.objects[HELI_SOUND] ~= nil, true)
+  local exits = {
+    function(env) env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 3, runnerId = 2 }) end,
+    function(env) env.fire("cnr_roundEnd", { reason = "cancelled", runnerId = 2 }) end,
+    function(env) env.M.onBeamMPServerLeave() end,
+    function(env) env.M.onClientEndMission() end,
+    function(env) env.M.onExtensionUnloaded() end,
+  }
+  for i, exit in ipairs(exits) do
+    for _, role in ipairs({ "cop", "runner" }) do
+      local env = nightTracking(role)
+      assertEq(env.sky.objects[HELI_SOUND] ~= nil, true, i .. " " .. role)
+      exit(env)
+      assertEq(env.sky.objects[HELI_SOUND], nil, i .. " " .. role)
+      if i < 5 then
+        env.tick(2)
+        assertEq(env.sky.objects[HELI_SOUND], nil, i .. " " .. role)
+      end
+    end
+  end
+end)
+
+test("turning the sound off fades it out within about 1 s, and on fades it in", function()
+  local env = nightTracking("runner")
+  local base = _G.createObject
+  local ok, err = pcall(function()
+    env.tick(1)
+    local snd = env.sky.objects[HELI_SOUND]
+    assertNear(snd.volume, 1, 1e-9)
+    env.M.ui({ action = "setting", key = "sound", value = false })
+    assertEq(env.written["settings/cnr_settings.json"].sound, false)
+    assertEq(env.hud().settings.sound, false)
+    env.tick(0.5)
+    assertEq(env.sky.objects[HELI_SOUND], snd)
+    assertNear(snd.volume, 0.5, 0.11)
+    env.tick(0.6)
+    assertEq(env.sky.objects[HELI_SOUND], nil)
+    env.tick(1)
+    assertEq(env.sky.objects[HELI_SOUND], nil)
+    local writes = {}
+    _G.createObject = function(class)
+      local obj = base(class)
+      function obj:setVolumePitchCT(v)
+        self.volume = v
+        writes[#writes + 1] = v
+      end
+      return obj
+    end
+    env.M.ui({ action = "setting", key = "sound", value = true })
+    env.tick(0.1)
+    local again = env.sky.objects[HELI_SOUND]
+    assertEq(again ~= nil and again ~= snd, true)
+    assertEq(again:getField("volume"), "0")
+    env.tick(0.4)
+    assertNear(again.volume, 0.5, 0.11)
+    env.tick(0.6)
+    assertNear(again.volume, 1, 1e-9)
+    local prev = 0
+    for _, v in ipairs(writes) do
+      assertEq(v - prev <= 0.1 + 0.02 + 1e-9, true, prev .. " -> " .. v)
+      prev = v
+    end
+  end)
+  _G.createObject = base
+  if not ok then error(err, 0) end
+end)
+
+test("on a cop's game the sound fades out 2 s after the runner's car goes missing and back in when it returns", function()
+  local env = nightTracking("cop")
+  env.tick(1)
+  local snd = env.sky.objects[HELI_SOUND]
+  assertNear(snd.volume, 1, 1e-9)
+  local car = env.objects[300]
+  env.objects[300] = nil
+  env.tick(1.9)
+  assertEq(env.sky.objects[HELI_SOUND], snd)
+  assertNear(snd.volume, 1, 1e-9)
+  env.tick(1.4)
+  assertEq(env.sky.objects[HELI_SOUND], nil)
+  env.objects[300] = car
+  env.tick(0.5)
+  local again = env.sky.objects[HELI_SOUND]
+  assertEq(again ~= nil, true)
+  assertNear(again.volume, 0.5, 0.11)
+end)
+
+test("a leftover emitter is deleted while no round runs", function()
+  local env = bootClient()
+  env.tick(0.5)
+  local planted = createObject("SFXEmitter")
+  planted:registerObject(HELI_SOUND)
+  assertEq(env.sky.objects[HELI_SOUND], planted)
+  env.tick(1.2)
+  assertEq(env.sky.objects[HELI_SOUND], nil)
+end)
+
 local function inLockGroup(env, action)
   for _, name in ipairs(env.actionGroups.cnr_locked or {}) do
     if name == action then return true end

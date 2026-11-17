@@ -41,6 +41,7 @@ M.SWEEP_RAY_HEIGHT = 100
 M.SWEEP_RAY_LENGTH = 200
 M.SWEEP_RAY_INTERVAL = 0.25
 M.AIM_SWITCH_SECONDS = 0.5
+M.TARGET_MISSING_SECONDS = 2
 
 local FIELDS = {
   { "brightness", M.BRIGHTNESS }, { "range", M.RANGE_MIN }, { "innerAngle", 8 }, { "outerAngle", 16 },
@@ -618,6 +619,15 @@ end
 
 function M.wantsNight(state)
   return isUp(state.phase) or state.light ~= nil
+end
+
+function M.soundLevel(state, clock)
+  if not state.flight then return 0 end
+  local since = state.missingSince
+  if since and clock - since > M.TARGET_MISSING_SECONDS then return 0 end
+  local left = state.leftAt
+  if left then return math.min(1, math.max(0, (M.DEPART_SECONDS - (clock - left)) / M.DEPART_FADE_SECONDS)) end
+  return 1
 end
 
 function M.clear(state)

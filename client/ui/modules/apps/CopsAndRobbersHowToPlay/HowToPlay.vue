@@ -205,7 +205,7 @@
         <div class="li">
           <span class="swatch"></span>
           <span>
-            <b>Your settings:</b> use the Settings button for your car colour, auto headlights at night and in bad weather, the helicopter's searchlight beam in the air, and as a cop, <span v-if="r.sirensAllowed !== false">a siren and </span>how the route to the runner is shown (always, only out of sight, or never).
+            <b>Your settings:</b> use the Settings button for your car colour, auto headlights at night and in bad weather, the helicopter's searchlight beam in the air, the helicopter's rotor sound, and as a cop, <span v-if="r.sirensAllowed !== false">a siren and </span>how the route to the runner is shown (always, only out of sight, or never).
             A colour set in prep repaints your car straight away; otherwise it applies from the next round.
           </span>
         </div>
