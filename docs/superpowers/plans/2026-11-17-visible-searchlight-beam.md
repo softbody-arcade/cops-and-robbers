@@ -8,7 +8,7 @@
 - **Flight:** a pure module `copsAndRobbers/heliFlight.lua` simulates the helicopter on each game.
 - **Searchlight:** `copsAndRobbers/heli.lua` places the light at the helicopter, keeps the brightness effects, and aims with relative velocity.
 - **Beam:** a pure module `copsAndRobbers/beam.lua` works out the beam's quads. `heli.lua` draws them with the game's debug drawer (in their own pcall), ends them at the first static hit, and sets the flare.
-- **Setting:** a player setting turns the beam and glare off.
+- **Setting:** a player setting turns the beam (the cone in the air) off; the light and its glare stay.
 
 **Tech Stack:**
 - Lua: the BeamNG GE client extension (LuaJIT in game; the tests run on Lua 5.x)
@@ -45,7 +45,7 @@
   - colour 217, 235, 255
   - one `drawQuadSolid` per quad in the camera-facing winding (≤ 1,200 calls), or both windings without a camera (≤ 2,400)
   - the occlusion ray every `RAY_INTERVAL = 0.25` s
-- **Glare:** `flareType` `BNG_LightFlare_1`, `flareScale` = `fx.bright` (rewritten when it changes by > 0.05); `flareType ""` when the setting is off.
+- **Glare:** `flareType` `BNG_LightFlare_1`, `flareScale` = `fx.bright` (rewritten when it changes by > 0.05). The glare belongs to the light; the beam setting doesn't touch it.
 - **The 2.9.0 anti-goals still hold:**
   - no light left after the round, a cancel, leaving, a map change or unload
   - under cover the light is cut at once
@@ -56,10 +56,10 @@
 ## Review Focus
 
 1. **A BeamNG.Earth origin shift or a runner reset (a car jump over 30 m).** The helicopter keeps its offset from the car: no fly-back from kilometres away, and no beam that long. Tasks 1a and 1b pin this.
-2. **A refuel of 0 to 8 s ends while the helicopter is still leaving.** It turns back from where it is: no teleport to 300 m out. Task 1b pins this.
+2. **A refuel shorter than 8 s ends while the helicopter is still leaving.** It turns back from where it is: no teleport to 300 m out. Task 1b pins this.
 3. **The helicopter is low or far out** (fly-in at 11° elevation, a car faster than 70 m/s). The beam ends on the ground plane, never as an upright disc, and there's no beam over a 400 m slant. Task 2 pins this.
 4. **The camera is right next to a wide beam's wall, or the beam is vertical.** No sheet within 6 m, and no NaN. Task 2 pins this.
-5. **The beam setting is toggled while the light is on, or the drawer errors.** The flare follows on the next frame, the beam stops, and the light stays. Tasks 2 and 3 pin this.
+5. **The beam setting is toggled while the light is on, or the beam code errors** (working out the quads or drawing them). The beam stops on the next frame, and the light and its glare stay. Tasks 2 and 3 pin this.
 
 ---
 
@@ -73,7 +73,8 @@
 - **`M.arrive(carPos, random) -> f`:**
   - `APPROACH_DISTANCE` out in a random heading, `APPROACH_HEIGHT` above the car
   - velocity 0, `side` ±1 at random
-- **`M.at(carPos, carVel, random) -> f`:** placed on its target point (follow or circle by the car's speed), velocity = `carVel`, `side` at random.
+- **`M.at(carPos, carVel, random) -> f`:** placed on its target point, velocity = `carVel`, `side` at random.
+- **Starting mode** for `arrive` and `at`: follow when the car's horizontal speed is ≥ 6 m/s, otherwise circle with `f.orbit` at the current bearing.
 - **`M.leave(f, carPos, random)`:** sets `f.leaving` to a world point `DEPART_DISTANCE` from the car, `DEPART_HEIGHT` above it, with the heading = the helicopter's bearing from the car ± up to `DEPART_HEADING_SPREAD`.
 - **`M.resume(f)`:** clears `f.leaving`; position and velocity are kept.
 - **`M.step(f, carPos, carVel, dt)`:**
@@ -98,7 +99,7 @@
   - **no jumps:** each step moves ≤ 70 × dt + 1e-6
   - **at:** starts on `M.target` with `vel == carVel`
   - **hysteresis:** a car at 6 m/s keeps whichever mode it was in
-  - **jump shift:** after a 2 km car jump, the offset from the car is unchanged (1e-6)
+  - **jump shift:** after a 2 km car jump, the step matches the same step run without the jump, compared relative to the car, to 1e-9
   - **jump velocity:** car and helicopter both at 30 m/s in +x, then a 50 m car jump in +x; the helicopter's x velocity doesn't increase
   - **dt 0:** the state is unchanged, and nothing is NaN
 - [ ] **Step 2: Run them to make sure they fail**
@@ -126,11 +127,12 @@
   - `step` every tick while a flight exists, also by day and with no light
 - **The car's velocity:**
   - `target:getVelocity()` when present, otherwise the position delta over the real frame time
-  - kept when the frame time is ≤ 0
+  - kept when the frame time is ≤ 0, and on a jump frame (a car jump over `JUMP_METERS`)
 - **The light:**
   - at `state.flight.pos`, aiming at the aim point
   - `lightPose`, `HOVER_DRIFT`, `glide` and the position parts of approach and depart go
-  - kept: the brightness effects (approach from the current `fx.bright` up to 1 over `APPROACH_SECONDS`; depart; fade; fadein; refound), `AIM_SWEEP_OFFSET` on a fresh fly-in, `REFOUND_AIM_OFFSET`, and the `DEPART_AIM_DRIFT` `extra` along the leave direction
+  - kept: the brightness effects (approach up to 1 over `APPROACH_SECONDS`, from 0 for a new light or from the current `fx.bright` when the light exists; depart; fade; fadein; refound), `AIM_SWEEP_OFFSET` on a fresh fly-in, `REFOUND_AIM_OFFSET`, and the `DEPART_AIM_DRIFT` `extra` along the leave direction
+  - when a depart ends early (`resume`, or night returning), the current `extra` is added to `aim.offset`, so the aim point doesn't jump; the existing cap max(6, current offset) lets the spring pull it back
 - **`M.aimStep(aim, carPos, dt, clock, random, heliVel)`:** the lag kick uses the change in (car velocity − `heliVel`); `heliVel` nil means zero.
 - **Range:** written on creation and by the 5 m rule, as in Global Constraints.
 - **For Task 2:** expose `state.aimPos` and `state.lightPos`.
@@ -141,15 +143,16 @@
     - **:247 (fly-in aim sweep):** the light now starts at `state.flight.pos` about 300 m out. Assert the aim starts 15 ± 1 m off the car.
     - **:266 and :443 (fly-away):** replace "distance > 60 m after 3-4 s" with "the light follows `state.flight.pos`, which moves away, and the light is removed after 8 s". The flight is nil after that frame.
     - **:379 (refuel during a fly-in):** the helicopter position stays continuous (≤ 70 × dt per step).
-    - **:401 (short refuel):** "refuelling" → "tracking" within 3 s calls `resume`, so there's no teleport, and the brightness ramps from the current value.
+    - **:401 (short refuel):** "refuelling" → "tracking" at 7 s calls `resume`, so there's no teleport; the brightness ramps up from its faded value; and the aim point doesn't jump (the drift goes into the offset).
     - **:461 (night returning):** fades back in over 1 s at the helicopter's position.
-  - **Delete:** the hover-drift and orbit position tests that assert `lightPose` or `HOVER_DRIFT`.
+  - **Adapt :97 and :293**, which assert positions from `LIGHT_HEIGHT` and `HOVER_DRIFT`: assert the light sits at `state.flight.pos` instead.
+  - **Delete:** any other test that asserts `lightPose` or `HOVER_DRIFT`.
   - **New tests:**
     - the light sits at `state.flight.pos`
     - under cover the light is cut, the flight keeps stepping, and on the way out the light is back at once at full brightness with the aim 8 m off
     - by day: "arriving" → "tracking" → "refuelling" creates a flight and never a light; the flight is dropped after 8 s
     - joining mid-round (first `set` is "tracking"): `state.flight` starts on its target point, not 300 m out
-    - a 2 km car jump keeps the light's offset from the car
+    - a 2 km car jump: the light's step matches the same step without the jump, relative to the car, to 1e-9
     - range: 130 with the helicopter 100 m from the car, 120 at 60 m, and written on creation even when `state.lightRange` already holds the same value
     - aim: car and `heliVel` braking together 30 → 0 over 1 s keep the offset within `NUDGE_RADIUS` + 0.3, while the car alone gives > 1 m
     - a fake vehicle with `getVelocity` is used when present
@@ -173,27 +176,33 @@
 
 **Interfaces:**
 - **`beam.strength(weather, bright) -> number`.**
-- **`beam.quads(lightPos, aimPos, strength, hitDist, camPos) -> list`:**
+- **`beam.quads(lightPos, aimPos, strength, hitDist, camPos, out) -> count`:**
+  - It fills the list `out` (kept in `state` and reused between frames, entries reused in place) and returns how many entries are valid.
   - Entries are `{ a, b, c, d, alpha, both }`.
   - Geometry, per the spec's "The beam":
-    - side lines from the lamp ring follow the cone and end on the plane `z = aimPos.z`, capped at `MAX_LENGTH_FACTOR` × the axis length
-    - when `hitDist` < the axis length, every side line is scaled by `hitDist` / the axis length
+    - side lines from the lamp ring follow the cone
+    - each ends at the first of the plane `z = aimPos.z` and the straight-line distance D from the light, with D = min(`MAX_LENGTH_FACTOR` × the axis length, `hitDist` or ∞)
     - `LAYERS` × `SEGMENTS` × `SIDES` quads
     - the x helper basis when the axis is nearly vertical
   - Alpha per quad: round(255 × strength × (1 − (1 − `GROUND`) × u) × near / `LAYERS`), where:
     - u is the quad's mid position along its side line, 0 to 1
-    - near = clamp((|quad centre − camPos| − `NEAR`) / (`FAR` − `NEAR`), 0, 1), or 1 without a camera
+    - near = clamp((the smallest |vertex − camPos| of its 4 vertices − `NEAR`) / (`FAR` − `NEAR`), 0, 1), or 1 without a camera
+    - each vertex's camera distance is worked out once per call
   - Quads with alpha < 1 are left out.
   - `both` is true without a camera. With a camera the winding is chosen so the quad faces the camera (one dot product), and `a..d` are in that order.
   - A zero-length axis gives an empty list.
-- **`beam.draw(list, drawQuad, colorFn) -> calls`:**
+- **`beam.draw(list, n, drawQuad, colorFn) -> calls`:** it draws the first `n` entries.
   - It caches `colorFn(217, 235, 255, alpha)` per alpha within the call.
   - It calls `drawQuad(a, b, c, d, clr)` once per quad, and again reversed when `both`.
 - **`heli.lua`:**
   - `M.lightTick(state, target, night, clock, opts)`, with `opts = { weather, beam }` (nil `opts` means beam on).
-  - The occlusion ray: every `RAY_INTERVAL`, `castRayStatic(lightPos, dir, axisLen)` sets `state.beamHit`, or nil when there's no hit.
-  - After the light is placed, when `opts.beam ~= false` and `state.light`, `debugDrawer`, `color` and `core_camera` exist, the slant is ≤ 400 and `state.beamFailed` isn't set, it runs `pcall(beam.draw, beam.quads(...), function(a, b, c, d, clr) debugDrawer:drawQuadSolid(a, b, c, d, clr) end, color)`. An error sets `state.beamFailed`; the light stays.
-  - Flare: on creation, and when `opts.beam` changes, `flareType` (`BNG_LightFlare_1` or ""); `flareScale` follows `fx.bright` (> 0.05 change). pcall-guarded.
+  - The occlusion ray: every `RAY_INTERVAL`, when `castRayStatic` exists, `castRayStatic(lightPos, the normalized direction to the aim point, axisLen)`.
+    - A returned d < axisLen − 2 sets `state.beamHit = d`.
+    - Otherwise, including hits within 2 m of the aim point, `state.beamHit` is nil.
+  - After the light is placed, when `opts.beam ~= false` and `state.light`, `debugDrawer`, `color` and `core_camera` exist, the slant is ≤ 400 and `state.beamFailed` isn't set, it runs `pcall(function() local n = beam.quads(lightPos, state.aimPos, strength, state.beamHit, camPos, state.beamQuads) beam.draw(state.beamQuads, n, drawQuad, color) end)`, with `drawQuad = function(a, b, c, d, clr) debugDrawer:drawQuadSolid(a, b, c, d, clr) end`.
+    - Any error in working out the quads or drawing them sets `state.beamFailed`.
+    - The light and its glare stay.
+  - Flare: on creation, `flareType` `BNG_LightFlare_1`; `flareScale` follows `fx.bright` (> 0.05 change). pcall-guarded. The beam setting doesn't touch the flare.
 - **`copsAndRobbers.lua`:** `updateHeli` passes `{ weather = traffic.weather(), beam = prefs.beam ~= false }`.
 - **Tests:** `load()` also clears `copsAndRobbers/beam`.
 
@@ -203,16 +212,19 @@
     - **call counts:** 1,200 calls with a camera 100 m to the side of the axis midpoint; 2,400 without
     - **vertical beam:** without a camera, draws 2,400 calls with finite vertices only
     - **far ring:** for a 60° beam, every far-ring vertex has z = `aimPos.z` ± 1e-6
-    - **low beam:** at 11° elevation, no vertex lies beyond 2 × the axis length from the light
+    - **low beam:** at 11° elevation, no vertex lies further than 2 × the axis length + 1e-6 from the light (straight-line distance)
     - **near camera:** with the camera at the aim point, no drawn quad has a vertex within 6 m of it
-    - **occlusion:** `hitDist` = half the axis puts no vertex further than half the axis + 1e-6 from the light
+    - **occlusion:** `hitDist` = half the axis puts no vertex further than half the axis + 1e-6 from the light, for 60°, 30° and 11° beams
     - **nothing:** strength 0 gives an empty list; light == aim gives an empty list without error
     - **colours:** at most 11 distinct `colorFn` calls in one `draw`
+    - **reuse:** a second `quads` call with the same `out` list returns the same count, and adds no new entry tables
   - **`tests/test_heli_client.lua`**, with `_G.debugDrawer` (counting `drawQuadSolid`), `_G.color`, `_G.core_camera` and `_G.castRayStatic` stubbed and restored:
     - **on:** at night while tracking, quads are drawn and `fields.flareType == "BNG_LightFlare_1"`
-    - **setting off:** `opts.beam` false draws no quads and sets `flareType == ""`; toggling back sets it again on the next tick
+    - **setting off:** `opts.beam` false draws no quads, and the flare stays `BNG_LightFlare_1`; toggling back draws again on the next tick
     - **nothing drawn:** by day, with no light, or at a slant over 400 m
     - **drawer error:** `drawQuadSolid` erroring sets `state.beamFailed`, and the light stays
+    - **quads error:** `beam.quads` erroring (stub it to raise) sets `state.beamFailed`; the light stays and `state.failed` stays nil
+    - **ray:** a stub `castRayStatic` hit at half the axis ends the beam there; a hit 1 m short of the aim point is ignored
     - **flare scale:** `flareScale` follows `fx.bright` during the fly-in
 - [ ] **Step 2: Run them to make sure they fail**
   Run: `make test 2>&1 | grep -E 'FAIL|passed'`. Expected: the new tests fail.
@@ -244,7 +256,7 @@
   - desc "The helicopter's beam in the air; off helps the frame rate"
   - it emits `setting` `beam`
 - **How to Play:** append "You can turn the beam in the air off in your settings." to the "Police helicopter" items (runner tab around lines 61-66, cop tab around 118-123).
-- **README:** line 52 says three switches and describes Searchlight beam (on by default; off removes the beam in the air and the glare, not the light).
+- **README:** line 52 says three switches and describes Searchlight beam (on by default; off removes the beam in the air; the light and its glare stay).
 - **FEATURES:**
   - the searchlight line: the helicopter flies (trails, swings, circles a stopped car, flies in and away)
   - the beam, its strength by weather, the glare, the setting
@@ -259,7 +271,7 @@
     - `load({ beam = false }).beam == false`
     - `set(p, "beam", false)` returns true; `set(p, "beam", "no")` returns false
   - `tests/test_hud.lua`: the settings payload's `beam` is true by default and false when `prefs.beam` is false.
-  - `tests/test_client.lua`: `M.ui({ action = "setting", key = "beam", value = false })` saves the setting, and on the next ticks while tracking at night (drawer stubbed) no quads are drawn and `flareType` is "".
+  - `tests/test_client.lua`: `M.ui({ action = "setting", key = "beam", value = false })` saves the setting, and on the next ticks while tracking at night (drawer stubbed) no quads are drawn, while the light and its flare stay.
 - [ ] **Step 2: Run them to make sure they fail**
   Run: `make test 2>&1 | grep -E 'FAIL|passed'`. Expected: the new tests fail.
 - [ ] **Step 3: Implement** as in Interfaces.

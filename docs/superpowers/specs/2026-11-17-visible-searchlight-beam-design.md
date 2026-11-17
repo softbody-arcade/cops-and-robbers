@@ -29,11 +29,12 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - The circle starts at the helicopter's current bearing from the car, so switching modes doesn't make it turn back.
   - The angle advances in the step, not in the target calculation.
   - It enters the circle below `SLOW_SPEED` 5 m/s and leaves above `FAST_SPEED` 7 m/s, so jitter doesn't flip the modes.
+- **Starting mode** (on arrival or when joining): follow when the car's horizontal speed is 6 m/s or more, otherwise circle, starting at the current bearing.
 - **Jumps:** a car jump over `JUMP_METERS` 30 m in one frame shifts the helicopter's position (and its leaving point) by the same jump.
   - This covers a reset, a teleport, and BeamNG.Earth moving its origin.
-  - The car's velocity counts as unchanged for that frame, so the helicopter keeps its place relative to the car.
+  - The car's velocity counts as unchanged for that frame, so the helicopter keeps its place relative to the car. This also holds when the velocity comes from position deltas: the jump frame keeps the last velocity.
 - **Arrival (fly-in):** when the helicopter goes up after arriving or refuelling and no flight exists, it starts `APPROACH_DISTANCE` 300 m out in a random heading, `APPROACH_HEIGHT` 60 m above the car, at rest, and flies in.
-- **Short refuel:** if a flight still exists, because a refuel of 0 to 8 s ended while it was leaving, it stops leaving and turns back from where it is. No teleport.
+- **Short refuel:** if a flight still exists, because a refuel shorter than 8 s ended while it was leaving, it stops leaving and turns back from where it is. No teleport.
 - **Joining mid-round:** when a game first sees the helicopter already up, the helicopter starts at its target point with the car's current velocity.
 - **Leaving (fly-away):** on refuel the helicopter heads for a point `DEPART_DISTANCE` 400 m from the car, `DEPART_HEIGHT` 80 m above it.
   - The heading is within ±60° of the helicopter's current bearing from the car, so it never flies back over the runner.
@@ -47,10 +48,11 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - **Lag kick:** now from the change in the car's velocity relative to the helicopter, not the car alone. When the car brakes or the helicopter swings round, the spot slips and is brought back. When both brake together, it doesn't slip.
   - **Fly-in sweep:** the aim starts 15 m off the car (`AIM_SWEEP_OFFSET`) and is pulled in.
   - **Fly-away drift:** the aim drifts off the car towards the direction of travel (`DEPART_AIM_DRIFT`), up to 60 m by 8 s.
+    - When a fly-away ends early (a short refuel, or night returning), the current drift is added to the aim's offset. The spring then pulls the spot back over a few seconds instead of snapping 40+ m in one frame. The offset cap is max(6, the current offset), as in 2.9.0.
   - **Refound:** the aim starts 8 m off the car (`REFOUND_AIM_OFFSET`).
   - **Hover drift removed:** `HOVER_DRIFT` and the sine waves on the light's position go; the real flight replaces them.
 - **Brightness effects**, on the light's brightness factor `fx.bright`:
-  - fly-in: rising from the current factor to full over `APPROACH_SECONDS` 8 s
+  - fly-in: rising to full over `APPROACH_SECONDS` 8 s, from 0 for a new light, or from the current factor when the light already exists
   - fly-away: full, then fading to 0 over the last `DEPART_FADE_SECONDS` 3 s of the 8 s; then the light is removed, after that frame's update
   - night ending: a 1.5 s fade
   - night returning: a 1 s fade-in
@@ -66,35 +68,36 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - So it follows the fly-in, fly-away and fades.
 - **Shape:**
   - The beam follows the light's cone from a lamp-sized top (radius 0.4 m) at the light.
-  - Each of its side lines ends where it meets the horizontal plane through the aim point (`z = aimPos.z`), capped at 2 × the axis length. The game's depth test hides anything below the ground.
+  - Each side line ends at the first of two points: where it meets the horizontal plane through the aim point (`z = aimPos.z`), or the straight-line distance D from the light. D = min(2 × the axis length, the occlusion hit distance). The game's depth test hides anything below the ground.
   - So on a slanted beam the far end lies on the road over the lit spot, not as a disc hanging in the air.
   - 5 nested layers give a soft edge, with the centre brightest.
   - The strength fades to half along each side line, towards the ground.
 - **A vertical axis:** the ring's basis uses the x axis as the helper when the axis is nearly vertical (|axis.z| / |axis| > 0.9), so there's no NaN.
-- **Blocked by solid things:** every 0.25 s a static ray (`castRayStatic`) is cast from the light towards the aim point.
-  - If it hits something first, like a bridge deck, a building or a tunnel roof, the beam ends at that distance.
-  - All side lines are shortened by the same factor.
+- **Blocked by solid things:** every 0.25 s a static ray is cast from the light, `castRayStatic(lightPos, normalized direction to the aim point, axis length)`.
+  - A hit means the returned distance d < the axis length. Something is in the way, like a bridge deck, a building or a tunnel roof, so D = d and every side line ends at most d from the light.
+  - Hits within 2 m of the aim point count as no hit: that's the road itself, or an aim point just under it.
+  - When `castRayStatic` doesn't exist, the ray is skipped.
 - **Strength by the round's weather** (the client's round weather, `traffic.weather()`):
   - clear, cloudy and rain: 0.06, 0.12 and 0.2
   - any other value, nil (the map's own weather) and BeamNG.Earth: 0.06
   - storm, fog and snow ground the helicopter, so there's no light then
-- **Near the camera:** each quad fades by its own distance from the camera.
+- **Near the camera:** each quad fades by the distance from the camera to the nearest of its four vertices.
   - The fade runs from invisible within 6 m to full at 18 m.
-  - The distance is measured to the quad's centre, so even a wide beam shows no sheets next to the camera.
+  - Each vertex's distance is worked out once per frame (at most 1,320 vertices). So no drawn quad has a vertex within 6 m of the camera, and even a wide beam shows no sheets next to it.
 - **Glare:**
   - The light gets `flareType` `BNG_LightFlare_1`.
   - `flareScale` follows `fx.bright`, rewritten when it changes by more than 0.05.
-  - With the beam setting off, `flareType` is cleared.
+  - The glare belongs to the light, so the beam setting doesn't touch it.
 - **Cost:**
-  - Each ring's vertices are built once per frame. The colour objects are cached per alpha value.
+  - Each ring's vertices are built once per frame. The colour objects are cached per alpha value. The quad list is kept between frames and reused, so drawing allocates nothing new each frame.
   - Each quad is one `debugDrawer:drawQuadSolid` call, drawn only in the winding that faces the camera (one dot product per quad).
     - That's at most 5 layers × 10 lengths × 24 sides = 1,200 calls a frame, or 2,400 (both windings) when the camera position is unknown.
     - The game's own editor code draws both windings for the same reason (`editor/api/gui.lua`: "keep backface cull off").
   - Budget: at most 0.5 ms a frame for the beam (an in-game check).
   - With the slant distance over the 400 m range cap, there's no beam.
-- **Safety:** the beam runs in its own `pcall`. An error stops the beam for the rest of the round (`beamFailed`), but never removes the light.
+- **Safety:** the beam, both working out its quads and drawing them, runs in its own `pcall`. An error stops the beam for the rest of the round (`beamFailed`), but never removes the light.
   - The beam also needs `debugDrawer` and `color` to exist.
-- **The player setting:** "Searchlight beam" in the HUD settings card, on by default. Off removes the beam and the glare on that player's game; the light itself stays.
+- **The player setting:** "Searchlight beam" in the HUD settings card, on by default. Off removes the beam, the cone in the air, on that player's game. The light and its glare stay.
 
 ## Code
 - **`client/lua/ge/extensions/copsAndRobbers/heliFlight.lua` (new, pure):**
@@ -132,9 +135,9 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - `at()` starts on the target point with the car's velocity.
   - Hysteresis: speeds between 5 and 7 m/s don't switch the mode.
 - **Jumps:**
-  - After a 2 km car jump, the helicopter's offset from the car is unchanged.
+  - After a 2 km car jump, the helicopter's step matches the same step without the jump, to 1e-9.
   - With car and helicopter both at 30 m/s in +x and a 50 m car jump in +x, the helicopter's x velocity doesn't increase.
-- **Short refuel:** "tracking" → "refuelling" → "tracking" within 3 s doesn't move the helicopter more than 70 × dt per step, and doesn't call `arrive`.
+- **Short refuel:** "tracking" → "refuelling" → "tracking" within 7 s doesn't move the helicopter more than 70 × dt per step, doesn't call `arrive`, and ramps the brightness up from its faded value.
 - **Aim:**
   - Car and helicopter braking together from 30 to 0 over 1 s keep the offset within `NUDGE_RADIUS` + 0.3.
   - The car braking alone gives an offset above 1 m.
@@ -151,10 +154,13 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - a vertical beam draws only finite vertices
   - a 60° beam's far ring lies at `aimPos.z` ± ε
   - no drawn quad has a vertex within 6 m of the camera
-  - an occlusion hit at half the axis leaves no vertex beyond the hit + ε
+  - an occlusion hit at half the axis leaves no vertex further than the hit + 1e-6 from the light, also for 30° and 11° beams
+  - a hit within 2 m of the aim point is ignored
+  - a low (11°) beam has no vertex further than 2 × the axis length + 1e-6 from the light
   - nothing is drawn without a light, by day, with the setting off, or at a slant over 400 m
-  - an error in the drawer stops the beam and keeps the light
-  - the flare is set, cleared with the setting off, and its scale follows `fx.bright`
+  - an error in the drawer, or in working out the quads, stops the beam and keeps the light
+  - a fly-away ended early by a short refuel adds the drift to the aim's offset, with no jump in the aim point
+  - the flare is set with the light whatever the setting, and its scale follows `fx.bright`
 
 ## In-game check
 - **Flight:**
@@ -169,10 +175,10 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - banding at the clear strength
   - no sheets from the runner's car
   - a bridge deck ending the beam
+  - toggling the setting while the light is on: the cone goes and comes back, and the glare stays
 - **Glare:**
   - looking up
   - it follows the fly-in and fly-away
-  - toggling the setting while the light is on
   - whether the spot dims when the helicopter's position is hidden from the camera (flares can change their light)
 - **Frame rate:** the beam on and off, within 0.5 ms.
 
@@ -180,7 +186,7 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
 - **Flight numbers:** 70 m/s, 8 m/s², 0.4/s, 25 m behind, 15 m to the side, 50 m up, a 30 m circle every 40 s, 5 / 7 m/s hysteresis, fly-away to 400 m at 80 m up within ±60°. To be tuned in game.
 - **Range cap:** 400 m, with no beam beyond it.
 - **Beam blocking:** a ray every 0.25 s, so the beam ends at a bridge or a roof.
-- **Glare:** its scale follows the light's brightness.
+- **Glare:** its scale follows the light's brightness. The beam setting turns off only the cone; the glare stays with the light, since it costs nothing and is part of how a real light looks.
 - **Each game simulates its own helicopter** (no network sync).
 
 ## Left to the builder
