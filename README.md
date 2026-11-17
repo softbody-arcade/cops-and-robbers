@@ -10,7 +10,7 @@ make package
 
 - Copy `dist/Server/CopsAndRobbers` to the server's `Resources/Server/`.
 - Copy `dist/Client/CopsAndRobbers.zip` to the server's `Resources/Client/`.
-- Set `MaxCars` to at least 3 if you want to use practice rounds (the AI cars count as yours).
+- Set `MaxCars` to at least 3 if you want to use practice rounds (the AI cars count as yours; watching the AI practise also takes 3, your own car is parked).
 - Traffic counts too: every player needs room for their round car plus `trafficPerPlayer` traffic cars, so `MaxCars` of at
   least 1 + traffic per player (3 + traffic per player for practice rounds). With less room the mod spawns fewer traffic
   cars and the panel says so.
@@ -49,7 +49,7 @@ Switch "Evolving car" on in the panel. Instead of a random car each round, every
 ## HUD
 
 - **Lobby card** (between rounds): who is online, a line saying whether a round is waiting, buttons for Settings, How to play, Leaderboard, Host panel, Sit out and Hide, and a yellow line for a standing problem (no reset button bound, an outdated copy, BeamNG.Earth too old).
-- **Sit out:** keeps you out of rounds until you press it again (it then reads Play). You're never the runner, and when a round is set up your car leaves the map and comes back where it stood when the round ends. It lasts until you leave the server. Pressed during a round, it counts from the next one. Start only refuses when everyone sits out.
+- **Sit out:** keeps you out of rounds until you press it again (it then reads Play). You're never the runner, and when a round is set up your car leaves the map and comes back where it stood when the round ends. It lasts until you leave the server. Pressed during a round, it counts from the next one. Start only refuses when everyone sits out. Practice still works: with Sit out on, the panel's **Practice: watch the AI** runs an AI runner against two AI cops and you spectate them.
 - **Spectating:** a player who sits out, or who joins while a round is running, watches instead of playing. The card shows "SPECTATING · Bob" (or "free camera"), the round clock and the helicopter, with Sit out (or Play), How to play, Leaderboard and Host panel. The game's own switch-car keys (Tab and Ctrl+Tab by default) go through the players' cars, the runner's too, and free camera (Shift+C by default) works. Spectators don't drive, can't spawn a car and count for nothing in the round. After the round they're back in the lobby and play the next one unless they sit out.
 - **Hide:** folds the lobby card into a small "Cops and Robbers" tab at the same place; click the tab to bring the card back. The yellow warning lines still show above the tab. Your choice is saved in your own game. Your rounds always show the full HUD, and the lobby after them goes back to your choice.
 - **Player settings:** the Settings button opens a card with your car colour, four switches and a choice: **Auto headlights** (on by default; low beam at night and in rain, storm, fog and snow, and off again at sunrise in clear weather; the mod only acts when something changes, so your own light key still works), **Siren** (off by default; as a cop, the light bar runs with siren once cops are released; the host can turn Cop sirens off for everyone), **Searchlight beam** (on by default; off removes the helicopter's beam in the air, which helps the frame rate; the light and its glare stay) and **Helicopter sound** (on by default; the police helicopter's rotor, heard from far off, day and night; off fades it out on your game). The choice is **Route to the runner** (as a cop: Always, Out of sight or Never; Out of sight by default). They are saved in your own game and apply on every server. Distances and speeds on the chase line and in How to play follow the game's unit setting (metric or imperial); the Host panel stays metric.
@@ -68,7 +68,7 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 
 "Cops and Robbers Panel" has four tabs:
 
-- **Round:** shows only what can be done now. The player list is the runner picker (the planned next runner is preselected: drawn at random among the players with the fewest runs, never the previous runner twice in a row). One main button does the next step: Start round, then GO, with a yellow line saying why it can't yet. Practice as runner and as cop, New car, Cancel round, and the Automatic rounds switch. During a round the panel folds into a bar with the time, End chase and Cancel (a second click is needed during the chase). It opens again when the round ends.
+- **Round:** shows only what can be done now. The player list is the runner picker (the planned next runner is preselected: drawn at random among the players with the fewest runs, never the previous runner twice in a row). One main button does the next step: Start round, then GO, with a yellow line saying why it can't yet. Practice as runner and as cop (one "Practice: watch the AI" button while you sit out), New car, Cancel round, and the Automatic rounds switch. During a round the panel folds into a bar with the time, End chase and Cancel (a second click is needed during the chase). It opens again when the round ends.
 - **Car:** Random car or Evolving build, the build summary, New build (choose a car or random) and Reset build, mod cars and excluded cars.
 - **Map:** gas stations of this map, Add station here and Remove nearest.
 - **Settings:** the common settings first, the rest under More settings, each with a one-line explanation. Changes save by themselves; a value that differs from the default is orange and has its own reset. Settings are locked during a round. "Reload config.json" picks up hand edits.
@@ -127,7 +127,7 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 
 During a round every player's game runs a few AI traffic cars around itself (`trafficPerPlayer`, 5 by default, 0 turns it
 off). With `trafficRunnerOnly` (panel: Traffic for the runner only) only the runner's game does, with the same count, for
-better performance; practice rounds keep their traffic either way. They spawn in prep, stand still until GO, and are removed when the round ends. There are no police or emergency
+better performance; practice rounds keep their traffic either way, except a practice you only watch (Sit out on), which has none. They spawn in prep, stand still until GO, and are removed when the round ends. There are no police or emergency
 vehicles among them, and they have no name tags, so every car with lights is a cop and every name tag is a player. A
 cop who drives into a traffic car gets the crash penalty ("crash penalty 10s (traffic)"), as with any crash only within
 `copResetMinDistanceMeters` of the runner; one who gets hit by traffic doesn't. While it rains, storms, fogs or snows traffic drives with its headlights on (it follows the weather as it changes); at night it follows the game's own

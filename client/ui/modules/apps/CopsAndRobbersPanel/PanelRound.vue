@@ -86,9 +86,13 @@
 
     <template v-if="view === 'idle'">
       <div v-if="can.test" class="p-buttons">
-        <BngButton class="p-btn" :accent="ACCENTS.secondary" :disabled="!!startBlocked" @click="emit('command', 'test runner')">Practice as runner</BngButton>
-        <BngButton class="p-btn" :accent="ACCENTS.secondary" :disabled="!!startBlocked" @click="emit('command', 'test cop')">Practice as cop</BngButton>
+        <BngButton v-if="state.sitOut" class="p-btn" :accent="ACCENTS.secondary" :disabled="!!startBlocked" @click="emit('command', 'test cop')">Practice: watch the AI</BngButton>
+        <template v-else>
+          <BngButton class="p-btn" :accent="ACCENTS.secondary" :disabled="!!startBlocked" @click="emit('command', 'test runner')">Practice as runner</BngButton>
+          <BngButton class="p-btn" :accent="ACCENTS.secondary" :disabled="!!startBlocked" @click="emit('command', 'test cop')">Practice as cop</BngButton>
+        </template>
       </div>
+      <div v-if="can.test && state.sitOut" class="p-sub">You're sitting out: an AI runner against two AI cops, and you watch</div>
       <BngSwitch
         class="p-switch"
         :model-value="state.auto === true"

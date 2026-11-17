@@ -43,8 +43,8 @@ local function snapshot(veh)
     local ok, paints = pcall(helpers.getColorsFromVehObj, veh)
     if ok and type(paints) == "table" then config.paints = paints end
   end
-  local p = veh:getPosition()
-  return { model = veh:getJBeamFilename(), config = config, pos = vec3(p.x, p.y, p.z), rot = game.uprightRotation(veh) }
+  local p, d = veh:getPosition(), veh:getDirectionVector()
+  return { model = veh:getJBeamFilename(), config = config, pos = vec3(p.x, p.y, p.z), dir = vec3(d.x, d.y, 0), rot = game.uprightRotation(veh) }
 end
 
 function M.park()
@@ -83,6 +83,12 @@ function M.parked()
   return parked ~= nil
 end
 
+function M.spot()
+  local first = parked and parked[1]
+  if not first then return nil end
+  return first.pos, first.dir
+end
+
 function M.carIds(owners, vehicles, exists)
   local ids = {}
   for _, key in pairs(owners or {}) do
@@ -107,10 +113,12 @@ function M.cycleTarget(ids, fromId, toId, dir)
   return step > 0 and ids[1] or ids[n]
 end
 
-function M.watchedName()
+function M.watchedName(localName)
   local cmds = rawget(_G, "commands")
   if cmds and cmds.isFreeCamera and cmds.isFreeCamera() then return nil end
   local veh = getPlayerVehicle(0)
+  local own = veh and localName and localName(veh:getID())
+  if own then return own end
   if not veh or not MPVehicleGE or not MPVehicleGE.getVehicleByGameID then return nil end
   local v = MPVehicleGE.getVehicleByGameID(veh:getID())
   if type(v) ~= "table" then return nil end

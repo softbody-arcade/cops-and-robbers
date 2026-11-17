@@ -15,6 +15,21 @@ local GATED_ACTIONS = { reset_physics = true, parts_selector = true, recover_veh
 local FREE_CAM_ACTIONS = { toggleCamera = true, dropCameraAtPlayer = true }
 local SWITCH_ACTIONS = { switch_next_vehicle = true, switch_previous_vehicle = true }
 local SPECTATOR_LOCKED_ACTIONS = { "recover_vehicle", "recover_vehicle_alt", "recover_to_last_road", "loadHome" }
+local AI_CAR_LOCKED_ACTIONS = {
+  "accelerate", "brake", "accelerate_brake", "steer_left", "steer_right", "steering", "clutch",
+  "parkingbrake", "parkingbrake_temporary", "parkingbrake_toggle", "shiftUp", "shiftDown", "gearR", "gearN",
+  "gear1", "gear2", "gear3", "gear4", "gear5", "gear6", "gear7", "gear8", "toggleShifterMode", "activateStarterMotor",
+  "setIgnitionLevel0", "setIgnitionLevel1", "setIgnitionLevel2", "setIgnitionLevel3",
+  "setIgnitionLevel1Momentary", "setIgnitionLevel2Momentary", "setIgnitionLevel3Momentary",
+  "toggleESCMode", "nextESCMode", "previousESCMode", "toggle_headlights", "highbeam", "toggle_foglights",
+  "toggle_left_signal", "toggle_right_signal", "toggle_hazard_signal", "toggle_lightbar_signal", "toggle_underglow",
+  "toggleLightbarMode", "horn", "toggleDiffMode", "toggle4WDStatus", "toggleRangeStatus", "toggleTransbrake",
+  "toggleLineLock", "overrideNitrousOxide", "toggleNitrousOxide", "toggleTwoStep", "increaseTwoStepRPM",
+  "decreaseTwoStepRPM", "set_cc_speed", "reset_cc_speed", "increase_cc_speed", "decrease_cc_speed",
+  "increase_cc_speed_large", "decrease_cc_speed_large", "disable_cc",
+  "toggleRadialMenuFavorites", "toggleRadialMenuMulti", "toggleRadialMenuPlayerVehicle", "toggleRadialMenuSandbox",
+  "toggleRadialMenuVehicleFeatures",
+}
 local RESET_ACTIONS = { "reset_physics" }
 local PARTS_ACTIONS = { "parts_selector" }
 local LIGHTBAR_ACTIONS = { "toggle_lightbar_signal", "toggleLightbarMode" }
@@ -34,8 +49,12 @@ local PART_EDITS = {
 }
 local PAINT_EDITS = { { "core_vehicle_partmgmt", "setConfigPaints" }, { "core_vehicle_colors", "setVehicleColor" }, { "core_vehicle_colors", "setVehiclePaint" } }
 local LOCK_MESSAGE = "Parts and paint are locked during a round. Use Settings for your car colour"
+local SPAWN_EDITS = { "spawnNewVehicle", "replaceVehicle", "cloneCurrent", "spawnDefault" }
+local SPAWN_MESSAGE = "You can't spawn a car while watching the AI"
+local REMOVE_MESSAGE = "You can't remove a car while watching the AI"
 
 local editMode
+local spawnsLocked = false
 local notify = function() end
 
 function M.setNotify(fn)
@@ -47,21 +66,30 @@ local function blocker()
   notify(LOCK_MESSAGE, "warn")
 end
 
-local function wrap(moduleName, name)
+local function spawnBlocker()
+  notify(SPAWN_MESSAGE, "warn")
+end
+
+local function removeBlocker()
+  notify(REMOVE_MESSAGE, "warn")
+end
+
+local function wrap(moduleName, name, block)
+  block = block or blocker
   local key = moduleName .. "." .. name
   local tbl = rawget(_G, moduleName)
   if type(tbl) ~= "table" or type(tbl[name]) ~= "function" then return end
   local w = wrapped[key]
-  if w and w.tbl == tbl and tbl[name] == blocker then return end
-  wrapped[key] = { tbl = tbl, name = name, fn = tbl[name] }
-  tbl[name] = blocker
+  if w and w.tbl == tbl and tbl[name] == block then return end
+  wrapped[key] = { tbl = tbl, name = name, fn = tbl[name], block = block }
+  tbl[name] = block
 end
 
 local function restore(moduleName, name)
   local key = moduleName .. "." .. name
   local w = wrapped[key]
   if not w then return end
-  if w.tbl[name] == blocker then w.tbl[name] = w.fn end
+  if w.tbl[name] == w.block then w.tbl[name] = w.fn end
   wrapped[key] = nil
 end
 
@@ -74,6 +102,15 @@ function M.enforceEditLock()
   for _, e in ipairs(PAINT_EDITS) do
     if lockPaint then wrap(e[1], e[2]) else restore(e[1], e[2]) end
   end
+  for _, name in ipairs(SPAWN_EDITS) do
+    if spawnsLocked then wrap("core_vehicles", name, spawnBlocker) else restore("core_vehicles", name) end
+  end
+  if spawnsLocked then wrap("core_vehicles", "removeCurrent", removeBlocker) else restore("core_vehicles", "removeCurrent") end
+end
+
+function M.lockSpawns(on)
+  spawnsLocked = on == true
+  M.enforceEditLock()
 end
 
 function M.lockEditing(mode)
@@ -84,7 +121,7 @@ end
 local originalBigMapTeleport, originalResetGameplay, originalLastRoad
 local lastVehiclePatch = -math.huge
 
-local function lockedActions(freeCam, spectator)
+local function lockedActions(freeCam, spectator, aiCars)
   local seen, list = {}, {}
   local function add(name)
     if type(name) == "string" and not seen[name] and not GATED_ACTIONS[name] and not (freeCam and FREE_CAM_ACTIONS[name])
@@ -98,6 +135,12 @@ local function lockedActions(freeCam, spectator)
   for _, name in ipairs(LOCKED_ACTIONS) do add(name) end
   for _, name in ipairs(EXTRA_LOCKED_ACTIONS) do add(name) end
   for _, name in ipairs(spectator and SPECTATOR_LOCKED_ACTIONS or {}) do
+    if not seen[name] then
+      seen[name] = true
+      list[#list + 1] = name
+    end
+  end
+  for _, name in ipairs(aiCars and AI_CAR_LOCKED_ACTIONS or {}) do
     if not seen[name] then
       seen[name] = true
       list[#list + 1] = name
@@ -145,10 +188,10 @@ local function hookResetButtons(on, requestReset)
   end
 end
 
-function M.lock(on, requestReset, freeCam, spectator)
+function M.lock(on, requestReset, freeCam, spectator, aiCars)
   local cmds = rawget(_G, "commands")
   if on and not freeCam and cmds and cmds.isFreeCamera and cmds.isFreeCamera() then cmds.setGameCamera() end
-  core_input_actionFilter.setGroup("cnr_locked", lockedActions(freeCam, spectator))
+  core_input_actionFilter.setGroup("cnr_locked", lockedActions(freeCam, spectator, aiCars))
   core_input_actionFilter.addAction(0, "cnr_locked", on)
   guardBigMapTeleport(on)
   hookResetButtons(on, requestReset)
@@ -170,6 +213,7 @@ function M.setLightbarKeys(locked)
 end
 
 function M.unlockAll()
+  spawnsLocked = false
   M.lock(false)
   M.setResetKey()
   M.setPartsMenu(true)
