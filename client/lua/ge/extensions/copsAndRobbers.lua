@@ -58,6 +58,7 @@ local lastGeoSent = 0
 local chaseStart
 local lastStatusAt = 0
 local infoParts
+local infoSeenAt
 local pendingPlacement
 local rebuildId
 local suppressResetUntil = 0
@@ -121,7 +122,7 @@ local function startStatus()
   statusActive = true
   chaseStart = clock
   lastStatusAt = 0
-  infoParts, infoTag = nil, nil
+  infoParts, infoTag, infoSeenAt = nil, nil, nil
 end
 
 local function onSetupAI(data)
@@ -387,6 +388,7 @@ local function onLastSeen(data)
   local d = jsonDecode(data) or {}
   local never, always = prefs.route == "never", prefs.route == "always"
   infoTag = d.live and "LIVE" or nil
+  infoSeenAt = nil
   if never then
     if routeDrawn then
       geo.clearRoute()
@@ -399,7 +401,7 @@ local function onLastSeen(data)
       geo.clearRoute()
       routeDrawn = false
     end
-    infoTag, infoParts = "IN SIGHT", nil
+    infoTag, infoParts, infoSeenAt = "IN SIGHT", nil, nil
     return
   end
   if inSight then infoTag = "IN SIGHT" end
@@ -410,6 +412,7 @@ local function onLastSeen(data)
       routeDrawn = true
       local info = geo.gpsInfo()
       infoParts = info or infoParts
+      infoSeenAt = not d.live and info and clock or nil
       return
     end
     if core_groundMarkers then
@@ -422,6 +425,7 @@ local function onLastSeen(data)
     local here = veh:getPosition()
     local meters = math.floor(here:distance(target) + 0.5)
     infoParts = { before = d.live and "Runner" or "Runner seen", meters = meters, after = geo.compass(here, target) }
+    infoSeenAt = not d.live and clock or nil
   end
 end
 
@@ -518,6 +522,7 @@ local function endRound(leaving)
   statusActive = false
   infoParts = nil
   infoTag = nil
+  infoSeenAt = nil
   spotted, nearestParts = nil, nil
   runnerId = nil
   evolving = false
@@ -897,7 +902,7 @@ local function onUpdate(dtReal)
   updateGpsInfo()
   hudfeed.update(clock, {
     active = active, role = role, chaseStart = statusActive and chaseStart or nil,
-    resetAllowed = resetAllowed, resetHint = lastHint, penalty = penaltyActive, infoParts = infoParts, infoTag = infoTag,
+    resetAllowed = resetAllowed, resetHint = lastHint, penalty = penaltyActive, infoParts = infoParts, infoSeenAt = infoSeenAt, infoTag = infoTag,
     timer = timerEnd and { label = timerLabel, endsAt = timerEnd } or nil,
   })
 end

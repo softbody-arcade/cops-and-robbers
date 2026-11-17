@@ -53,6 +53,17 @@ test("payload hides status before the chase and shows catch per role", function(
   assertEq(c.catch.label, "HOLDING RUNNER"); assertEq(c.catch.tone, "cop")
 end)
 
+test("payload status line ages the last-seen point", function()
+  local s = hud.new()
+  local info = { active = true, role = "cop", chaseStart = 0, infoSeenAt = 100, infoParts = { before = "Runner seen", meters = 640, after = "NE" } }
+  assertEq(hud.payload(s, 100.4, info).status.info.age, "0 s ago")
+  assertEq(hud.payload(s, 159.9, info).status.info.age, "59 s ago")
+  assertEq(hud.payload(s, 160, info).status.info.age, "1 min ago")
+  assertEq(hud.payload(s, 400, info).status.info.age, "5 min ago")
+  info.infoSeenAt = nil
+  assertEq(hud.payload(s, 400, info).status.info.age, nil)
+end)
+
 test("payload status line", function()
   local s = hud.new()
   local p = hud.payload(s, 200, { active = true, role = "cop", chaseStart = 7.3, resetAllowed = true, infoParts = { before = "Runner", meters = 640, after = "NE" } })

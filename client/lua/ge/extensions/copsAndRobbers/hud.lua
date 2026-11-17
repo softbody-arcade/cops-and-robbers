@@ -52,6 +52,12 @@ local function waitingText(prep, applying)
   return string.format("Waiting for %s's change", prep.runner or "the runner")
 end
 
+function M.ageText(seconds)
+  local s = math.max(0, math.floor(seconds))
+  if s < 60 then return s .. " s ago" end
+  return math.floor(s / 60) .. " min ago"
+end
+
 local function resetText(info)
   if info.penalty then return "Penalty" end
   if info.resetAllowed then return "Reset ready" end
@@ -171,6 +177,7 @@ local function statusBlock(info, now)
   local p = info.infoParts
   if type(p) == "table" then
     status.info = { before = p.before, dist = p.meters and units.distance(p.meters, info.units) or nil, after = p.after }
+    if type(info.infoSeenAt) == "number" then status.info.age = M.ageText(now - info.infoSeenAt) end
   end
   status.tag = info.infoTag
   status.heli = M.heliItem(info.heli, now)
