@@ -11,6 +11,7 @@ M.MUFFLE_SECONDS = 0.5
 M.RAY_INTERVAL = 0.25
 M.VOLUME_STEP = 0.02
 M.LEFTOVER_INTERVAL = 1
+M.MAX_STEP = 0.1
 
 local HIT_MARGIN = 2
 
@@ -144,7 +145,7 @@ end
 
 function M.tick(s, pos, level, clock, camPos, castRay)
   clock = clock or 0
-  local dt = s.clock and math.max(0, clock - s.clock) or 0
+  local dt = s.clock and math.min(M.MAX_STEP, math.max(0, clock - s.clock)) or 0
   s.clock = clock
   if s.failed then
     pcall(leftover, s, clock)
