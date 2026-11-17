@@ -528,3 +528,13 @@ test("at with a spot starts on its circle", function()
     assertEq(f.lastCar.x, 10)
   end
 end)
+
+test("jumpOf reports a jump over 30 m in 3D", function()
+  assertEq(flight.jumpOf(nil, vec3(5, 5, 5)), nil)
+  assertEq(flight.jumpOf(vec3(0, 0, 0), vec3(29, 0, 0)), nil)
+  local x, y, z = flight.jumpOf(vec3(0, 0, 0), vec3(31, 0, 0))
+  assertEq(x, 31); assertEq(y, 0); assertEq(z, 0)
+  x, y, z = flight.jumpOf(vec3(0, 0, 0), vec3(0, 0, 31))
+  assertEq(x, 0); assertEq(y, 0); assertEq(z, 31)
+  assertEq(flight.jumpOf(vec3(0, 0, 0), vec3(20, 20, 10)), nil)
+end)

@@ -160,21 +160,25 @@ function M.resume(f)
   f.leaving = nil
 end
 
+function M.jumpOf(last, pos)
+  if not last then return nil end
+  local jx, jy, jz = pos.x - last.x, pos.y - last.y, pos.z - last.z
+  if math.sqrt(jx * jx + jy * jy + jz * jz) > M.JUMP_METERS then return jx, jy, jz end
+  return nil
+end
+
 function M.step(f, carPos, carVel, dt)
   if not dt or not (dt > 0) then return end
   if dt > M.MAX_STEP then dt = M.MAX_STEP end
 
-  local last = f.lastCar
-  if last then
-    local jx, jy, jz = carPos.x - last.x, carPos.y - last.y, carPos.z - last.z
-    if math.sqrt(jx * jx + jy * jy + jz * jz) > M.JUMP_METERS then
-      f.pos = vec3(f.pos.x + jx, f.pos.y + jy, f.pos.z + jz)
-      if f.leaving then
-        f.leaving = vec3(f.leaving.x + jx, f.leaving.y + jy, f.leaving.z + jz)
-      end
-      if f.spot then
-        f.spot = vec3(f.spot.x + jx, f.spot.y + jy, f.spot.z + jz)
-      end
+  local jx, jy, jz = M.jumpOf(f.lastCar, carPos)
+  if jx then
+    f.pos = vec3(f.pos.x + jx, f.pos.y + jy, f.pos.z + jz)
+    if f.leaving then
+      f.leaving = vec3(f.leaving.x + jx, f.leaving.y + jy, f.leaving.z + jz)
+    end
+    if f.spot then
+      f.spot = vec3(f.spot.x + jx, f.spot.y + jy, f.spot.z + jz)
     end
   end
   f.lastCar = vec3(carPos.x, carPos.y, carPos.z)

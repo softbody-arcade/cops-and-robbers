@@ -12,7 +12,7 @@ local function load()
     function obj:setPosition(p) self.pos = { x = p.x, y = p.y, z = p.z } end
     return obj
   end
-  for _, n in ipairs({ "copsAndRobbers/heli", "copsAndRobbers/shelter", "copsAndRobbers/heliFlight", "copsAndRobbers/beam" }) do package.loaded[n] = nil end
+  for _, n in ipairs({ "copsAndRobbers/heli", "copsAndRobbers/shelter", "copsAndRobbers/heliFlight", "copsAndRobbers/heliSearch", "copsAndRobbers/beam" }) do package.loaded[n] = nil end
   heli = require("copsAndRobbers/heli")
   state = heli.new()
   pos = vec3(10, 20, 5)
@@ -2332,4 +2332,62 @@ test("soundLevel follows the flight", function()
   assertEq(heli.soundLevel(state, since + 2.1), 0)
   heli.lightTick(state, target, false, since + 2.2)
   assertEq(heli.soundLevel(state, since + 2.2), 1)
+end)
+
+test("the three jump checks agree on a vertical jump", function()
+  local function drive(jump)
+    load()
+    state.random = seeded(31)
+    night(0, "tracking")
+    local c = 0
+    for _ = 1, 20 do
+      c = c + 0.05
+      heli.lightTick(state, target, true, c)
+    end
+    c = c + 0.05
+    if jump then pos = vec3(pos.x, pos.y, pos.z + 40) end
+    heli.lightTick(state, target, true, c)
+    return c, { x = state.flight.pos.x, y = state.flight.pos.y, z = state.flight.pos.z }
+  end
+  local _, plain = drive(false)
+  local c, jumped = drive(true)
+  assertNear(jumped.x, plain.x, 1e-9)
+  assertNear(jumped.y, plain.y, 1e-9)
+  assertNear(jumped.z, plain.z + 40, 1e-9)
+  assertEq(state.jumpAt, c)
+  assertEq(state.aim.velKnown, false)
+end)
+
+test("a car jump re-casts the sweep's ground ray on the next tick", function()
+  load()
+  state.random = seeded(32)
+  local stub = downwardRays(108)
+  withCast(stub.cast, function()
+    night(0, "arriving")
+    local c = 0
+    heli.set(state, { phase = "searching" }, c)
+    for _ = 1, 40 do
+      c = c + 0.05
+      heli.lightTick(state, target, true, c)
+    end
+    local before = stub.rays
+    c = c + 0.1
+    pos = vec3(pos.x + 2000, pos.y, pos.z)
+    heli.lightTick(state, target, true, c)
+    assertEq(stub.rays, before + 1)
+  end)
+end)
+
+test("dropping the flight leaves the light to the light part", function()
+  load()
+  state.random = seeded(33)
+  night(0, "tracking")
+  run(0, 2, 0.05)
+  assertEq(state.light ~= nil, true)
+  require("copsAndRobbers/heliSearch").drop(state)
+  assertEq(state.light ~= nil, true)
+  assertEq(state.flight, nil)
+  heli.set(state, { phase = "arriving" }, 2.1)
+  heli.lightTick(state, target, true, 2.1)
+  assertEq(fake.objects[LIGHT], nil)
 end)
