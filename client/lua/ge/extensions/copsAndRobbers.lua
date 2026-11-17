@@ -19,7 +19,7 @@ local hiding = require("copsAndRobbers/hiding")
 local playerSettings = require("copsAndRobbers/playerSettings")
 local ownLights = require("copsAndRobbers/ownLights")
 
-local CLIENT_VERSION = "2.9.1"
+local CLIENT_VERSION = "2.9.2"
 local LIGHTS_OFF = "electrics.set_lightbar_signal(0)"
 local SETUP_DELAY = 0.5
 local PLACEMENT_TIMEOUT = 5
