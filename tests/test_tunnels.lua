@@ -47,44 +47,80 @@ local function allRoofed(pos) return true end
 
 local CAR = v(150, 0, 0)
 
-test("a straight tunnel gives the exit ahead", function()
+local function ids(list)
+  local out = {}
+  for i, e in ipairs(list) do out[i] = e.id end
+  return out
+end
+
+local function assertIds(list, want)
+  assertEq(list ~= nil, true)
+  local got = ids(list)
+  assertEq(#got, #want)
+  for i = 1, #want do assertEq(got[i], want[i]) end
+end
+
+local function near(a, b) assertEq(math.abs(a - b) < 1e-6, true) end
+
+test("a straight tunnel gives the exit ahead, then the one behind", function()
   local nodes, links = line(5, 100)
   local roads = roadsOf(nodes, links, 2, 3, 2)
-  local p = tunnels.exit(CAR, 1, 0, roads, roofedRange(nodes, 2, 4))
-  assertEq(p.x, 400)
-  assertEq(p.y, 0)
+  local list = tunnels.watch(CAR, 1, 0, roads, roofedRange(nodes, 2, 4))
+  assertIds(list, { 5, 1 })
+  near(list[1].length, 250)
+  near(list[2].length, 150)
+  assertEq(list[1].behind, nil)
+  assertEq(list[2].behind, true)
+  assertEq(list[1].pos.x, 400)
+  assertEq(list[1].from, 4)
+  assertEq(list[2].from, 2)
+  near(list[1].turn, 0)
 end)
 
-test("turning around in a tunnel gives the exit behind", function()
+test("turning around in a tunnel puts the exit behind first", function()
   local nodes, links = line(5, 100)
   local roads = roadsOf(nodes, links, 2, 3, 2)
-  local p = tunnels.exit(CAR, -1, 0, roads, roofedRange(nodes, 2, 4))
-  assertEq(p.x, 0)
+  local list = tunnels.watch(CAR, -1, 0, roads, roofedRange(nodes, 2, 4))
+  assertIds(list, { 1, 5 })
+  assertEq(list[1].behind, nil)
+  assertEq(list[2].behind, true)
 end)
 
-local function fork()
+local function fork(angle)
+  local a = angle or math.rad(30)
   local nodes = {
     [1] = { pos = v(0, 0, 0) },
     [2] = { pos = v(100, 0, 0) },
-    [3] = { pos = v(200, 50, 0) },
-    [4] = { pos = v(200, -50, 0) },
+    [3] = { pos = v(100 + 100 * math.cos(a), 100 * math.sin(a), 0) },
+    [4] = { pos = v(100 + 100 * math.cos(a), -100 * math.sin(a), 0) },
   }
   local links = { [1] = { [2] = {} }, [2] = { [1] = {}, [3] = {}, [4] = {} }, [3] = { [2] = {} }, [4] = { [2] = {} } }
   return nodes, links
 end
 
-test("a fork picks the exit by seed, ordered by node id", function()
+test("a fork gives the straighter branch first", function()
+  local nodes, links = fork()
+  nodes[4].pos = v(200, -10, 0)
+  local roads = roadsOf(nodes, links, 1, 2, 2)
+  local roofed = roofedRange(nodes, 1, 2)
+  local list = tunnels.watch(v(0, 0, 0), 1, 0, roads, roofed, 0)
+  assertEq(list[1].id, 4)
+  assertEq(list[2].id, 3)
+  assertEq(list[1].turn < list[2].turn, true)
+end)
+
+test("a symmetric fork is rotated by the seed", function()
   local nodes, links = fork()
   local roads = roadsOf(nodes, links, 1, 2, 2)
   local roofed = roofedRange(nodes, 1, 2)
   local car = v(0, 0, 0)
-  assertEq(tunnels.exit(car, 1, 0, roads, roofed, 0).y, 50)
-  assertEq(tunnels.exit(car, 1, 0, roads, roofed, 1).y, -50)
-  assertEq(tunnels.exit(car, 1, 0, roads, roofed, 2).y, 50)
-  assertEq(tunnels.exit(car, 1, 0, roads, roofed).y, 50)
+  assertEq(tunnels.watch(car, 1, 0, roads, roofed, 0)[1].id, 3)
+  assertEq(tunnels.watch(car, 1, 0, roads, roofed, 1)[1].id, 4)
+  assertEq(tunnels.watch(car, 1, 0, roads, roofed, 2)[1].id, 3)
+  assertEq(tunnels.watch(car, 1, 0, roads, roofed)[1].id, 3)
 end)
 
-test("exit ids are ordered as strings", function()
+test("ids in a tie are ordered as strings", function()
   local nodes = {
     [1] = { pos = v(0, 0, 0) },
     [2] = { pos = v(10, 0, 0) },
@@ -94,55 +130,61 @@ test("exit ids are ordered as strings", function()
   local links = { [1] = { [2] = {} }, [2] = { [1] = {}, [10] = {}, ["9"] = {} }, [10] = { [2] = {} }, ["9"] = { [2] = {} } }
   local roads = roadsOf(nodes, links, 1, 2, 2)
   local roofed = roofedRange(nodes, 1, 2)
-  assertEq(tunnels.exit(v(0, 0, 0), 1, 0, roads, roofed, 0).y, 10)
-  assertEq(tunnels.exit(v(0, 0, 0), 1, 0, roads, roofed, 1).y, -10)
+  assertEq(tunnels.watch(v(0, 0, 0), 1, 0, roads, roofed, 0)[1].id, 10)
+  assertEq(tunnels.watch(v(0, 0, 0), 1, 0, roads, roofed, 1)[1].id, "9")
 end)
 
-test("a tunnel over 3 km gives nil", function()
+test("a tunnel over 3 km gives an empty list", function()
   local nodes, links = line(43, 100)
   local roads = roadsOf(nodes, links, 1, 2, 2)
-  assertEq(tunnels.exit(v(0, 0, 0), 1, 0, roads, roofedRange(nodes, 1, 41)), nil)
+  local list = tunnels.watch(v(0, 0, 0), 1, 0, roads, roofedRange(nodes, 1, 41))
+  assertEq(list ~= nil, true)
+  assertEq(#list, 0)
 end)
 
-test("a ring of 250 roofed nodes is stopped by the node cap", function()
+test("a ring of 600 roofed nodes is stopped by the node cap", function()
   local nodes, links = {}, {}
-  for i = 1, 250 do
+  for i = 1, 600 do
     nodes[i] = { pos = v(i * 10, 0, 0) }
     links[i] = {}
   end
-  for i = 1, 250 do
-    local j = i % 250 + 1
+  for i = 1, 600 do
+    local j = i % 600 + 1
     links[i][j] = {}
     links[j][i] = {}
   end
   local roads = roadsOf(nodes, links, 1, 2, 2)
-  local roofed = function(pos) return pos.x ~= 2300 end
-  assertEq(tunnels.exit(v(10, 0, 0), 1, 0, roads, roofed), nil)
+  local roofed = function(pos) return pos.x ~= 3000 end
+  local list = tunnels.watch(v(10, 0, 0), 1, 0, roads, roofed)
+  assertEq(list ~= nil, true)
+  assertEq(#list, 0)
 end)
 
 test("lengths come from node positions, not link len", function()
   local nodes, links = line(43, 100, 1)
   local roads = roadsOf(nodes, links, 1, 2, 2)
-  assertEq(tunnels.exit(v(0, 0, 0), 1, 0, roads, roofedRange(nodes, 1, 41)), nil)
+  assertEq(#tunnels.watch(v(0, 0, 0), 1, 0, roads, roofedRange(nodes, 1, 41)), 0)
   local shortNodes, shortLinks = line(5, 100, 5000)
   local shortRoads = roadsOf(shortNodes, shortLinks, 2, 3, 2)
-  assertEq(tunnels.exit(CAR, 1, 0, shortRoads, roofedRange(shortNodes, 2, 4)).x, 400)
+  local list = tunnels.watch(CAR, 1, 0, shortRoads, roofedRange(shortNodes, 2, 4))
+  assertEq(list[1].pos.x, 400)
+  near(list[1].length, 250)
 end)
 
 test("a road too far gives nil", function()
   local nodes, links = line(5, 100)
   local roofed = roofedRange(nodes, 2, 4)
-  assertEq(tunnels.exit(CAR, 1, 0, roadsOf(nodes, links, 2, 3, 16), roofed), nil)
-  assertEq(tunnels.exit(CAR, 1, 0, roadsOf(nodes, links, 2, 3, 14), roofed).x, 400)
-  assertEq(tunnels.exit(CAR, 1, 0, roadsOf(nodes, links, 2, 3, nil), roofed), nil)
-  assertEq(tunnels.exit(CAR, 1, 0, roadsOf(nodes, links, 2, 3, "2"), roofed), nil)
+  assertEq(tunnels.watch(CAR, 1, 0, roadsOf(nodes, links, 2, 3, 16), roofed), nil)
+  assertEq(tunnels.watch(CAR, 1, 0, roadsOf(nodes, links, 2, 3, 14), roofed)[1].pos.x, 400)
+  assertEq(tunnels.watch(CAR, 1, 0, roadsOf(nodes, links, 2, 3, nil), roofed), nil)
+  assertEq(tunnels.watch(CAR, 1, 0, roadsOf(nodes, links, 2, 3, "2"), roofed), nil)
 end)
 
 test("a car with no roof gives nil without asking the road", function()
   local nodes, links = line(5, 100)
   local calls = { n = 0 }
   local roads = roadsOf(nodes, links, 2, 3, 2, calls)
-  assertEq(tunnels.exit(CAR, 1, 0, roads, function() return false end), nil)
+  assertEq(tunnels.watch(CAR, 1, 0, roads, function() return false end), nil)
   assertEq(calls.n, 0)
 end)
 
@@ -150,11 +192,11 @@ test("the roof is tested ROOF_HEIGHT above the car and the nodes", function()
   local nodes, links = line(5, 100)
   local roads = roadsOf(nodes, links, 2, 3, 2)
   local seen = {}
-  local p = tunnels.exit(v(150, 0, 7), 1, 0, roads, function(pos)
+  local list = tunnels.watch(v(150, 0, 7), 1, 0, roads, function(pos)
     seen[#seen + 1] = pos.z
     return pos.x >= 100 and pos.x <= 300
   end)
-  assertEq(p.x, 400)
+  assertEq(list[1].pos.x, 400)
   assertEq(seen[1], 7 + tunnels.ROOF_HEIGHT)
   assertEq(seen[2], tunnels.ROOF_HEIGHT)
 end)
@@ -162,60 +204,101 @@ end)
 test("missing data gives nil without an error", function()
   local nodes, links = line(5, 100)
   local roofed = roofedRange(nodes, 2, 4)
-  assertEq(tunnels.exit(CAR, 1, 0, nil, roofed), nil)
-  assertEq(tunnels.exit(CAR, 1, 0, { closest = function() return 2, 3, 2 end, nodes = nodes }, roofed), nil)
-  assertEq(tunnels.exit(CAR, 1, 0, { links = links, nodes = nodes }, roofed), nil)
-  assertEq(tunnels.exit(CAR, 1, 0, { closest = function() return 2, 3, 2 end, links = links }, roofed), nil)
-  assertEq(tunnels.exit(CAR, 1, 0, roadsOf(nodes, links, nil, nil, nil), roofed), nil)
-  assertEq(tunnels.exit(CAR, 1, 0, roadsOf(nodes, links, 2, 3, 2), nil), nil)
+  assertEq(tunnels.watch(CAR, 1, 0, nil, roofed), nil)
+  assertEq(tunnels.watch(CAR, 1, 0, { closest = function() return 2, 3, 2 end, nodes = nodes }, roofed), nil)
+  assertEq(tunnels.watch(CAR, 1, 0, { links = links, nodes = nodes }, roofed), nil)
+  assertEq(tunnels.watch(CAR, 1, 0, { closest = function() return 2, 3, 2 end, links = links }, roofed), nil)
+  assertEq(tunnels.watch(CAR, 1, 0, roadsOf(nodes, links, nil, nil, nil), roofed), nil)
+  assertEq(tunnels.watch(CAR, 1, 0, roadsOf(nodes, links, 2, 3, 2), nil), nil)
+  assertEq(tunnels.watch(nil, 1, 0, roadsOf(nodes, links, 2, 3, 2), roofed), nil)
+  assertEq(tunnels.watch(v(0 / 0, 0, 0), 1, 0, roadsOf(nodes, links, 2, 3, 2), function() return true end), nil)
   local holes = {}
   for k, n in pairs(nodes) do holes[k] = n end
   holes[3] = nil
   holes[5] = nil
-  assertEq(tunnels.exit(CAR, 1, 0, roadsOf(holes, links, 2, 3, 2), roofed), nil)
+  assertEq(tunnels.watch(CAR, 1, 0, roadsOf(holes, links, 2, 3, 2), roofed), nil)
   local h4 = {}
   for k, n in pairs(nodes) do h4[k] = n end
   h4[5] = nil
-  assertEq(tunnels.exit(CAR, 1, 0, roadsOf(h4, links, 2, 3, 2), roofed), nil)
+  local list = tunnels.watch(CAR, 1, 0, roadsOf(h4, links, 2, 3, 2), roofed)
+  assertIds(list, { 1 })
 end)
 
 test("just under a bridge the forward node is the exit", function()
   local nodes, links = line(5, 100)
   local roads = roadsOf(nodes, links, 2, 3, 2)
-  local p = tunnels.exit(CAR, 1, 0, roads, roofedRange(nodes, 1, 2))
-  assertEq(p.x, 200)
+  local list = tunnels.watch(CAR, 1, 0, roads, roofedRange(nodes, 1, 2))
+  assertEq(list[1].pos.x, 200)
+  near(list[1].length, 50)
+  assertEq(list[1].from, nil)
 end)
 
-test("a zero direction walks from n1", function()
+test("a zero direction has no turn and walks from n1 first", function()
   local nodes, links = line(5, 100)
   local roads = roadsOf(nodes, links, 2, 3, 2)
-  local p = tunnels.exit(CAR, 0, 0, roads, roofedRange(nodes, 2, 4))
-  assertEq(p.x, 0)
+  local list = tunnels.watch(CAR, 0, 0, roads, roofedRange(nodes, 2, 4))
+  assertIds(list, { 1, 5 })
+  near(list[1].turn, 0)
+  near(list[2].turn, 0)
 end)
 
-test("the node behind the car is never visited", function()
+test("the node behind the car is not walked ahead", function()
   local nodes, links = line(5, 100)
   local roads = roadsOf(nodes, links, 2, 3, 2)
-  local visited = {}
-  tunnels.exit(CAR, 1, 0, roads, function(pos)
-    visited[pos.x] = true
-    return pos.x >= 100 and pos.x <= 300
-  end)
-  assertEq(visited[100], nil)
+  local list = tunnels.watch(CAR, 1, 0, roads, roofedRange(nodes, 2, 4))
+  local ahead = 0
+  for _, e in ipairs(list) do
+    if not e.behind then ahead = ahead + 1 end
+  end
+  assertEq(ahead, 1)
 end)
 
 test("a tunnel just under 3 km still gives its exit", function()
   local nodes, links = line(32, 99)
   local roads = roadsOf(nodes, links, 1, 2, 2)
-  local p = tunnels.exit(v(0, 0, 0), 1, 0, roads, roofedRange(nodes, 1, 31))
-  assertEq(p.x, 31 * 99)
+  local list = tunnels.watch(v(0, 0, 0), 1, 0, roads, roofedRange(nodes, 1, 31))
+  assertEq(list[1].pos.x, 31 * 99)
 end)
 
-test("a non-finite seed picks the first exit", function()
+test("a non-finite seed does not rotate", function()
   local nodes, links = fork()
   local roads = roadsOf(nodes, links, 1, 2, 2)
   local roofed = roofedRange(nodes, 1, 2)
-  assertEq(tunnels.exit(v(0, 0, 0), 1, 0, roads, roofed, math.huge).y, 50)
-  assertEq(tunnels.exit(v(0, 0, 0), 1, 0, roads, roofed, -math.huge).y, 50)
-  assertEq(tunnels.exit(v(0, 0, 0), 1, 0, roads, roofed, 0 / 0).y, 50)
+  assertEq(tunnels.watch(v(0, 0, 0), 1, 0, roads, roofed, math.huge)[1].id, 3)
+  assertEq(tunnels.watch(v(0, 0, 0), 1, 0, roads, roofed, -math.huge)[1].id, 3)
+  assertEq(tunnels.watch(v(0, 0, 0), 1, 0, roads, roofed, 0 / 0)[1].id, 3)
+end)
+
+test("a turn sums the angles along the path", function()
+  local nodes = {
+    [1] = { pos = v(0, 0, 0) },
+    [2] = { pos = v(100, 0, 0) },
+    [3] = { pos = v(200, 0, 0) },
+    [4] = { pos = v(200, 100, 0) },
+  }
+  local links = { [1] = { [2] = {} }, [2] = { [1] = {}, [3] = {} }, [3] = { [2] = {}, [4] = {} }, [4] = { [3] = {} } }
+  local roads = roadsOf(nodes, links, 1, 2, 2)
+  local list = tunnels.watch(v(0, 0, 0), 1, 0, roads, roofedRange(nodes, 1, 3))
+  assertEq(list[1].id, 4)
+  near(list[1].turn, math.pi / 2)
+  near(list[1].length, 300)
+  assertEq(list[1].from, 3)
+end)
+
+test("a second walk with the same cache tests only the car's roof", function()
+  local nodes, links = line(5, 100)
+  local roads = roadsOf(nodes, links, 2, 3, 2)
+  local set = { [2] = true, [3] = true, [4] = true }
+  local inner = roofedIds(nodes, set)
+  local n = 0
+  local function roofed(pos)
+    n = n + 1
+    return inner(pos) or (pos.x >= 150 and pos.x <= 170)
+  end
+  local cache = {}
+  assertEq(#tunnels.watch(v(150, 0, 0), 1, 0, roads, roofed, 0, cache), 2)
+  assertEq(n, 1 + 5)
+  n = 0
+  assertEq(#tunnels.watch(v(160, 0, 0), 1, 0, roads, roofed, 0, cache), 2)
+  assertEq(n, 1)
 end)

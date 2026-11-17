@@ -146,7 +146,7 @@ looked up and remembered by the server as they drive. Players need a BeamNG.Eart
 ## Credits
 
 The helicopter's rotor sound is "Helicopter Rotor Loop" by qubodup, https://freesound.org/people/qubodup/sounds/187681/, CC0
-(shipped as a mono OGG in `client/art/sound/cnr/heli_rotor.ogg`).
+(shipped as a mono OGG in `client/art/sound/cnr/heli_rotor.ogg`, made louder by +6 dB with a limiter).
 
 ## Development
 

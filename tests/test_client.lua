@@ -2776,12 +2776,12 @@ end)
 
 local HELI_LIGHT = "cnr_heli_light"
 
-local function nightTracking(role)
+local function nightTracking(role, seed)
   local env = bootClient()
   local d = copy(SETUP)
   d.phase = "running"
   d.sky = NIGHT
-  d.heli = { phase = "tracking", seconds = 100 }
+  d.heli = { phase = "tracking", seconds = 100, seed = seed }
   if role == "runner" then
     d.role, d.runnerId = "runner", 1
   else
@@ -2802,14 +2802,14 @@ test("at night the searchlight hangs from the helicopter circling the runner's c
   local cop = nightTracking("cop")
   local light = cop.sky.objects[HELI_LIGHT]
   assertEq(light ~= nil, true)
-  assertEq(near(horizontal(light.pos, vec3(1000, 1000, 10)), 30, 3), true, tostring(horizontal(light.pos, vec3(1000, 1000, 10))))
-  assertEq(near(light.pos.z, 60, 1e-6), true, tostring(light.pos.z))
+  assertEq(near(horizontal(light.pos, vec3(1000, 1000, 10)), 80, 3), true, tostring(horizontal(light.pos, vec3(1000, 1000, 10))))
+  assertEq(near(light.pos.z, 110, 1e-6), true, tostring(light.pos.z))
   local runner = nightTracking("runner")
   light = runner.sky.objects[HELI_LIGHT]
   assertEq(light ~= nil, true)
   local own = runner.veh:getPosition()
-  assertEq(near(horizontal(light.pos, own), 30, 3), true, tostring(horizontal(light.pos, own)))
-  assertEq(near(light.pos.z, own.z + 50, 1e-6), true, tostring(light.pos.z))
+  assertEq(near(horizontal(light.pos, own), 80, 3), true, tostring(horizontal(light.pos, own)))
+  assertEq(near(light.pos.z, own.z + 100, 1e-6), true, tostring(light.pos.z))
 end)
 
 test("turning the beam off stops the quads while the light and its glare stay", function()
@@ -2868,7 +2868,7 @@ end)
 test("a tunnel loss sends the helicopter to the exit ahead", function()
   local saved = { _G.castRayStatic, _G.map }
   local ok, err = pcall(function()
-    local env = nightTracking("runner")
+    local env = nightTracking("runner", 7)
     local car = env.veh:getPosition()
     env.veh.getDirectionVector = function() return vec3(1, 0, 0) end
     local nodes, graph = {}, {}
@@ -2897,12 +2897,18 @@ test("a tunnel loss sends the helicopter to the exit ahead", function()
     local light = env.sky.objects[HELI_LIGHT]
     assertEq(light ~= nil, true)
     env.fire("cnr_heli", { phase = "searching", seconds = 100 })
-    env.tick(60)
-    local exit = nodes[5].pos
-    for _ = 1, 10 do
+    env.tick(15)
+    for t = 15, 37 do
       assertEq(env.sky.objects[HELI_LIGHT], light)
-      local d = horizontal(light.pos, exit)
-      assertEq(near(d, 60, 3), true, tostring(d))
+      local d = horizontal(light.pos, nodes[5].pos)
+      assertEq(near(d, 120, 3), true, t .. ": " .. tostring(d))
+      env.tick(1)
+    end
+    env.tick(20)
+    for t = 58, 59 do
+      assertEq(env.sky.objects[HELI_LIGHT], light)
+      local d = horizontal(light.pos, nodes[1].pos)
+      assertEq(near(d, 120, 3), true, t .. ": " .. tostring(d))
       env.tick(1)
     end
   end)
