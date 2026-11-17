@@ -160,6 +160,24 @@ test("the roof lowers the sound to half and hides the rain", function()
   end)
 end)
 
+test("the roof does not carry over from a round's faded rain to the next round's rain", function()
+  withRoof(3, function(roof)
+    load()
+    full(RAIN)
+    run(1)
+    assertEq(fake.objects.cnr_precipitation:getField("hidden"), "1")
+    rain.target(nil, 3)
+    run(3.1)
+    assertEq(rain.active(), false)
+    roof.height = nil
+    rain.target(RAIN, 3)
+    run(0.3)
+    local obj = fake.objects.cnr_precipitation
+    assertEq(obj:getField("hidden"), nil)
+    assertNear(fake.objects.cnr_rain_sound.volume, tonumber(obj:getField("numDrops")) / RAIN.numDrops, 0.01)
+  end)
+end)
+
 local function countWrites()
   local obj = fake.objects.cnr_precipitation
   local snd = fake.objects.cnr_rain_sound
