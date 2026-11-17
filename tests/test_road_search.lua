@@ -272,7 +272,7 @@ end)
 test("noBack never walks into the road behind the origin when closest is a side road", function()
   local g = graph()
   g.node("t0", -200, 0)
-  g.node("t1", -100, 0)
+  g.node("t1", -30, 0)
   g.node("p", 0, 0)
   g.node("s1", 10, -50)
   g.node("s2", 10, 50)
@@ -291,4 +291,30 @@ test("noBack never walks into the road behind the origin when closest is a side 
     for _, p in ipairs(route.points) do if p.x < -1 then reaches = true end end
   end
   assertEq(reaches, true)
+end)
+
+test("noBack still follows a hairpin that curves back past the origin's plane", function()
+  local g = graph()
+  g.node("t0", -200, 0)
+  g.node("t1", -30, 0)
+  g.node("p", 0, 0)
+  g.node("a", 100, 0)
+  g.node("b", 100, 60)
+  g.node("c", -50, 60)
+  g.node("d", -150, 60)
+  g.link("t0", "t1")
+  g.link("t1", "p")
+  g.link("p", "a")
+  g.link("a", "b")
+  g.link("b", "c")
+  g.link("c", "d")
+  local routes = roadSearch.routes(v(0, 0, 0), 1, 0, roadsOf(g, "p", "a", 0), 0, true)
+  local hairpin = false
+  for _, route in ipairs(routes) do
+    for _, p in ipairs(route.points) do
+      if p.x < -1 and p.y == 60 then hairpin = true end
+      assertEq(p.x < -1 and p.y == 0, false, "tunnel entered")
+    end
+  end
+  assertEq(hairpin, true)
 end)

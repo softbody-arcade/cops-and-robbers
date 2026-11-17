@@ -13,6 +13,7 @@ M.AIM_SIDE = 15
 M.AIM_PERIOD = 3
 M.MIN_ROUTE = 1
 M.BEHIND_MARGIN = 1
+M.BEHIND_RADIUS = 40
 
 local TIE = 1e-6
 local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
@@ -149,7 +150,10 @@ function M.routes(origin, dirX, dirY, roads, seed, noBack)
     if len > 0 then
       for id in pairs(nodes) do
         local x, y = nodePos(nodes, id)
-        if x ~= nil and ((x - ox) * dirX + (y - oy) * dirY) / len < -M.BEHIND_MARGIN then blocked[id] = true end
+        if x ~= nil and ((x - ox) * dirX + (y - oy) * dirY) / len < -M.BEHIND_MARGIN
+          and (x - ox) ^ 2 + (y - oy) ^ 2 <= M.BEHIND_RADIUS ^ 2 then
+          blocked[id] = true
+        end
       end
     end
   end
