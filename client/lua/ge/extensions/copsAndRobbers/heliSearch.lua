@@ -26,7 +26,7 @@ function M.clear(state)
   state.flightRandom, state.lastKnown, state.wasGuided, state.sweepAt, state.retargetAt = nil, nil, nil, nil, nil
   state.missingSince, state.tunnelLogged, state.flightFailed, state.jumpAt = nil, nil, nil, nil
   state.lastKnownVel, state.roofCache, state.search = nil, nil, nil
-  state.guidedCheckAt, state.guidedExit, state.guidedKey, state.guidedOn = nil, nil, nil, nil
+  state.guidedCheckAt, state.guidedExit, state.guidedKey, state.guidedOn, state.guidedList = nil, nil, nil, nil, nil
 end
 
 local function copy(p)
@@ -129,11 +129,11 @@ local function heading(vel, target)
   return speed, dirX, dirY
 end
 
-local function decide(state, pos, vel, target, opts)
+local function decide(state, pos, vel, target, opts, cached)
   local speed, dirX, dirY = heading(vel, target)
   local roads = opts and opts.roads and opts.roads()
   state.roofCache = state.roofCache or {}
-  local list = tunnels.watch(pos, dirX, dirY, roads, opts and opts.roofedAt, state.seed, state.roofCache)
+  local list = cached or tunnels.watch(pos, dirX, dirY, roads, opts and opts.roofedAt, state.seed, state.roofCache)
   local s = { mode = "contain", speed = speed, dirX = dirX, dirY = dirY }
   if list and #list > 0 then
     s.mode, s.list, s.i = "tunnel", list, 1
@@ -144,8 +144,8 @@ local function decide(state, pos, vel, target, opts)
   return s
 end
 
-local function choose(state, f, pos, vel, target, clock, opts)
-  local ok, s = pcall(decide, state, pos, vel, target, opts)
+local function choose(state, f, pos, vel, target, clock, opts, cached)
+  local ok, s = pcall(decide, state, pos, vel, target, opts, cached)
   if not ok then
     failed(state, s)
     s = { mode = "contain" }
@@ -231,7 +231,7 @@ local function guidedCheck(state, car, vel, target, clock, opts)
   state.guidedCheckAt = clock
   local roofedAt = opts and opts.roofedAt
   if not roofedAt or roofedAt(vec3(car.x, car.y, car.z + tunnels.ROOF_HEIGHT)) ~= true then
-    state.guidedExit, state.guidedKey = nil, nil
+    state.guidedExit, state.guidedKey, state.guidedList = nil, nil, nil
     return
   end
   local _, dirX, dirY = heading(vel, target)
@@ -241,7 +241,23 @@ local function guidedCheck(state, car, vel, target, clock, opts)
   state.roofCache = state.roofCache or {}
   local list = tunnels.watch(car, dirX, dirY, roads, roofedAt, state.seed, state.roofCache)
   state.guidedExit = list and list[1] and copy(list[1].pos) or nil
+  state.guidedList = list
   state.guidedKey = key
+end
+
+local function guidedCached(state, car, vel, target, clock, opts)
+  local list, at = state.guidedList, state.guidedCheckAt
+  if not list or not at or clock - at >= M.GUIDED_CHECK_SECONDS then return nil end
+  local ok, key = pcall(function()
+    local _, dirX, dirY = heading(vel, target)
+    return edgeKey(opts and opts.roads and opts.roads(), car, dirX, dirY)
+  end)
+  if not ok or key ~= state.guidedKey then return nil end
+  local out = {}
+  for i, e in ipairs(list) do
+    out[i] = { id = e.id, pos = copy(e.pos), from = e.from, length = e.length, turn = e.turn, behind = e.behind }
+  end
+  return out
 end
 
 local function guidedApply(state, f, car, carVel, target, clock, opts)
@@ -275,15 +291,13 @@ local function retarget(state, f, phase, last, car, target, carVel, dt, clock, o
       state.retargetAt = clock
     end
     state.search = nil
-    state.guidedCheckAt, state.guidedExit, state.guidedKey, state.guidedOn = nil, nil, nil, nil
+    state.guidedCheckAt, state.guidedExit, state.guidedKey, state.guidedOn, state.guidedList = nil, nil, nil, nil, nil
     state.lastKnown, state.lastKnownVel = copy(car), copy(carVel)
     return
   end
   if phase ~= "searching" then return end
   local guided = state.guided
-  if not guided then
-    state.guidedCheckAt, state.guidedExit, state.guidedKey, state.guidedOn = nil, nil, nil, nil
-  end
+  if not guided then state.guidedOn = nil end
   if last == "tracking" then
     if guided then
       circle(state, f, car, clock)
@@ -293,7 +307,7 @@ local function retarget(state, f, phase, last, car, target, carVel, dt, clock, o
   elseif guided and (not state.wasGuided or not f.spot) then
     circle(state, f, car, clock)
   elseif state.wasGuided and not guided then
-    choose(state, f, car, carVel, target, clock, opts)
+    choose(state, f, car, carVel, target, clock, opts, guidedCached(state, car, carVel, target, clock, opts))
   elseif not guided and not state.search then
     local k = state.lastKnown
     if k then

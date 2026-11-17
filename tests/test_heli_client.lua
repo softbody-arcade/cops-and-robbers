@@ -2980,7 +2980,6 @@ test("the walk runs at most once a second, and only on an edge or direction chan
       v.vel = vec3(10 * flip, 0, 0)
       flip = -flip
       c = guidedDrive(c, c + 0.2, v, car, opts)
-      pos = vec3(150, 0, 0)
     end
     assertEq(calls() >= 2, true)
     assertEq(calls() <= 6, true)
@@ -3015,24 +3014,33 @@ test("a redone walk tests only the car's roof", function()
   end)
 end)
 
-test("guidance flickering 10 times in the tunnel tests the nodes once", function()
+test("guidance flickering 10 times in the tunnel walks once and tests the nodes once", function()
   local g = straight(-9, 20)
   local nodeCalls = 0
   local opts = { roads = function() return g end, roofedAt = function(p)
     if math.abs(p.x - 150) >= 1e-6 then nodeCalls = nodeCalls + 1 end
     return inTunnel(p)
   end }
-  local v, car, c = guidedStart(66, vec3(150, 0, 0), vec3(10, 0, 0), opts)
-  local first = nodeCalls
-  assertEq(first > 0, true)
-  for i = 1, 10 do
+  countWatch(function(calls)
+    local v, car, c = guidedStart(66, vec3(150, 0, 0), vec3(10, 0, 0), opts)
+    local first = nodeCalls
+    assertEq(first > 0, true)
+    assertEq(calls(), 1)
+    for i = 1, 10 do
+      c = c + 0.05
+      status(c, "searching", nil, opts, car)
+      c = c + 0.05
+      status(c, "searching", { guided = true }, opts, car)
+    end
     c = c + 0.05
     status(c, "searching", nil, opts, car)
-    c = c + 0.05
-    status(c, "searching", { guided = true }, opts, car)
-    pos = vec3(150, 0, 0)
-  end
-  assertEq(nodeCalls, first)
+    assertEq(calls() <= 2, true)
+    assertEq(nodeCalls, first)
+    assertEq(state.search.mode, "tunnel")
+    assertEq(state.search.list[1].id, 5)
+    assertEq(state.search.since, c)
+    samePos(state.flight.spot, vec3(400, 0, 0), 1e-9)
+  end)
 end)
 
 test("back in the open it circles the live position, and so does a tunnel with no exit within the caps", function()
