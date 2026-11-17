@@ -26,6 +26,8 @@ const emit = defineEmits(["show"])
 .hud-tab .cnr-btn {
   text-shadow: none;
   pointer-events: auto;
-  --bng-icon-size: 1.25rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  --bng-icon-size: 1rem;
 }
 </style>
