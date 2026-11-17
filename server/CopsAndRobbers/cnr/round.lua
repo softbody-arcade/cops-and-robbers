@@ -180,7 +180,7 @@ end
 
 function Round:start(now, runnerId, issuerId, players, opts)
   if self:isActive() then
-    return { { kind = "reply", pid = issuerId, msg = "A round is already running" } }
+    return { { kind = "reply", pid = issuerId, msg = "A round is already running", tone = "warn" } }
   end
   self:clear()
   self.test = opts and opts.test or false
@@ -188,7 +188,7 @@ function Round:start(now, runnerId, issuerId, players, opts)
     local role = opts.role
     if role ~= "runner" and role ~= "cop" then
       self:clear()
-      return { { kind = "reply", pid = issuerId, msg = "Pick practice as runner or as cop" } }
+      return { { kind = "reply", pid = issuerId, msg = "Pick practice as runner or as cop", tone = "warn" } }
     end
     self.testRole = role
     self.players = { [issuerId] = players[issuerId] or "You" }
@@ -241,7 +241,7 @@ end
 
 function Round:apply(now, pid)
   if not self.evolving or self.state ~= "prep" then
-    return { { kind = "reply", pid = pid, msg = "Apply only works during prep in evolving mode" } }
+    return { { kind = "reply", pid = pid, msg = "Apply only works during prep in evolving mode", tone = "warn" } }
   end
   self.state = "applying"
   self.applyStartedAt = now
@@ -301,13 +301,13 @@ end
 
 function Round:go(now, pid)
   if self.state == "idle" or self.state == "picking" then
-    return { { kind = "reply", pid = pid, msg = "No round set up, start one in the panel" } }
+    return { { kind = "reply", pid = pid, msg = "No round set up, start one in the panel", tone = "warn" } }
   end
   if self.evolving and (self.state == "prep" or self.state == "applying") then
-    return { { kind = "reply", pid = pid, msg = "Apply the change first" } }
+    return { { kind = "reply", pid = pid, msg = "Apply the change first", tone = "warn" } }
   end
   if self.state ~= (self.evolving and "ready" or "prep") then
-    return { { kind = "reply", pid = pid, msg = "Round already started" } }
+    return { { kind = "reply", pid = pid, msg = "Round already started", tone = "warn" } }
   end
   self.state = "countdown"
   self.countdownStartedAt = now
@@ -621,18 +621,18 @@ end
 
 function Round:endCalled(now, pid)
   if self.state ~= "running" then
-    if self.state == "idle" then return { { kind = "reply", pid = pid, msg = "No round running" } } end
-    return { { kind = "reply", pid = pid, msg = "The chase has not started, use Cancel" } }
+    if self.state == "idle" then return { { kind = "reply", pid = pid, msg = "No round running", tone = "warn" } } end
+    return { { kind = "reply", pid = pid, msg = "The chase has not started, use Cancel", tone = "warn" } }
   end
   return self:finish(now, "called")
 end
 
 function Round:reroll(now, pid)
   if self.evolving then
-    return { { kind = "reply", pid = pid, msg = "New car isn't available in evolving mode" } }
+    return { { kind = "reply", pid = pid, msg = "New car isn't available in evolving mode", tone = "warn" } }
   end
   if self.state ~= "prep" then
-    return { { kind = "reply", pid = pid, msg = "You can only reroll during prep" } }
+    return { { kind = "reply", pid = pid, msg = "You can only reroll during prep", tone = "warn" } }
   end
   self.state = "picking"
   self.issuerId = pid
@@ -642,7 +642,7 @@ end
 
 function Round:stop(now, issuerId)
   if self.state == "idle" then
-    return { { kind = "reply", pid = issuerId, msg = "No round running" } }
+    return { { kind = "reply", pid = issuerId, msg = "No round running", tone = "warn" } }
   end
   return self:cancel(now, "Round cancelled")
 end

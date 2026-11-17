@@ -1033,7 +1033,7 @@ function M.newBuild(choice)
   else
     b = vehicles.buildFrom(path)
   end
-  if not b then return guihooks.trigger("CnRPanelReply", { text = "That car can't start a build" }) end
+  if not b then return guihooks.trigger("CnRPanelReply", { text = "That car can't start a build", tone = "warn" }) end
   M.panel({ action = "build", op = "new", model = b.model, name = b.name, parts = b.parts, vars = b.vars, from = choice.random and "random" or path })
 end
 

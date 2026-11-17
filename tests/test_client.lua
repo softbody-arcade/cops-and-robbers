@@ -1009,6 +1009,7 @@ test("starting a build reads the chosen config and sends its parts", function()
   assertEq(msg.parts.pickup_engine, "v8"); assertEq(msg.vars.gear1, 3.1); assertEq(msg.name, "Gavril Pickup")
   env.M.newBuild({ config = "vehicles/pickup/missing.pc" })
   assertEq(env.lastTrigger("CnRPanelReply").text, "That car can't start a build")
+  assertEq(env.lastTrigger("CnRPanelReply").tone, "warn")
 end)
 
 test("an engine swap is sent as one change with the parts that came with it", function()
