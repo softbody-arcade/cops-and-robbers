@@ -88,10 +88,20 @@ function M.payload(s, cfg, clockSeconds)
   return p
 end
 
-function M.record(s, cfg)
+local RANK = { clear = 0, cloudy = 1, rain = 2, fog = 3, snow = 3, storm = 4 }
+
+local function worst(s, clock)
+  local w = s.weather
+  for _, ch in ipairs(s.changes or {}) do
+    if clock and ch.at <= clock and (RANK[ch.to] or 0) > (RANK[w] or 0) then w = ch.to end
+  end
+  return w
+end
+
+function M.record(s, cfg, clock)
   local p = M.payload(s, cfg, nil)
   if not p then return nil end
-  return { time = p.time, weather = p.weather, year = p.year, month = p.month, day = p.day, dayLength = cfg.dayLength, driving = p.driving }
+  return { time = p.time, weather = worst(s, clock), weatherStart = s.weather, year = p.year, month = p.month, day = p.day, dayLength = cfg.dayLength, driving = p.driving }
 end
 
 return M

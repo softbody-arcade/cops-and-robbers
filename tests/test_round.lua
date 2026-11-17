@@ -1078,6 +1078,52 @@ test("the helicopter starts at release with the round's weather", function()
   assertEq(e.phase, "arriving"); assertNear(e.seconds, 60, 1e-9)
 end)
 
+local function skyRound(sk, overrides)
+  local r = round.new((config.merge(overrides)))
+  r:start(0, 1, 2, players, { sky = sk })
+  r:vehiclePicked(1, 2, "pickup", "cfg", players)
+  r:go(1, 3)
+  r:tick(4, stillCars(), {})
+  r:coverReport(5, 1, false)
+  return r
+end
+
+test("the heli effect goes grounded when a change to storm starts and arriving when the change away ends", function()
+  local r = skyRound({ weather = "rain", changes = { { at = 40, to = "storm" }, { at = 200, to = "rain" } } }, { helicopterArrivalSeconds = 60, helicopterUpSeconds = 1000 })
+  local seen = {}
+  for t = 11, 262 do
+    local e = find(r:tick(t, farCars(), {}), "heli")
+    if e then seen[#seen + 1] = (t - 1) .. " " .. e.phase end
+  end
+  assertEq(seen[1], "10 arriving")
+  assertEq(seen[2], "40 grounded")
+  assertEq(seen[3], "260 arriving")
+end)
+
+test("a round that starts in fog returns when the fog clears", function()
+  local r = skyRound({ weather = "fog", changes = { { at = 100, to = "clear" } } }, { helicopterArrivalSeconds = 60 })
+  local seen = {}
+  for t = 11, 300 do
+    local e = find(r:tick(t, farCars(), {}), "heli")
+    if e then seen[#seen + 1] = (t - 1) .. " " .. e.phase .. " " .. tostring(e.reason) end
+  end
+  assertEq(seen[1], "10 grounded fog")
+  assertEq(seen[2], "160 arriving nil")
+end)
+
+test("a run records the worst weather and the start weather", function()
+  local r = skyRound({ weather = "cloudy", changes = { { at = 20, to = "rain" }, { at = 40, to = "storm" }, { at = 60, to = "cloudy" }, { at = 500, to = "snow" } } }, { helicopter = false })
+  r:tick(11, stillCars(), {})
+  local fx = r:tick(71, { [1] = car(0), [2] = car(1), [3] = car(1) }, {})
+  for t = 72, 80 do
+    local out = r:tick(t, { [1] = car(0), [2] = car(1), [3] = car(1) }, {})
+    for _, e in ipairs(out) do fx[#fx + 1] = e end
+  end
+  local rec = find(fx, "record")
+  assertEq(rec ~= nil, true)
+  assertEq(rec.run.sky.weather, "storm"); assertEq(rec.run.sky.weatherStart, "cloudy")
+end)
+
 test("heli effects follow phase changes", function()
   local r = started({helicopterArrivalSeconds=60, helicopterUpSeconds=120, helicopterRefuelSeconds=90})
   r:tick(4, stillCars(), {})
@@ -1245,8 +1291,9 @@ test("runs note when the helicopter flew", function()
     r:tick(4, stillCars(), {}); r:tick(11, stillCars(), {})
     return find(r:endCalled(20, 2), "record").run.helicopter
   end
-  assertEq(flew(nil, "clear"), true)
-  assertEq(flew(nil, "fog"), nil)
+  assertEq(flew({helicopterArrivalSeconds=0}, "clear"), true)
+  assertEq(flew(nil, "clear"), nil)
+  assertEq(flew({helicopterArrivalSeconds=0}, "fog"), nil)
   assertEq(flew({helicopter=false}, "clear"), nil)
 end)
 

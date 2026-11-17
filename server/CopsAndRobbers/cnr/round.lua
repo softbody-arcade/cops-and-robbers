@@ -5,6 +5,7 @@ local vec = require("cnr.vec")
 local sight = require("cnr.sight")
 local sky = require("cnr.sky")
 local helicopter = require("cnr.helicopter")
+local weather = require("cnr.weather")
 
 local M = {}
 local Round = {}
@@ -161,7 +162,7 @@ function Round:finish(now, reason)
       lostCount = self.cfg.sightMaxMeters > 0 and self.lostCount or nil,
       timeline = self.timeline,
       mode = self.evolving and "evolving" or "random", buildStep = self.buildStep, buildName = self.buildName,
-      sky = sky.record(self.sky, self.cfg),
+      sky = sky.record(self.sky, self.cfg, now - self.countdownStartedAt),
       traffic = (self.traffic or 0) > 0 and self.traffic or nil,
       trafficRunnerOnly = (self.traffic or 0) > 0 and self.trafficRunnerOnly or nil,
       helicopter = self.heli and helicopter.flew(self.heli) or nil,
@@ -354,7 +355,7 @@ function Round:tick(now, cars, stations, traffic)
     self.nearestAt = now
     fx[#fx + 1] = { kind = "release" }
     if self.cfg.helicopter then
-      self.heli = helicopter.new(self.cfg, self.sky and self.sky.weather, now)
+      self.heli = helicopter.new(self.cfg, weather.groundedAt(self.sky, now - self.countdownStartedAt), now)
       heliNew = true
     end
   end
@@ -391,7 +392,7 @@ function Round:tick(now, cars, stations, traffic)
     end
     progress, caught = self.catchTracker:update(now, runnerCar, cops)
     if caught then self.catchers = self:copsNear(runnerCar, cars) end
-    if self.heli and not caught and (helicopter.update(self.heli, now, self.runnerCovered, self.inSight) or heliNew) then
+    if self.heli and not caught and (helicopter.update(self.heli, now, self.runnerCovered, self.inSight, weather.groundedAt(self.sky, now - self.countdownStartedAt)) or heliNew) then
       local s = helicopter.status(self.heli, now)
       fx[#fx + 1] = { kind = "heli", phase = s.phase, seconds = s.seconds, reason = s.reason, seed = s.seed, guided = s.guided }
     end
