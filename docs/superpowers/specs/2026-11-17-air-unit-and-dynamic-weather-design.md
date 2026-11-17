@@ -17,6 +17,7 @@ Status: for the user's approval, 2026-11-17, after a builder check. Builds on 2.
 - It tracks from a realistic height and stand-off, sees over most buildings, and keeps its light useful.
 - The weather changes during a chase whenever the day allows it (worked out in advance on the server, at set intervals, only into logical neighbours for the temperature and time of day), the same for every player at the same moment. It blends over about a minute, and grip, wind, rain, sound and lights follow it.
 - The helicopter is grounded when the weather turns to storm, fog or snow. It comes back when the weather clears.
+- A forecast shows the next change roughly (a 2-minute window), the same for everyone, as a real crew and a real runner would check the weather.
 - Everything stays deterministic across games: the server's seeds and the round clock decide; positions come from each game's copy of the runner's car, as in 2.9.4.
 
 ## Non-goals
@@ -38,6 +39,8 @@ Status: for the user's approval, 2026-11-17, after a builder check. Builds on 2.
 - **Sight:** the helicopter's sight stays a thermal view. It sees the runner by line of sight within 400 m, day and night, and the light plays no part ("as is; thermals would allow them to anyway").
 - **Tunnels:** the timed tunnel watch as described below.
 - **Version:** this is 2.10.0, with dynamic weather folded in.
+- **Weather logic:** changes only when the day allows it, worked out in advance, with no limit on their number and a set minimum and maximum time between them; snow only when the day's temperatures allow it, and in the southern hemisphere in its own winter.
+- **Forecast:** the next change only, with a rough 2-minute window, on the HUD and in prep. Chosen over an outlook in prep only and over an exact timeline.
 
 ## Approaches
 - **Road search:**
@@ -164,7 +167,7 @@ See B5. A grounded helicopter flies away and drops its search. When it comes bac
   - The date is still chosen from the start weather's window (as now), so a winter round with a snow start is cold, and a summer round never sees snow.
   - The month the server picks is the season (northern months). On a map in the southern hemisphere the client already shows the date six months on (since 2.4.0), so a local July there is winter and can snow. The server needs no latitude: it works in seasons.
   - A clear or cloudy start in winter can turn to snow only when the morning curve dips to 1 °C or below.
-- **Payload:** the sky payload gains `changes = { { at = seconds, to = weather }, ... }` (possibly empty), plus `tempLow` and `tempHigh`. The base `weather` stays the start weather.
+- **Payload:** the sky payload gains `changes = { { at = seconds, to = weather, forecastFrom = seconds }, ... }` (possibly empty; `forecastFrom` is B8), plus `tempLow` and `tempHigh`. The base `weather` stays the start weather.
 - **Server state:** the server keeps the schedule in `round.sky` and works out the current weather from its own round clock (B5, B6).
 
 ### B3. The change on the clients (client `sky.lua`, `rain.lua`, `surfaces.lua`, `wind.lua`)
@@ -195,7 +198,7 @@ See B5. A grounded helicopter flies away and drops its search. When it comes bac
 - **Joining or reconnecting mid-chase:** the setup payload carries the schedule and `clockSeconds`. The client applies the weather in effect at that moment. If a change is running, it uses the in-between values and runs the rest of the change from there.
 
 ### B4. Round start and New sky
-Unchanged, except that the schedule is rolled with the sky. Prep shows only the start weather. The schedule is a surprise.
+Unchanged, except that the schedule is rolled with the sky. Prep shows the start weather and the forecast of the first change (B8); the rest of the schedule stays hidden.
 
 ### B5. The helicopter and the weather (server `helicopter.lua`, client `heli.lua`)
 - **Grounding:**
@@ -218,10 +221,22 @@ Unchanged, except that the schedule is rolled with the sky. Prep shows only the 
 
 ### B7. Docs
 - FEATURES: the helicopter and night and weather sections.
-- How to Play: the helicopter, plus a line on weather changes and grounding.
+- How to Play: the helicopter, plus a line on weather changes, the forecast and grounding.
 - README: the config table and the helicopter text.
 - DEPENDENCIES: the environment calls, the road graph for the road search, and the stepped blend.
 - The panel help.
+
+### B8. Forecast (client `sky.lua` text, `hudfeed.lua`, the round HUD app)
+- **What it shows:** only the next change, as a 2-minute window, the same on every game. It is never wrong: the change always lands inside the window.
+- **The window:** each change gets `forecastFrom` = `at` − uniform(0, 120) s, drawn from the weather seed with the schedule. The window runs from `forecastFrom` for 120 s, so the change can fall anywhere in it and the middle doesn't give it away.
+- **HUD line** during the chase, under the round timer, in the style of the helicopter status line:
+  - before the window: "Forecast: rain in 3-5 min" (whole minutes from now; the shown range always covers the window)
+  - inside the window: "Forecast: rain any minute"
+  - while a change is running, and after it: the next change, or no line when there is none left
+  - when the helicopter is on and the change grounds it (to storm, fog or snow): a second line "(helicopter grounded)"; when it brings it back (from those to rain, cloudy or clear): "(helicopter returns)"
+- **Prep line:** the sky label gains "Forecast: rain 5-7 min after release" for the first change.
+- **Hidden** when Weather changes is off, on BeamNG.Earth, or when the round has no sky weather.
+- **New sky** re-rolls it with the schedule. Practice shows it the same way.
 
 ## Part C: split the flight lifecycle out of `heli.lua` (first, no behaviour change)
 - **Why first:** `heli.lua` is 646 lines, and Part A changes the flight lifecycle heavily. A 2.9.4 review recommended this split before the next helicopter feature.
@@ -274,6 +289,13 @@ Unchanged, except that the schedule is rolled with the sky. Prep shows only the 
   - min ≤ max is enforced
   - off when `weatherChanges` is off or on BeamNG.Earth
   - New sky re-rolls it
+- **Forecast:**
+  - every window is 120 s, contains its change and comes from the seed (the same on every game)
+  - the text before the window, inside it, during a change and with none left
+  - the shown minutes always cover the window
+  - the helicopter line only when the helicopter is on and the change grounds it or brings it back
+  - the prep text for the first change
+  - hidden when off, on Earth or with no sky weather
 - **Weather on the client:**
   - clouds and fog step twice a second and the environment is locked between steps
   - time, play, date and temperature are never touched
@@ -307,6 +329,7 @@ Unchanged, except that the schedule is rolled with the sky. Prep shows only the 
   - grip changes when expected
   - the environment menu stays unavailable
   - the notice shows
+  - the forecast line is readable, counts down, and the change lands inside its window
 - **Storm, fog or snow arriving:** the helicopter flies away and the HUD says "GROUNDED". When it clears, the helicopter comes back.
 - **A player joining mid-change** gets the same sky.
 
@@ -316,17 +339,19 @@ Unchanged, except that the schedule is rolled with the sky. Prep shows only the 
 - the route caps (2,500 / 1,500 / 1,000 m)
 - the light's sweep across the road: 60 m ahead, ±15 m, 3 s
 - the tunnel watch time clamp(len / max(v, 10) × 1.5, 15, 90)
-- the weather change odds 40/45/15, the times, the transition weights, `CHANGE_SECONDS` 60, `DRY_SECONDS` 60, two steps a second
+- `CHANGE_SECONDS` 60, `DRY_SECONDS` 60, two steps a second
 - the weather logic: the thresholds 1 / 2 °C, warm day ≥ 15 °C, fog ≤ 12 °C between sunset and sunrise + 3 h; equal weights among allowed neighbours
 - the default interval 3 to 8 minutes; the horizon 180 minutes without a time limit
 - the temperature estimate's sunrise about 06:00 and high about 14:00, approximating the game's solar model
 - snow grounds the helicopter, as in 2.9.0
+- the forecast window 120 s, placed at random around the change; the helicopter hint lines
 - the recall at the start of a change to storm, fog or snow, and the return at the end of a change away from them
 - records keep the worst weather plus the start weather
 - the first arrival uses the same mode choice as a loss, from the runner's car at that moment (the builder check asked)
 - a full time up after each return from a grounding (the builder check asked)
 
 ## Left to the builder
-- how the stepped blend interpolates (smoothstep) and the exact notice wording within the tone above
+- how the stepped blend interpolates (smoothstep) and the exact notice and forecast wording within the tone above
+- the forecast's minute rounding, as long as the shown range covers the window
 - how the wind blends the two gust tables
 - the tunnel candidate list's return shape
