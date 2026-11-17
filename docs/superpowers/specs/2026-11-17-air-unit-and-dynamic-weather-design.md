@@ -304,7 +304,7 @@ Unchanged, except that the schedule is rolled with the sky. Prep shows only the 
   - grip changes when expected
   - the environment menu stays unavailable
   - the notice shows
-- **Storm or fog arriving:** the helicopter flies away and the HUD says "GROUNDED". When it clears, the helicopter comes back.
+- **Storm, fog or snow arriving:** the helicopter flies away and the HUD says "GROUNDED". When it clears, the helicopter comes back.
 - **A player joining mid-change** gets the same sky.
 
 ## Calls made (easy to change)
