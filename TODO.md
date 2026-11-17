@@ -12,6 +12,7 @@ One entry per piece of work that has started: what it is, its branch (or "design
   - [ ] A gap in the runner's car on a cop's game reads as a car jump: when the car comes back more than 30 m away, the helicopter, the search spot and `lastKnown` shift by the car's travel. Reset `lastCar` after a gap instead (`heli.lua` `carVelocity`, `heliFlight.step`)
   - [ ] The tunnel walk repeats every time cop guidance ends (up to about 1,000 upward rays in one frame), so a cop following through a long tunnel with flickering sight repeats it every 2-3 s; reuse the last result while the car moved under 30 m
   - [ ] Helicopter jump detection lives in several places that must agree (`heli.lua` `carVelocity`, which also moves `lastKnown` and `sweepRayAt`; `heliFlight.step`, which also moves the spot; the aim's 2D check in `aimStep`); one helper would keep them in step. Do it with the module split below
+  - [ ] A sunrise time equal to the high time (two hours after noon) would make the game reject the temperature curve, and the previous curve would stay. Impossible at stock latitudes (`sky.lua` `roundState`). Gone with 2.10, whose curve uses fixed hours (06:00 and 14:00)
 
 ## In-game checks
 Things only a player in the game can confirm, each with what to look for. Add them here when work is merged or deployed without the check; delete a line once it is checked, and turn anything that fails into an Issue.
@@ -57,7 +58,6 @@ Things only a player in the game can confirm, each with what to look for. Add th
 - [ ] App preview images (`tools/previews/*.svg`) are drawn approximations; replace them with in-game screenshots
 - [ ] `useFit` (`fit.js`) only shrinks text and never grows it in a large app. Decide whether it should
 - [ ] HUD styles repeated across components: `.title`, `.tone-*` and `.mono` (HudCenter, HudResult, HudChase) and the root container (Hud, Announcements and How to play `app.vue`). Move them into the shared kit; needs a visual check in game. (`.hud-btn` and `.swatch` are already shared: `.cnr-btn`, `.cnr-swatch` in `CnrRoot.vue`)
-- [ ] A sunrise time equal to the high time (two hours after noon) would make the game reject the temperature curve, and the previous curve would stay. Impossible at stock latitudes (`sky.lua` `roundState`)
 - [ ] `drop` during a restore blend freezes the sky half-way for a player whose environment was locked. It's reachable only from `onClientEndMission`, where the level unloads anyway (`sky.lua`)
 - [ ] The `Sim` and `MatrixF` guards in `rain.lua` exist only for the test stubs, and the `setTransform` stub is never used. Stub them instead (`rain.lua`, `tests/env_stubs.lua`)
 - [ ] Helicopter server details (`round.lua`): a last-seen ping after a timer loss while the runner's car is missing from the tick carries the position where it comes back; `copPids` is sorted three times per tick; `runnerShown` can be sent right before `roundEnd` on the escape tick (harmless)
