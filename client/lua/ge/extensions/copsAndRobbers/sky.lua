@@ -184,7 +184,11 @@ function M.apply(p)
     else
       rain.target(precipitation(to), M.BLEND_SECONDS)
     end
-    surfaces.apply(p.driving and p.weather or nil)
+    if p.driving then
+      surfaces.blend(skyChanges.grip(p, at))
+    else
+      surfaces.apply(nil)
+    end
   end)
   if ok then
     lockTimer, lockAfter = LOCK_DELAY, true
@@ -193,6 +197,7 @@ function M.apply(p)
     rain.clear()
     env.enableChanges(false)
     lockTimer, restoring = nil, nil
+    failed.grip = true
     log("E", "cnr_sky", tostring(err))
   end
 end
@@ -266,11 +271,17 @@ local function stepRain(to, progress, index)
   end
 end
 
+local function stepGrip()
+  local ok, err = pcall(function() surfaces.blend(skyChanges.grip(round, roundTime)) end)
+  if not ok then fail("grip", err) end
+end
+
 local function step()
   local from, to, progress, index = skyChanges.at(round, roundTime)
   if not failed.clouds then stepClouds(from, to, progress) end
   if not failed.curve then stepCurve() end
   if not failed.rain then stepRain(to, progress, index) end
+  if round.driving and not failed.grip then stepGrip() end
 end
 
 local function newChange()

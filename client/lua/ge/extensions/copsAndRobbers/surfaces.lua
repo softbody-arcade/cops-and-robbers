@@ -41,7 +41,11 @@ M.RULES = {
   snow = { SNOW_RULE },
 }
 
+M.STEP = 0.05
+M.KINDS = { "dry", "rain", "storm", "snow" }
+
 local saved = {}
+local pushed = nil
 
 local function pushModels(name)
   local models = core_environment.groundModels
@@ -69,41 +73,97 @@ function M.restore()
       pushModels(name)
     end
   end
-  saved = {}
+  saved, pushed = {}, nil
 end
 
 function M.drop()
-  saved = {}
+  saved, pushed = {}, nil
 end
 
-function M.apply(weather)
-  M.restore()
-  local rules = M.RULES[weather]
-  if not rules then return end
-  local models = core_environment.groundModels
-  for _, rule in ipairs(rules) do
-    local source = rule.become and models[rule.become]
-    if not rule.become or source then
-      local copy = {}
-      if source then
-        for _, field in ipairs(FIELDS) do copy[field] = source.cdata[field] end
-      end
+local function ruleFor(kind, name)
+  local found
+  for _, rule in ipairs(M.RULES[kind] or {}) do
+    for _, target in ipairs(rule.targets) do
+      if target == name then found = rule end
+    end
+  end
+  return found
+end
+
+local function saveTargets(models)
+  for _, rules in pairs(M.RULES) do
+    for _, rule in ipairs(rules) do
+      local source = rule.become and models[rule.become]
+      if source then save(rule.become, source.cdata) end
       for _, name in ipairs(rule.targets) do
-        local model = models[name]
-        if model then
-          local cdata = model.cdata
-          save(name, cdata)
-          if source then
-            for _, field in ipairs(FIELDS) do cdata[field] = copy[field] end
-          else
-            cdata.staticFrictionCoefficient = cdata.staticFrictionCoefficient * rule.static
-            cdata.slidingFrictionCoefficient = cdata.slidingFrictionCoefficient * rule.sliding
-          end
-          pushModels(name)
-        end
+        if models[name] then save(name, models[name].cdata) end
       end
     end
   end
+end
+
+local function valueOf(kind, name, field)
+  local dry = saved[name][field]
+  local rule = kind ~= "dry" and ruleFor(kind, name)
+  if not rule then return dry end
+  if rule.become then
+    local source = saved[rule.become]
+    return source and source[field] or dry
+  end
+  if field == "staticFrictionCoefficient" then return dry * rule.static end
+  if field == "slidingFrictionCoefficient" then return dry * rule.sliding end
+  return dry
+end
+
+local function mustPush(weights)
+  if not pushed then return true end
+  local ones, differs = 0, false
+  for _, kind in ipairs(M.KINDS) do
+    local w = weights[kind] or 0
+    if math.abs(w - pushed[kind]) >= M.STEP - 1e-9 then return true end
+    if w >= 1 - 1e-9 then ones = ones + 1 end
+    if w ~= pushed[kind] then differs = true end
+  end
+  return ones > 0 and differs
+end
+
+function M.blend(weights)
+  if not weights then return end
+  local models = core_environment.groundModels
+  if not next(saved) then saveTargets(models) end
+  if not mustPush(weights) then return end
+  local names = {}
+  for name in pairs(saved) do
+    if ruleFor("rain", name) or ruleFor("storm", name) or ruleFor("snow", name) then names[#names + 1] = name end
+  end
+  table.sort(names)
+  local snapshot = {}
+  for _, kind in ipairs(M.KINDS) do snapshot[kind] = weights[kind] or 0 end
+  for _, name in ipairs(names) do
+    local model = models[name]
+    if model then
+      for _, field in ipairs(FIELDS) do
+        local sum = 0
+        for _, kind in ipairs(M.KINDS) do
+          local w = snapshot[kind]
+          if w ~= 0 then sum = sum + w * valueOf(kind, name, field) end
+        end
+        model.cdata[field] = sum
+      end
+      pushModels(name)
+    end
+  end
+  pushed = snapshot
+end
+
+function M.apply(weather)
+  if not M.RULES[weather] then
+    M.restore()
+    return
+  end
+  local weights = { dry = 0, rain = 0, storm = 0, snow = 0 }
+  weights[weather] = 1
+  M.blend(weights)
 end
 
 return M

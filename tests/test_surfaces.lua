@@ -57,3 +57,41 @@ test("restore puts every surface back, drop leaves them", function()
   s.apply("rain"); s.drop(); s.restore()
   assertEq(cd(fake, "ASPHALT").staticFrictionCoefficient, 0.92)
 end)
+
+test("blend mixes dry and wet values", function()
+  local fake = fakeEnvironment(); local s = load()
+  s.blend({ dry = 0.5, rain = 0.5, storm = 0, snow = 0 })
+  assertNear(cd(fake, "ASPHALT").staticFrictionCoefficient, (0.98 + 0.92) / 2, 1e-9)
+  assertNear(cd(fake, "GRASS").staticFrictionCoefficient, 0.61 * (1 + 0.85) / 2, 1e-9)
+  assertNear(cd(fake, "GRASS").roughnessCoefficient, 0.43, 1e-9)
+end)
+
+test("a rain and snow mix reads the wet models' dry values", function()
+  local fake = fakeEnvironment(); local s = load()
+  s.blend({ dry = 0, rain = 0.5, storm = 0, snow = 0.5 })
+  assertNear(cd(fake, "DIRT").staticFrictionCoefficient, (0.62 + 0.65) / 2, 1e-9)
+  s.blend({ dry = 0, rain = 0.5, storm = 0, snow = 0.5 })
+  assertNear(cd(fake, "DIRT").staticFrictionCoefficient, (0.62 + 0.65) / 2, 1e-9)
+end)
+
+test("a model is pushed only when the blend moved 5 % or reached its end", function()
+  local fake = fakeEnvironment(); local s = load()
+  local batches = 0
+  for i = 0, 100 do
+    local r = i / 100
+    local before = #fake.modelSets
+    s.blend({ dry = 1 - r, rain = r, storm = 0, snow = 0 })
+    if #fake.modelSets > before then batches = batches + 1 end
+  end
+  assertEq(batches, 21)
+  assertEq(cd(fake, "ASPHALT").staticFrictionCoefficient, 0.92)
+end)
+
+test("restore puts the dry values back after a blend", function()
+  local fake = fakeEnvironment(); local s = load()
+  s.blend({ dry = 0.3, rain = 0, storm = 0.7, snow = 0 })
+  s.restore()
+  assertEq(cd(fake, "ASPHALT").staticFrictionCoefficient, 0.98)
+  assertEq(cd(fake, "DIRT").defaultDepth, 0)
+  assertEq(cd(fake, "GRASS").staticFrictionCoefficient, 0.61)
+end)

@@ -904,3 +904,71 @@ test("the label's range comes from the turning points around the start", functio
   assertEq(sky.label(p, true), "Noon · Cloudy · 14 Dec · -2 to 8 °C")
   assertEq(sky.label(changing({ temps = false }), true), "Noon · Cloudy · 14 Dec")
 end)
+
+local function asphalt(fake) return fake.models.ASPHALT.cdata.staticFrictionCoefficient end
+
+local function gripRound(extra)
+  local p = changing({ driving = true, weather = "cloudy", changes = { { at = 20, to = "rain", forecastFrom = 0 }, { at = 200, to = "cloudy", forecastFrom = 0 } } })
+  for k, v in pairs(extra or {}) do p[k] = v end
+  local sky, fake = load()
+  sky.apply(p); sky.startClock(0); sky.update(4)
+  return sky, fake, p
+end
+
+test("grip gets wet over the change and dries over 180 s after it", function()
+  local sky, fake = gripRound()
+  local t = 4
+  t = runFor(sky, t, 50 - t, 0.5)
+  assertNear(asphalt(fake), (0.98 + 0.92) / 2, 0.06 * 0.06 + 0.001)
+  t = runFor(sky, t, 80 - t, 0.5)
+  assertNear(asphalt(fake), 0.92, 1e-6)
+  t = runFor(sky, t, 200 - t, 0.5)
+  assertNear(asphalt(fake), 0.92, 1e-6)
+  t = runFor(sky, t, 350 - t, 0.5)
+  assertNear(asphalt(fake), (0.98 + 0.92) / 2, 0.003)
+  t = runFor(sky, t, 440 - t, 0.5)
+  assertNear(asphalt(fake), 0.98, 1e-6)
+end)
+
+test("between wet kinds the blend runs over the change", function()
+  local sky, fake = gripRound({
+    weather = "rain", changes = { { at = 20, to = "snow", forecastFrom = 0 } },
+  })
+  local t = runFor(sky, 4, 46, 0.5)
+  assertNear(asphalt(fake), (0.92 + 0.65) / 2, 0.03)
+  t = runFor(sky, t, 40, 0.5)
+  assertNear(asphalt(fake), 0.65, 1e-6)
+end)
+
+test("driving off never changes grip", function()
+  local sky, fake = gripRound({ driving = false })
+  runFor(sky, 4, 120, 0.5)
+  assertEq(#fake.modelSets, 0)
+  assertEq(asphalt(fake), 0.98)
+end)
+
+test("a joiner gets the grip in effect", function()
+  local sky, fake = load()
+  local p = changing({ driving = true, weather = "cloudy", clockSeconds = 50, changes = { { at = 20, to = "rain", forecastFrom = 0 } } })
+  sky.apply(p)
+  assertNear(asphalt(fake), (0.98 + 0.92) / 2, 0.003)
+  local sky2, fake2 = load()
+  p.clockSeconds = 100
+  sky2.apply(p)
+  assertNear(asphalt(fake2), 0.92, 1e-6)
+end)
+
+test("a failing grip push logs once and stops grip for the round", function()
+  local sky, fake = gripRound()
+  withLog(function(lines)
+    local make = _G.be.setGroundModel
+    _G.be.setGroundModel = function() error("push boom") end
+    runFor(sky, 4, 100, 0.5, function() assertEq(fake.locked, true) end)
+    _G.be.setGroundModel = make
+    assertEq(#lines, 1)
+    assertEq(fake.state.cloudCover, 2.2)
+    local n = #fake.modelSets
+    runFor(sky, 104, 400, 0.5)
+    assertEq(#fake.modelSets, n)
+  end)
+end)
