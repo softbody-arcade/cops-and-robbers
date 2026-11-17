@@ -565,6 +565,20 @@ test("a rejoining cop gets runnerShown and heli in setup", function()
   env.cleanup()
 end)
 
+test("cnr_heli carries the seed while up", function()
+  local env = boot({ config = '{"helicopterArrivalSeconds": 0, "weather": "clear"}' })
+  runToChase(env)
+  local last
+  for _, m in ipairs(env.sent) do if m.ev == "cnr_heli" then last = decodeJson(m.data) end end
+  assertEq(type(last.seed), "number")
+  env.call("onPlayerDisconnect", 2)
+  env.sent = {}
+  env.call("onPlayerJoin", 2)
+  local setup = env.lastSent("cnr_roundSetup")
+  assertEq(type(decodeJson(setup.data).heli.seed), "number")
+  env.cleanup()
+end)
+
 test("cnr_cover from the runner reaches the round", function()
   local env = boot({ config = '{"helicopterArrivalSeconds": 0, "helicopterUpSeconds": 200, "weather": "clear"}' })
   runToChase(env)

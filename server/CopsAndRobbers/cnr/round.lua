@@ -380,7 +380,7 @@ function Round:tick(now, cars, stations, traffic)
     if caught then self.catchers = self:copsNear(runnerCar, cars) end
     if self.heli and not caught and (helicopter.update(self.heli, now, self.runnerCovered) or heliNew) then
       local s = helicopter.status(self.heli, now)
-      fx[#fx + 1] = { kind = "heli", phase = s.phase, seconds = s.seconds, reason = s.reason }
+      fx[#fx + 1] = { kind = "heli", phase = s.phase, seconds = s.seconds, reason = s.reason, seed = s.seed }
     end
     if not caught and runnerCar then
       local nearest = self:nearestCop(cars, runnerCar)

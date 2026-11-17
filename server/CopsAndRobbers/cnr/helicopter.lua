@@ -3,8 +3,8 @@ local M = {}
 M.GROUNDED = { storm = true, fog = true, snow = true }
 M.LOSE_SECONDS = 2
 
-function M.new(cfg, weather, now)
-  local h = { cfg = cfg, tracking = false, coveredSince = nil }
+function M.new(cfg, weather, now, random)
+  local h = { cfg = cfg, tracking = false, coveredSince = nil, random = random or math.random }
   if weather and M.GROUNDED[weather] then
     h.phase = "grounded"
     h.reason = weather
@@ -17,6 +17,7 @@ end
 
 local function enterUp(h, start, covered)
   h.phase = "up"
+  h.seed = h.random(1, 2147483646)
   h.tracking = not covered
   h.coveredSince = nil
   if h.cfg.helicopterRefuelSeconds > 0 then
@@ -38,6 +39,7 @@ function M.status(h, now)
   elseif h.phaseEnd then
     s.seconds = math.max(0, h.phaseEnd - now)
   end
+  if h.phase == "up" then s.seed = h.seed end
   return s
 end
 
