@@ -21,6 +21,8 @@ M.DEPART_SECONDS = 8
 M.DEPART_FADE_SECONDS = 3
 M.JUMP_METERS = 30
 M.MAX_STEP = 0.1
+M.SEARCH_RADIUS = 60
+M.SEARCH_PERIOD = 40
 
 local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
 
@@ -54,6 +56,12 @@ function M.target(f, carPos, carVel)
   if f.leaving then
     return vec3(f.leaving.x, f.leaving.y, f.leaving.z)
   end
+  if f.spot then
+    return vec3(
+      f.spot.x + M.SEARCH_RADIUS * math.cos(f.searchAngle),
+      f.spot.y + M.SEARCH_RADIUS * math.sin(f.searchAngle),
+      f.spot.z + M.HELI_HEIGHT)
+  end
   if f.mode == "circle" then
     return vec3(
       carPos.x + M.ORBIT_RADIUS * math.cos(f.orbit),
@@ -76,15 +84,28 @@ local function startMode(f, carVel, bearing)
   f.orbit = bearing
 end
 
-function M.arrive(carPos, random, carVel)
+function M.search(f, spot)
+  f.spot = vec3(spot.x, spot.y, spot.z)
+  f.spotVel = vec3(0, 0, 0)
+  f.searchAngle = atan2(f.pos.y - spot.y, f.pos.x - spot.x)
+end
+
+function M.follow(f, carPos, carVel)
+  f.spot = nil
+  f.spotVel = nil
+  startMode(f, carVel, atan2(f.pos.y - carPos.y, f.pos.x - carPos.x))
+end
+
+function M.arrive(carPos, random, carVel, spot)
   random = random or math.random
   local side = pickSide(random)
   local heading = random() * 2 * math.pi
+  local origin = spot or carPos
   local f = {
     pos = vec3(
-      carPos.x + M.APPROACH_DISTANCE * math.cos(heading),
-      carPos.y + M.APPROACH_DISTANCE * math.sin(heading),
-      carPos.z + M.APPROACH_HEIGHT),
+      origin.x + M.APPROACH_DISTANCE * math.cos(heading),
+      origin.y + M.APPROACH_DISTANCE * math.sin(heading),
+      origin.z + M.APPROACH_HEIGHT),
     vel = vec3(0, 0, 0),
     side = side,
     headingX = 1,
@@ -95,8 +116,22 @@ function M.arrive(carPos, random, carVel)
   return f
 end
 
-function M.at(carPos, carVel, random)
+function M.at(carPos, carVel, random, spot)
   random = random or math.random
+  if spot then
+    local f = {
+      vel = vec3(0, 0, 0),
+      side = pickSide(random),
+      headingX = 1,
+      headingY = 0,
+      lastCar = vec3(carPos.x, carPos.y, carPos.z),
+    }
+    f.spot = vec3(spot.x, spot.y, spot.z)
+    f.spotVel = vec3(0, 0, 0)
+    f.searchAngle = random() * 2 * math.pi
+    f.pos = M.target(f, carPos, carVel)
+    return f
+  end
   local f = {
     vel = vec3(carVel.x, carVel.y, carVel.z),
     side = pickSide(random),
@@ -137,27 +172,41 @@ function M.step(f, carPos, carVel, dt)
       if f.leaving then
         f.leaving = vec3(f.leaving.x + jx, f.leaving.y + jy, f.leaving.z + jz)
       end
+      if f.spot then
+        f.spot = vec3(f.spot.x + jx, f.spot.y + jy, f.spot.z + jz)
+      end
     end
   end
   f.lastCar = vec3(carPos.x, carPos.y, carPos.z)
 
-  local speed = horizontalSpeed(carVel)
-  f.headingX, f.headingY = headingOf(carVel, f.headingX, f.headingY)
-  if f.mode == "circle" then
-    if speed > M.FAST_SPEED then f.mode = "follow" end
-  elseif speed < M.SLOW_SPEED then
-    f.mode = "circle"
-    f.orbit = atan2(f.pos.y - carPos.y, f.pos.x - carPos.x)
+  local searching = f.spot ~= nil
+  local omega
+  if searching then
+    omega = 2 * math.pi / M.SEARCH_PERIOD * f.side
+    if not f.leaving then f.searchAngle = f.searchAngle + omega * dt end
+  else
+    local speed = horizontalSpeed(carVel)
+    f.headingX, f.headingY = headingOf(carVel, f.headingX, f.headingY)
+    if f.mode == "circle" then
+      if speed > M.FAST_SPEED then f.mode = "follow" end
+    elseif speed < M.SLOW_SPEED then
+      f.mode = "circle"
+      f.orbit = atan2(f.pos.y - carPos.y, f.pos.x - carPos.x)
+    end
+    omega = 2 * math.pi / M.ORBIT_PERIOD * f.side
+    if f.mode == "circle" then f.orbit = f.orbit + omega * dt end
   end
-
-  local omega = 2 * math.pi / M.ORBIT_PERIOD * f.side
-  if f.mode == "circle" then f.orbit = f.orbit + omega * dt end
 
   local t = M.target(f, carPos, carVel)
   local wx = M.FOLLOW_GAIN * (t.x - f.pos.x)
   local wy = M.FOLLOW_GAIN * (t.y - f.pos.y)
   local wz = M.FOLLOW_GAIN * (t.z - f.pos.z)
-  if not f.leaving then
+  if not f.leaving and searching then
+    local sv = f.spotVel
+    if sv then wx, wy, wz = wx + sv.x, wy + sv.y, wz + sv.z end
+    wx = wx - M.SEARCH_RADIUS * omega * math.sin(f.searchAngle)
+    wy = wy + M.SEARCH_RADIUS * omega * math.cos(f.searchAngle)
+  elseif not f.leaving then
     wx, wy, wz = wx + carVel.x, wy + carVel.y, wz + carVel.z
     if f.mode == "circle" then
       wx = wx - M.ORBIT_RADIUS * omega * math.sin(f.orbit)
