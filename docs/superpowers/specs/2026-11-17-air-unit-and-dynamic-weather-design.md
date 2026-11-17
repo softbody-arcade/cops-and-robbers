@@ -161,8 +161,9 @@ See B5. A grounded helicopter flies away and drops its search. When it comes bac
   - **In-between temperatures:** between 1 and 2 °C both rain and snow hold.
   - **Always a neighbour:** every weather has at least one allowed neighbour, so each slot changes the weather.
 - **Season and start:**
-  - The date is still chosen from the start weather's window (as now), so a December round with a snow start is cold, and a July round never sees snow.
-  - A clear or cloudy start in December can turn to snow only when the morning curve dips to 1 °C or below.
+  - The date is still chosen from the start weather's window (as now), so a winter round with a snow start is cold, and a summer round never sees snow.
+  - The month the server picks is the season (northern months). On a map in the southern hemisphere the client already shows the date six months on (since 2.4.0), so a local July there is winter and can snow. The server needs no latitude: it works in seasons.
+  - A clear or cloudy start in winter can turn to snow only when the morning curve dips to 1 °C or below.
 - **Payload:** the sky payload gains `changes = { { at = seconds, to = weather }, ... }` (possibly empty), plus `tempLow` and `tempHigh`. The base `weather` stays the start weather.
 - **Server state:** the server keeps the schedule in `round.sky` and works out the current weather from its own round clock (B5, B6).
 
@@ -188,6 +189,8 @@ See B5. A grounded helicopter flies away and drops its search. When it comes bac
   - "Weather: clearing up" (to clear or cloudy from rain or fog)
   - "Weather: clouds coming in" (clear → cloudy)
   - "Weather: fog rolling in"
+  - "Weather: snow coming" (cloudy → snow)
+  - "Weather: the rain is turning to snow" / "Weather: the snow is turning to rain"
 - **The searchlight beam's strength** follows the current weather (it already reads `traffic.weather()` every frame; keep that up to date).
 - **Joining or reconnecting mid-chase:** the setup payload carries the schedule and `clockSeconds`. The client applies the weather in effect at that moment. If a change is running, it uses the in-between values and runs the rest of the change from there.
 
@@ -265,7 +268,7 @@ Unchanged, except that the schedule is rolled with the sky. Prep shows only the 
   - changes come at intervals between the set minimum and maximum, without a count cap, up to the time limit or 180 min
   - each draw comes only from the logical neighbours: snow only at T ≤ 1 °C, rain only at T ≥ 2 °C, storm only on a warm day, fog only in foggy conditions
   - rain turns to snow when it gets cold, and snow to rain when it warms
-  - a July round never sees snow
+  - a summer-season round never sees snow
   - the temperature estimate at known times
   - `tempLow`/`tempHigh` in the payload match the moved climate table
   - min ≤ max is enforced
