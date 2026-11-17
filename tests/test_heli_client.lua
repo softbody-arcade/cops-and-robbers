@@ -2865,7 +2865,7 @@ test("after the last route it contains at the origin", function()
   assertEq(state.search.mode, "road")
   assertEq(#state.search.run.routes, 2)
   local containAt
-  flyTo(c, c + 60, opts, nil, nil, function(t)
+  drive(c, c + 60, vec3(0, 10, 0), opts, function(t)
     if state.search.mode == "contain" then
       containAt = containAt or t
       assertEq(f.lead, nil)
@@ -2877,6 +2877,33 @@ test("after the last route it contains at the origin", function()
   end)
   assertEq(containAt ~= nil, true)
   assertEq(state.retargetAt, containAt)
+  assertEq(horiz(f.spot, pos) > 500, true, tostring(horiz(f.spot, pos)))
+end)
+
+test("a tunnel's road out with no routes keeps the last candidate, never the car", function()
+  load()
+  state.random = seeded(59)
+  pos = vec3(129, 0, 0)
+  local g = straight(1, 20)
+  local opts = { roads = function() return g end, roofedAt = inTunnel }
+  local c0 = loseDriving(0, vec3(20, 0, 0), opts)
+  local s = state.search
+  assertEq(s.mode, "tunnel")
+  assertEq(#s.list, 2)
+  samePos(s.list[2].pos, vec3(0, 0, 0), 1e-9)
+  local f, contained = state.flight, false
+  drive(c0, c0 + 60, vec3(0, 20, 0), opts, function(t)
+    if state.search.mode == "contain" then
+      contained = true
+      samePos(f.spot, vec3(0, 0, 0), 1e-9, tostring(t))
+    end
+    assertEq(f.spot ~= nil, true, tostring(t))
+    assertEq(horiz(f.spot, pos) > 1, true, tostring(t))
+  end)
+  assertEq(contained, true)
+  assertEq(state.tunnelLogged, nil)
+  assertEq(state.search.run, nil)
+  samePos(state.search.origin, vec3(0, 0, 0), 1e-9)
 end)
 
 test("a 2 km car jump shifts the road search with the car", function()
