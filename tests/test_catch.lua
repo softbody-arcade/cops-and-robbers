@@ -101,6 +101,17 @@ test("a runner driving away at 20 km/h is never held, even with a cop alongside"
   end
 end)
 
+test("a straight crawl under 3 m in 4 s is not held when it is above the catch speed", function()
+  local slow = config.merge({ catchMaxSpeedKmh = 1 })
+  local t = catch.new(slow)
+  for i = 0, 80 do
+    local x = i * 0.25 * 2 / 3.6
+    local p, c = t:update(i * 0.25, moving(x, 2), { moving(x + 3, 2) })
+    assertEq(p, 0, "at " .. i * 0.25)
+    assertEq(c, false)
+  end
+end)
+
 test("a runner creeping straight at 4 km/h with a cop alongside is never held", function()
   local t = catch.new(cfg)
   for i = 0, 80 do
