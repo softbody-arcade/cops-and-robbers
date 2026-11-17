@@ -1,117 +1,188 @@
-# Visible searchlight beam
+# Visible searchlight beam and a flying helicopter
 
-Status: approved 2026-11-17 for 2.9.1. It builds on the police helicopter searchlight (`docs/superpowers/specs/2026-11-16-police-helicopter-design.md`). Extended the same day with a helicopter that really flies (see "Helicopter flight"), so the beam's angle and the light's sway come from the helicopter's own motion.
+Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and plan review. It builds on the police helicopter (`docs/superpowers/specs/2026-11-16-police-helicopter-design.md`). The light now hangs from a helicopter that really flies, so the beam's angle and the light's sway come from the helicopter's own motion.
 
 ## Why
-BeamNG lights only light the surfaces they hit; the engine renders only clouds as volumes. So the helicopter's searchlight shows as a bright spot on the road, but there is no shaft in the air. In real life a searchlight beam is visible from the side and from below:
-- faintly on a clear night
-- clearly in haze, cloud or rain
+- **No beam in the air:** BeamNG lights only light the surfaces they hit; the engine renders only clouds as volumes. So the 2.9.0 searchlight is a bright spot on the road with no shaft in the air. In real life the beam is visible from the side and from below: faintly on a clear night, and clearly in haze, cloud or rain.
+- **No real helicopter:** the 2.9.0 light sat straight above the car and moved with it instantly. A real police helicopter holds off to one side, trails a fast car, swings wide on turns and circles a stopped car, while the operator keeps the spot on the car.
 
 ## Approaches (tried in game with a throwaway probe, 2026-11-17)
 - **A cone drawn with the game's debug drawer:** see-through triangles drawn every frame.
-  - It lines up exactly with the lit spot and sits behind wires and poles properly.
+  - It lines up with the lit spot and sits behind wires and poles properly.
   - Soft layers and a fade along the length make it read as a beam.
+  - A fade near the camera removes the see-through sheets when the camera is inside the beam.
   - **Picked.**
-- **The game's hologram marker meshes** (`single_faded_column.dae`, `s_mm_gatecone.dae` as `TSStatic`):
-  - they render solid and opaque at full glow, so the strength setting does nothing visible
-  - they don't line up with the car
-  - Rejected. A good mesh would need our own model.
-- **Glare at the light source:** a SpotLight can use one of the game's flare definitions (`flareType`). `BNG_LightFlare_1` gives a soft halo where the helicopter is when you look up. **Added** on top of the cone.
-
-## Design
-- **Who sees it:** every player, while the searchlight exists, which means the helicopter is tracking at night.
-  - The beam follows the light's fly-in, sway, fly-away and fades: its strength is the light's brightness factor (`fx.bright`, 0 to 1) times the weather strength.
-- **Shape:**
-  - It runs from the light's position to the point the light aims at, as wide as the light's cone (outer angle 16°, so the radius at a distance d is d·tan 8°).
-  - It has a lamp-sized top: radius 0.4 m.
-  - The edge is soft: 5 nested layers, so the centre is brightest.
-  - It's brightest at the light and fades to half by the ground.
-- **Strength by the round's weather** (the client's round weather, `traffic.weather()`):
-  - clear, cloudy and rain: 0.06, 0.12 and 0.2
-  - the map's own weather (no weather set) and BeamNG.Earth: 0.06
-  - storm, fog and snow ground the helicopter, so no light and no beam
-- **Near the camera:** a part of the beam within 6 m of the camera is invisible, and it is fully back by 18 m. So there are no see-through sheets around a car that is inside the beam.
-- **Glare:** the light gets `flareType` `BNG_LightFlare_1` and `flareScale` 1.
-- **Cost:**
-  - 5 layers × 10 lengths × 24 sides, each quad drawn from both sides: about 4,800 triangles a frame, only while the light exists. The probe drew about 14,000.
-  - A player setting, "Searchlight beam", in the HUD settings card, on by default. Off removes the beam and the glare on that player's game; the light itself stays.
+- **The game's hologram marker meshes** (`single_faded_column.dae`, `s_mm_gatecone.dae` as `TSStatic`): they render solid and opaque at full glow, and don't line up with the car. Rejected; a good mesh would need our own model.
+- **Glare at the light source:** a SpotLight can use one of the game's flare definitions (`flareType`). `BNG_LightFlare_1` (in the game's `art/datablocks/lights.datablocks.json`) gives a soft halo where the helicopter is when you look up. **Added** on top of the cone.
 
 ## Helicopter flight
-Until now the light sat straight above the car (40 m up, ±2 m drift) and moved with it instantly. A real helicopter holds off to one side, trails a fast car, swings wide on turns and circles a stopped one. The operator keeps the spot on the car from there.
-
-- **The helicopter has its own position and velocity.** Each game simulates it while the helicopter is up (tracking or searching), also by day and with the light off, so it is where it should be when the light comes on.
-  - **Chasing:** every frame it steers towards a target point.
-    - Its wanted velocity is the car's velocity plus `FOLLOW_GAIN` (0.4 per second) × the distance to the target point, capped at `MAX_SPEED` 70 m/s (about 250 km/h).
-    - It changes velocity by at most `MAX_ACCEL` 8 m/s².
-    - So it keeps up with steady driving, lags and overshoots on sudden changes, and never jumps.
-  - **Target point while the car moves** (above `SLOW_SPEED` 5 m/s, horizontally): `FOLLOW_BACK` 25 m behind the car along its direction of travel, `FOLLOW_SIDE` 15 m to one side, `HELI_HEIGHT` 50 m above the car. The side is picked at random on arrival.
-  - **Target point when the car is slow or stopped:** a circle of `ORBIT_RADIUS` 30 m around the car, 50 m up, one lap every `ORBIT_PERIOD` 40 s. The circle starts at the helicopter's current bearing from the car, so switching modes doesn't make it turn back.
-- **Arrival (fly-in):**
-  - When the helicopter goes up after arriving or refuelling, it starts `APPROACH_DISTANCE` 300 m out in a random heading, `APPROACH_HEIGHT` 60 m up, at rest, and flies in under the same chase rule.
-  - At night the light is on during the fly-in, rising from dark to full over `APPROACH_SECONDS` 8 s.
-- **Leaving (fly-away):**
-  - On refuel the target point moves 400 m away in a random heading, 80 m up.
-  - At night the light stays on for `DEPART_SECONDS` 8 s, its brightness fading out over the last 3 s, then it's removed. The helicopter's position is dropped with it.
+- **Each game simulates the helicopter** while it is up (tracking or searching). It keeps flying by day and with the light off, so it is in the right place when the light comes on. No network messages are added: random choices are local, so two players may see it on different sides of the runner. Nobody can compare the views.
+- **The car's velocity:** from `target:getVelocity()` when the object has it, otherwise from position deltas over the real frame time. With a frame time of 0 or less the flight keeps its last velocity and doesn't step. The simulation step is clamped to 0.1 s.
+- **Chasing:** every frame the helicopter steers towards a target point.
+  - Its wanted velocity is the car's velocity, plus the target point's own velocity relative to the car (while circling), plus `FOLLOW_GAIN` 0.4/s × (target − position).
+  - That is capped at `MAX_SPEED` 70 m/s (about 250 km/h).
+  - Its velocity moves towards the wanted one by at most `MAX_ACCEL` 8 m/s² × dt.
+  - So it keeps up with steady driving, lags and overshoots on sudden changes, and never jumps.
+- **Target point while the car moves:** `FOLLOW_BACK` 25 m behind the car along its horizontal direction of travel, `FOLLOW_SIDE` 15 m to one side (`side` ±1, picked at random on arrival), `HELI_HEIGHT` 50 m above the car.
+- **Target point when the car is slow or stopped:** a circle of `ORBIT_RADIUS` 30 m around the car, 50 m up, one lap every `ORBIT_PERIOD` 40 s.
+  - It turns counter-clockwise for `side` +1 and clockwise for −1.
+  - The circle starts at the helicopter's current bearing from the car, so switching modes doesn't make it turn back.
+  - The angle advances in the step, not in the target calculation.
+  - It enters the circle below `SLOW_SPEED` 5 m/s and leaves above `FAST_SPEED` 7 m/s, so jitter doesn't flip the modes.
+- **Jumps:** a car jump over `JUMP_METERS` 30 m in one frame shifts the helicopter's position (and its leaving point) by the same jump.
+  - This covers a reset, a teleport, and BeamNG.Earth moving its origin.
+  - The car's velocity counts as unchanged for that frame, so the helicopter keeps its place relative to the car.
+- **Arrival (fly-in):** when the helicopter goes up after arriving or refuelling and no flight exists, it starts `APPROACH_DISTANCE` 300 m out in a random heading, `APPROACH_HEIGHT` 60 m above the car, at rest, and flies in.
+- **Short refuel:** if a flight still exists, because a refuel of 0 to 8 s ended while it was leaving, it stops leaving and turns back from where it is. No teleport.
+- **Joining mid-round:** when a game first sees the helicopter already up, the helicopter starts at its target point with the car's current velocity.
+- **Leaving (fly-away):** on refuel the helicopter heads for a point `DEPART_DISTANCE` 400 m from the car, `DEPART_HEIGHT` 80 m above it.
+  - The heading is within ±60° of the helicopter's current bearing from the car, so it never flies back over the runner.
+  - After `DEPART_SECONDS` 8 s the flight is dropped.
 - **Under cover and back:** while searching, the helicopter keeps flying its target point around the car; the crew knows where the cover ends. At the exit the light appears at once where the helicopter is.
-- **The light:**
-  - It sits at the helicopter's position and aims at the operator's aim point.
-  - Its reach (`range`) follows the slant distance to the car plus 30 m, never below 120 m. It's only rewritten when it changes by more than 5 m.
-  - The spot grows when the helicopter is further off, as a real one would (cone 16°).
-- **The operator's aim** keeps the spring, nudges and tremor tuned in 2.9.0, with one change:
-  - The lag kick now comes from the change in the car's velocity relative to the helicopter, not from the car alone. When the car brakes or the helicopter swings round, the spot slips and is brought back.
-  - The hover drift (`HOVER_DRIFT`, the sine waves on the light's position) is removed; the real flight replaces it.
-- **Each game flies its own copy:** random choices (side, headings) are local, so two players may see the helicopter on different sides of the runner. That's acceptable, since nobody can compare the views.
+- **Constants:** `APPROACH_*` and `DEPART_*` live in the flight module only. The searchlight code uses them from there.
+
+## The light
+- **Position and aim:** it sits at the helicopter's position and aims at the operator's aim point.
+- **The operator's aim** keeps the 2.9.0 spring, nudges and tremor:
+  - **Lag kick:** now from the change in the car's velocity relative to the helicopter, not the car alone. When the car brakes or the helicopter swings round, the spot slips and is brought back. When both brake together, it doesn't slip.
+  - **Fly-in sweep:** the aim starts 15 m off the car (`AIM_SWEEP_OFFSET`) and is pulled in.
+  - **Fly-away drift:** the aim drifts off the car towards the direction of travel (`DEPART_AIM_DRIFT`), up to 60 m by 8 s.
+  - **Refound:** the aim starts 8 m off the car (`REFOUND_AIM_OFFSET`).
+  - **Hover drift removed:** `HOVER_DRIFT` and the sine waves on the light's position go; the real flight replaces them.
+- **Brightness effects**, on the light's brightness factor `fx.bright`:
+  - fly-in: rising from the current factor to full over `APPROACH_SECONDS` 8 s
+  - fly-away: full, then fading to 0 over the last `DEPART_FADE_SECONDS` 3 s of the 8 s; then the light is removed, after that frame's update
+  - night ending: a 1.5 s fade
+  - night returning: a 1 s fade-in
+  - refound: at once, at full brightness
+  - going under cover still cuts the light at once
+- **Range:** max(120, slant distance to the car + 30), rounded to whole metres and capped at 400.
+  - It's written when the light is created, and again whenever it differs from the last written value by more than 5 m.
+  - The spot grows when the helicopter is further off (cone 16°), as a real one would.
+
+## The beam
+- **Who sees it:** every player whose game has the light: the helicopter is tracking at night, and the player's "Searchlight beam" setting is on.
+  - Its strength is the weather strength × `fx.bright`.
+  - So it follows the fly-in, fly-away and fades.
+- **Shape:**
+  - The beam follows the light's cone from a lamp-sized top (radius 0.4 m) at the light.
+  - Each of its side lines ends where it meets the horizontal plane through the aim point (`z = aimPos.z`), capped at 2 × the axis length. The game's depth test hides anything below the ground.
+  - So on a slanted beam the far end lies on the road over the lit spot, not as a disc hanging in the air.
+  - 5 nested layers give a soft edge, with the centre brightest.
+  - The strength fades to half along each side line, towards the ground.
+- **A vertical axis:** the ring's basis uses the x axis as the helper when the axis is nearly vertical (|axis.z| / |axis| > 0.9), so there's no NaN.
+- **Blocked by solid things:** every 0.25 s a static ray (`castRayStatic`) is cast from the light towards the aim point.
+  - If it hits something first, like a bridge deck, a building or a tunnel roof, the beam ends at that distance.
+  - All side lines are shortened by the same factor.
+- **Strength by the round's weather** (the client's round weather, `traffic.weather()`):
+  - clear, cloudy and rain: 0.06, 0.12 and 0.2
+  - any other value, nil (the map's own weather) and BeamNG.Earth: 0.06
+  - storm, fog and snow ground the helicopter, so there's no light then
+- **Near the camera:** each quad fades by its own distance from the camera.
+  - The fade runs from invisible within 6 m to full at 18 m.
+  - The distance is measured to the quad's centre, so even a wide beam shows no sheets next to the camera.
+- **Glare:**
+  - The light gets `flareType` `BNG_LightFlare_1`.
+  - `flareScale` follows `fx.bright`, rewritten when it changes by more than 0.05.
+  - With the beam setting off, `flareType` is cleared.
+- **Cost:**
+  - Each ring's vertices are built once per frame. The colour objects are cached per alpha value.
+  - Each quad is one `debugDrawer:drawQuadSolid` call, drawn only in the winding that faces the camera (one dot product per quad).
+    - That's at most 5 layers × 10 lengths × 24 sides = 1,200 calls a frame, or 2,400 (both windings) when the camera position is unknown.
+    - The game's own editor code draws both windings for the same reason (`editor/api/gui.lua`: "keep backface cull off").
+  - Budget: at most 0.5 ms a frame for the beam (an in-game check).
+  - With the slant distance over the 400 m range cap, there's no beam.
+- **Safety:** the beam runs in its own `pcall`. An error stops the beam for the rest of the round (`beamFailed`), but never removes the light.
+  - The beam also needs `debugDrawer` and `color` to exist.
+- **The player setting:** "Searchlight beam" in the HUD settings card, on by default. Off removes the beam and the glare on that player's game; the light itself stays.
 
 ## Code
-- `client/lua/ge/extensions/copsAndRobbers/heli.lua`:
-  - the helicopter flight: position and velocity, chase step, target points, fly-in and fly-away
-  - the light placed at the helicopter, and its range
-  - a beam step drawn after the light is placed each frame, from the light's position, its aim point and `fx.bright`
-  - the weather strength table
-  - the flare fields, set when the light is created and when the setting changes
-- `client/lua/ge/extensions/copsAndRobbers.lua`: passes the round weather and the player setting to the searchlight tick.
-- Player settings:
+- **`client/lua/ge/extensions/copsAndRobbers/heliFlight.lua` (new, pure):**
+  - the flight: position, velocity, side, orbit, leaving point
+  - `arrive`, `at`, `leave`, `step`, target points, jump shift
+  - all maths per component, building results with `vec3(x, y, z)` (the test stubs' `vec3` has no operators)
+  - the bearing uses `math.atan2`, which exists in the game's LuaJIT; tests add the shim from `client_stubs.lua`
+- **`client/lua/ge/extensions/copsAndRobbers/beam.lua` (new, pure):** strength, and the quads with their colours and windings for a light, aim point, hit distance and camera.
+- **`client/lua/ge/extensions/copsAndRobbers/heli.lua`:**
+  - the flight lifecycle and the light at the helicopter
+  - the brightness effects, range, aim with relative velocity
+  - the occlusion ray, the beam drawn in its own pcall, the flare
+- **`client/lua/ge/extensions/copsAndRobbers.lua`:** passes the round weather and the beam setting to the searchlight tick.
+- **Player settings:**
   - `playerSettings.lua`: a `beam` boolean, default true
   - `hud.lua`: carries it in the settings payload
   - `HudSettings.vue`: a "Searchlight beam" switch
-- Docs:
-  - How to Play: one line, the beam can be switched off in your settings
-  - `docs/FEATURES.md`: the searchlight section
-  - `docs/DEPENDENCIES.md`: the debug drawer's `drawTriSolid` with `color()`, `core_camera.getPosition()`, and the `BNG_LightFlare_1` flare datablock from the game's `art/datablocks/lights.datablocks.json`
+- **Docs:**
+  - **How to Play:** the helicopter items at `HowToPlay.vue` (runner tab around lines 58-71, cop tab around 115-126) get a line that the beam can be turned off in your settings.
+  - **`README.md`:** the player settings line says three switches.
+  - **`docs/FEATURES.md`:** the searchlight section: the flight, the beam, the glare, the setting.
+  - **`docs/DEPENDENCIES.md`:**
+    - update the SpotLight entry, which still says it "hovers 40 m above"
+    - add `debugDrawer:drawQuadSolid` with `color()`, `core_camera.getPosition()`, the vehicle's `getVelocity()`, `castRayStatic` for the occlusion, and the `BNG_LightFlare_1` flare datablock
+  - **The 2.9.0 spec's searchlight lines** point here for the flight.
 
 ## Tests
-- **Flight:**
-  - The speed never goes above 70 m/s, and the velocity never changes by more than 8 m/s² × dt.
-  - Following a car at a steady 30 m/s, it settles near the target point 25 m behind, 15 m to the side and 50 m up.
-  - When a car at 30 m/s stops, it overshoots and then circles at about 30 m radius, one lap in about 40 s.
-  - The fly-in from 300 m reaches the target point. The fly-away moves away.
-  - The position is continuous: no step longer than the top speed allows.
-  - While searching, the helicopter keeps following, and the light reappears at its position.
-  - The light's range follows the slant distance + 30 m, with a 120 m floor.
-- **Aim:** the lag comes from the change in relative velocity. A car and helicopter moving together at a steady speed give no kick.
-- **Strength:** per weather, scaled by the light's brightness factor.
-- **Nothing drawn:**
-  - without a light, by day, or with the setting off
-  - with the setting off, the flare fields are cleared
-- **Near-camera fade:** no triangles drawn for a part within 6 m of the camera, and full strength beyond 18 m.
-- **Triangle budget:** at most 4,800 a frame.
-- **Shape:** the beam starts at the light and ends at the aim point.
+- **Flight** (dt 0.05 unless stated):
+  - The speed never goes above 70 m/s, and the velocity never changes by more than 8 × dt per step.
+  - Behind a car at a steady 30 m/s (+x) it settles within 3 m of (−25, 15 × side, 50) from the car.
+  - When a 30 m/s car stops, it overshoots, then circles at 30 ± 2 m, 50 ± 2 m up, at 2π/40 rad/s ± 20%, in its side's direction.
+  - The fly-in from 300 m (car still) is within 5 m of its target point at 20 s.
+  - After a fly-away with the heading within ±60° of its bearing, it's more than 200 m from a still car at 8 s, and the distance grows every second.
+  - No step moves further than 70 × dt.
+  - `at()` starts on the target point with the car's velocity.
+  - Hysteresis: speeds between 5 and 7 m/s don't switch the mode.
+- **Jumps:**
+  - After a 2 km car jump, the helicopter's offset from the car is unchanged.
+  - With car and helicopter both at 30 m/s in +x and a 50 m car jump in +x, the helicopter's x velocity doesn't increase.
+- **Short refuel:** "tracking" → "refuelling" → "tracking" within 3 s doesn't move the helicopter more than 70 × dt per step, and doesn't call `arrive`.
+- **Aim:**
+  - Car and helicopter braking together from 30 to 0 over 1 s keep the offset within `NUDGE_RADIUS` + 0.3.
+  - The car braking alone gives an offset above 1 m.
+- **Light:**
+  - It sits at the helicopter.
+  - Range: 130 at 100 m, 120 at 60 m, and written on creation even when the stored value matches.
+  - It's cut under cover.
+  - Refound happens at once, at full brightness.
+  - The fly-away fades and is removed after 8 s, with the flight dropped after the light update.
+  - By day there's no light, and the flight is dropped after a day refuel.
+- **Beam:**
+  - strength per weather and brightness
+  - the call count: 1,200 with a camera, 2,400 without, at strength 0.2
+  - a vertical beam draws only finite vertices
+  - a 60° beam's far ring lies at `aimPos.z` ± ε
+  - no drawn quad has a vertex within 6 m of the camera
+  - an occlusion hit at half the axis leaves no vertex beyond the hit + ε
+  - nothing is drawn without a light, by day, with the setting off, or at a slant over 400 m
+  - an error in the drawer stops the beam and keeps the light
+  - the flare is set, cleared with the setting off, and its scale follows `fx.bright`
 
 ## In-game check
 - **Flight:**
-  - the helicopter trails and swings on a twisty road at speed
+  - it trails and swings on a twisty road at speed
   - it circles a stopped car
   - the fly-in and fly-away look like flight
   - the sway feels like an operator correcting, not like noise
-- **Distance views:** the beam from a distance in clear, cloudy and rain rounds, and the glare looking up.
-- **Inside the beam:** no sheets from the runner's car.
-- **Frame rate:** with the beam on and off.
-- **Setting off:** the beam and glare go, and the light stays.
+  - a reset or teleport doesn't fling it
+- **Light:** the spot's brightness at the new slant of about 58 m (twice the spot area of the 2.9.0 light at 40 m), so brightness 80 may need retuning.
+- **Beam:**
+  - from a distance in clear, cloudy and rain rounds
+  - banding at the clear strength
+  - no sheets from the runner's car
+  - a bridge deck ending the beam
+- **Glare:**
+  - looking up
+  - it follows the fly-in and fly-away
+  - toggling the setting while the light is on
+  - whether the spot dims when the helicopter's position is hidden from the camera (flares can change their light)
+- **Frame rate:** the beam on and off, within 0.5 ms.
 
 ## Calls made (not discussed, easy to change)
-- **Flight numbers:** 70 m/s top speed, 8 m/s², gain 0.4/s, 25 m behind, 15 m to the side, 50 m up, a 30 m circle every 40 s below 5 m/s, fly-away to 400 m at 80 m up. All are to be tuned in game.
+- **Flight numbers:** 70 m/s, 8 m/s², 0.4/s, 25 m behind, 15 m to the side, 50 m up, a 30 m circle every 40 s, 5 / 7 m/s hysteresis, fly-away to 400 m at 80 m up within ±60°. To be tuned in game.
+- **Range cap:** 400 m, with no beam beyond it.
+- **Beam blocking:** a ray every 0.25 s, so the beam ends at a bridge or a roof.
+- **Glare:** its scale follows the light's brightness.
 - **Each game simulates its own helicopter** (no network sync).
 
 ## Left to the builder
-- How the beam step gets the camera position and the debug drawer in tests (stubs).
-- Exact colour: the light's own cool white (0.85, 0.92, 1).
+- The test stubs for the debug drawer, `color`, the camera position and `getVelocity`.
+- Exact colour: the light's own cool white (0.85, 0.92, 1), as 217, 235, 255.
