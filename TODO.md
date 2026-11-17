@@ -4,7 +4,7 @@ The shared ledger for every agent and worktree. Edit this file only on main (in 
 
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
-- [ ] Sit out in practice (the user, 2026-11-17): with Sit out on, practice runs an AI runner against AI cops and you spectate them (Tab between the AI cars, free camera). On branch `practice-sitout` (worktree) Review: fixing input blocking on the watched AI car, restore order, the frozen-cop flee target and the camera after New car
+- [ ] Sit out in practice (the user, 2026-11-17): with Sit out on, practice runs an AI runner against AI cops and you spectate them (Tab between the AI cars, free camera). On branch `practice-sitout` (worktree) Review: fixing input blocking on the watched AI car, restore order, the frozen-cop flee target and the camera after New car. Local test (the user): watching, cycling, the key lock, New car and the car coming back work; the vehicle selector still spawns and Replace swaps the watched AI car, being fixed
 
 ## In-game checks
 Things only a player in the game can confirm, each with what to look for. Add them here when work is merged or deployed without the check; delete a line once it is checked, and turn anything that fails into an Issue.
