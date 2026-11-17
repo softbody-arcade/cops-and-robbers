@@ -20,12 +20,11 @@ function M.roofed(pos, castUp)
   return across and along
 end
 
-local SIGHT_HEIGHT = 1.5
 local SIGHT_REACH = 2
 local SIGHT_SLACK = 0.5
 
-function M.inSight(from, carPos, dirX, dirY, castRay)
-  local z = carPos.z + SIGHT_HEIGHT
+function M.inSight(from, carPos, height, dirX, dirY, castRay)
+  local z = carPos.z + height
   local xs, ys = { carPos.x }, { carPos.y }
   local len = math.sqrt(dirX * dirX + dirY * dirY)
   if len >= 1e-6 then

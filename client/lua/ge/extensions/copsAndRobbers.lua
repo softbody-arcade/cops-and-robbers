@@ -792,12 +792,21 @@ local function castUp(pos, range)
   return castRayStatic(pos, vec3(0, 0, 1), range)
 end
 
+local coverFailed = false
+
 local function updateHeli(runnerObj)
   if runnerOut and castRayStatic then
     local car = role == "runner" and ownVehicle() or ai.runnerObject()
     if car then
-      local c = heli.coverTick(heliState, clock, car, castUp, castRayStatic)
-      if c ~= nil then sendServer("cnr_cover", { covered = c }) end
+      local ok, c = pcall(heli.coverTick, heliState, clock, car, castUp, castRayStatic)
+      if not ok then
+        if not coverFailed then
+          coverFailed = true
+          log("E", "cnr_heli", "cover check failed: " .. tostring(c))
+        end
+      elseif c ~= nil then
+        sendServer("cnr_cover", { covered = c })
+      end
     end
   end
   if active then

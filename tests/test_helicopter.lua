@@ -15,6 +15,16 @@ test("the helicopter arrives, flies, refuels and flies again", function()
   assertEq(helicopter.status(h, 280).phase, "tracking"); assertEq(helicopter.status(h, 280).seconds, 120)
 end)
 
+test("one update across a whole refuel reports the new flight's seed", function()
+  local h = helicopter.new(std(), "clear", 10)
+  helicopter.update(h, 70, false)
+  local first = helicopter.status(h, 70).seed
+  h.random = function() return first + 1 end
+  assertEq(helicopter.update(h, 280, false), true)
+  assertEq(helicopter.status(h, 280).phase, "tracking")
+  assertEq(helicopter.status(h, 280).seed, first + 1)
+end)
+
 test("time up keeps counting while searching", function()
   local h = helicopter.new(std(), "clear", 10)
   helicopter.update(h, 70, false)

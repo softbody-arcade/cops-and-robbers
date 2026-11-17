@@ -117,6 +117,8 @@ Then do the checks for whatever actually updated.
   - `core_input_actionFilter.getActionTemplates().competitive`, `setGroup` and `addAction`.
   - `core_input_bindings.bindings[].contents.bindings[].action`.
   - The action names in `LOCKED_ACTIONS` and `RESET_BUTTONS`.
+  - Free cam in practice leaves the game's `actionTemplates.freeCam` actions (`toggleCamera`, `dropCameraAtPlayer`) open, so on update `FREE_CAM_ACTIONS` in `inputs.lua` must still match that template.
+  - `commands.isFreeCamera` and `commands.setGameCamera`, to leave free cam when a real round starts.
   - We replace the globals `resetGameplay` and `spawn.teleportToLastRoad`, and `freeroam_bigMapMode.teleportToPoi`.
 - **Gas stations:** `freeroam_facilities.getFacilitiesByType("gasStation")` and `freeroam_gasStations.gasStationCenterRadius(f)`.
 - **Evolving car mode:**

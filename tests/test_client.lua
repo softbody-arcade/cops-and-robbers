@@ -2544,9 +2544,8 @@ test("at night the searchlight hangs from the helicopter circling the runner's c
 end)
 
 test("turning the beam off stops the quads while the light and its glare stay", function()
-  local saved = { _G.debugDrawer, _G.color, _G.core_camera, _G.castRayStatic, package.loaded["utils/debugDraw"] }
+  local saved = { _G.color, _G.core_camera, _G.castRayStatic, package.loaded["utils/debugDraw"] }
   local quads = 0
-  _G.debugDrawer = {}
   package.loaded["utils/debugDraw"] = { drawTriSolid = function(_, _, _, clr)
     if type(clr) ~= "number" then error("expect number colour, got " .. type(clr)) end
     quads = quads + 0.5
@@ -2575,8 +2574,8 @@ test("turning the beam off stops the quads while the light and its glare stay", 
     env.tick(1)
     assertEq(quads > 0, true, tostring(quads))
   end)
-  _G.debugDrawer, _G.color, _G.core_camera, _G.castRayStatic = saved[1], saved[2], saved[3], saved[4]
-  package.loaded["utils/debugDraw"] = saved[5]
+  _G.color, _G.core_camera, _G.castRayStatic = saved[1], saved[2], saved[3]
+  package.loaded["utils/debugDraw"] = saved[4]
   if not ok then error(err, 0) end
 end)
 
@@ -2645,6 +2644,43 @@ test("free cam is open in practice, while moving the car to the camera stays loc
   assertEq(inLockGroup(env, "switch_next_vehicle"), true)
 end)
 
+local function withCommands(stub, fn)
+  local saved = _G.commands
+  _G.commands = stub
+  local ok, err = pcall(fn)
+  _G.commands = saved
+  if not ok then error(err, 0) end
+end
+
+test("a practice round followed by a real one locks free cam again", function()
+  local env = bootClient()
+  local d = copy(SETUP)
+  d.practice = true
+  env.fire("cnr_roundSetup", d)
+  assertEq(inLockGroup(env, "toggleCamera"), false)
+  env.fire("cnr_roundSetup", copy(SETUP))
+  assertEq(inLockGroup(env, "toggleCamera"), true)
+end)
+
+test("a real round leaves free cam, a practice round does not", function()
+  local calls = 0
+  withCommands({ isFreeCamera = function() return true end, setGameCamera = function() calls = calls + 1 end }, function()
+    local env = bootClient()
+    local d = copy(SETUP)
+    d.practice = true
+    env.fire("cnr_roundSetup", d)
+    assertEq(calls, 0)
+    env.fire("cnr_roundSetup", copy(SETUP))
+    assertEq(calls, 1)
+  end)
+  calls = 0
+  withCommands({ isFreeCamera = function() return false end, setGameCamera = function() calls = calls + 1 end }, function()
+    local env = bootClient()
+    env.fire("cnr_roundSetup", copy(SETUP))
+    assertEq(calls, 0)
+  end)
+end)
+
 local AI_RUNNER = -10
 
 local function practiceAsCop(env)
@@ -2698,10 +2734,13 @@ end)
 
 test("the runner's game reports cover from the helicopter's view", function()
   local saved = _G.castRayStatic
+  local slanted
   local function lastCover(blocked)
     local env = nightTracking("runner")
+    slanted = 0
     _G.castRayStatic = function(origin, dir, len)
       if dir.z == 1 then return len + 100 end
+      slanted = slanted + 1
       if blocked then return 1 end
       return len + 100
     end
@@ -2710,9 +2749,29 @@ test("the runner's game reports cover from the helicopter's view", function()
   end
   local ok, err = pcall(function()
     assertEq(lastCover(true).covered, true)
+    assertEq(slanted > 0, true)
     assertEq(lastCover(false).covered, false)
+    assertEq(slanted > 0, true)
   end)
   _G.castRayStatic = saved
+  if not ok then error(err, 0) end
+end)
+
+test("an error in the cover check is logged once and the game keeps running", function()
+  local savedCast, savedLog = _G.castRayStatic, _G.log
+  local env = nightTracking("runner")
+  local lines = {}
+  _G.log = function(level, tag, msg)
+    if tostring(msg):find("cover check failed", 1, true) then lines[#lines + 1] = msg end
+  end
+  _G.castRayStatic = function() error("ray failed") end
+  local sent = env.lastSent("cnr_cover")
+  local ok, err = pcall(function()
+    for _ = 1, 8 do env.tick(0.3) end
+    assertEq(#lines, 1)
+    assertEq(env.lastSent("cnr_cover"), sent)
+  end)
+  _G.castRayStatic, _G.log = savedCast, savedLog
   if not ok then error(err, 0) end
 end)
 

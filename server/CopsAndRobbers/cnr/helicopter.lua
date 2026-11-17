@@ -45,7 +45,7 @@ end
 
 function M.update(h, now, covered)
   if h.phase == "grounded" then return false end
-  local before = phaseName(h)
+  local before, seedBefore = phaseName(h), h.seed
   while h.phaseEnd and now >= h.phaseEnd do
     local ended = h.phaseEnd
     if h.phase == "up" then
@@ -69,7 +69,7 @@ function M.update(h, now, covered)
       end
     end
   end
-  return phaseName(h) ~= before
+  return phaseName(h) ~= before or h.seed ~= seedBefore
 end
 
 function M.tracking(h)

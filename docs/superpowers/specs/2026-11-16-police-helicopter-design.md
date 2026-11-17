@@ -117,7 +117,7 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
 
 ### Client: cover check on the runner's car
 - **Who runs it:** the game that owns the runner's car, which is the runner's own car, or the AI runner (`ai.runnerObject()`) in practice.
-- **How:** it runs `shelter.roofed` from 1.5 m above the car's position every 0.25 s, with `shelter.step` (two checks to switch, both directions). It sends `cnr_cover { covered }` to the server when the state changes, and once at the runner's release (the head start), so a runner already under cover when the cops are released isn't revealed.
+- **How:** it runs `shelter.roofed` from 1.5 m above the car's position every 0.25 s, with `shelter.step` (two checks to switch, both directions). It sends `cnr_cover { covered }` to the server when the state changes, and once at the runner's release (the head start), so a runner already under cover when the cops are released isn't revealed. (Since 2.9.1, while the helicopter flies, cover is its line of sight; see `2026-11-17-visible-searchlight-beam-design.md`, Line of sight.)
 - **Separate state:** this is a second shelter state, apart from the camera one the rain uses.
 
 ### Client: HUD
@@ -210,7 +210,7 @@ The weather is the round's sky weather (`current.sky.weather` on the server). Ne
 ## Calls made (not discussed, easy to change)
 - **Defaults:** arrival 60 s, time up 2 min, refuel 90 s.
 - **The runner's SPOTTED / HIDDEN tag** stays about cop sight. The helicopter has its own HUD item.
-- **Cover is reported** by the game that owns the runner's car, using the roof check from 1.5 m above it.
+- **Cover is reported** by the game that owns the runner's car, using the roof check from 1.5 m above it. (Since 2.9.1, while the helicopter flies, cover is its line of sight; see `2026-11-17-visible-searchlight-beam-design.md`, Line of sight.)
 - **Searchlight** (the flight and beam are now in `2026-11-17-visible-searchlight-beam-design.md`): hovers 40 m above the car with a slight drift; the beam keeps on the car with smooth operator-style corrections (nudges every 1.5-3 s); flies in over 8 s from 300 m, flies away over 8 s with a fade, is cut at once when the helicopter loses the runner and is back at once at full brightness when it finds them again.
 - **Earth:** the helicopter flies, the name tag is hidden, and there's no minimap hiding.
 - **Pings:** one last-seen ping per loss of the runner by both sight and the helicopter. It replaces the two separate pings, so neither cuts into the other's live stream.

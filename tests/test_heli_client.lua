@@ -93,6 +93,21 @@ test("with a helicopter, cover comes from its line of sight", function()
   assertEq(heli.coverTick(state, 5, target, open, blockAll), true)
 end)
 
+test("a failed light stops the flight, so cover falls back to the roof check", function()
+  load()
+  heli.set(state, { phase = "tracking" }, 0)
+  heli.lightTick(state, target, true, 0)
+  assertEq(state.flight ~= nil, true)
+  state.failed = true
+  local rays = 0
+  local blockAll = function() rays = rays + 1; return 1 end
+  assertEq(heli.coverTick(state, 1, target, open, blockAll), false)
+  assertEq(rays, 0)
+  assertEq(heli.coverTick(state, 2, target, roofAll, blockAll), nil)
+  assertEq(heli.coverTick(state, 3, target, roofAll, blockAll), true)
+  assertEq(rays, 0)
+end)
+
 test("without a helicopter the roof check decides", function()
   load()
   local blockAll = function() return 1 end
@@ -165,6 +180,13 @@ test("set stores the phase, reason and end time", function()
   assertEq(state.phase, "grounded"); assertEq(state.reason, "fog"); assertEq(state.endsAt, 15)
   heli.set(state, nil, 20)
   assertEq(state.phase, nil)
+  heli.set(state, { phase = "tracking", seed = 5 }, 30)
+  assertEq(state.seed, 5)
+  heli.set(state, { seed = 6 }, 31)
+  assertEq(state.phase, nil); assertEq(state.seed, nil)
+  heli.set(state, { phase = "tracking", seed = 5 }, 32)
+  heli.set(state, "tracking", 33)
+  assertEq(state.seed, nil)
 end)
 
 test("the aim stays near a car that drives and turns randomly", function()
@@ -867,7 +889,6 @@ end
 
 local function stubBeam(cast)
   drawn = { calls = 0, tris = 0, far = 0, colors = {}, depth = true }
-  _G.debugDrawer = {}
   package.loaded["utils/debugDraw"] = { drawTriSolid = function(a, b, c, clr, useZ)
     if type(clr) ~= "number" then error("expect number colour, got " .. type(clr)) end
     drawn.tris = drawn.tris + 1
@@ -884,10 +905,10 @@ end
 
 local function beamTest(name, fn)
   test(name, function()
-    local saved = { _G.debugDrawer, _G.color, _G.core_camera, _G.castRayStatic, package.loaded["utils/debugDraw"] }
+    local saved = { _G.color, _G.core_camera, _G.castRayStatic, package.loaded["utils/debugDraw"] }
     local ok, err = pcall(fn)
-    _G.debugDrawer, _G.color, _G.core_camera, _G.castRayStatic = saved[1], saved[2], saved[3], saved[4]
-    package.loaded["utils/debugDraw"] = saved[5]
+    _G.color, _G.core_camera, _G.castRayStatic = saved[1], saved[2], saved[3]
+    package.loaded["utils/debugDraw"] = saved[4]
     if not ok then error(err, 0) end
   end)
 end
@@ -923,6 +944,18 @@ beamTest("each beam quad is two depth-tested triangles in the quad's winding, wi
   assertEq(type(tris[1].clr), "number")
   assertEq(tris[1].useZ, true)
   assertEq(tris[2].useZ, true)
+end)
+
+beamTest("without the game's colour function the beam is not drawn and nothing fails", function()
+  load()
+  stubBeam()
+  _G.color = nil
+  heli.set(state, { phase = "tracking" }, 0)
+  assertEq(drawsAt(0, true), 0)
+  assertEq(drawn.tris, 0)
+  assertEq(state.beamFailed, nil)
+  assertEq(state.failed, nil)
+  assertEq(fake.objects[LIGHT] ~= nil, true)
 end)
 
 beamTest("without the game's debug draw module the beam stops and the light stays", function()
@@ -1157,15 +1190,18 @@ local function game(stub, statuses, wrapLeave)
     bearings.turn = math.atan2(math.sin(d), math.cos(d))
   end
   local out = {}
-  for i, s in ipairs(statuses) do
-    heli.set(state, s, (i - 1) * 0.05)
-    heli.lightTick(state, target, true, (i - 1) * 0.05)
-    if s.phase == "tracking" and not out.side then
-      out.side, out.pos = state.flight.side, copyPos(state.flight.pos)
+  local ok, err = pcall(function()
+    for i, s in ipairs(statuses) do
+      heli.set(state, s, (i - 1) * 0.05)
+      heli.lightTick(state, target, true, (i - 1) * 0.05)
+      if s.phase == "tracking" and not out.side then
+        out.side, out.pos = state.flight.side, copyPos(state.flight.pos)
+      end
+      if s.phase == "refuelling" then out.leaving, out.f = copyPos(state.flight.leaving), state.flight end
     end
-    if s.phase == "refuelling" then out.leaving, out.f = copyPos(state.flight.leaving), state.flight end
-  end
+  end)
   fl.leave = orig
+  if not ok then error(err, 0) end
   out.turn = bearings.turn
   return out
 end

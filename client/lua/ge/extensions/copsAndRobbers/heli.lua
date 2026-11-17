@@ -48,7 +48,7 @@ end
 function M.set(state, d, clock)
   state.failed = nil
   if type(d) ~= "table" or type(d.phase) ~= "string" then
-    state.phase, state.reason, state.endsAt = nil, nil, nil
+    state.phase, state.reason, state.endsAt, state.seed = nil, nil, nil, nil
     return
   end
   local seconds = tonumber(d.seconds)
@@ -70,9 +70,9 @@ function M.coverTick(state, clock, obj, castUp, castRay)
   state.lastCheck = clock
   local p = obj:getPosition()
   local roofed
-  if state.flight and castRay then
+  if state.flight and castRay and not state.failed then
     local dir = obj.getDirectionVector and obj:getDirectionVector()
-    local seen = shelter.inSight(state.flight.pos, p, dir and dir.x or 0, dir and dir.y or 0, castRay)
+    local seen = shelter.inSight(state.flight.pos, p, M.COVER_HEIGHT, dir and dir.x or 0, dir and dir.y or 0, castRay)
     roofed = not seen
   else
     roofed = shelter.roofed(vec3(p.x, p.y, p.z + M.COVER_HEIGHT), castUp) and true or false
@@ -389,7 +389,7 @@ local function drawBeam(state, clock, weather)
 end
 
 local function beamTick(state, car, clock, opts)
-  if (opts and opts.beam == false) or state.beamFailed or not (debugDrawer and color) then return end
+  if (opts and opts.beam == false) or state.beamFailed or not color then return end
   if slantOf(state.lightPos, car) > M.RANGE_MAX then return end
   local ok, err = pcall(drawBeam, state, clock, opts and opts.weather)
   if not ok then

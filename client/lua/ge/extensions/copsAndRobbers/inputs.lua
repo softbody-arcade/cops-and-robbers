@@ -136,6 +136,8 @@ local function hookResetButtons(on, requestReset)
 end
 
 function M.lock(on, requestReset, freeCam)
+  local cmds = rawget(_G, "commands")
+  if on and not freeCam and cmds and cmds.isFreeCamera and cmds.isFreeCamera() then cmds.setGameCamera() end
   core_input_actionFilter.setGroup("cnr_locked", lockedActions(freeCam))
   core_input_actionFilter.addAction(0, "cnr_locked", on)
   guardBigMapTeleport(on)

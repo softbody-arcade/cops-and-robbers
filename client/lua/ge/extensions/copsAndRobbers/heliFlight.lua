@@ -29,7 +29,9 @@ local function horizontalSpeed(v)
 end
 
 function M.seeded(seed)
-  local n = math.floor(tonumber(seed) or 1)
+  local n = tonumber(seed) or 1
+  if n ~= n or n == math.huge or n == -math.huge then n = 1 end
+  n = math.floor(n)
   if n < 1 or n > 2147483646 then n = n % 2147483646 + 1 end
   local x = n
   return function()

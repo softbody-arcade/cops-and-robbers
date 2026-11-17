@@ -295,6 +295,14 @@ test("seeded generators repeat", function()
     assertEq(x >= 0 and x < 1, true)
   end
   assertEq(flight.seeded(43)() ~= flight.seeded(42)(), true)
+  for _, s in ipairs({ 0 / 0, math.huge, -math.huge }) do
+    local g, one = flight.seeded(s), flight.seeded(1)
+    for _ = 1, 5 do
+      local x = g()
+      assertEq(x == x and x >= 0 and x < 1, true)
+      assertEq(x, one())
+    end
+  end
   for _, s in ipairs({ 0, 2147483647 }) do
     local g = flight.seeded(s)
     for _ = 1, 5 do
