@@ -12,6 +12,7 @@ M.AIM_AHEAD = 60
 M.AIM_SIDE = 15
 M.AIM_PERIOD = 3
 M.MIN_ROUTE = 1
+M.BEHIND_MARGIN = 1
 
 local TIE = 1e-6
 local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
@@ -142,8 +143,25 @@ function M.routes(origin, dirX, dirY, roads, seed, noBack)
     return dx, dy
   end
 
+  local blocked = {}
+  if noBack then
+    local len = math.sqrt(dirX * dirX + dirY * dirY)
+    if len > 0 then
+      for id in pairs(nodes) do
+        local x, y = nodePos(nodes, id)
+        if x ~= nil and ((x - ox) * dirX + (y - oy) * dirY) / len < -M.BEHIND_MARGIN then blocked[id] = true end
+      end
+    end
+  end
+  local function fresh()
+    local set = {}
+    for id in pairs(blocked) do set[id] = true end
+    return set
+  end
+
   local junctions = {}
-  local visited = { [forward] = true }
+  local visited = fresh()
+  visited[forward] = true
   if other ~= nil then visited[other] = true end
   local ahead = newRoute(ox, oy, oz)
   local dx, dy = heading(forward)
@@ -156,7 +174,8 @@ function M.routes(origin, dirX, dirY, roads, seed, noBack)
       local alt = newRoute(junction.x, junction.y, junction.z)
       local pick = junction.list[2]
       local ax, ay = nodePos(nodes, pick.id)
-      local altVisited = { [junction.id] = true }
+      local altVisited = fresh()
+      altVisited[junction.id] = true
       if junction.from ~= nil then altVisited[junction.from] = true end
       walk(roads, alt, pick.id, junction.id, altVisited, ax - junction.x, ay - junction.y, M.ALT_LENGTH, seed)
       out[#out + 1] = alt
