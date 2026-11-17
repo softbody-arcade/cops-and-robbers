@@ -317,6 +317,41 @@ test("a cop far from the runner gets the reset status again after each reset", f
   assertEq(find(r:tick(12, far(), {}), "state", 3) ~= nil, true)
 end)
 
+test("a car at a gas station gets the reset status again after each reset", function()
+  local r = running()
+  local stations = { { x = 300, y = 0, z = 0 } }
+  local cars = function() return {[1]=car(0), [2]=car(300), [3]=car(600)} end
+  local s = find(r:tick(11.25, cars(), stations), "state", 2)
+  assertEq(s.resetAllowed, true); assertEq(s.resetHint, "Reset available (gas station)")
+  assertEq(find(r:tick(11.5, cars(), stations), "state", 2), nil)
+  assertEq(find(r:vehicleReset(11.6, 2), "broadcast"), nil)
+  s = find(r:tick(11.75, cars(), stations), "state", 2)
+  assertEq(s ~= nil, true)
+  assertEq(s.resetAllowed, true); assertEq(s.resetHint, "Reset available (gas station)")
+end)
+
+test("an illegal reset also gets the reset status again", function()
+  local r = running()
+  local cars = function() return {[1]=car(0), [2]=kmh(300, 50), [3]=car(600)} end
+  for _, t in ipairs({ 11.25, 11.5, 11.75, 12, 12.25, 12.5, 12.75 }) do r:tick(t, cars(), {}) end
+  assertEq(find(r:tick(13, cars(), {}), "state", 2), nil)
+  assertEq(find(r:vehicleReset(13.1, 2), "broadcast").msg, "Bob reset illegally")
+  local s = find(r:tick(13.25, cars(), {}), "state", 2)
+  assertEq(s ~= nil, true)
+  assertEq(s.resetAllowed, false); assertEq(s.resetHint, "Stop to reset")
+end)
+
+test("a relocation by the map gets the reset status again", function()
+  local r = running()
+  local far = function() return {[1]=car(0), [2]=car(300), [3]=car(1500)} end
+  assertEq(find(r:tick(11.25, far(), {}), "state", 3).resetAllowed, true)
+  assertEq(find(r:tick(11.5, far(), {}), "state", 3), nil)
+  r:relocated(11.6, 3)
+  local s = find(r:tick(11.75, far(), {}), "state", 3)
+  assertEq(s ~= nil, true)
+  assertEq(s.resetAllowed, true)
+end)
+
 test("cop crash gives a penalty and freezes", function()
   local r = running()
   r:tick(11.25, {[1]=kmh(0, 80), [2]=kmh(200, 120), [3]=kmh(500, 0)}, {})

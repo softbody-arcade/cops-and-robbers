@@ -612,6 +612,7 @@ end
 function Round:relocated(now, pid)
   local tracker = self.resetTrackers[pid]
   if not tracker then return {} end
+  self.lastState[pid] = nil
   tracker:grant(now, RELOCATE_GRACE_SECONDS)
   if self.crashDetectors[pid] then self.crashDetectors[pid]:reset() end
   self.prevCars[pid] = nil
