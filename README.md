@@ -68,7 +68,7 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 
 "Cops and Robbers Panel" has four tabs:
 
-- **Round:** shows only what can be done now. The player list is the runner picker (the player with the fewest runs is preselected). One main button does the next step: Start round, then GO, with a yellow line saying why it can't yet. Practice as runner and as cop, New car, Cancel round, and the Automatic rounds switch. During a round the panel folds into a bar with the time, End chase and Cancel (a second click is needed during the chase). It opens again when the round ends.
+- **Round:** shows only what can be done now. The player list is the runner picker (the planned next runner is preselected: drawn at random among the players with the fewest runs, never the previous runner twice in a row). One main button does the next step: Start round, then GO, with a yellow line saying why it can't yet. Practice as runner and as cop, New car, Cancel round, and the Automatic rounds switch. During a round the panel folds into a bar with the time, End chase and Cancel (a second click is needed during the chase). It opens again when the round ends.
 - **Car:** Random car or Evolving build, the build summary, New build (choose a car or random) and Reset build, mod cars and excluded cars.
 - **Map:** gas stations of this map, Add station here and Remove nearest.
 - **Settings:** the common settings first, the rest under More settings, each with a one-line explanation. Changes save by themselves; a value that differs from the default is orange and has its own reset. Settings are locked during a round. "Reload config.json" picks up hand edits.

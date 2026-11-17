@@ -500,15 +500,15 @@ test("/cnr start next and again", function()
   local env = boot()
   env.panel(1, "start next")
   env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
-  assertEq(env.lastSent("cnr_roundSetup").data:find('"runnerId":2', 1, true) ~= nil, true)
+  local first = decodeJson(env.lastSent("cnr_roundSetup").data).runnerId
   env.panel(1, "stop")
   env.panel(1, "start next")
   env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
-  assertEq(env.lastSent("cnr_roundSetup").data:find('"runnerId":2', 1, true) ~= nil, true)
+  assertEq(decodeJson(env.lastSent("cnr_roundSetup").data).runnerId, 3 - first)
   env.panel(1, "stop")
-  env.panel(2, "start again")
-  env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
-  assertEq(env.lastSent("cnr_roundSetup").data:find('"runnerId":2', 1, true) ~= nil, true)
+  env.panel(1, "start again")
+  env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  assertEq(decodeJson(env.lastSent("cnr_roundSetup").data).runnerId, 3 - first)
   env.cleanup()
 end)
 
@@ -2207,8 +2207,8 @@ test("panel marks next and last runner", function()
   local st = panelOf(env)
   assertEq(#st.players, 2)
   assertEq(st.players[1].name, "Bob"); assertEq(st.players[2].name, "Reinder")
-  assertEq(st.nextRunner, "Bob"); assertEq(st.lastRunner, nil)
-  assertEq(rowOf(st, "Bob").next, true); assertEq(rowOf(st, "Reinder").next, false)
+  assertEq(st.nextRunner == "Bob" or st.nextRunner == "Reinder", true); assertEq(st.lastRunner, nil)
+  assertEq(rowOf(st, st.nextRunner).next, true)
   assertEq(rowOf(st, "Bob").role, nil)
   env.startRound()
   env.panel(1, "stop")
@@ -3058,7 +3058,7 @@ test("a sitting-out player is never the runner", function()
   assertEq(env.replyHas("Ann is sitting out"), true)
   env.panel(2, "start next")
   env.call("cnr_vehiclePicked", 2, PICK)
-  assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 2)).runnerName, "Bob")
+  assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 2)).runnerName ~= "Ann", true)
   env.panel(1, "stop")
   math.randomseed(7)
   for _ = 1, 12 do
@@ -3184,7 +3184,7 @@ test("the panel marks sitting-out players, Next skips them and the traffic note 
   local rows = {}
   for _, row in ipairs(st.players) do rows[row.name] = row end
   assertEq(rows.Ann.sitOut, true); assertEq(rows.Bob.sitOut, nil)
-  assertEq(st.nextRunner, "Bob")
+  assertEq(st.nextRunner ~= "Ann" and st.nextRunner ~= nil, true)
   assertEq(st.trafficNote, "5 each · 10 cars with 2 players")
   env.cleanup()
 end)
@@ -3213,4 +3213,85 @@ test("a player who joins in prep keeps spectating through New car, with spawns s
   assertEq(sentTo(env, "cnr_roundSetup", 1) ~= nil, true)
   assertEq(env.call("onVehicleSpawn", 3, 0, '3:Kim:3-0:{"jbm":"etk800","vcf":{"partConfigFilename":"vehicles/etk800/base.pc"}}'), 1)
   env.cleanup()
+end)
+
+local function runnerNamed(env)
+  local d = decodeJson(env.lastSent("cnr_roundSetup").data)
+  return env.names[d.runnerId]
+end
+
+test("the panel's next runner is the runner a Start next round gets, across rounds", function()
+  local env = boot()
+  env.names = { "Reinder", "Bob", "Kim", "Ann" }
+  math.randomseed(5)
+  for _ = 1, 6 do
+    local planned = panelOf(env).nextRunner
+    env.panel(1, "start next")
+    env.call("cnr_vehiclePicked", 1, PICK)
+    local setup
+    for i = #env.sent, 1, -1 do
+      local m = env.sent[i]
+      if m.ev == "cnr_roundSetup" and decodeJson(m.data).role == "runner" then setup = decodeJson(m.data) break end
+    end
+    assertEq(env.names[setup.runnerId], planned)
+    env.go()
+    for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+    env.panel(1, "end")
+  end
+  env.cleanup()
+end)
+
+test("the planned next runner holds when someone joins and changes when it leaves or sits out", function()
+  local env = boot()
+  env.names = { "Reinder", "Bob", "Kim", "Ann" }
+  math.randomseed(9)
+  local planned = panelOf(env).nextRunner
+  for _ = 1, 20 do assertEq(panelOf(env).nextRunner, planned) end
+  env.names[5] = "Zed"
+  env.call("onPlayerJoin", 5)
+  assertEq(panelOf(env).nextRunner, planned)
+  local pidOf
+  for pid, n in pairs(env.names) do if n == planned then pidOf = pid end end
+  sitOut(env, pidOf, true)
+  local after = panelOf(env).nextRunner
+  assertEq(after ~= planned, true)
+  for _ = 1, 20 do assertEq(panelOf(env).nextRunner, after) end
+  local pid2
+  for pid, n in pairs(env.names) do if n == after then pid2 = pid end end
+  env.names[pid2] = nil
+  env.call("onPlayerDisconnect", pid2)
+  local third = panelOf(env).nextRunner
+  assertEq(third ~= after and third ~= planned, true)
+  env.cleanup()
+end)
+
+test("two cycles of four players never repeat a runner back to back and the second order is drawn", function()
+  local orders = {}
+  for seed = 1, 12 do
+    local env = boot()
+    env.names = { "Reinder", "Bob", "Kim", "Ann" }
+    math.randomseed(seed)
+    local order, prev = {}, nil
+    for i = 1, 8 do
+      env.panel(1, "start next")
+      env.call("cnr_vehiclePicked", 1, PICK)
+      local name = runnerNamed(env)
+      assertEq(name ~= prev, true)
+      if i <= 4 then
+        for j = 1, i - 1 do assertEq(order[j] ~= name, true) end
+      end
+      order[#order + 1] = name
+      prev = name
+      env.go()
+      for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+      env.panel(1, "end")
+    end
+    orders[table.concat(order, ",", 1, 4) == table.concat(order, ",", 5, 8) and "same" or "diff"] = true
+    orders[table.concat(order, ",", 1, 4)] = true
+    env.cleanup()
+  end
+  assertEq(orders.diff, true)
+  local alpha = 0
+  for k in pairs(orders) do if k == "Ann,Bob,Kim,Reinder" then alpha = alpha + 1 end end
+  assertEq(alpha <= 1, true)
 end)

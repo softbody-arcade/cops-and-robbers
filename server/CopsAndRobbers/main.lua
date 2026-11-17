@@ -38,6 +38,7 @@ local partsBaseline = {}
 local aiVid = {}
 local runCounts = {}
 local lastRunnerKey
+local plannedRunnerKey
 local missingCount = {}
 local lastResult
 local currentRunnerKey
@@ -528,6 +529,7 @@ local function applyEffects(effects)
       if e.role == "runner" and not current.test then
         local key = playerKey(e.pid)
         lastRunnerKey = key
+        plannedRunnerKey = nil
         currentRunnerKey = key
       end
       local runnerCar = carFor(current.runnerId)
@@ -675,6 +677,7 @@ local function applyEffects(effects)
       run.endedAt = endedAt
       run.key = currentRunnerKey
       if currentRunnerKey then runCounts[currentRunnerKey] = (runCounts[currentRunnerKey] or 0) + 1 end
+      plannedRunnerKey = nil
       run.cops, run.copNames, run.copSightSeconds = {}, {}, {}
       for i, pid in ipairs(run.copIds or {}) do
         run.cops[i] = playerKey(pid)
@@ -708,6 +711,22 @@ local function applyEffects(effects)
   end
 end
 
+local function plannedRunner(players)
+  local countsByName = {}
+  for p, name in pairs(players) do countsByName[name] = runCounts[playerKey(p)] or 0 end
+  local lastPid = lastRunnerKey and pidForKey(lastRunnerKey)
+  local lastName = lastPid and MP.GetPlayerName(lastPid) or nil
+  local eligible = commands.eligibleNext(players, countsByName, lastName)
+  if plannedRunnerKey then
+    for _, p in ipairs(eligible) do
+      if playerKey(p) == plannedRunnerKey then return p end
+    end
+  end
+  local pid = commands.matchPlayer("next", players, nil, countsByName, lastName)
+  plannedRunnerKey = pid and playerKey(pid) or nil
+  return pid
+end
+
 local handlers = {}
 
 function handlers.start(pid, cmd)
@@ -727,9 +746,11 @@ function handlers.start(pid, cmd)
     runnerId = lastRunnerKey and pidForKey(lastRunnerKey)
     if not runnerId then return refuse(pid, "No previous runner online") end
   else
-    local countsByName = {}
-    for p, name in pairs(candidates) do countsByName[name] = runCounts[playerKey(p)] or 0 end
-    runnerId, err = commands.matchPlayer(query, candidates, nil, countsByName)
+    if query and query:lower() == "next" then
+      runnerId = plannedRunner(candidates)
+    else
+      runnerId, err = commands.matchPlayer(query, candidates)
+    end
     if not runnerId then
       local anyone = commands.matchPlayer(query, players)
       if anyone and sitOut[anyone] then runnerId = anyone end
@@ -905,9 +926,7 @@ end
 
 
 local function nextRunnerName(players)
-  local countsByName = {}
-  for p, name in pairs(players) do countsByName[name] = runCounts[playerKey(p)] or 0 end
-  local pid = commands.matchPlayer("next", players, nil, countsByName)
+  local pid = plannedRunner(players)
   return pid and players[pid] or nil
 end
 

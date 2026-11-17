@@ -13,7 +13,30 @@ function M.parse(msg)
   return { name = name, args = args, rest = rest }
 end
 
-function M.matchPlayer(query, players, random, runCounts)
+function M.eligibleNext(players, runCounts, lastName)
+  local pids = {}
+  for pid in pairs(players) do pids[#pids + 1] = pid end
+  table.sort(pids)
+  local pool = pids
+  if lastName ~= nil and #pids > 1 then
+    pool = {}
+    for _, pid in ipairs(pids) do
+      if players[pid] ~= lastName then pool[#pool + 1] = pid end
+    end
+  end
+  local fewest
+  for _, pid in ipairs(pool) do
+    local count = (runCounts or {})[players[pid]] or 0
+    if not fewest or count < fewest then fewest = count end
+  end
+  local eligible = {}
+  for _, pid in ipairs(pool) do
+    if ((runCounts or {})[players[pid]] or 0) == fewest then eligible[#eligible + 1] = pid end
+  end
+  return eligible
+end
+
+function M.matchPlayer(query, players, random, runCounts, lastName)
   random = random or math.random
   if query == nil or query == "" then return nil, "Pick a runner" end
   local pids = {}
@@ -29,15 +52,8 @@ function M.matchPlayer(query, players, random, runCounts)
   local q = query:lower()
   if q == "next" then
     if #pids == 0 then return nil, "No players online" end
-    local best, bestCount, bestName
-    for _, pid in ipairs(pids) do
-      local name = players[pid]
-      local count = (runCounts or {})[name] or 0
-      if not best or count < bestCount or (count == bestCount and name < bestName) then
-        best, bestCount, bestName = pid, count, name
-      end
-    end
-    return best
+    local eligible = M.eligibleNext(players, runCounts, lastName)
+    return eligible[random(#eligible)]
   end
   if q == "random" then
     if #pids == 0 then return nil, "No players online" end
