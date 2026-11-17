@@ -3017,6 +3017,22 @@ test("the road out of the last candidate heads along its last edge, or away from
   samePos(last, vec3(-1000, 0, 0), 1e-9)
 end)
 
+test("the road out of the last candidate never flies back into the tunnel", function()
+  load()
+  state.random = seeded(58)
+  pos = vec3(129, 0, 0)
+  local opts = tunnelOpts()
+  local c0 = loseDriving(0, vec3(20, 0, 0), opts)
+  flyTo(c0, c0 + 40, opts)
+  local s = state.search
+  assertEq(s.mode, "road")
+  samePos(s.origin, vec3(0, 0, 0), 1e-9)
+  assertEq(#s.run.routes, 1)
+  for _, route in ipairs(s.run.routes) do
+    for _, p in ipairs(route.points) do assertEq(inTunnel(p), false, tostring(p.x)) end
+  end
+end)
+
 local function guidedCar(v)
   return {
     getPosition = function() return pos end,

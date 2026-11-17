@@ -116,7 +116,7 @@ local function walk(roads, route, start, from, visited, dx, dy, cap, seed, junct
   end
 end
 
-function M.routes(origin, dirX, dirY, roads, seed)
+function M.routes(origin, dirX, dirY, roads, seed, noBack)
   local out = {}
   if origin == nil or roads == nil or roads.closest == nil or roads.links == nil or roads.nodes == nil then return out end
   local ox, oy, oz = origin.x, origin.y, origin.z
@@ -164,7 +164,7 @@ function M.routes(origin, dirX, dirY, roads, seed)
     end
   end
 
-  if other ~= nil then
+  if other ~= nil and not noBack then
     local back = newRoute(ox, oy, oz)
     local bx, by = heading(other)
     walk(roads, back, other, forward, { [other] = true, [forward] = true }, bx, by, M.BACK_LENGTH, seed)

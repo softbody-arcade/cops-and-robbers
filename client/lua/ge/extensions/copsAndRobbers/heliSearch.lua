@@ -172,7 +172,7 @@ local function roadOut(state, s, here, opts)
     local dx, dy = b.pos.x - a.pos.x, b.pos.y - a.pos.y
     if dx ~= 0 or dy ~= 0 then dirX, dirY = dx, dy end
   end
-  local run = roadSearch.newRun(roadSearch.routes(here.pos, dirX, dirY, roads, state.seed))
+  local run = roadSearch.newRun(roadSearch.routes(here.pos, dirX, dirY, roads, state.seed, true))
   if #run.routes > 0 then return run end
 end
 
