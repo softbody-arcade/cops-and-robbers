@@ -5,12 +5,11 @@ The shared ledger for every agent and worktree. Edit this file only on main (in 
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 - [ ] Sit out in practice (the user, 2026-11-17): with Sit out on, practice runs an AI runner against AI cops and you spectate them (Tab between the AI cars, free camera). On branch `practice-sitout` (worktree)
-- [ ] Fixes alongside (the parallel rule) on branch `fixes-13` (worktree)
-  - [ ] Heavy machinery (the dump truck and the WL40 wheel loader) in the random car draw (the user, 2026-11-17); `vehicles.lua` `ALLOWED_TYPES` has only Car and Truck
 
 ## In-game checks
 Things only a player in the game can confirm, each with what to look for. Add them here when work is merged or deployed without the check; delete a line once it is checked, and turn anything that fails into an Issue.
 
+- [ ] Heavy machinery (merged 2026-11-17, not deployed yet): New car can land on the dump truck or the WL40 wheel loader; cops in one get no light bar and the round works
 - [ ] Livery colour (merged 2026-11-17, not deployed yet): with a colour picked, a round car with a livery (a police or racing skin) shows your colour instead, as runner, as cop, in practice and after a rejoin or New car; without a colour the livery stays
 - [ ] Runner order (deployed 2026-11-17 in 2.11.0): the panel's next runner is who actually runs; after everyone has run once the next cycle comes in a different order, and nobody runs twice in a row while someone else can
 - [ ] 2.10.1 spectators (deployed 2026-11-17 in 2.11.0): join mid-round and you spectate in free camera, Tab and Ctrl+Tab cycle through every round car (runner included), Shift+C free camera, the HUD says SPECTATING; nobody sees a phantom car; Sit out on the lobby card: your car disappears for the round and comes back where it stood, with its paint, and your lobby traffic is gone; a joiner during prep keeps spectating through a New car; a solo real round still starts; a rejoining cop's car may only be reachable with Tab once the watched car is slow (BeamMP's spawn queue)
