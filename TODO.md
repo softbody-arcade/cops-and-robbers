@@ -21,6 +21,7 @@ One entry per piece of work that has started: what it is, its branch (or "design
   - [ ] Cop spots on a road piece not connected to the rest: the straight-line fallback widens from 0 and ignores gates, so a cop can start right next to the runner or behind a gate (`roads.lua` `lineSpots`)
   - [ ] Leaderboard runs don't record Traffic for the runner only, so a runner-only round shows "Traffic: 5 per player" in the Rounds tab and counts the same as everyone-traffic in the traffic filter (`leaderboard.lua`, `BoardRounds.vue`)
   - [ ] Hiding may leak through other game screens: the in-car navigation screen and the radar app (`uiNavi`, `map.getTrackedObjects`) were not checked
+  - [ ] Crash penalty only near the runner: a cop gets the crash penalty only while within `copResetMinDistanceMeters` (1 km) of the runner, the same range in which their resets are limited. Further away they may reset at any time anyway, so the 10 s freeze only costs them time (`crash.lua`, `resets.lua`, `round.lua`). Decide whether the fault rule against traffic cars changes with it, and update the panel's Crash penalty explanation, `docs/FEATURES.md` (Crash penalty) and README. Being built on the same branch (the user's call, 2026-11-17): no penalty at all beyond that distance, traffic included
 
 ## In-game checks
 Things only a player in the game can confirm, each with what to look for. Add them here when work is merged or deployed without the check; delete a line once it is checked, and turn anything that fails into an Issue.
@@ -37,7 +38,6 @@ Things only a player in the game can confirm, each with what to look for. Add th
 
 ## Ideas
 - [ ] Hard mode vs normal mode (a round setting): the police helicopter already removes the 30 s pings and hides the runner unless spotted; hard mode adds whatever else fits when planning it (for example no "Nearest cop" for the runner, no name plates or minimap markers for other cars, a shorter helicopter time up). Hard mode also raises the night and bad weather chances of night and weather rounds
-- [ ] Crash penalty only near the runner: a cop gets the crash penalty only while within `copResetMinDistanceMeters` (1 km) of the runner, the same range in which their resets are limited. Further away they may reset at any time anyway, so the 10 s freeze only costs them time (`crash.lua`, `resets.lua`, `round.lua`). Decide whether the fault rule against traffic cars changes with it, and update the panel's Crash penalty explanation, `docs/FEATURES.md` (Crash penalty) and README
 - [ ] Spike strips for cops: a few per round on a button (keybind), placed behind or ahead of the cop and visible to everyone (the game has spike strip props)
 - [ ] Dynamic roadblocks: parked cop cars that block part of the road ahead of the runner. Same goal as spike strips (stop the runner ahead), so plan them together
 - [ ] Infection mode: game starts with 1 cop and caught runners become cops
