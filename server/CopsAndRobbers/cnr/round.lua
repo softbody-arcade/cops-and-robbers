@@ -45,6 +45,11 @@ local function sortedPids(players)
   return pids
 end
 
+local function nearRunner(car, runnerCar, cfg)
+  if not runnerCar or not runnerCar.pos or not car or not car.pos then return true end
+  return vec.dist(car.pos, runnerCar.pos) < cfg.copResetMinDistanceMeters
+end
+
 function M.new(cfg)
   local r = setmetatable({ cfg = cfg }, Round)
   r:clear()
@@ -361,7 +366,8 @@ function Round:tick(now, cars, stations, traffic)
         if untilTime and now >= untilTime then
           self.penalties[pid] = nil
           fx[#fx + 1] = { kind = "penaltyEnd", pid = pid }
-        elseif not untilTime and self.crashDetectors[pid] and self.crashDetectors[pid]:update(now, cars[pid]) then
+        elseif not untilTime and self.crashDetectors[pid] and self.crashDetectors[pid]:update(now, cars[pid])
+          and nearRunner(cars[pid], runnerCar, self.cfg) then
           local fault, nearest = crash.atFault(self.prevCars[pid], self:otherCars(pid))
           if fault then
             local seconds = self.cfg.crashPenaltySeconds

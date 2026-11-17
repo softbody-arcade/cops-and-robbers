@@ -63,6 +63,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 
 ### Crash penalty (cops)
 - A cop who loses 50 km/h within 0.5 s (about 2.8 G on average) gets frozen for 10 s.
+- Only within 1 km of the runner (`copResetMinDistanceMeters`), where a cop can't reset freely. Further away a crash gives no penalty, whatever the cause, traffic included.
 - The 7 s reset wait only starts after the penalty.
 - **Fault:** when another car was within 15 m, only the one who drove into the other is penalised. A runner who rams a cop, or a cop who gets hit, is not penalised. Rear-ending a runner who brake-checks still counts against the cop. Traffic cars count here too: driving into one is the cop's fault, being hit by one is not.
 - Everyone sees a notice "<name>: crash penalty 10s", with "(traffic)" after it when the cop drove into traffic. The round's timeline shows the same.
@@ -256,10 +257,10 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | `resetWaitSeconds` | 7 | Stand still this long to reset anywhere |
 | `stillMaxSpeedKmh` | 1 | "Standing still" threshold |
 | `gasStationRadiusMeters` | 25 | Gas station reset area |
-| `copResetMinDistanceMeters` | 1000 | Cops this far from the runner may always reset |
+| `copResetMinDistanceMeters` | 1000 | Cops this far from the runner may always reset and get no crash penalty |
 | `copSpawnMinMeters` / `copSpawnMaxMeters` | 50 / 150 | Cop start distance from the runner, by road |
 | `crashSpeedLossKmh` | 50 | Speed lost within 0.5 s that counts as a crash |
-| `crashPenaltySeconds` | 10 | Freeze for the cop at fault |
+| `crashPenaltySeconds` | 10 | Freeze for the cop at fault, within `copResetMinDistanceMeters` of the runner |
 | `helicopter` | true | Police helicopter that tracks the runner in the open |
 | `helicopterArrivalSeconds` | 60 | It arrives this long after the cops are released (0 = at release) |
 | `helicopterUpSeconds` | 120 | How long it flies before it refuels (more than 0) |

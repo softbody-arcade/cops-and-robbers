@@ -364,6 +364,49 @@ test("cop crash gives a penalty and freezes", function()
   assertEq(find(fx, "penaltyEnd", 2) ~= nil, true)
 end)
 
+local function crashAt(copX, runnerThere)
+  local r = started()
+  local before = {[1]=kmh(0, 0), [2]=kmh(copX, 120), [3]=kmh(500, 0)}
+  r:tick(4, before, {}); r:tick(11, before, {}); r:tick(11.25, before, {})
+  local after = {[2]=kmh(copX, 10), [3]=kmh(500, 0)}
+  if runnerThere ~= false then after[1] = kmh(0, 0) end
+  return r, r:tick(11.5, after, {})
+end
+
+local function penaltyNotes(r)
+  local n = 0
+  for _, e in ipairs(r.timeline) do if e.kind == "penalty" then n = n + 1 end end
+  return n
+end
+
+test("a cop crashing 1.5 km from the runner gets no penalty and no notice", function()
+  local r, fx = crashAt(1500)
+  assertEq(find(fx, "penalty"), nil)
+  assertEq(penaltyNotes(r), 0)
+  assertEq(r.penalties[2], nil)
+  local s = find(fx, "state", 2)
+  assertEq(s == nil or s.resetHint ~= "Crash penalty 10s", true)
+end)
+
+test("a cop crashing 900 m from the runner gets the penalty", function()
+  local r, fx = crashAt(900)
+  assertEq(find(fx, "penalty", 2).seconds, 10)
+  assertEq(penaltyNotes(r), 1)
+end)
+
+test("a cop crash with the runner's car missing that tick still gets the penalty", function()
+  local r, fx = crashAt(1500, false)
+  assertEq(find(fx, "penalty", 2).seconds, 10)
+  assertEq(penaltyNotes(r), 1)
+end)
+
+test("a crash ignored far from the runner is not counted again once the runner is near", function()
+  local r = crashAt(1500)
+  local fx = r:tick(11.75, {[1]=kmh(600, 0), [2]=kmh(1500, 10), [3]=kmh(500, 0)}, {})
+  assertEq(find(fx, "penalty"), nil)
+  assertEq(penaltyNotes(r), 0)
+end)
+
 test("runner crash has no penalty", function()
   local r = running()
   r:tick(11.25, {[1]=kmh(0, 120), [2]=kmh(200, 0), [3]=kmh(500, 0)}, {})

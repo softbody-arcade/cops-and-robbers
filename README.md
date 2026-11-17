@@ -86,10 +86,10 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `resetWaitSeconds` | 7 | Stand still this long to reset anywhere |
 | `stillMaxSpeedKmh` | 1 | "Standing still" threshold |
 | `gasStationRadiusMeters` | 25 | Gas station reset area |
-| `copResetMinDistanceMeters` | 1000 | Cops this far from the runner may reset any time |
+| `copResetMinDistanceMeters` | 1000 | Cops this far from the runner may reset any time and get no crash penalty |
 | `copSpawnMinMeters` / `copSpawnMaxMeters` | 50 / 150 | Cop start distance from the runner, by road |
 | `crashSpeedLossKmh` | 50 | Speed lost within 0.5 s that counts as a crash (~2.8 G) |
-| `crashPenaltySeconds` | 10 | Freeze for the cop at fault |
+| `crashPenaltySeconds` | 10 | Freeze for the cop at fault, within `copResetMinDistanceMeters` of the runner |
 | `helicopter` | true | Police helicopter that tracks the runner in the open |
 | `helicopterArrivalSeconds` | 60 | It arrives this long after the cops are released (0 = at release) |
 | `helicopterUpSeconds` | 120 | How long it flies before it refuels (more than 0) |

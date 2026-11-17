@@ -132,7 +132,7 @@
           <BngIcon class="warn" :type="icons.caution" />
           <span>
             <b>Crash penalty:</b> crash into someone hard (losing <span class="v">{{ kmh("crashSpeedLossKmh") }}</span> in half a second)
-            and you're frozen for <span class="v">{{ sec("crashPenaltySeconds") }}</span>. Getting hit doesn't count.<template v-if="trafficOn"> Driving into traffic counts too; being hit by it doesn't.</template>
+            within <span class="v">{{ dist("copResetMinDistanceMeters") }}</span> of the runner and you're frozen for <span class="v">{{ sec("crashPenaltySeconds") }}</span>. Getting hit doesn't count.<template v-if="trafficOn"> Driving into traffic counts too; being hit by it doesn't.</template>
           </span>
         </div>
         <div class="li">
