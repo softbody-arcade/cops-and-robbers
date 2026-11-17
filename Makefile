@@ -11,7 +11,7 @@ vuecheck:
 
 package: clean
 	mkdir -p dist/Client dist/Server
-	cd client && zip -qr ../dist/Client/CopsAndRobbers.zip scripts lua mod_info ui
+	cd client && zip -qr ../dist/Client/CopsAndRobbers.zip scripts lua mod_info ui art
 	rsync -a --exclude data server/CopsAndRobbers dist/Server/
 
 install-local: package

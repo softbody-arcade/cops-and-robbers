@@ -23,7 +23,7 @@ end
 local SIGHT_REACH = 2
 local SIGHT_SLACK = 0.5
 
-function M.inSight(from, carPos, height, dirX, dirY, castRay)
+function M.inSight(from, carPos, height, dirX, dirY, castRay, maxRange)
   local z = carPos.z + height
   local xs, ys = { carPos.x }, { carPos.y }
   local len = math.sqrt(dirX * dirX + dirY * dirY)
@@ -35,9 +35,11 @@ function M.inSight(from, carPos, height, dirX, dirY, castRay)
   for i = 1, #xs do
     local dx, dy, dz = xs[i] - from.x, ys[i] - from.y, z - from.z
     local d = math.sqrt(dx * dx + dy * dy + dz * dz)
-    if d <= SIGHT_SLACK then return true end
-    local hit = tonumber(castRay(from, vec3(dx / d, dy / d, dz / d), d))
-    if not (hit and hit < d - SIGHT_SLACK) then return true end
+    if not (maxRange and d > maxRange) then
+      if d <= SIGHT_SLACK then return true end
+      local hit = tonumber(castRay(from, vec3(dx / d, dy / d, dz / d), d))
+      if not (hit and hit < d - SIGHT_SLACK) then return true end
+    end
   end
   return false
 end

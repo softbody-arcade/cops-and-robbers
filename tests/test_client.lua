@@ -2625,7 +2625,7 @@ test("the runner reports cover from the head start, once, and a cop does not", f
   assertEq(env.lastSent("cnr_cover"), nil)
   env.fire("cnr_runnerGo", { headStartSeconds = 7 })
   env.tick(0.5)
-  assertEq(env.lastSent("cnr_cover").covered, false)
+  assertEq(env.lastSent("cnr_cover").covered, true)
   assertEq(sentCount(env, "cnr_cover"), 1)
   env.fire("cnr_release", {})
   env.tick(1)
@@ -2713,7 +2713,7 @@ test("turning the beam off stops the quads while the light and its glare stay", 
   if not ok then error(err, 0) end
 end)
 
-test("no searchlight by day or while the helicopter searches", function()
+test("no searchlight by day; at night it stays on while the helicopter searches", function()
   local env = bootClient()
   local d = copy(SETUP)
   d.phase, d.role, d.runnerId = "running", "runner", 1
@@ -2723,9 +2723,56 @@ test("no searchlight by day or while the helicopter searches", function()
   env.tick(1)
   assertEq(env.sky.objects[HELI_LIGHT], nil)
   local night = nightTracking("runner")
+  local light = night.sky.objects[HELI_LIGHT]
+  assertEq(light ~= nil, true)
   night.fire("cnr_heli", { phase = "searching" })
   night.tick(0.2)
-  assertEq(night.sky.objects[HELI_LIGHT], nil)
+  assertEq(night.sky.objects[HELI_LIGHT], light)
+end)
+
+test("a tunnel loss sends the helicopter to the exit ahead", function()
+  local saved = { _G.castRayStatic, _G.map }
+  local ok, err = pcall(function()
+    local env = nightTracking("runner")
+    local car = env.veh:getPosition()
+    env.veh.getDirectionVector = function() return vec3(1, 0, 0) end
+    local nodes, graph = {}, {}
+    for i = 1, 5 do
+      nodes[i] = { pos = vec3(car.x + (i - 2.5) * 100, car.y, car.z) }
+      graph[i] = {}
+    end
+    for i = 1, 4 do
+      local link = { inNode = i, outNode = i + 1, oneWay = false, gated = 0, len = 100 }
+      graph[i][i + 1], graph[i + 1][i] = link, link
+    end
+    _G.map = {
+      getMap = function() return { nodes = nodes } end,
+      getGraphpath = function() return { graph = graph } end,
+      findClosestRoad = function() return 2, 3, 2 end,
+    }
+    local roofs = { nodes[2].pos, nodes[3].pos, nodes[4].pos, car }
+    _G.castRayStatic = function(origin, dir, len)
+      if dir.x == 0 and dir.y == 0 and dir.z == 1 then
+        for _, r in ipairs(roofs) do
+          if horizontal(origin, r) <= 5 then return 5 end
+        end
+      end
+      return len + 100
+    end
+    local light = env.sky.objects[HELI_LIGHT]
+    assertEq(light ~= nil, true)
+    env.fire("cnr_heli", { phase = "searching", seconds = 100 })
+    env.tick(60)
+    local exit = nodes[5].pos
+    for _ = 1, 10 do
+      assertEq(env.sky.objects[HELI_LIGHT], light)
+      local d = horizontal(light.pos, exit)
+      assertEq(near(d, 60, 3), true, tostring(d))
+      env.tick(1)
+    end
+  end)
+  _G.castRayStatic, _G.map = saved[1], saved[2]
+  if not ok then error(err, 0) end
 end)
 
 test("the searchlight is gone after the round, a cancel, leaving, a map change and unloading", function()
@@ -2748,6 +2795,128 @@ test("the searchlight is gone after the round, a cancel, leaving, a map change a
       end
     end
   end
+end)
+
+local HELI_SOUND = "cnr_heli_sound"
+
+local function samePlace(a, b, msg)
+  assertEq(a.x, b.x, msg); assertEq(a.y, b.y, msg); assertEq(a.z, b.z, msg)
+end
+
+test("the sound plays at the helicopter and is gone after the round", function()
+  for _, role in ipairs({ "cop", "runner" }) do
+    local env = nightTracking(role)
+    local snd, light = env.sky.objects[HELI_SOUND], env.sky.objects[HELI_LIGHT]
+    assertEq(snd ~= nil, true, role)
+    assertEq(snd:getField("fileName"), "/art/sound/cnr/heli_rotor.ogg", role)
+    assertEq(snd.playing, true, role)
+    samePlace(snd.pos, light.pos, role)
+    env.tick(1)
+    samePlace(snd.pos, light.pos, role)
+    assertNear(snd.volume, 1, 1e-9, role)
+  end
+  local day = bootClient()
+  local d = copy(SETUP)
+  d.phase, d.role, d.runnerId = "running", "runner", 1
+  d.sky = { time = "noon", windDir = 0, windSeed = 1 }
+  d.heli = { phase = "tracking", seconds = 100 }
+  day.fire("cnr_roundSetup", d)
+  day.tick(1)
+  assertEq(day.sky.objects[HELI_LIGHT], nil)
+  assertEq(day.sky.objects[HELI_SOUND] ~= nil, true)
+  local exits = {
+    function(env) env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 3, runnerId = 2 }) end,
+    function(env) env.fire("cnr_roundEnd", { reason = "cancelled", runnerId = 2 }) end,
+    function(env) env.M.onBeamMPServerLeave() end,
+    function(env) env.M.onClientEndMission() end,
+    function(env) env.M.onExtensionUnloaded() end,
+  }
+  for i, exit in ipairs(exits) do
+    for _, role in ipairs({ "cop", "runner" }) do
+      local env = nightTracking(role)
+      assertEq(env.sky.objects[HELI_SOUND] ~= nil, true, i .. " " .. role)
+      exit(env)
+      assertEq(env.sky.objects[HELI_SOUND], nil, i .. " " .. role)
+      if i < 5 then
+        env.tick(2)
+        assertEq(env.sky.objects[HELI_SOUND], nil, i .. " " .. role)
+      end
+    end
+  end
+end)
+
+test("turning the sound off fades it out within about 1 s, and on fades it in", function()
+  local env = nightTracking("runner")
+  local base = _G.createObject
+  local ok, err = pcall(function()
+    env.tick(1)
+    local snd = env.sky.objects[HELI_SOUND]
+    assertNear(snd.volume, 1, 1e-9)
+    env.M.ui({ action = "setting", key = "sound", value = false })
+    assertEq(env.written["settings/cnr_settings.json"].sound, false)
+    assertEq(env.hud().settings.sound, false)
+    env.tick(0.5)
+    assertEq(env.sky.objects[HELI_SOUND], snd)
+    assertNear(snd.volume, 0.5, 0.11)
+    env.tick(0.6)
+    assertEq(env.sky.objects[HELI_SOUND], nil)
+    env.tick(1)
+    assertEq(env.sky.objects[HELI_SOUND], nil)
+    local writes = {}
+    _G.createObject = function(class)
+      local obj = base(class)
+      function obj:setVolumePitchCT(v)
+        self.volume = v
+        writes[#writes + 1] = v
+      end
+      return obj
+    end
+    env.M.ui({ action = "setting", key = "sound", value = true })
+    env.tick(0.1)
+    local again = env.sky.objects[HELI_SOUND]
+    assertEq(again ~= nil and again ~= snd, true)
+    assertEq(again:getField("volume"), "0")
+    env.tick(0.4)
+    assertNear(again.volume, 0.5, 0.11)
+    env.tick(0.6)
+    assertNear(again.volume, 1, 1e-9)
+    local prev = 0
+    for _, v in ipairs(writes) do
+      assertEq(v - prev <= 0.1 + 0.02 + 1e-9, true, prev .. " -> " .. v)
+      prev = v
+    end
+  end)
+  _G.createObject = base
+  if not ok then error(err, 0) end
+end)
+
+test("on a cop's game the sound fades out 2 s after the runner's car goes missing and back in when it returns", function()
+  local env = nightTracking("cop")
+  env.tick(1)
+  local snd = env.sky.objects[HELI_SOUND]
+  assertNear(snd.volume, 1, 1e-9)
+  local car = env.objects[300]
+  env.objects[300] = nil
+  env.tick(1.9)
+  assertEq(env.sky.objects[HELI_SOUND], snd)
+  assertNear(snd.volume, 1, 1e-9)
+  env.tick(1.4)
+  assertEq(env.sky.objects[HELI_SOUND], nil)
+  env.objects[300] = car
+  env.tick(0.5)
+  local again = env.sky.objects[HELI_SOUND]
+  assertEq(again ~= nil, true)
+  assertNear(again.volume, 0.5, 0.11)
+end)
+
+test("a leftover emitter is deleted while no round runs", function()
+  local env = bootClient()
+  env.tick(0.5)
+  local planted = createObject("SFXEmitter")
+  planted:registerObject(HELI_SOUND)
+  assertEq(env.sky.objects[HELI_SOUND], planted)
+  env.tick(1.2)
+  assertEq(env.sky.objects[HELI_SOUND], nil)
 end)
 
 local function inLockGroup(env, action)
@@ -2910,31 +3079,48 @@ test("an error in the cover check is logged once and the game keeps running", fu
 end)
 
 test("practice as a cop: the practising cop's game reports cover for the AI runner", function()
-  local env = bootClient()
-  local aiRunner = practiceAsCop(env)
-  env.blockFrom = vec3(aiRunner.pos.x, aiRunner.pos.y, aiRunner.pos.z + 1.5)
-  env.tick(1)
-  assertEq(env.lastSent("cnr_cover"), nil)
-  env.fire("cnr_runnerGo", { headStartSeconds = 7 })
-  env.tick(0.5)
-  assertEq(env.lastSent("cnr_cover").covered, true)
+  local saved = _G.castRayStatic
+  local ok, err = pcall(function()
+    local env = bootClient()
+    practiceAsCop(env)
+    env.tick(1)
+    assertEq(env.lastSent("cnr_cover"), nil)
+    local fromAbove = 0
+    _G.castRayStatic = function(origin, dir, len)
+      if dir.z == 1 then return len + 100 end
+      if origin.z > 40 then fromAbove = fromAbove + 1 end
+      return 1
+    end
+    env.fire("cnr_runnerGo", { headStartSeconds = 7 })
+    env.fire("cnr_heli", { phase = "searching", seconds = 100, seed = 7 })
+    env.tick(1)
+    assertEq(env.lastSent("cnr_cover").covered, true)
+    assertEq(fromAbove > 0, true)
+    _G.castRayStatic = function(origin, dir, len) return len + 100 end
+    env.tick(1)
+    assertEq(env.lastSent("cnr_cover").covered, false)
+  end)
+  _G.castRayStatic = saved
+  if not ok then error(err, 0) end
 end)
 
-test("the game asks whether it is night only while the helicopter tracks or a light is up", function()
-  local env = bootClient()
-  local d = copy(SETUP)
-  d.phase, d.sky, d.heli = "running", NIGHT, { phase = "arriving", seconds = 60 }
-  env.fire("cnr_roundSetup", d)
-  env.tick(1)
-  local asked = 0
-  local getLightState = core_environment.getLightState
-  core_environment.getLightState = function() asked = asked + 1; return getLightState() end
-  env.tick(3)
-  assertEq(asked < 10, true, tostring(asked))
-  local idle = asked
-  env.fire("cnr_heli", { phase = "tracking", seconds = 100 })
-  env.tick(3)
-  assertEq(asked - idle >= 30, true, tostring(asked - idle))
+test("the game asks whether it is night only while the helicopter tracks or searches, or a light is up", function()
+  for _, phase in ipairs({ "tracking", "searching" }) do
+    local env = bootClient()
+    local d = copy(SETUP)
+    d.phase, d.sky, d.heli = "running", NIGHT, { phase = "arriving", seconds = 60 }
+    env.fire("cnr_roundSetup", d)
+    env.tick(1)
+    local asked = 0
+    local getLightState = core_environment.getLightState
+    core_environment.getLightState = function() asked = asked + 1; return getLightState() end
+    env.tick(3)
+    assertEq(asked < 10, true, phase .. " " .. asked)
+    local idle = asked
+    env.fire("cnr_heli", { phase = phase, seconds = 100 })
+    env.tick(3)
+    assertEq(asked - idle >= 30, true, phase .. " " .. (asked - idle))
+  end
 end)
 
 local function hiddenRunnerTag()

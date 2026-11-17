@@ -14,6 +14,9 @@ local modes = require("copsAndRobbers/modes")
 local nearby = require("copsAndRobbers/nearby")
 local sky = require("copsAndRobbers/sky")
 local heli = require("copsAndRobbers/heli")
+local heliSound = require("copsAndRobbers/heliSound")
+local shelter = require("copsAndRobbers/shelter")
+local tunnels = require("copsAndRobbers/tunnels")
 local traffic = require("copsAndRobbers/traffic")
 local hiding = require("copsAndRobbers/hiding")
 local playerSettings = require("copsAndRobbers/playerSettings")
@@ -169,6 +172,7 @@ local function playerName(id)
 end
 
 local heliState = heli.new()
+local soundState = heliSound.new()
 
 local function setHeli(h)
   heli.set(heliState, h, clock)
@@ -499,6 +503,7 @@ end
 local function endRound(leaving)
   hudfeed.clearRound()
   heli.clear(heliState)
+  heliSound.clear(soundState)
   lightsState = nil
   sky.restore(leaving)
   traffic.stop(clock)
@@ -822,13 +827,28 @@ local function castUp(pos, range)
   return castRayStatic(pos, vec3(0, 0, 1), range)
 end
 
+local function closestRoad(p)
+  if map and map.findClosestRoad then return map.findClosestRoad(p) end
+end
+
+local function roofedAt(p)
+  return shelter.roofed(p, castUp)
+end
+
+local function tunnelExit(carPos, dirX, dirY, seed)
+  local gp = map and map.getGraphpath and map.getGraphpath()
+  local m = map and map.getMap and map.getMap()
+  local roadData = { closest = closestRoad, links = gp and gp.graph, nodes = m and m.nodes }
+  return tunnels.exit(carPos, dirX, dirY, roadData, roofedAt, seed)
+end
+
 local coverFailed = false
 
 local function updateHeli(runnerObj)
   if runnerOut and castRayStatic then
     local car = role == "runner" and ownVehicle() or ai.runnerObject()
     if car then
-      local ok, c = pcall(heli.coverTick, heliState, clock, car, castUp, castRayStatic)
+      local ok, c = pcall(heli.coverTick, heliState, clock, car, castRayStatic)
       if not ok then
         if not coverFailed then
           coverFailed = true
@@ -841,9 +861,15 @@ local function updateHeli(runnerObj)
   end
   if active then
     local target = role == "runner" and ownVehicle() or runnerObj
-    heli.lightTick(heliState, target, heli.wantsNight(heliState) and sky.isNight(), clock, { weather = traffic.weather(), beam = prefs.beam ~= false })
+    local opts = { weather = traffic.weather(), beam = prefs.beam ~= false }
+    if castRayStatic then opts.tunnelExit = tunnelExit end
+    heli.lightTick(heliState, target, heli.wantsNight(heliState) and sky.isNight(), clock, opts)
+    local camPos = core_camera and core_camera.getPosition and core_camera.getPosition() or nil
+    local level = prefs.sound ~= false and heli.soundLevel(heliState, clock) or 0
+    heliSound.tick(soundState, heliState.flight and heliState.flight.pos, level, clock, camPos, castRayStatic)
   else
     heli.lightTick(heliState, nil, false, clock)
+    heliSound.tick(soundState, nil, 0, clock)
   end
 end
 

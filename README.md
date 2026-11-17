@@ -49,7 +49,7 @@ Switch "Evolving car" on in the panel. Instead of a random car each round, every
 ## HUD
 
 - **Lobby card** (between rounds): who is online, a line saying whether a round is waiting, buttons for Settings, How to play, Leaderboard and Host panel, and a yellow line for a standing problem (no reset button bound, an outdated copy, BeamNG.Earth too old).
-- **Player settings:** the Settings button opens a card with your car colour, three switches and a choice: **Auto headlights** (on by default; low beam at night and in rain, storm, fog and snow, and off again at sunrise in clear weather; the mod only acts when something changes, so your own light key still works), **Siren** (off by default; as a cop, the light bar runs with siren once cops are released; the host can turn Cop sirens off for everyone) and **Searchlight beam** (on by default; off removes the helicopter's beam in the air, which helps the frame rate; the light and its glare stay). The choice is **Route to the runner** (as a cop: Always, Out of sight or Never; Out of sight by default). They are saved in your own game and apply on every server. Distances and speeds on the chase line and in How to play follow the game's unit setting (metric or imperial); the Host panel stays metric.
+- **Player settings:** the Settings button opens a card with your car colour, four switches and a choice: **Auto headlights** (on by default; low beam at night and in rain, storm, fog and snow, and off again at sunrise in clear weather; the mod only acts when something changes, so your own light key still works), **Siren** (off by default; as a cop, the light bar runs with siren once cops are released; the host can turn Cop sirens off for everyone), **Searchlight beam** (on by default; off removes the helicopter's beam in the air, which helps the frame rate; the light and its glare stay) and **Helicopter sound** (on by default; the police helicopter's rotor, heard from far off, day and night; off fades it out on your game). The choice is **Route to the runner** (as a cop: Always, Out of sight or Never; Out of sight by default). They are saved in your own game and apply on every server. Distances and speeds on the chase line and in How to play follow the game's unit setting (metric or imperial); the Host panel stays metric.
 - **Colour:** a colour picker with a hex field, "No colour" and Done. The colour is used for every round car, repaints at once in prep and otherwise applies from the next round.
 - **Prep:** the centre shows your role ("YOU'RE THE RUNNER" or "YOU'RE A COP", and for cops the runner's name). The bottom shows "Waiting for the host to press GO" with the Settings, How to play and Host panel buttons. In evolving mode it shows the runner's queued change instead, with Apply change for the runner.
 - **Countdowns:** "RUNNER STARTS IN", "COPS RELEASED IN" and "CRASH PENALTY", then "GO!" or "PENALTY OVER".
@@ -90,7 +90,7 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `copSpawnMinMeters` / `copSpawnMaxMeters` | 50 / 150 | Cop start distance from the runner, by road |
 | `crashSpeedLossKmh` | 50 | Speed lost within 0.5 s that counts as a crash (~2.8 G) |
 | `crashPenaltySeconds` | 10 | Freeze for the cop at fault, within `copResetMinDistanceMeters` of the runner |
-| `helicopter` | true | Police helicopter that tracks the runner in the open |
+| `helicopter` | true | Police helicopter that searches for the runner and tracks them while it sees them |
 | `helicopterArrivalSeconds` | 60 | It arrives this long after the cops are released (0 = at release) |
 | `helicopterUpSeconds` | 120 | How long it flies before it refuels (more than 0) |
 | `helicopterRefuelSeconds` | 90 | How long it is away refuelling (0 = stays up) |
@@ -141,6 +141,11 @@ parts of a police config of the same model are added for cops.
 On `beamng_earth` the mod switches to geo mode automatically: positions are exchanged as latitude/longitude through
 BeamNG.Earth's mod API (each player has their own coordinate origin there), and real gas stations near players are
 looked up and remembered by the server as they drive. Players need a BeamNG.Earth version with API v1.
+
+## Credits
+
+The helicopter's rotor sound is "Helicopter Rotor Loop" by qubodup, https://freesound.org/people/qubodup/sounds/187681/, CC0
+(shipped as a mono OGG in `client/art/sound/cnr/heli_rotor.ogg`).
 
 ## Development
 

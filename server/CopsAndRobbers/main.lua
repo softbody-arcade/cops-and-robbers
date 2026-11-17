@@ -626,7 +626,7 @@ local function applyEffects(effects)
         send(current.runnerId, "cnr_nearestCop", { dist = e.nearestCop })
       end
     elseif e.kind == "heli" then
-      send(e.to or -1, "cnr_heli", { phase = e.phase, seconds = e.seconds, reason = e.reason, seed = e.seed })
+      send(e.to or -1, "cnr_heli", { phase = e.phase, seconds = e.seconds, reason = e.reason, seed = e.seed, guided = e.guided })
     elseif e.kind == "runnerShown" then
       for pid in pairs(current.players) do
         if pid ~= current.runnerId and not round.isAI(pid) then

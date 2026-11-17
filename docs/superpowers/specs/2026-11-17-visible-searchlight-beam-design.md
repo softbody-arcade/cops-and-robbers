@@ -1,6 +1,6 @@
 # Visible searchlight beam and a flying helicopter
 
-Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and plan review. After the first in-game tests the same day, more was added at the user's call, all approved for 2.9.1: cover from the helicopter's line of sight, searching (it searches where it lost the runner, also tunnel exits, guided by the cops' sight, with the light never cut), and a helicopter sound. It builds on the police helicopter (`docs/superpowers/specs/2026-11-16-police-helicopter-design.md`). The light now hangs from a helicopter that really flies, so the beam's angle and the light's sway come from the helicopter's own motion.
+Status: approved 2026-11-17, revised after a review. The beam, the flight and line of sight shipped in 2.9.1; searching (where it last knew the runner was, tunnel exits, guided by the cops' sight, the light never cut) and the helicopter sound are 2.9.4. It builds on the police helicopter (`docs/superpowers/specs/2026-11-16-police-helicopter-design.md`). The light now hangs from a helicopter that really flies, so the beam's angle and the light's sway come from the helicopter's own motion.
 
 ## Why
 - **No beam in the air:** BeamNG lights only light the surfaces they hit; the engine renders only clouds as volumes. So the 2.9.0 searchlight is a bright spot on the road with no shaft in the air. In real life the beam is visible from the side and from below: faintly on a clear night, and clearly in haze, cloud or rain.
@@ -16,10 +16,10 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
 - **Glare at the light source:** a SpotLight can use one of the game's flare definitions (`flareType`). `BNG_LightFlare_1` (in the game's `art/datablocks/lights.datablocks.json`) gives a soft halo where the helicopter is when you look up. **Added** on top of the cone.
 
 ## Helicopter flight
-- **Each game simulates the helicopter** while it is up (tracking or searching). It keeps flying by day and with the light off, so it is in the right place when the light comes on. No network messages are added: random choices are local, so two players may see it on different sides of the runner. Nobody can compare the views.
+- **Each game simulates the helicopter** while it is up (tracking or searching). It keeps flying by day and with the light off, so it is in the right place when the light comes on. No network messages are added: the flight's random choices come from the seed in the helicopter status (see Line of sight), so every game flies it on the same side and in the same directions. Positions still differ a little between games.
 - **The car's velocity:** from `target:getVelocity()` when the object has it, otherwise from position deltas over the real frame time. With a frame time of 0 or less the flight keeps its last velocity and doesn't step. The simulation step is clamped to 0.1 s.
 - **Chasing:** every frame the helicopter steers towards a target point.
-  - Its wanted velocity is the car's velocity, plus the target point's own velocity relative to the car (while circling), plus `FOLLOW_GAIN` 0.4/s × (target − position).
+  - Its wanted velocity is the car's velocity, plus the target point's own velocity relative to the car (while circling), plus `FOLLOW_GAIN` 0.4/s × (target − position). While searching, the search spot's velocity (the runner's while the cops guide it, otherwise 0) takes the car's place, and the circle point is on the search circle (see Searching).
   - That is capped at `MAX_SPEED` 70 m/s (about 250 km/h).
   - Its velocity moves towards the wanted one by at most `MAX_ACCEL` 8 m/s² × dt.
   - So it keeps up with steady driving, lags and overshoots on sudden changes, and never jumps.
@@ -29,40 +29,52 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - The circle starts at the helicopter's current bearing from the car, so switching modes doesn't make it turn back.
   - The angle advances in the step, not in the target calculation.
   - It enters the circle below `SLOW_SPEED` 5 m/s and leaves above `FAST_SPEED` 7 m/s, so jitter doesn't flip the modes.
-- **Starting mode** (on arrival or when joining): follow when the car's horizontal speed is 6 m/s or more, otherwise circle, starting at the current bearing (a random bearing for a helicopter placed on joining).
-- **Jumps:** a car jump over `JUMP_METERS` 30 m in one frame shifts the helicopter's position (and its leaving point) by the same jump.
+- **Starting mode** (a flight that starts "tracking", and a searching helicopter that finds the runner): follow when the car's horizontal speed is 6 m/s or more, otherwise circle, starting at the helicopter's current bearing from the car (a random bearing for a helicopter placed on joining). A flight that starts "searching", the usual case, circles its search spot instead (see Searching).
+- **Jumps:** a car jump over `JUMP_METERS` 30 m in one frame shifts the helicopter's position (and its leaving point and search spot) by the same jump.
   - This covers a reset, a teleport, and BeamNG.Earth moving its origin.
   - The car's velocity counts as unchanged for that frame, so the helicopter keeps its place relative to the car. This also holds when the velocity comes from position deltas: the jump frame keeps the last velocity.
-- **Arrival (fly-in):** when the helicopter goes up after arriving or refuelling and no flight exists, it starts `APPROACH_DISTANCE` 300 m out in a random heading, `APPROACH_HEIGHT` 60 m above the car, at rest, and flies in.
-- **Short refuel:** if a flight still exists, because a refuel shorter than 8 s ended while it was leaving, it stops leaving and turns back from where it is. No teleport.
-- **Joining mid-round:** when a game first sees the helicopter already up, the helicopter starts at its target point with the car's current velocity.
-- **Leaving (fly-away):** on refuel the helicopter heads for a point `DEPART_DISTANCE` 400 m from the car, `DEPART_HEIGHT` 80 m above it.
-  - The heading is within ±60° of the helicopter's current bearing from the car, so it never flies back over the runner.
+- **Arrival (fly-in):** when the helicopter goes up after arriving or refuelling and no flight exists, it starts `APPROACH_DISTANCE` 300 m out in a random heading, at rest, and flies in. Going up "searching" (the usual case), it starts 300 m out from the search spot, `APPROACH_HEIGHT` 60 m above it; going up "tracking" (stale cover, see Searching), 300 m out from the car, 60 m above it. Either way the flight's jump check starts from the car, so a spot kilometres from the car is not read as a car jump.
+- **Short refuel:** if a flight still exists, because a refuel shorter than 8 s ended while it was leaving, it stops leaving and turns back from where it is. No teleport. Coming back "searching" without a spot (it was tracking), it searches the last known position; coming back "tracking" while it was searching, it follows the car (see Searching).
+- **Joining mid-round:** when a game first sees the helicopter already up: while "tracking", the helicopter starts at its target point with the car's current velocity; while "searching", it starts on its search circle around the runner's position, at rest.
+- **Leaving (fly-away):** on refuel the helicopter heads for a point `DEPART_DISTANCE` 400 m from its reference, `DEPART_HEIGHT` 80 m above it. The reference is the search spot while it has one (a refuel while searching), otherwise the car.
+  - The heading is within ±60° of the helicopter's current bearing from the reference, so it flies outward: never back over the runner it was tracking, and never back across the spot it was searching.
   - After `DEPART_SECONDS` 8 s the flight is dropped.
-- **Under cover and back:** while searching, the helicopter keeps flying its target point around the car; the crew knows where the cover ends. At the exit the light appears at once where the helicopter is.
+- **Lost and found:** when the helicopter loses the runner it flies to the search spot and circles it (see Searching). When it sees the runner again it goes back to trailing or circling them (Starting mode), and the light's aim swings over without a jump.
 - **Constants:** `APPROACH_*` and `DEPART_*` live in the flight module only. The searchlight code uses them from there.
 
 ## The light
-- **Position and aim:** it sits at the helicopter's position and aims at the operator's aim point.
-- **The operator's aim** keeps the 2.9.0 spring, nudges and tremor:
+- **Position and aim:** it sits at the helicopter's position and aims at the aim point: the operator's aim on the car while the flight has no search spot, the search sweep while it has one (see Searching).
+- **The operator's aim** keeps the 2.9.0 spring, nudges and tremor. It keeps stepping on the car while the light follows the sweep, so it is current when the helicopter finds the runner.
   - **Lag kick:** now from the change in the car's velocity relative to the helicopter, not the car alone. When the car brakes or the helicopter swings round, the spot slips and is brought back. When both brake together, it doesn't slip.
-  - **Fly-in sweep:** the aim starts 15 m off the car (`AIM_SWEEP_OFFSET`) and is pulled in.
-  - **Fly-away drift:** the aim drifts off the car towards the direction of travel (`DEPART_AIM_DRIFT`), up to 60 m by 8 s.
-    - When a fly-away ends early (a short refuel, night ending into a fade, or night returning), the current drift is added to the aim's offset. The spring then pulls the spot back over a few seconds instead of snapping 40+ m in one frame. The offset cap is max(6, the current offset), as in 2.9.0.
+  - **Fly-in sweep** (2.9.1, removed with searching): the aim started 15 m off the car (`AIM_SWEEP_OFFSET`) and was pulled in. Every fly-in now starts searching, so the aim starts on the search sweep, and the switch offset (see Searching) carries it to the car when the helicopter finds the runner.
+  - **Fly-away drift:** the aim drifts away from the fly-away's reference (the search spot or the car, see Leaving) towards the leaving point (`DEPART_AIM_DRIFT`), up to 60 m by 8 s.
+    - When a fly-away ends early (a short refuel, night ending into a fade, or night returning), the current drift is kept. While the aim follows the car it is added to the aim's offset: the spring then pulls the spot back over a few seconds instead of snapping 40+ m in one frame, and the offset cap is max(6, the current offset), as in 2.9.0. While the aim follows the sweep it is added to the switch offset, which decays the same way as on a change of target.
   - **Refound** (2.9.0, removed with searching): the light was cut while searching and came back 8 m off the car. Now the light stays on and swings between the car and the search sweep (see Searching).
   - **Hover drift removed:** `HOVER_DRIFT` and the sine waves on the light's position go; the real flight replaces them.
 - **Brightness effects**, on the light's brightness factor `fx.bright`:
   - fly-in: rising to full over `APPROACH_SECONDS` 8 s, from 0 for a new light, or from the current factor when the light already exists
-  - fly-away: full, then fading to 0 over the last `DEPART_FADE_SECONDS` 3 s of the 8 s; then the light is removed, after that frame's update
+  - fly-away: full, then fading to 0 over the last `DEPART_FADE_SECONDS` 3 s of the 8 s; then the light and the flight go together at 8 s
   - night ending: a 1.5 s fade
   - night returning: a 1 s fade-in
   - searching never cuts or dims the light (see Searching)
-- **Range:** max(120, slant distance to the car + 30), rounded to whole metres and capped at 400.
+- **Phase changes:** when the helicopter's phase differs from the one the light last saw:
+
+  | From → to | The light |
+  |---|---|
+  | "arriving" or "refuelling" → "tracking" or "searching", at night, with a flight | fly-in (`startApproach`): a new light rises from 0, an existing one (a short refuel) from its current factor |
+  | "arriving" or "refuelling" → "tracking" or "searching", by day | unchanged: there is no light, or a night-end fade runs on |
+  | "tracking" ↔ "searching" | kept as it is; the aim swings to the new target with the switch offset |
+  | "tracking" or "searching" → "refuelling", with a flight and the light not in its night-end fade | fly-away (`startDepart`) |
+  | anything else (the round over, a phase that grounds it, a first status), with a light | removed, unless it is already flying away and the phase is "refuelling" |
+
+  - After the table, as before: night ending starts the fade; the light wanted with none there (a game joining at night, or night falling while the helicopter is up) creates it at full brightness; the light wanted while it fades or flies away fades it in.
+  - The light is wanted while the helicopter is up ("tracking" or "searching") at night and its flight exists. After a flight error there is no flight, so no light is made until the flight is back.
+- **Range:** max(120, slant distance to the aim point + 30), rounded to whole metres and capped at 400.
   - It's written when the light is created, and again whenever it differs from the last written value by more than 5 m.
   - The spot grows when the helicopter is further off (cone 16°), as a real one would.
 
 ## The beam
-- **Who sees it:** every player whose game has the light: the helicopter is tracking at night, and the player's "Searchlight beam" setting is on.
+- **Who sees it:** every player whose game has the light (the helicopter is up, tracking or searching, at night, or flying away with its light), and whose "Searchlight beam" setting is on.
   - Its strength is the weather strength × `fx.bright`.
   - So it follows the fly-in, fly-away and fades.
 - **Shape:**
@@ -116,7 +128,8 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - a point is seen when the ray reaches within 0.5 m of it
   - only points within 400 m (straight-line distance) of the helicopter can be seen (`SIGHT_RANGE`)
   - the car is covered when no point is seen
-- **Without a helicopter** (head start, the arrival countdown, a refuel after the fly-away): the car counts as covered, since nothing can see it. The roof check is no longer used for cover; it stays for the rain. (Changed with Searching: each flight now starts searching, so the state at arrival no longer comes from a roof check.)
+- **A flight error** is logged once per round. The flight is dropped and stays gone until the next valid helicopter status (or the round's end), so the car counts as covered meanwhile (below).
+- **Without a helicopter** (head start, the arrival countdown, a refuel after the fly-away, after a flight error until the next status): the car counts as covered, since nothing can see it. The roof check is no longer used for cover; it stays for the rain and the tunnel walk (see Searching). (Changed with Searching: this is what makes each flight start searching, so the state at arrival no longer comes from a roof check.)
 - **Unchanged:**
   - the client needs the same reading twice in a row (about 0.5 s) before it reports a change, and the server needs 2 s of cover before "searching"
   - tracking again the moment a point is seen
@@ -127,36 +140,48 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - A game joining mid-round (`at`) draws from the same seed in the same order, so it takes the same side and bearing.
   - Positions still differ a little between games: network lag on the runner's car, and a joiner starts on its target point instead of mid-fly-in.
   - A short refuel resumes the existing flight and ignores the new seed.
+  - The tunnel exit pick (see Searching) uses the seed itself, not the generator, so it never changes the draws above.
 - **Gameplay:** the runner loses the helicopter behind buildings, in valleys and in tunnels, and is free once out of its 400 m sight. That is intended. The height (50 m) and side offset (15 m) become balance values, tuned in game.
 - **Trees:** whatever `castRayStatic` hits counts. The game's drone camera uses the same call for line of sight. Whether trees block it is an in-game check.
 
 ## Searching (added after the second in-game test, approved 2026-11-17)
 - **Why:** in 2.9.0 and the first line-of-sight build, "searching" only changed the status: every game's helicopter kept flying after the runner's real position and the light was cut. Searching should look and play like a search: the helicopter goes where it last knew the runner was, and the light keeps sweeping so everyone can read where it's looking.
 - **Every flight starts searching:**
-  - The server's helicopter enters its up phase as "searching", at arrival and after every refuel; it never starts "tracking" on its own.
-  - It turns to "tracking" the first time the runner's game reports the car not covered, which needs that game's helicopter to see the car (Line of sight). Losing the runner still takes 2 s of cover.
-- **The search spot** (each game works it out itself from the runner's car, so it needs no network message and works on BeamNG.Earth; games may differ by a few metres of network lag):
+  - The server's tracking rule stays as it is: an up phase starts "tracking" only when the runner's game last reported the car not covered, and turns to "tracking" the moment it does. Losing the runner still takes 2 s of cover.
+  - What makes every flight start "searching" is the client: without a helicopter flight the car counts as covered (Line of sight). During "arriving", and after the fly-away's 8 s drop, the runner's game reports covered, so the server enters each up phase "searching", at arrival and after every refuel of about 9 s or more. It turns to "tracking" the first time the runner's game sees the car from its own helicopter.
+  - The server starts each round with the runner counted as covered, so a game that never reports cover (a broken or missing client) doesn't get tracked at arrival. The runner's game always sends its first reading.
+  - A refuel shorter than about 9 s can come back "tracking": the helicopter still exists, flying away, and may still see the runner.
+- **The search spot** (each game works it out itself from the runner's car, so it needs no network message and works on BeamNG.Earth; games may differ by a few metres of network lag, and at a tunnel mouth by more, see Tunnel exits):
   - **At arrival:** the runner's position when the helicopter goes up (where the cops called it in).
-  - **After a refuel:** the last known position: where this game's helicopter last tracked the runner, or where the cops last guided it (below). Without one (a game that joined during the refuel), the runner's position at that moment.
+  - **After a refuel:** the last known position: where this game's helicopter last tracked the runner, or where the cops last guided it (below). Without one (a game that joined during the refuel, or a round in which it never found the runner), the runner's position at that moment. The last known position is forgotten at the round's end.
   - **When it loses the runner** ("tracking" → "searching"), and when the cops lose sight while guiding it: the runner's position then, or a tunnel exit (below).
   - **A game joining mid-round** whose first status is "searching": the runner's position at that moment.
-  - The spot moves with a car jump over 30 m (a BeamNG.Earth origin shift or a reset), like the helicopter itself.
+  - **Any searching helicopter without a spot** (a short refuel that resumes a flight that was tracking): the last known position, or the runner's position. This is checked every frame, so no sequence of statuses leaves a searching helicopter without a spot.
+  - **A flight that starts "tracking"** has no spot. A searching helicopter whose status turns to "tracking" (also straight from a short refuel) drops its spot and follows the runner.
+  - The spot moves with a car jump over 30 m (a BeamNG.Earth origin shift or a reset), like the helicopter itself. So does the last known position while no flight exists (a jump during a refuel).
 - **Tunnel exits:**
-  - When the spot is set because the runner was lost, and the runner's car is under a roof (the same roof check as the rain), the game follows the road from the car in its direction of travel, using the game's road map (`map.findClosestRoad`, `map.getMap().nodes` and their `links`, as `roads.lua` already does).
+  - When the spot is set because the runner was lost, and the runner's car is under a roof (the same roof check as the rain), the game follows the road from the car in its direction of travel: the car's velocity when it is above 1 m/s, otherwise the way the car faces.
+  - It uses the game's road graph: `map.findClosestRoad` for the road under the car, `map.getGraphpath().graph` for the links (they hold both directions, as `roads.lua` reads them) and `map.getMap().nodes` for the positions. Road lengths come from the node positions, not the graph's `len`, which is a routing cost.
+  - The closest road must be within 15 m of the car (`findClosestRoad`'s third value). Further off, the tunnel's road is likely missing from the graph and the closest one is a surface road, so there is no exit.
   - It walks through road nodes that are roofed (the roof check at 1.5 m above each node) and collects the first unroofed node on each branch: the exits.
   - The way back (the edge's node behind the car) is never walked, so turning around in a tunnel dodges the helicopter.
-  - It stops after 3 km of road or 200 nodes. With no exit found, or no road data (likely on BeamNG.Earth), the spot is where the runner was lost.
+  - It stops after 3 km of road or 200 nodes. With no exit found, no road data (likely on BeamNG.Earth), or an error in the walk (logged once), the spot is where the runner was lost.
   - With several exits, they are ordered by node id and the seed picks one (`exits[seed % #exits + 1]`), so every game picks the same one without drawing from the flight's generator.
+  - **At a tunnel mouth** the roof check can differ between the runner's game and a lagging cop's game, so one game may search the exit and another the runner's position. Accepted: nobody can compare the views, and each game's own helicopter only drives its own light and sound.
 - **Cops guide it:**
   - While any cop sees the runner (the server's existing sight), the helicopter status carries `guided = true`, sent when it changes. The flag is only sent while the helicopter is up.
-  - While guided and searching, every game's search spot is the runner's live position, so the helicopter flies to the runner and circles them. It still says "searching" until it sees the runner itself (a cop can see into a tunnel where the helicopter can't).
+  - While guided and searching, every game's search spot is the runner's live position and moves with them: the helicopter's circle carries the runner's velocity, so it flies to the runner and circles them. It still says "searching" until it sees the runner itself (a cop can see into a tunnel where the helicopter can't).
+  - Guidance starting is a change of target: the circle starts at the helicopter's current bearing from the runner, the light's sweep starts again from the runner, and the aim swings over without a jump.
   - When guidance ends while still searching, the spot is worked out again as for a loss (tunnel exit included), from the runner's position and direction at that moment.
-- **The search flight:** the helicopter circles the spot at 60 m (`SEARCH_RADIUS`), 50 m up, once every 40 s (`SEARCH_PERIOD`), in the direction of its side, with the same speed and acceleration limits. The fly-in after arrival or a refuel starts 300 m out from the spot, not from the car. When it finds the runner it goes back to trailing them.
+  - Losing the runner while guided searches the runner's live position, not a tunnel exit.
+  - Only players' sight counts: in practice as runner the cops are AI, so the helicopter is never guided there.
+- **The search flight:** the helicopter circles the spot at 60 m (`SEARCH_RADIUS`), 50 m up, once every 40 s (`SEARCH_PERIOD`), in the direction of its side, with the same speed and acceleration limits. A new spot starts the circle at the helicopter's current bearing from it. The fly-in after arrival or a refuel starts 300 m out from the spot, not from the car. When it finds the runner it goes back to trailing or circling them (Starting mode). A refuel while searching flies away from the spot (Leaving).
 - **The light while searching** (at night, as always):
-  - It stays on: searching never cuts or dims it. It only goes with the helicopter at refuel (the fly-away fade) and at daybreak.
-  - It sweeps a widening spiral around the spot: out to 150 m (`SWEEP_RADIUS`) over 40 s (`SWEEP_PERIOD`), one turn every 8 s (`SWEEP_TURN`), then from the spot again.
-  - Switching between the car and the sweep (found, lost, guided) never jumps: the aim point moves towards its new target with a time constant of about 0.5 s.
-  - A refuel while searching flies away with the light, like one while tracking.
+  - It stays on: searching never cuts or dims it. It only goes with the helicopter at refuel (the fly-away fade) and at daybreak. Its phase changes follow the table in The light.
+  - It sweeps a spiral around the spot that winds out to 150 m (`SWEEP_RADIUS`) over 20 s and back in over the next 20 s (`SWEEP_PERIOD` 40 s), one turn every 8 s (`SWEEP_TURN`): r = 150 × (1 − |1 − 2 × (t mod 40) / 40|), at the angle 2π × t / 8, with t the time since the current spot was chosen (a guided spot moving with the runner doesn't restart it; guidance starting does). So it never jumps back to the centre.
+  - **On the ground:** the sweep point is put on the ground by a ray straight down from 100 m above it, every 0.25 s; without a hit it stays at the spot's height. So the beam ends on the ground there (its far end lies on the plane through the aim point), not as a disc in the air or cut short by a slope.
+  - **No jumps:** on every change of target (found, lost, a new spot, guidance starting) the aim keeps a switch offset: the previous aim point minus the new one, decaying with a time constant of 0.5 s. The aim point moves smoothly to the new target.
+  - A refuel while searching flies away with the light, like one while tracking; the drift points from the spot towards the leaving point.
 - **Gameplay:** hiding behind a building near the spot is found within seconds as it circles; a tunnel or garage hides you; a long tunnel with the helicopter waiting at the other end can be dodged by turning back; once you are more than 400 m from it, you have escaped until the cops spot you again.
 
 ## Helicopter sound (approved 2026-11-17)
@@ -164,11 +189,14 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
 - **The sound:** one looping 3D `SFXEmitter` named `cnr_heli_sound` at the simulated helicopter, on every game, moved with it every frame.
   - It plays day and night while the flight exists, and is removed with it: on the drop after the fly-away, `clear`, the round's end, a cancel, leaving, a map change and unload. No emitter is left behind.
   - The game's 3D audio fades it with distance, so the fly-in and the fly-away get louder and quieter by themselves. The reference and maximum distances are tuned in game (start: 40 m and 800 m).
-  - It fades in over 1 s when the flight starts close (a game joining mid-round) and fades out over the fly-away's last 3 s, so it never cuts off.
+  - **It never jumps up or cuts off:** every rise of its volume is eased over 1 s, so it fades in whenever it starts (a new flight, a game joining mid-round, the setting turned on) and when a short refuel brings it back to full. It fades out over the fly-away's last 3 s, and over 1 s whenever it stops otherwise (the setting turned off, a flight error), and is then removed. Only the round's end and `clear` remove it at once.
+  - **The runner's car missing:** on a cop's game the runner's car can be missing for a moment. After 2 s without it, the sound fades out; it fades back in when the car is back.
   - **Muffled when hidden:** one ray every 0.25 s from the camera to the helicopter. When it's blocked, the volume eases down to half over 0.5 s, and back up when it's clear.
   - **A player setting** "Helicopter sound", on by default, next to "Searchlight beam".
+  - **Safety:** the emitter is always looked up by its name, never kept as a reference that a mission change could leave dangling. An error deletes it, is logged once and stops the sound for the rest of the round. While no sound is wanted, a leftover emitter (after a Lua reload) is looked for about once a second and deleted, as the light does.
 - **The file:** "Helicopter Rotor Loop" by qubodup (freesound.org/people/qubodup/sounds/187681/, CC0, cut from a US government video, marked loopable), converted to a mono OGG (Vorbis q5, 48 kHz, 6.3 s, 64 KB) and shipped in the mod at `art/sound/cnr/heli_rotor.ogg` (the client zip gains its `art` folder). CC0 needs no credit; the author asks for a link, so `docs/DEPENDENCIES.md` and `README.md` name it.
-- **Probe-verified in game (2026-11-17):** an `SFXEmitter` made from Lua with `fileName`, `is3D`, `isLooping`, `referenceDistance`, `maxDistance` and `volume` set with `setField`, registered, added to the mission group and moved with `setPosition`, plays the file in 3D and loops.
+- **Probe-verified in game (2026-11-17):** an `SFXEmitter` made from Lua with `fileName`, `is3D`, `isLooping`, `referenceDistance`, `maxDistance` and `volume` set with `setField`, registered, added to the mission group and moved with `setPosition`, plays the file in 3D and loops. It is made as our rain sound is (`Sim.upcast` when present, and checked to have registered).
+- **The volume call:** assumed for the build: `setVolumePitchCT(v, 1, 0, 0)` (the game and our rain only call it on `track` emitters); checked in game afterwards. The fallback is writing the `volume` field plus `postApply()`.
 - **Not doing:** Doppler, and a separate close-up sound.
 
 ## Code
@@ -195,6 +223,16 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
     - update the SpotLight entry, which still says it "hovers 40 m above"
     - add the FFI `utils/debugDraw` `drawTriSolid` with the packed `color()`, `core_camera.getPosition()`, the vehicle's `getVelocity()`, `castRayStatic` for the occlusion, and the `BNG_LightFlare_1` flare datablock
   - **The 2.9.0 spec's searchlight lines** point here for the flight.
+- **Added in 2.9.4:**
+  - **`heliFlight.lua`:** the search mode (`search`, `follow`, a spot for `arrive` and `at`, the spot's own velocity while guided).
+  - **`tunnels.lua` (new, pure):** the tunnel exit walk on the road graph.
+  - **`heliSound.lua` (new):** the rotor emitter, its fades, muffle and cleanup.
+  - **`heli.lua`:** the spot lifecycle, sight-only cover, the flight's own protected step, the light's phase table, the sweep and the switch offset, the sound level.
+  - **`shelter.lua`:** `inSight` gets a range (400 m).
+  - **`hud.lua`:** the refuel countdown shows while searching too, since every flight now starts searching; the settings payload carries the sound switch.
+  - **Player settings:** `playerSettings.lua` gets a `sound` boolean, default true, and `HudSettings.vue` a "Helicopter sound" switch.
+  - **`copsAndRobbers.lua`:** the road graph and roof check for the tunnel walk, the sound, the "Helicopter sound" setting.
+  - **Server:** `guided` in the helicopter status; the runner counted as covered until their game reports.
 
 ## Tests
 - **Flight** (dt 0.05 unless stated):
@@ -204,22 +242,33 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - The fly-in from 300 m (car still) is within 5 m of its target point at 20 s.
   - After a fly-away with the heading within ±60° of its bearing, it's more than 200 m from a still car at 8 s, and the distance grows every second.
   - No step moves further than 70 × dt.
-  - `at()` starts on the target point with the car's velocity.
+  - `at()` starts on the target point with the car's velocity; with a spot, on its search circle at rest.
   - Hysteresis: speeds between 5 and 7 m/s don't switch the mode.
 - **Jumps:**
   - After a 2 km car jump, the helicopter's step matches the same step without the jump, to 1e-9.
   - With car and helicopter both at 30 m/s in +x and a 50 m car jump in +x, the helicopter's x velocity doesn't increase.
-- **Short refuel:** "tracking" → "refuelling" → "tracking" within 7 s doesn't move the helicopter more than 70 × dt per step, doesn't call `arrive`, and ramps the brightness up from its faded value.
+  - A fly-in to a spot 2 km from the car doesn't move the spot or the helicopter on its first step.
+- **Short refuel:** "tracking" → "refuelling" → "searching" within 7 s keeps the same light and flight, doesn't move the helicopter more than 70 × dt per step, doesn't call `arrive`, ramps the brightness up from its faded value, and searches the last known position. "searching" → "refuelling" → "tracking" follows the car.
 - **Aim:**
   - Car and helicopter braking together from 30 to 0 over 1 s keep the offset within `NUDGE_RADIUS` + 0.3.
   - The car braking alone gives an offset above 1 m.
 - **Light:**
   - It sits at the helicopter.
-  - Range: 130 at 100 m, 120 at 60 m, and written on creation even when the stored value matches.
-  - It's cut under cover.
-  - Refound happens at once, at full brightness.
-  - The fly-away fades and is removed after 8 s, with the flight dropped after the light update.
+  - Range: 130 at 100 m, 120 at 60 m (the slant to the aim point), and written on creation even when the stored value matches.
+  - "arriving" → "searching" at night ramps from 0 over 8 s.
+  - It stays on while searching: the same light, its brightness unchanged.
+  - Found again, the aim swings from the sweep to the car without a jump.
+  - The fly-away fades, and the light and the flight go together at 8 s.
   - By day there's no light, and the flight is dropped after a day refuel.
+- **Searching:**
+  - The search circle: 60 ± 3 m from the spot, 50 ± 2 m up, at 2π/40 rad/s ± 20 %, ignoring the car; a guided spot moving at 30 m/s is circled the same way.
+  - The spot: the car at arrival, the last known position after a refuel, the tunnel exit or the car on a loss, the runner while guided, recomputed when guidance ends; a short refuel either way; a car jump moves it, and the last known position, too.
+  - The tunnel walk: straight, turned around, a fork picked by the seed, too long, a cycle, not roofed, missing data, a road over 15 m away, lengths from node positions.
+  - The sweep: 0 m out at t = 0, 75 at 10, 150 at 20, 75 at 30, 0 at 40, continuous; on the ground below it.
+  - The aim never jumps over found, lost, a new spot and guidance starting.
+  - A refuel while searching flies away from the spot, not towards the runner.
+  - Errors: a flight error drops the flight until the next status, counts as covered and makes no light at night; a tunnel walk error searches the car's position.
+- **Sound:** made, moved and removed; every rise eased over 1 s; the fade-out; the muffle; a leftover found and deleted; an error deletes it and logs once; nothing left after the round.
 - **Beam:**
   - strength per weather and brightness
   - the call count: 1,200 with a camera, 2,400 without, at strength 0.2
@@ -258,18 +307,23 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - it follows the fly-in and fly-away
   - whether the spot dims when the helicopter's position is hidden from the camera (flares can change their light)
 - **Searching:**
-  - the fly-in says "searching" until it sees you, then tracks
+  - the fly-in says "searching" until it sees you, then tracks; the HUD counts down to the refuel while searching
   - lost behind a building: it circles where it lost you, the light sweeping, and finds you within seconds
   - into a tunnel: it flies to the exit ahead; turning around in the tunnel dodges it
-  - a cop seeing you while it searches: it flies to you
+  - a cop seeing you while it searches: it flies to you. Test with two players, or practice as cop; in practice as runner the cops are AI and their sight doesn't count, so it is never guided there
   - after a refuel it comes back to where it last knew you were
   - the light is never cut; the sweep is readable from a cop's car and from the runner's
-- **Sound:** heard from far off, louder overhead, quieter behind buildings, the switch turns it off, nothing left after the round
+  - the sweep on a hillside and over a valley: the lit spot stays on the ground, the beam ends on it, and its height doesn't visibly step between rays
+- **Sound:**
+  - heard from far off, louder overhead, quieter behind buildings, the switch turns it off and on with a fade, nothing left after the round
+  - whether `setVolumePitchCT` changes a playing `fileName` emitter's volume: the fade-in, the fly-away fade and the muffle are audible; if not, switch to the fallback
 - **Line of sight:**
   - "SEARCHING" shows about 2.5 s after a building is between the helicopter and the car
   - trees
   - stopping under a bridge versus driving under it
-- **Frame rate:** the beam on and off, within 0.5 ms.
+- **Frame rate:**
+  - the beam on and off, within 0.5 ms
+  - losing the runner in a long tunnel: the tunnel walk (a full roof check per node, up to about 1,000 rays in one frame) gives no visible hitch
 
 ## Calls made (not discussed, easy to change)
 - **Flight numbers:** 70 m/s, 8 m/s², 0.4/s, 25 m behind, 15 m to the side, 50 m up, a 30 m circle every 40 s, 5 / 7 m/s hysteresis, fly-away to 400 m at 80 m up within ±60°. To be tuned in game.
@@ -277,7 +331,8 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
 - **Beam blocking:** a ray every 0.25 s, so the beam ends at a bridge or a roof.
 - **Glare:** its scale follows the light's brightness. The beam setting turns off only the cone; the glare stays with the light, since it costs nothing and is part of how a real light looks.
 - **Each game simulates its own helicopter.** Since the line-of-sight change, the server's seed makes them take the same side and directions, and each game works out the search spot from the runner's car; positions are not synced.
-- **Search numbers:** a 60 m circle every 40 s around the spot, a sweep out to 150 m over 40 s turning every 8 s, sight 400 m, the tunnel walk capped at 3 km or 200 nodes. To be tuned in game.
+- **Search numbers:** a 60 m circle every 40 s around the spot, a sweep out to 150 m and back over 40 s turning every 8 s, its ground ray every 0.25 s from 100 m up, sight 400 m, the tunnel walk capped at 3 km or 200 nodes and starting only on a road within 15 m. To be tuned in game.
+- **Sound fades:** every rise eased over 1 s, a fade-out over 1 s when it stops other than by the fly-away, silent after 2 s without the runner's car.
 
 ## Left to the builder
 - The test stubs for the debug drawer, `color`, the camera position and `getVelocity`.
