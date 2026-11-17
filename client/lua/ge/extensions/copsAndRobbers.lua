@@ -274,6 +274,7 @@ local function onSpectate(data)
   inputs.lock(true, requestReset, true, true)
   inputs.setPartsMenu(false)
   inputs.lockEditing("all")
+  traffic.removeOwn()
   spectator.park()
   sky.apply(d.sky)
   traffic.setWeather(d.sky and d.sky.weather)
@@ -551,6 +552,13 @@ local function onState(data)
 end
 
 local function endRound(leaving)
+  spectating = false
+  watchedId = nil
+  if leaving then
+    spectator.drop()
+  elseif not spectator.restore() then
+    hudfeed.event("Your car could not be put back", clock, "warn")
+  end
   hudfeed.clearRound()
   heli.clear(heliState)
   heliSound.clear(soundState)
@@ -584,9 +592,6 @@ local function endRound(leaving)
   lastPose = nil
   if frozen then setFreeze(false) end
   inputs.unlockAll()
-  spectating = false
-  watchedId = nil
-  if leaving then spectator.drop() else spectator.restore() end
 end
 
 local function onRoundEnd(data)

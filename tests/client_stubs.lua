@@ -88,6 +88,9 @@ function bootClient(opts)
       local own = {}
       if env.veh and env.objects[env.veh.id] == env.veh then own[env.veh.id] = { gameVehicleID = env.veh.id } end
       for id in pairs(env.gameTraffic) do own[id] = { gameVehicleID = id } end
+      for id in pairs(env.ownCars or {}) do
+        if env.objects[id] then own[id] = { gameVehicleID = id } end
+      end
       return own
     end,
   }

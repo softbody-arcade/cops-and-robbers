@@ -3848,3 +3848,69 @@ test("a round setup ends spectating", function()
     assertEq(#env.spawned, 0)
   end)
 end)
+
+test("a sitting-out player's own traffic is removed on spectate and never comes back", function()
+  withCamera(function()
+    local env = bootClient()
+    gameplay_traffic.spawnTraffic(2, {})
+    local ids = {}
+    for id in pairs(env.gameTraffic) do ids[#ids + 1] = id end
+    assertEq(#ids, 2)
+    spectate(env)
+    assertEq(env.trafficDeletes, 1); assertEq(next(env.gameTraffic), nil)
+    for _, id in ipairs(ids) do assertEq(env.objects[id], nil) end
+    env.fire("cnr_roundEnd", { reason = "cancelled" })
+    assertEq(#env.spawned, 1); assertEq(env.spawned[1].model, "pickup")
+  end)
+end)
+
+test("a walking player's walker is removed but only the real car comes back", function()
+  withCamera(function()
+    local env = bootClient()
+    env.veh.model = "unicycle"
+    local car = env.addObject(150, vec3(30, 40, 0))
+    car.model = "etk800"
+    env.ownCars = { [150] = true }
+    spectate(env)
+    assertEq(env.objects[100], nil); assertEq(env.objects[150], nil)
+    env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 3, runnerId = 2 })
+    assertEq(#env.spawned, 1)
+    assertEq(env.spawned[1].model, "etk800"); assertEq(env.spawned[1].opt.pos.x, 30)
+    assertEq(env.spawned[1].opt.autoEnterVehicle ~= false, true)
+    local walker = bootClient()
+    walker.veh.model = "unicycle"
+    spectate(walker)
+    walker.fire("cnr_roundEnd", { reason = "cancelled" })
+    assertEq(#walker.spawned, 0)
+  end)
+end)
+
+test("a car that can't be put back says so once", function()
+  withCamera(function()
+    local env = bootClient()
+    env.fire("cnr_mode", {})
+    env.addObject(150, vec3(30, 40, 0))
+    env.ownCars = { [150] = true }
+    local warnings = 0
+    _G.log = function(level, tag) if level == "W" and tag == "cnr_spectate" then warnings = warnings + 1 end end
+    core_vehicles.spawnNewVehicle = function() return false end
+    spectate(env)
+    env.fire("cnr_roundEnd", { reason = "cancelled" })
+    env.tick(0.2)
+    local found = false
+    for _, n in ipairs(env.hud().notices) do
+      if n.text == "Your car could not be put back" and n.tone == "warn" then found = true end
+    end
+    assertEq(found, true); assertEq(warnings, 1)
+  end)
+end)
+
+test("the parked car comes back even when the rest of the round end fails", function()
+  withCamera(function()
+    local env = bootClient()
+    spectate(env)
+    core_input_actionFilter.setGroup = function() error("boom") end
+    pcall(env.fire, "cnr_roundEnd", { reason = "cancelled" })
+    assertEq(#env.spawned, 1)
+  end)
+end)

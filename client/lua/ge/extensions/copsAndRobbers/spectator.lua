@@ -55,7 +55,7 @@ function M.park()
   local cmds = rawget(_G, "commands")
   if game.ownVehicle() and cmds and cmds.setFreeCamera then cmds.setFreeCamera() end
   for _, veh in ipairs(cars) do
-    parked[#parked + 1] = snapshot(veh)
+    if veh:getJBeamFilename() ~= "unicycle" then parked[#parked + 1] = snapshot(veh) end
     veh:delete()
   end
 end
@@ -63,12 +63,16 @@ end
 function M.restore()
   local list = parked
   parked = nil
-  if not list or #list == 0 or not core_vehicles then return end
+  if not list or #list == 0 or not core_vehicles then return true end
+  local allBack = true
   for i, car in ipairs(list) do
-    pcall(core_vehicles.spawnNewVehicle, car.model, { config = car.config, pos = car.pos, rot = car.rot, autoEnterVehicle = i == 1 })
+    local ok, veh = pcall(core_vehicles.spawnNewVehicle, car.model, { config = car.config, pos = car.pos, rot = car.rot, autoEnterVehicle = i == 1 })
+    if not ok or not veh then allBack = false end
   end
+  if not allBack and log then log("W", "cnr_spectate", "a parked car could not be put back") end
   local cmds = rawget(_G, "commands")
   if cmds and cmds.isFreeCamera and cmds.isFreeCamera() and cmds.setGameCamera then cmds.setGameCamera() end
+  return allBack
 end
 
 function M.drop()
