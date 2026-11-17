@@ -22,6 +22,7 @@ local function fakeVehicle(env, id, pos)
   function veh:getPosition() return self.pos end
   function veh:getVelocity() return v3(0, 0, 0) end
   function veh:getDirectionVector() return v3(0, 1, 0) end
+  function veh:getJBeamFilename() return self.model or "pickup" end
   function veh:queueLuaCommand(cmd) self.commands[#self.commands + 1] = cmd end
   function veh:delete() env.objects[self.id] = nil end
   env.objects[id] = veh
@@ -65,7 +66,11 @@ function bootClient(opts)
   _G.guihooks = { trigger = function(name, data) env.triggers[#env.triggers + 1] = { name = name, data = data } end }
   _G.ui_message = function(msg) env.toasts[#env.toasts + 1] = msg end
   env.veh = fakeVehicle(env, 100, v3(0, 0, 0))
-  _G.getPlayerVehicle = function() return env.veh end
+  _G.getPlayerVehicle = function()
+    if env.player then return env.player end
+    if env.veh and env.objects[env.veh.id] == env.veh then return env.veh end
+    return nil
+  end
   _G.getObjectByID = function(id) return env.objects[id] end
   env.mpVehicles = {}
   env.mpPlayers = {}
@@ -79,6 +84,12 @@ function bootClient(opts)
     getPlayers = function() return env.mpPlayers end,
     isOwn = function(id) return (env.veh and id == env.veh.id) or env.gameTraffic[id] ~= nil end,
     getVehicleByGameID = function(id) return { serverVehicleString = "1-" .. tostring(id) } end,
+    getOwnMap = function()
+      local own = {}
+      if env.veh and env.objects[env.veh.id] == env.veh then own[env.veh.id] = { gameVehicleID = env.veh.id } end
+      for id in pairs(env.gameTraffic) do own[id] = { gameVehicleID = id } end
+      return own
+    end,
   }
   _G.MPConfig = { getPlayerServerID = function() return 1 end }
   _G.core_vehicles = {
@@ -200,6 +211,11 @@ function bootClient(opts)
     end,
   }
   env.sky = fakeEnvironment()
+  env.entered = {}
+  _G.be.enterVehicle = function(_, _, veh)
+    env.player = veh
+    env.entered[#env.entered + 1] = veh:getID()
+  end
   env.M = assert(loadfile("client/lua/ge/extensions/copsAndRobbers.lua"))()
   function env.fire(ev, data) return env.handlers[ev](data) end
   function env.tick(seconds, step)

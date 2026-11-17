@@ -3557,3 +3557,294 @@ test("leaving the server forgets Sit out", function()
   env.tick(0.2)
   assertEq(env.hud().lobby.sitOut, false)
 end)
+
+local SPECTATE = { runnerId = 2, runnerName = "Bob", phase = "prep" }
+
+local function spectate(env, over)
+  local d = copy(SPECTATE)
+  for k, v in pairs(over or {}) do d[k] = v end
+  env.fire("cnr_spectate", d)
+end
+
+local function withCamera(fn)
+  local saved = _G.commands
+  local cam = { free = false, games = 0 }
+  _G.commands = {
+    isFreeCamera = function() return cam.free end,
+    setFreeCamera = function() cam.free = true end,
+    setGameCamera = function() cam.free = false; cam.games = cam.games + 1 end,
+  }
+  local ok, err = pcall(fn, cam)
+  _G.commands = saved
+  if not ok then error(err, 0) end
+end
+
+local function roundCars(env)
+  env.mpPlayers[2] = { name = "Bob" }
+  env.mpPlayers[3] = { name = "Kim" }
+  env.mpVehicles["2-0"] = { gameVehicleID = 201 }
+  env.mpVehicles["3-0"] = { gameVehicleID = 202, ownerName = "Kim" }
+  env.mpVehicles["2-5"] = { gameVehicleID = 250 }
+  env.addObject(201, vec3(0, 0, 0)); env.addObject(202, vec3(50, 0, 0)); env.addObject(250, vec3(90, 0, 0))
+  MPVehicleGE.getVehicleByGameID = function(id)
+    for key, v in pairs(env.mpVehicles) do
+      if v.gameVehicleID == id then return { serverVehicleString = key, ownerName = v.ownerName } end
+    end
+  end
+  env.fire("cnr_roundCars", { keys = { "2-0", "3-0" } })
+end
+
+test("a sitting-out player's car is parked on spectate and comes back where it stood at the round end", function()
+  withCamera(function(cam)
+    local env = bootClient()
+    env.fire("cnr_mode", {})
+    env.veh.pos = vec3(10, 20, 0)
+    env.veh.model = "etk800"
+    spectate(env)
+    assertEq(env.objects[100], nil)
+    assertEq(cam.free, true)
+    env.tick(0.2)
+    assertEq(env.hud().mode, "round"); assertEq(env.hud().spectate.name, "free camera")
+    assertEq(#env.spawned, 0)
+    env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 30, runnerId = 2 })
+    assertEq(#env.spawned, 1)
+    local s = env.spawned[1]
+    assertEq(s.model, "etk800"); assertEq(s.opt.pos.x, 10); assertEq(s.opt.pos.y, 20)
+    assertEq(s.opt.config.parts.pickup_engine, "v8"); assertEq(s.opt.config.partsTree, nil); assertEq(s.opt.config.vars.gear1, 3.1)
+    assertEq(s.opt.rot ~= nil, true); assertEq(s.opt.autoEnterVehicle ~= false, true)
+    assertEq(cam.free, false)
+  end)
+end)
+
+test("a cancelled round puts the parked car back too", function()
+  withCamera(function()
+    local env = bootClient()
+    spectate(env)
+    env.fire("cnr_roundEnd", { reason = "cancelled", message = "Round cancelled" })
+    assertEq(#env.spawned, 1); assertEq(env.spawned[1].model, "pickup")
+    env.fire("cnr_roundEnd", { reason = "cancelled" })
+    assertEq(#env.spawned, 1)
+  end)
+end)
+
+test("the parked car is found while watching someone else's car", function()
+  withCamera(function(cam)
+    local env = bootClient()
+    env.player = env.addObject(300, vec3(0, 0, 0))
+    spectate(env)
+    assertEq(env.objects[100], nil); assertEq(env.objects[300] ~= nil, true)
+    assertEq(cam.free, false)
+    env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 3, runnerId = 2 })
+    assertEq(#env.spawned, 1)
+  end)
+end)
+
+test("a second spectate (New car) keeps the parked car", function()
+  withCamera(function()
+    local env = bootClient()
+    env.veh.model = "etk800"
+    spectate(env)
+    spectate(env)
+    env.fire("cnr_roundEnd", { reason = "cancelled" })
+    assertEq(#env.spawned, 1); assertEq(env.spawned[1].model, "etk800")
+  end)
+end)
+
+test("a mid-round joiner without a car gets nothing back", function()
+  withCamera(function()
+    local env = bootClient()
+    env.objects[100] = nil
+    spectate(env, { phase = "running", chaseElapsed = 30 })
+    env.fire("cnr_roundEnd", { reason = "called", runnerName = "Bob", survivedSeconds = 40, runnerId = 2 })
+    assertEq(#env.spawned, 0)
+  end)
+end)
+
+test("a map change, leaving or unloading drops the parked car and leaves nothing behind", function()
+  for _, leave in ipairs({ "onClientEndMission", "onBeamMPServerLeave", "onExtensionUnloaded" }) do
+    withCamera(function()
+      local env = bootClient()
+      env.fire("cnr_mode", {})
+      spectate(env, { phase = "running", chaseElapsed = 5, heli = { phase = "arriving", seconds = 60 },
+        sky = { weather = "storm", driving = true, windDir = 0, windSeed = 7 } })
+      env.tick(0.2)
+      assertEq(env.actionFilter.cnr_locked, true); assertEq(env.sky.locked, true)
+      env.M[leave]()
+      assertEq(env.actionFilter.cnr_locked, false, leave)
+      assertEq(env.sky.locked, false, leave)
+      if leave ~= "onExtensionUnloaded" then
+        env.fire("cnr_roundEnd", { reason = "cancelled" })
+        assertEq(#env.spawned, 0, leave)
+        env.fire("cnr_mode", {})
+        env.tick(0.2)
+        assertEq(env.hud().mode, "lobby", leave); assertEq(env.hud().spectate, nil, leave)
+      end
+    end)
+  end
+end)
+
+test("a spectator's locks leave switching cars and free camera open", function()
+  withCamera(function(cam)
+    local env = bootClient()
+    cam.free = true
+    spectate(env)
+    assertEq(env.actionFilter.cnr_locked, true)
+    for _, open in ipairs({ "toggleCamera", "dropCameraAtPlayer", "switch_next_vehicle", "switch_previous_vehicle" }) do
+      assertEq(inLockGroup(env, open), false, open)
+    end
+    for _, shut in ipairs({ "vehicle_selector", "toggleWalkingMode", "dropPlayerAtCamera", "nodegrabberGrab" }) do
+      assertEq(inLockGroup(env, shut), true, shut)
+    end
+    assertEq(cam.games, 0); assertEq(cam.free, true)
+    env.fire("cnr_roundEnd", { reason = "cancelled" })
+    assertEq(env.actionFilter.cnr_locked, false)
+    startCop(env)
+    assertEq(inLockGroup(env, "switch_next_vehicle"), true); assertEq(inLockGroup(env, "toggleCamera"), true)
+  end)
+end)
+
+test("cycling lands on round cars only, in both directions", function()
+  withCamera(function(cam)
+    local env = bootClient()
+    roundCars(env)
+    spectate(env)
+    env.tick(0.1)
+    assertEq(cam.free, true)
+    env.player = env.objects[250]
+    env.M.onVehicleCycleSwitchPerformedByUser(1, 0, 250)
+    assertEq(env.player:getID(), 201)
+    assertEq(cam.free, false)
+    env.tick(0.1)
+    env.player = env.objects[250]
+    env.M.onVehicleCycleSwitchPerformedByUser(1, 0, 250)
+    assertEq(env.player:getID(), 202)
+    env.tick(0.1)
+    env.player = env.objects[250]
+    env.M.onVehicleCycleSwitchPerformedByUser(1, 0, 250)
+    assertEq(env.player:getID(), 201)
+    env.tick(0.1)
+    env.player = env.objects[250]
+    env.M.onVehicleCycleSwitchPerformedByUser(-1, 0, 250)
+    assertEq(env.player:getID(), 202)
+    env.tick(0.1)
+    local n = #env.entered
+    env.player = env.objects[201]
+    env.M.onVehicleCycleSwitchPerformedByUser(1, 0, 201)
+    assertEq(#env.entered, n)
+    env.tick(0.1)
+    cam.free = true
+    env.tick(0.1)
+    env.player = env.objects[250]
+    env.M.onVehicleCycleSwitchPerformedByUser(-1, 0, 250)
+    assertEq(env.player:getID(), 202)
+    env.player = nil
+    env.tick(0.1)
+    env.player = env.objects[250]
+    env.M.onVehicleCycleSwitchPerformedByUser(-1, 0, 250)
+    assertEq(env.player:getID(), 202)
+    env.fire("cnr_roundEnd", { reason = "cancelled" })
+    n = #env.entered
+    env.player = env.objects[250]
+    env.M.onVehicleCycleSwitchPerformedByUser(1, 0, 250)
+    assertEq(#env.entered, n)
+  end)
+end)
+
+test("a round player's cycling is left to the game", function()
+  local env = bootClient()
+  roundCars(env)
+  startCop(env)
+  env.M.onVehicleCycleSwitchPerformedByUser(1, 0, 250)
+  assertEq(#env.entered, 0)
+end)
+
+test("spectating shows the countdowns, the chase clock, the helicopter and who is watched", function()
+  withCamera(function(cam)
+    local env = bootClient()
+    env.fire("cnr_mode", {})
+    env.fire("cnr_rules", { roundTimeLimitSeconds = 600 })
+    roundCars(env)
+    spectate(env, { phase = "countdown", countdownRemaining = 2 })
+    env.tick(0.2)
+    local h = env.hud()
+    assertEq(h.center.kind, "countdown"); assertEq(h.center.label, "RUNNER STARTS IN"); assertEq(h.center.number, 2)
+    assertEq(h.spectate.time, nil); assertEq(h.driving, false); assertEq(h.prep, nil); assertEq(h.status, nil)
+    env.fire("cnr_runnerGo", { headStartSeconds = 7 })
+    env.tick(0.2)
+    assertEq(env.hud().center.label, "COPS RELEASED IN")
+    env.fire("cnr_release", {})
+    env.fire("cnr_heli", { phase = "arriving", seconds = 60 })
+    env.tick(5.2)
+    h = env.hud()
+    assertEq(h.spectate.time, "0:05"); assertEq(h.spectate.limit, "10:00")
+    assertEq(h.spectate.heli.text, "HELICOPTER IN")
+    assertEq(h.center == nil or h.center.kind ~= "flash", true)
+    assertEq(env.hud().spectate.name, "free camera")
+    cam.free = false
+    env.player = env.objects[201]
+    env.tick(0.2)
+    assertEq(env.hud().spectate.name, "Bob")
+    env.player = env.objects[202]
+    env.tick(0.2)
+    assertEq(env.hud().spectate.name, "Kim")
+    cam.free = true
+    env.tick(0.2)
+    assertEq(env.hud().spectate.name, "free camera")
+    assertEq(env.lastSent("cnr_sight"), nil)
+  end)
+end)
+
+test("a mid-chase spectator starts the clock where the chase is", function()
+  withCamera(function()
+    local env = bootClient()
+    env.fire("cnr_mode", {})
+    spectate(env, { phase = "running", chaseElapsed = 30, heli = { phase = "searching", seconds = 50 } })
+    env.tick(0.2)
+    assertEq(env.hud().spectate.time, "0:30"); assertEq(env.hud().spectate.heli.text, "HELICOPTER SEARCHING")
+    spectate(env, { phase = "headstart", headStartRemaining = 4 })
+    env.tick(0.2)
+    assertEq(env.hud().center.label, "COPS RELEASED IN")
+  end)
+end)
+
+test("a spectator sees the result card, a cancelled round too", function()
+  withCamera(function()
+    local env = bootClient()
+    env.fire("cnr_mode", {})
+    spectate(env)
+    env.fire("cnr_roundEnd", { reason = "caught", runnerName = "Bob", survivedSeconds = 90, runnerId = 2, catchers = { "Kim" } })
+    env.tick(0.2)
+    assertEq(env.hud().mode, "result"); assertEq(env.hud().result.title, "RUNNER CAUGHT")
+    spectate(env)
+    env.fire("cnr_roundEnd", { reason = "cancelled", message = "Round cancelled" })
+    env.tick(0.2)
+    assertEq(env.hud().mode, "result"); assertEq(env.hud().result.title, "ROUND CANCELLED")
+  end)
+end)
+
+test("a spectator gets the round's sky and New sky, and its own back afterwards", function()
+  withCamera(function()
+    local env = bootClient()
+    spectate(env, { sky = { weather = "storm", driving = true, windDir = 0, windSeed = 7 } })
+    env.tick(5)
+    assertEq(env.sky.locked, true); assertEq(env.sky.state.cloudCover ~= 0.3, true)
+    local n = #env.sky.setStates
+    env.fire("cnr_sky", { weather = "clear", windDir = 0, windSeed = 3 })
+    assertEq(#env.sky.setStates > n, true)
+    env.fire("cnr_roundEnd", { reason = "cancelled" })
+    assertEq(env.sky.locked, false); assertEq(env.sky.state.cloudCover, 0.3)
+  end)
+end)
+
+test("a round setup ends spectating", function()
+  withCamera(function()
+    local env = bootClient()
+    env.fire("cnr_mode", {})
+    spectate(env)
+    env.objects[100] = env.veh
+    startCop(env)
+    assertEq(env.hud().spectate, nil); assertEq(env.hud().center.title, "YOU'RE A COP")
+    env.fire("cnr_roundEnd", { reason = "cancelled" })
+    assertEq(#env.spawned, 0)
+  end)
+end)

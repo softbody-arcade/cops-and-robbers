@@ -21,6 +21,7 @@ local traffic = require("copsAndRobbers/traffic")
 local hiding = require("copsAndRobbers/hiding")
 local playerSettings = require("copsAndRobbers/playerSettings")
 local ownLights = require("copsAndRobbers/ownLights")
+local spectator = require("copsAndRobbers/spectator")
 
 local CLIENT_VERSION = "2.9.5"
 local LIGHTS_OFF = "electrics.set_lightbar_signal(0)"
@@ -43,6 +44,8 @@ local sendServer, ownVehicle = game.sendServer, game.ownVehicle
 
 local clock = 0
 local active = false
+local spectating = false
+local watchedId
 local role
 local frozen = false
 local resetAllowed = false
@@ -195,6 +198,10 @@ end
 
 local function onRoundSetup(data)
   local d = jsonDecode(data) or {}
+  if spectating then
+    spectating = false
+    spectator.drop()
+  end
   hudfeed.clearRound()
   hudfeed.clearResult()
   setHeli(d.heli)
@@ -256,8 +263,38 @@ local function onRoundSetup(data)
   end
 end
 
+local function onSpectate(data)
+  local d = jsonDecode(data) or {}
+  if active then return end
+  hudfeed.clearRound()
+  hudfeed.clearResult()
+  setHeli(d.heli)
+  spectating = true
+  runnerId = d.runnerId
+  inputs.lock(true, requestReset, true, true)
+  inputs.setPartsMenu(false)
+  inputs.lockEditing("all")
+  spectator.park()
+  sky.apply(d.sky)
+  traffic.setWeather(d.sky and d.sky.weather)
+  local phase = d.phase or "running"
+  runnerOut = phase == "headstart" or phase == "running"
+  if phase == "countdown" or phase == "headstart" or phase == "running" then
+    sky.startClock(d.sky and d.sky.clockSeconds or 0)
+  end
+  timerEnd = nil
+  if phase == "countdown" then
+    startTimer(tonumber(d.countdownRemaining), "Runner starts in")
+  elseif phase == "headstart" then
+    startTimer(tonumber(d.headStartRemaining), "Cops released in")
+  elseif phase == "running" then
+    startStatus()
+    chaseStart = clock - (tonumber(d.chaseElapsed) or 0)
+  end
+end
+
 local function onSky(data)
-  if not active then return end
+  if not active and not spectating then return end
   local d = jsonDecode(data) or {}
   sky.apply(d)
   traffic.setWeather(d.weather)
@@ -547,16 +584,19 @@ local function endRound(leaving)
   lastPose = nil
   if frozen then setFreeze(false) end
   inputs.unlockAll()
+  spectating = false
+  watchedId = nil
+  if leaving then spectator.drop() else spectator.restore() end
 end
 
 local function onRoundEnd(data)
   local d = jsonDecode(data) or {}
   local wasRunner = MPConfig and MPConfig.getPlayerServerID() == d.runnerId
-  local wasActive = active
+  local wasActive = active or spectating
   local caughtCar
   if d.explode and wasRunner then
     caughtCar = ownVehicle()
-  elseif d.explode and wasActive and role == "cop" and not ai.runnerObject() then
+  elseif d.explode and wasActive and (role == "cop" or spectating) and not ai.runnerObject() then
     caughtCar = runnerObject()
   end
   endRound()
@@ -873,7 +913,7 @@ local function updateHeli(runnerObj)
       end
     end
   end
-  if active then
+  if active or spectating then
     local target = role == "runner" and ownVehicle() or runnerObj
     local opts = { weather = traffic.weather(), beam = prefs.beam ~= false }
     if castRayStatic then opts.tunnelExit = tunnelExit end
@@ -901,19 +941,38 @@ local function onUpdate(dtReal)
   updateOwnLights()
   updateLightSync()
   updateGeo()
-  local runnerObj = active and role == "cop" and runnerObject() or nil
+  if spectating then
+    local watched = getPlayerVehicle(0)
+    watchedId = watched and watched:getID() or nil
+  end
+  local runnerObj = (active and role == "cop" or spectating) and runnerObject() or nil
   updateSight(runnerObj)
   updateHiding(runnerObj)
   updateHeli(runnerObj)
   updateBuild()
   updateModes()
-  if active then inputs.enforceEditLock() end
+  if active or spectating then inputs.enforceEditLock() end
   updateGpsInfo()
   hudfeed.update(clock, {
     active = active, role = role, chaseStart = statusActive and chaseStart or nil,
     resetAllowed = resetAllowed, resetHint = lastHint, penalty = penaltyActive, infoParts = infoParts, infoSeenAt = infoSeenAt, infoTag = infoTag,
     timer = timerEnd and { label = timerLabel, endsAt = timerEnd } or nil,
+    spectate = spectating and { name = spectator.watchedName() } or nil,
   })
+end
+
+local function roundCarIds()
+  local vehicles = MPVehicleGE and MPVehicleGE.getVehicles and MPVehicleGE.getVehicles() or {}
+  return spectator.carIds(traffic.roundCarOwners(), vehicles, function(id) return getObjectByID(id) ~= nil end)
+end
+
+local function onVehicleCycleSwitchPerformedByUser(dir, player, vehId)
+  if not spectating or (player or 0) ~= 0 then return end
+  local id = spectator.cycleTarget(roundCarIds(), watchedId, vehId, dir)
+  local target = id and getObjectByID(id)
+  if target and be and be.enterVehicle then be:enterVehicle(0, target) end
+  local cmds = rawget(_G, "commands")
+  if cmds and cmds.isFreeCamera and cmds.isFreeCamera() and cmds.setGameCamera then cmds.setGameCamera() end
 end
 
 local function onVehicleResetted(gameVid)
@@ -991,6 +1050,7 @@ local function onExtensionLoaded()
   if not AddEventHandler then return end
   AddEventHandler("cnr_pickVehicle", onPickVehicle)
   AddEventHandler("cnr_roundSetup", onRoundSetup)
+  AddEventHandler("cnr_spectate", onSpectate)
   AddEventHandler("cnr_release", onRelease)
   AddEventHandler("cnr_heli", function(data) setHeli(jsonDecode(data)) end)
   AddEventHandler("cnr_countdown", onCountdown)
@@ -1156,5 +1216,6 @@ M.onWorldReadyState = function(st)
 end
 M.onUpdate = onUpdate
 M.onVehicleResetted = onVehicleResetted
+M.onVehicleCycleSwitchPerformedByUser = onVehicleCycleSwitchPerformedByUser
 
 return M
