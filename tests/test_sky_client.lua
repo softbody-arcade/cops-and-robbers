@@ -355,10 +355,16 @@ end)
 test("a failing apply still relocks and restore still works", function()
   local sky, fake = load()
   fake.state.cloudCover = 0.05
-  local make = _G.be.setGroundModel
-  _G.be.setGroundModel = function() error("boom") end
+  local make = core_environment.setState
+  core_environment.setState = function(s, seconds)
+    if s and s.cloudCover == 2.2 and s.time and not fake.threw then
+      fake.threw = true
+      error("boom")
+    end
+    return make(s, seconds)
+  end
   sky.apply(RAIN_NIGHT)
-  _G.be.setGroundModel = make
+  core_environment.setState = make
   assertEq(fake.objects.cnr_precipitation, nil)
   assertEq(fake.locked, true)
   assertEq(fake.lerps[#fake.setStates], nil); assertEq(fake.state.cloudCover, 2.2)
@@ -970,5 +976,39 @@ test("a failing grip push logs once and stops grip for the round", function()
     local n = #fake.modelSets
     runFor(sky, 104, 400, 0.5)
     assertEq(#fake.modelSets, n)
+  end)
+end)
+
+test("a grip push failure at apply keeps the rain, the clouds and the lock", function()
+  local sky, fake = load()
+  withLog(function(lines)
+    local make = _G.be.setGroundModel
+    _G.be.setGroundModel = function() error("push boom") end
+    sky.apply(RAIN_NIGHT)
+    _G.be.setGroundModel = make
+    assertEq(#lines, 1)
+    assertEq(lines[1]:find("grip", 1, true) ~= nil, true)
+    sky.update(0.1)
+    assertEq(fake.objects.cnr_precipitation ~= nil, true)
+    assertEq(fake.state.cloudCover, 2.2)
+    assertEq(fake.locked, false)
+    sky.update(4)
+    assertEq(fake.locked, true)
+    assertEq(fake.models.ASPHALT.cdata.staticFrictionCoefficient, 0.98)
+  end)
+end)
+
+test("a ground model push that still fails at restore never blocks the sky restore", function()
+  local sky, fake = load()
+  withLog(function(lines)
+    sky.apply(RAIN_NIGHT); sky.startClock(0); sky.update(4)
+    local make = _G.be.setGroundModel
+    _G.be.setGroundModel = function() error("push boom") end
+    assertEq(pcall(sky.restore), true)
+    sky.update(4)
+    _G.be.setGroundModel = make
+    assertEq(fake.locked, false)
+    assertEq(fake.models.ASPHALT.cdata.staticFrictionCoefficient, 0.98)
+    assertEq(#lines, 1)
   end)
 end)

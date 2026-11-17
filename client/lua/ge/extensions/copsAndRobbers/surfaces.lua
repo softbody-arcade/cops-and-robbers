@@ -66,14 +66,21 @@ end
 
 function M.restore()
   local models = core_environment.groundModels
+  local restored = {}
   for name, values in pairs(saved) do
     local model = models[name]
     if model then
       for _, field in ipairs(FIELDS) do model.cdata[field] = values[field] end
-      pushModels(name)
+      restored[#restored + 1] = name
     end
   end
   saved, pushed = {}, nil
+  local firstErr
+  for _, name in ipairs(restored) do
+    local ok, err = pcall(pushModels, name)
+    if not ok and not firstErr then firstErr = err end
+  end
+  if firstErr then error(firstErr, 0) end
 end
 
 function M.drop()

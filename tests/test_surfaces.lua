@@ -70,8 +70,11 @@ test("a rain and snow mix reads the wet models' dry values", function()
   local fake = fakeEnvironment(); local s = load()
   s.blend({ dry = 0, rain = 0.5, storm = 0, snow = 0.5 })
   assertNear(cd(fake, "DIRT").staticFrictionCoefficient, (0.62 + 0.65) / 2, 1e-9)
-  s.blend({ dry = 0, rain = 0.5, storm = 0, snow = 0.5 })
-  assertNear(cd(fake, "DIRT").staticFrictionCoefficient, (0.62 + 0.65) / 2, 1e-9)
+  s.blend({ dry = 0, rain = 0.2, storm = 0, snow = 0.8 })
+  assertNear(cd(fake, "DIRT").staticFrictionCoefficient, 0.62 * 0.2 + 0.65 * 0.8, 1e-9)
+  for _, m in ipairs(fake.modelSets) do
+    assertEq(m.name ~= "ASPHALT_WET" and m.name ~= "SNOW", true, m.name)
+  end
 end)
 
 test("a model is pushed only when the blend moved 5 % or reached its end", function()

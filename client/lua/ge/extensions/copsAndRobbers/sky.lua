@@ -154,6 +154,16 @@ function M.label(p, withDate)
   return table.concat(parts, " · ")
 end
 
+local function fail(part, err)
+  failed[part] = true
+  log("E", "cnr_sky", part .. ": " .. tostring(err))
+end
+
+local function failGrip(err)
+  fail("grip", err)
+  pcall(surfaces.restore)
+end
+
 function M.apply(p)
   local env = core_environment
   if not env or not setsSomething(p) then return end
@@ -184,20 +194,22 @@ function M.apply(p)
     else
       rain.target(precipitation(to), M.BLEND_SECONDS)
     end
-    if p.driving then
-      surfaces.blend(skyChanges.grip(p, at))
-    else
-      surfaces.apply(nil)
-    end
   end)
   if ok then
+    local gripOk, gripErr = pcall(function()
+      if p.driving then
+        surfaces.blend(skyChanges.grip(p, at))
+      else
+        surfaces.apply(nil)
+      end
+    end)
+    if not gripOk then failGrip(gripErr) end
     lockTimer, lockAfter = LOCK_DELAY, true
   else
     pcall(env.setState, target)
     rain.clear()
     env.enableChanges(false)
     lockTimer, restoring = nil, nil
-    failed.grip = true
     log("E", "cnr_sky", tostring(err))
   end
 end
@@ -236,11 +248,6 @@ local function lockedWrite(state)
   return ok, err
 end
 
-local function fail(part, err)
-  failed[part] = true
-  log("E", "cnr_sky", part .. ": " .. tostring(err))
-end
-
 local function stepClouds(from, to, progress)
   local cloudCover, fogDensity, windSpeed = between(from, to, skyChanges.smooth(progress))
   if not cloudCover then return end
@@ -273,7 +280,7 @@ end
 
 local function stepGrip()
   local ok, err = pcall(function() surfaces.blend(skyChanges.grip(round, roundTime)) end)
-  if not ok then fail("grip", err) end
+  if not ok then failGrip(err) end
 end
 
 local function step()
@@ -352,7 +359,11 @@ function M.restore(immediate)
   end
   if not env or not saved then return end
   env.enableChanges(true)
-  surfaces.restore()
+  local restored, restoreErr = pcall(surfaces.restore)
+  if not restored and not failed.grip then
+    failed.grip = true
+    log("E", "cnr_sky", "grip: " .. tostring(restoreErr))
+  end
   if not immediate then rain.target(nil, M.BLEND_SECONDS) end
   if immediate then
     env.setState(saved)
