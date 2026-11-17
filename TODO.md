@@ -17,6 +17,10 @@ One entry per piece of work that has started: what it is, its branch (or "design
   - [ ] The HUD's settings card clears the colour draft in its not-allowed watch (`app.vue`). That is safe only while no HUD push lands between the lobby and prep payloads; the spec asks for the draft to survive such a gap
   - [ ] Sky test gaps: the restore-blend save test runs only with an unlocked environment; `locked == false` straight after `cnr_roundEnd` passes trivially; no test for GO landing with Day length Off; the high-bridge roof test runs exactly the 4 switch checks, with no margin; rain → snow at 1.6 s and the roof test switching during `full()` are weak asserts (`tests/test_sky_client.lua`, `tests/test_client.lua`, `tests/test_rain.lua`)
   - [ ] README says "Everything is clickable with the mouse cursor shown" without saying how a player shows the cursor. Check the game's control and say it
+  - [ ] Cop spots next to a narrow median: the runner can be matched to the other carriageway, so cops are placed for that side (`roads.lua` uses `findClosestRoad`, not the runner's heading)
+  - [ ] Cop spots on a road piece not connected to the rest: the straight-line fallback widens from 0 and ignores gates, so a cop can start right next to the runner or behind a gate (`roads.lua` `lineSpots`)
+  - [ ] Leaderboard runs don't record Traffic for the runner only, so a runner-only round shows "Traffic: 5 per player" in the Rounds tab and counts the same as everyone-traffic in the traffic filter (`leaderboard.lua`, `BoardRounds.vue`)
+  - [ ] Hiding may leak through other game screens: the in-car navigation screen and the radar app (`uiNavi`, `map.getTrackedObjects`) were not checked
 
 ## In-game checks
 Things only a player in the game can confirm, each with what to look for. Add them here when work is merged or deployed without the check; delete a line once it is checked, and turn anything that fails into an Issue.
@@ -47,9 +51,6 @@ Things only a player in the game can confirm, each with what to look for. Add th
 
 ## Issues
 - [ ] A stuck runner escapes the catch by rocking back and forth: the hold timer only runs while the runner's speed is under `catchMaxSpeedKmh` (3 km/h), and rocking a stuck car keeps it above that most of the time (`catch.lua`, reported by the user 2026-11-17). Judge "not getting away" by how far the runner gets instead, for example the distance moved over the last few seconds, or the net displacement staying within the catch radius
-- [ ] Cop spots next to a narrow median: the runner can be matched to the other carriageway, so cops are placed for that side (`roads.lua` uses `findClosestRoad`, not the runner's heading)
-- [ ] Cop spots on a road piece not connected to the rest: the straight-line fallback widens from 0 and ignores gates, so a cop can start right next to the runner or behind a gate (`roads.lua` `lineSpots`)
-- [ ] Leaderboard runs don't record Traffic for the runner only, so a runner-only round shows "Traffic: 5 per player" in the Rounds tab and counts the same as everyone-traffic in the traffic filter (`leaderboard.lua`, `BoardRounds.vue`)
 - [ ] Helicopter jump detection lives in three places that must agree (`heli.lua` `carVelocity`, `heliFlight.step`, the aim's 2D check in `aimStep`); one helper would keep them in step
 - [ ] The helicopter's position ignores terrain and buildings (50 m up, about 29 m to the side): if the light or its line of sight is blocked too often downtown or in mountains, fly higher (80-100 m) or keep a floor above the ground under the target point (2.9.1 final review)
 - [ ] Leaderboard Cops tab: cops with only assists get no row (`leaderboard.lua` `cops`). Showing them needs a sort and empty-state decision, since the tab ranks catches
@@ -62,7 +63,6 @@ Things only a player in the game can confirm, each with what to look for. Add th
 - [ ] A sunrise time equal to the high time (two hours after noon) would make the game reject the temperature curve, and the previous curve would stay. Impossible at stock latitudes (`sky.lua` `roundState`)
 - [ ] `drop` during a restore blend freezes the sky half-way for a player whose environment was locked. It's reachable only from `onClientEndMission`, where the level unloads anyway (`sky.lua`)
 - [ ] The `Sim` and `MatrixF` guards in `rain.lua` exist only for the test stubs, and the `setTransform` stub is never used. Stub them instead (`rain.lua`, `tests/env_stubs.lua`)
-- [ ] Hiding may leak through other game screens: the in-car navigation screen and the radar app (`uiNavi`, `map.getTrackedObjects`) were not checked
 - [ ] Helicopter server details (`round.lua`): a last-seen ping after a timer loss while the runner's car is missing from the tick carries the position where it comes back; `copPids` is sorted three times per tick; `runnerShown` can be sent right before `roundEnd` on the escape tick (harmless)
 - [ ] Helicopter test gaps: `update()`'s return value on cover transitions and a long gap into an up phase while covered (`test_helicopter.lua`); the redundant "no periodic last seen" test (`test_round.lua`); loose `test_main.lua` checks (helicopter recipients only via the broadcast, rejoin matched by substring, nearest-cop count ">= 1"); no `cnr_heli {}` clear test; no client tests for BeamNG.Earth's minimap, a rejoin with `runnerShown` false, a cop joining mid-round, a cop key whose vehicle entry appears later, or the wrapper with an empty set
 
