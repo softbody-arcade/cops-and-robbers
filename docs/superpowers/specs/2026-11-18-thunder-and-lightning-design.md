@@ -64,8 +64,8 @@ It is a new weather key, `thunderstorm`, labelled "Thunderstorm" and named "a th
 **When it happens:**
 - **As the round's starting weather:** it joins the random bad-weather pick (server `sky.lua` `BAD`). Its date window is May to September (`WINDOWS.thunderstorm = { 5, 6, 7, 8, 9 }`). Its temperature offset for the day is `{ 2, -6 }` (`climate.lua` `OFFSET`): the high is cut by the storm.
 - **During a round** (`weather.lua` `NEXT`), it can come:
-  - from cloudy when it is hot;
-  - from rain when it is hot.
+  - from cloudy when it is hot, at half the weight of each other option (the user: "I feel like it happens to often");
+  - from rain when it is hot, at the normal weight.
 
   "Hot" is a new condition: the higher of the two surrounding temperature points is 20 °C or more, worked out the way `warm` is (15 °C).
 - **Afterwards:** a thunderstorm moves on to rain or cloudy.
@@ -85,6 +85,37 @@ It is a new weather key, `thunderstorm`, labelled "Thunderstorm" and named "a th
   - the leaderboard's and HUD's weather labels.
 - **The rest:** grep for `storm` gives the full list, and every place that lists the types gets the new one.
 - A hand-picked "Thunderstorm" in the panel works like any hand-picked weather.
+- As a starting weather it goes through the existing random-weather settings (the bad-weather chance and the rest), like the other bad weathers. The user: "bad weather should use the normal random weather percentage and other stuff that we already do for dynamic weather".
+- It never changes straight to or from the storm (gale); the user agreed.
+
+## Planned changes can keep the weather
+
+The user: "it should be possible for the same weather to chain so clear -> clear and then the forecast just shows nothing for that cycle".
+
+**How a planned change picks:** each planned change slot (every `weatherChangeMinMinutes`–`weatherChangeMaxMinutes`) now picks with weights from the allowed options plus "stay". "Stay" is the current weather, with weight 1, and is always allowed.
+
+**When it stays:**
+- Nothing is added to the change list: no change, no notice, no forecast.
+- The next slot is drawn as usual, so the forecast shows nothing until the next real change's forecast window (up to 2 minutes before it), exactly as it would for any change.
+
+**What doesn't change:**
+- Forced changes (temperature crossings, fog lifting) never stay.
+- `weather.build` stays deterministic from `weatherSeed`.
+- The 3-hour horizon cap stays.
+
+**The pick becomes weighted** (`pick` in `weather.lua`). Each `NEXT` option takes an optional weight, defaulting to 1. The options with weights:
+
+| From | Options (weight) |
+|---|---|
+| clear | stay (1), cloudy (1), fog (1, if foggy) |
+| cloudy | stay (1), clear (1), rain (1, if wet), snow (1, if cold), fog (1, if foggy), thunderstorm (0.5, if hot) |
+| rain | stay (1), cloudy (1), storm (1, if warm), snow (1, if cold), thunderstorm (1, if hot) |
+| storm | stay (1), rain (1) |
+| snow | stay (1), cloudy (1), rain (1, if wet) |
+| fog | stay (1), cloudy (1), clear (1) |
+| thunderstorm | stay (1), rain (1), cloudy (1) |
+
+On average, every weather now lasts longer, since about a third to a half of the planned slots keep it. The existing schedule property tests need updating, and a new test pins that a "stay" adds no change and no forecast.
 
 ## The design
 
@@ -223,6 +254,7 @@ These are the builder's to refine.
 
 1. Thunderstorms show up: pick "Thunderstorm" in the panel, and on random weather in summer they also come from cloudy or rain on hot days. The panel, the notices, the forecast and How to Play name them.
 2. A storm (gale) has no lightning.
+2a. A planned change can keep the weather: some cycles show no forecast and nothing changes, then the next real change is forecast as usual.
 3. Strikes come in a thunderstorm at about the expected rate and stop when it clears.
 4. The flash strength suits the distances.
 5. The bolt shows at the right spot and only for strikes up to 4 km, and it looks right with the tweaks.
