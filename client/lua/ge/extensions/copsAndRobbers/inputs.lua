@@ -17,6 +17,7 @@ local SWITCH_ACTIONS = { switch_next_vehicle = true, switch_previous_vehicle = t
 local SPECTATOR_LOCKED_ACTIONS = { "recover_vehicle", "recover_vehicle_alt", "recover_to_last_road", "loadHome" }
 local RESET_ACTIONS = { "reset_physics" }
 local PARTS_ACTIONS = { "parts_selector" }
+local LIGHTBAR_ACTIONS = { "toggle_lightbar_signal", "toggleLightbarMode" }
 local VEHICLE_PATCH_INTERVAL = 2
 local VEHICLE_UNPATCH = "if cnrOrig then recovery.startRecovering, recovery.stopRecovering, recovery.loadHome = cnrOrig.s, cnrOrig.t, cnrOrig.h; cnrOrig = nil end"
 
@@ -163,10 +164,16 @@ function M.setPartsMenu(allowed)
   core_input_actionFilter.addAction(0, "cnr_parts", not allowed)
 end
 
+function M.setLightbarKeys(locked)
+  core_input_actionFilter.setGroup("cnr_lightbar", LIGHTBAR_ACTIONS)
+  core_input_actionFilter.addAction(0, "cnr_lightbar", locked == true)
+end
+
 function M.unlockAll()
   M.lock(false)
   M.setResetKey()
   M.setPartsMenu(true)
+  M.setLightbarKeys(false)
   M.lockEditing(nil)
 end
 

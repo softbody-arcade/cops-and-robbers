@@ -2629,6 +2629,33 @@ test("a cop's siren runs only after release", function()
   assertEq(bars[#bars], SIREN0)
 end)
 
+test("a runner's lightbar is forced off on the patch tick and a cop's is not", function()
+  local env = bootClient(SIREN_ON)
+  skyRound(env, nil, "runner")
+  env.fire("cnr_release", {})
+  env.tick(3)
+  assertEq(count(env.veh, SIREN0) > 0, true)
+  assertEq(count(env.veh, SIREN1), 0)
+  assertEq(count(env.veh, SIREN2), 0)
+  assertEq(ownLights.LIGHTBAR_OFF, SIREN0)
+end)
+
+test("the lightbar and siren keys are locked for a runner, free for a cop, and free after the round", function()
+  local env = bootClient()
+  skyRound(env, nil, "runner")
+  assertEq(env.actionFilter.cnr_lightbar, true)
+  local g = env.actionGroups.cnr_lightbar
+  local has = {}
+  for _, n in ipairs(g) do has[n] = true end
+  assertEq(has.toggle_lightbar_signal, true)
+  assertEq(has.toggleLightbarMode, true)
+  env.fire("cnr_roundEnd", { reason = "cancelled", message = "Round cancelled" })
+  assertEq(env.actionFilter.cnr_lightbar, false)
+  env = bootClient()
+  skyRound(env, nil, "cop")
+  assertEq(env.actionFilter.cnr_lightbar, false)
+end)
+
 test("the host's switch silences a cop and never touches the saved switch", function()
   local env = bootClient(SIREN_ON)
   env.fire("cnr_rules", { sirensAllowed = false })
@@ -2653,12 +2680,12 @@ test("leaving a server forgets its siren ban", function()
   assertEq(count(env.veh, SIREN2) > 0, true)
 end)
 
-test("a runner never gets light bar commands", function()
+test("a runner only ever gets the light bar off command", function()
   local env = bootClient(SIREN_ON)
   skyRound(env, nil, "runner")
   env.fire("cnr_release", {})
   env.tick(3)
-  assertEq(#lightbarCommands(env.veh), 0)
+  for _, c in ipairs(lightbarCommands(env.veh)) do assertEq(c, SIREN0) end
 end)
 
 test("geo.gpsInfo reports the road distance with a compass direction", function()

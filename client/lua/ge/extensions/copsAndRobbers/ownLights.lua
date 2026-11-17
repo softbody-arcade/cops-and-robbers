@@ -3,6 +3,7 @@ local M = {}
 M.HEADLIGHTS_ON = "if (electrics.values.lights_state or 0) == 0 then electrics.setLightsState(1) end"
 M.HEADLIGHTS_OFF = "electrics.setLightsState(0)"
 M.LIGHTS_ONLY = "electrics.set_lightbar_signal(1)"
+M.LIGHTBAR_OFF = "electrics.set_lightbar_signal(0)"
 M.SIREN_ON = "electrics.set_lightbar_signal((v.data.soundscape and v.data.soundscape.siren) and 2 or 1)"
 
 function M.new(enabled)
@@ -19,6 +20,7 @@ function M.step(state, enabled, dark, placed)
 end
 
 function M.lightbarSignal(role, released, sirenOn, allowed)
+  if role == "runner" then return 0 end
   if role ~= "cop" then return nil end
   if released and sirenOn and allowed then return 2 end
   return 1
