@@ -25,6 +25,7 @@ Status: for the user's approval, 2026-11-17, after a builder check. Builds on 2.
 - Thunder and lightning (a separate Idea).
 - A leaderboard conditions filter (a separate Idea). Records gain the start weather so the filter can use it later.
 - BeamNG.Earth weather. The sky is off there, as now.
+- A climate per map. Maps don't define one: they set a location for the sun and a single day's temperature curve (a placeholder on some, missing on others), which can't tell a snowy high desert from a mild coast at the same latitude. The user ruled it out unless the map defines it, so every map keeps the one temperate table.
 - Changing time of day or the date during a round. The temperature curve only moves on at its turning points (B2).
 
 ## Anti-goals (a failure even if it works)
