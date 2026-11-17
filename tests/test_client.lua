@@ -3914,3 +3914,16 @@ test("the parked car comes back even when the rest of the round end fails", func
     assertEq(#env.spawned, 1)
   end)
 end)
+
+test("recover keys are locked while spectating and freed after", function()
+  withCamera(function()
+    local env = bootClient()
+    local recover = { "recover_vehicle", "recover_vehicle_alt", "recover_to_last_road", "loadHome" }
+    spectate(env)
+    for _, name in ipairs(recover) do assertEq(inLockGroup(env, name), true, name) end
+    env.fire("cnr_roundEnd", { reason = "cancelled" })
+    assertEq(env.actionFilter.cnr_locked, false)
+    startCop(env)
+    for _, name in ipairs(recover) do assertEq(inLockGroup(env, name), false, name) end
+  end)
+end)

@@ -14,6 +14,7 @@ local RESET_BUTTONS = { reset_physics = true, recover_vehicle = true, recover_ve
 local GATED_ACTIONS = { reset_physics = true, parts_selector = true, recover_vehicle = true, recover_vehicle_alt = true, recover_to_last_road = true, loadHome = true }
 local FREE_CAM_ACTIONS = { toggleCamera = true, dropCameraAtPlayer = true }
 local SWITCH_ACTIONS = { switch_next_vehicle = true, switch_previous_vehicle = true }
+local SPECTATOR_LOCKED_ACTIONS = { "recover_vehicle", "recover_vehicle_alt", "recover_to_last_road", "loadHome" }
 local RESET_ACTIONS = { "reset_physics" }
 local PARTS_ACTIONS = { "parts_selector" }
 local VEHICLE_PATCH_INTERVAL = 2
@@ -95,6 +96,12 @@ local function lockedActions(freeCam, spectator)
   for _, name in ipairs(templates and templates.competitive or {}) do add(name) end
   for _, name in ipairs(LOCKED_ACTIONS) do add(name) end
   for _, name in ipairs(EXTRA_LOCKED_ACTIONS) do add(name) end
+  for _, name in ipairs(spectator and SPECTATOR_LOCKED_ACTIONS or {}) do
+    if not seen[name] then
+      seen[name] = true
+      list[#list + 1] = name
+    end
+  end
   return list
 end
 
