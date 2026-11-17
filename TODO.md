@@ -4,6 +4,7 @@ The shared ledger for every agent and worktree. Edit this file only on main (in 
 
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
+- [ ] Thunder and lightning in storm rounds (the user, 2026-11-18: "Let's do Thunder and lightning in storm rounds", sounds from freesound.org like the helicopter's): the game has no lightning object in this version and no thunder sound, so it would be our own: a brief sky flash (the game's sky brightness) and a thunder sound a second or more later, timed from the round's weather seed so every player gets the same strikes. Needs a thunder recording with a free licence (CC0) shipped in the mod. Research notes in `docs/superpowers/specs/2026-11-16-sky-transitions-design.md` In design
 
 ## In-game checks
 Things only a player in the game can confirm, each with what to look for. Add them here when work is merged or deployed without the check; delete a line once it is checked, and turn anything that fails into an Issue.
@@ -23,7 +24,6 @@ Things only a player in the game can confirm, each with what to look for. Add th
 - [ ] Infection mode: game starts with 1 cop and caught runners become cops
 - [ ] Leaderboard filter by conditions (All / Normal / Night / Bad weather), next to the car-mode filter, so storm records don't compete with clear-day runs unless wanted. Runs already record their conditions (night and weather rounds)
 - [ ] Runner preference: a player's own choice not to be picked as runner by Next (whoever has run least) and the automatic next round. The host can still pick them by name in the Round tab
-- [ ] Thunder and lightning in storm rounds: the game has no lightning object in this version and no thunder sound, so it would be our own: a brief sky flash (the game's sky brightness) and a thunder sound a second or more later, timed from the round's weather seed so every player gets the same strikes. Needs a thunder recording with a free licence (CC0) shipped in the mod. Research notes in `docs/superpowers/specs/2026-11-16-sky-transitions-design.md`
 - [ ] Dry roads in tunnels: in rain, storm and snow rounds the road grip is the same inside a tunnel as outside, because the mod changes the map-wide surface types (`surfaces.lua`). The roof check that hides the rain (`shelter.lua`) could switch the surfaces back to dry while the player's own car is under a roof, with a short delay at tunnel mouths so grip doesn't flicker. Grip is simulated per player, so only your own car's grip changes noticeably; on your machine every road is briefly dry while you're under the roof
 - [ ] Cop sight that follows visibility: the sight range is worked out from what the game knows (fog thickness, how dark it is, street lights near the runner, whether the runner's lights are on, rain). Comes after night and weather rounds
 
