@@ -31,9 +31,10 @@ export const GROUPS = [
   ] },
   { title: "Traffic", noEarth: true, items: [
     { key: "trafficPerPlayer", label: "Traffic", unit: "per player", step: 1, min: 0, max: 20, common: true, offAtZero: true,
-      help: "AI traffic cars around each player during a round" },
-    { key: "trafficRunnerOnly", label: "Traffic for the runner only", kind: "bool",
-      help: "Only the runner's game spawns traffic, with the same count; cops see it as the chase gets close. Fewer AI cars, better performance" },
+      help: "AI traffic cars around each player during a round",
+      vary: v => v("trafficRunnerOnly") === true && { unit: "for the runner", help: "AI traffic cars around the runner during a round" } },
+    { key: "trafficRunnerOnly", label: "Traffic for the runner only", kind: "bool", common: true, when: v => Number(v("trafficPerPlayer")) > 0,
+      help: "Only the runner's game spawns traffic; cops see it as the chase gets close. Fewer AI cars, better performance" },
   ] },
   { title: "Catching", items: [
     { key: "catchHoldSeconds", label: "Hold time", unit: "s", step: 1, min: 1, common: true,
@@ -130,6 +131,11 @@ export function shown(item, v) {
   if (item.offAtZero && n === 0) return "off"
   if (item.duration) return n % 60 === 0 ? `${n / 60} min` : formatTime(n)
   return `${n} ${item.unit || ""}`.trim()
+}
+
+export function liveItem(item, valueOf) {
+  const change = item.vary && item.vary(valueOf)
+  return change ? { ...item, ...change } : item
 }
 
 export function settingGroups(settings) {
@@ -275,7 +281,7 @@ export function useSettings(state, send, beforeSend) {
     if (!data.ok) return { text: data.text || "Not saved", tone: "warn" }
     if (req && req.reset) return { text: "Reset to defaults", tone: "good" }
     if (req && req.keys.length === 1) {
-      const item = itemFor(req.keys[0])
+      const item = liveItem(itemFor(req.keys[0]), valueOf)
       return { text: `Saved: ${item.label.toLowerCase()} ${shown(item, req.values[item.key])}`, tone: "good" }
     }
     return { text: `Saved ${req ? req.keys.length + " " : ""}settings`, tone: "good" }

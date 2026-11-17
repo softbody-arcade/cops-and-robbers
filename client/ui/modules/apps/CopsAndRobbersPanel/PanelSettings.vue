@@ -66,7 +66,7 @@
 import { ref, computed } from "vue"
 import { BngButton, BngIcon, BngSwitch, ACCENTS, icons } from "@/common/components/base"
 import { vBngTextInput, vBngTooltip } from "@/common/directives"
-import { settingGroups, shown } from "./settings.js"
+import { settingGroups, shown, liveItem } from "./settings.js"
 import { useConfirm } from "./confirm.js"
 
 const props = defineProps({
@@ -83,17 +83,18 @@ const locked = computed(() => !(props.state.can && props.state.can.settings === 
 const groups = computed(() => settingGroups(props.state.settings || {}))
 const earth = computed(() => props.state.geo === true)
 const open = item => !item.when || item.when(props.store.valueOf)
+const live = item => liveItem(item, props.store.valueOf)
 const common = computed(() =>
   groups.value
     .map(g => g.noEarth && earth.value
       ? { id: `c-${g.title}`, title: g.title, items: [], note: "Not available on BeamNG.Earth yet" }
-      : { id: `c-${g.title}`, title: g.title, items: g.items.filter(i => i.common && open(i)) })
+      : { id: `c-${g.title}`, title: g.title, items: g.items.filter(i => i.common && open(i)).map(live) })
     .filter(g => g.items.length || g.note)
 )
 const more = computed(() =>
   groups.value
     .filter(g => !(g.noEarth && earth.value))
-    .map(g => ({ id: `m-${g.title}`, title: g.title, items: g.items.filter(i => !i.common && open(i)) }))
+    .map(g => ({ id: `m-${g.title}`, title: g.title, items: g.items.filter(i => !i.common && open(i)).map(live) }))
     .filter(g => g.items.length)
 )
 const moreCount = computed(() => more.value.reduce((n, g) => n + g.items.length, 0))

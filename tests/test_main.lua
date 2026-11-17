@@ -2554,6 +2554,13 @@ test("the panel shows the traffic note", function()
   env.cleanup()
 end)
 
+test("with traffic for the runner only, the panel's traffic note says so", function()
+  local env = trafficBoot({ maxCars = 4, config = '{"trafficRunnerOnly":true}' })
+  env.call("cnr_panel", 1, '{"action":"open"}')
+  assertEq(env.lastSent("cnr_panelState").data:find('"trafficNote":"MaxCars is 4 on this server: 3 for the runner"', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
 test("a recorded run keeps its traffic, and a traffic crash's cause survives the save", function()
   local env = trafficBoot()
   trafficCrash(env)
