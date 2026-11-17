@@ -13,12 +13,13 @@ One entry per piece of work that has started: what it is, its branch (or "design
   - [ ] The tunnel walk repeats every time cop guidance ends (up to about 1,000 upward rays in one frame), so a cop following through a long tunnel with flickering sight repeats it every 2-3 s; reuse the last result while the car moved under 30 m
   - [ ] Helicopter jump detection lives in several places that must agree (`heli.lua` `carVelocity`, which also moves `lastKnown` and `sweepRayAt`; `heliFlight.step`, which also moves the spot; the aim's 2D check in `aimStep`); one helper would keep them in step. Do it with the module split below
   - [ ] A sunrise time equal to the high time (two hours after noon) would make the game reject the temperature curve, and the previous curve would stay. Impossible at stock latitudes (`sky.lua` `roundState`). Gone with 2.10, whose curve uses fixed hours (06:00 and 14:00)
-- [ ] Fixes alongside 2.10 (the parallel rule) on branch `fixes-5` (worktree)
-  - [ ] The cop's status line shows how old the GPS route point is ("Runner seen 230 m NE · 12 s ago", then "2 min ago"); nothing when live or in sight (the user, 2026-11-17)
+- [ ] Fixes alongside 2.10 (the parallel rule) on branch `fixes-6` (worktree)
+  - [ ] The runner starts where their car stood, so a runner stopped against a wall or on a rock starts stuck (`copsAndRobbers.lua` `setupPosition` places only cops and rejoins). Place the runner on the nearest road at round start, facing the road direction closest to their heading; stay in place without a road (the user, 2026-11-17)
 
 ## In-game checks
 Things only a player in the game can confirm, each with what to look for. Add them here when work is merged or deployed without the check; delete a line once it is checked, and turn anything that fails into an Issue.
 
+- [ ] GPS point age (merged 2026-11-17, not deployed yet): as a cop, a last-seen route shows "Runner seen 230 m NE · 12 s ago" counting up, "2 min ago" after a minute; nothing when live or in sight; also on BeamNG.Earth
 - [ ] Reset while rocking (merged 2026-11-17, not deployed yet): on your side rocking back and forth, the "Stay still Ns to reset" countdown keeps running and the reset comes at 7 s; driving more than 3 m away shows "Stop to reset" again
 - [ ] 2.9.5 HUD hide (deployed 2026-11-17, with the helicopter sound leak fix): Hide folds the lobby card to a small "Cops and Robbers" tab and the tab brings it back; the five lobby buttons fit on one row at the smaller size; the choice survives a rejoin and a restart; a round (also your own practice) shows the full HUD and the tab comes back after it; notices and a version warning show above the tab; an open Leaderboard or Host panel stays open
 - [ ] 2.8.0 in-game checks not yet done (deployed 2026-11-16): another player sees your headlights at night and, as a cop, your light bar and siren about 20 s into a round (`ownLights.syncCommand`, BeamMP `MPElectricsGE.sendElectrics`); the runner's free reset after a cop crashes into them; Traffic for the runner only leaves cops' games without traffic; an opened door no longer comes back on the next round car
