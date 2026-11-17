@@ -76,9 +76,7 @@ const detailSub = computed(() => {
   const when = [dayLabel(r), clock(r)].filter(Boolean).join(" ")
   const step = buildStep(r)
   const car = (r.car || r.model || "") + (step !== null ? `, build step ${step}` : "")
-  const n = Number(r.traffic)
-  const trafficText = n > 0 ? `Traffic: ${n} per player` : ""
-  return [when, r.map ? props.mapLabel(r.map) : "", [car, r.skyLabel, trafficText].filter(Boolean).join(" · ")].filter(Boolean).join(" · ")
+  return [when, r.map ? props.mapLabel(r.map) : "", [car, r.skyLabel, r.trafficLabel].filter(Boolean).join(" · ")].filter(Boolean).join(" · ")
 })
 
 const timeline = computed(() => {

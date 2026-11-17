@@ -1,4 +1,4 @@
-# Cops and Robbers 2.9.2: features
+# Cops and Robbers 2.9.3: features
 
 A BeamMP server plugin with a client mod that BeamMP downloads automatically. The mod enforces the group's cops-and-robbers rules. It is one mod for every map, and it switches to geo mode on BeamNG.Earth by itself.
 
@@ -8,7 +8,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 
 | Step | What happens |
 |---|---|
-| Start round | Picks a random car and config (or the evolving build). Everyone gets the same one. Cops are placed on a road 50–150 m by road from the runner, facing toward the runner. Everyone is frozen. |
+| Start round | Picks a random car (a car model first, each equally likely, then one of its configs; with mod vehicles on, only mod cars the server provides) or the evolving build. Everyone gets the same one. Cops are placed on a road 50–150 m by road from the runner, facing toward the runner. Everyone is frozen. |
 | Prep | No time limit. Everyone sees only their role (and cops the runner's name) and "Waiting for the host to press GO". Colors come from the Settings card only: the game's parts and paint menu is closed for everyone (except the runner in evolving mode, for their one change). A parts change the mod didn't make is shown to everyone as a notice (with the slots that changed), but not undone. New car picks another car (random mode). Once a player's car is placed, their game spawns its traffic (see Traffic), which stands still until GO. |
 | Apply change (evolving only, the runner's HUD button) | Locks in the runner's change and rebuilds every car; the screen shows APPLYING CHANGES until everyone has loaded (at most 20 s). |
 | GO | "Runner starts in 3", then the runner is released. |
@@ -32,6 +32,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 
 ### Catching
 - The runner is caught after being held for 7 s: runner under 3 km/h with a cop within 10 m (centre to centre).
+- A runner rocking back and forth (moving under 3 m in 4 s while going back and forth) counts as held too, at any speed, so a stuck car can't escape by rocking. A slow straight crawl doesn't count. In the first 4 s after the cops' release only the speed counts.
 - The hold timer drains at twice the speed it fills, so one jolt does not wipe the progress.
 - Cops serving a crash penalty do not count toward a catch.
 - No catch is possible during the head start.
@@ -63,6 +64,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 
 ### Crash penalty (cops)
 - A cop who loses 50 km/h within 0.5 s (about 2.8 G on average) gets frozen for 10 s.
+- Only within 1 km of the runner (`copResetMinDistanceMeters`), where a cop can't reset freely. Further away a crash gives no penalty, whatever the cause, traffic included.
 - The 7 s reset wait only starts after the penalty.
 - **Fault:** when another car was within 15 m, only the one who drove into the other is penalised. A runner who rams a cop, or a cop who gets hit, is not penalised. Rear-ending a runner who brake-checks still counts against the cop. Traffic cars count here too: driving into one is the cop's fault, being hit by one is not.
 - Everyone sees a notice "<name>: crash penalty 10s", with "(traffic)" after it when the cop drove into traffic. The round's timeline shows the same.
@@ -92,8 +94,8 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
   - A cop who sees the runner and is within their own speed × 5 s (at least 50 m) gets no route and reads "IN SIGHT". This is the Out of sight default: a cop's Route to the runner setting can keep the route while in sight (Always) or turn it off (Never).
   - When the runner stops being spotted (no cop has sight and the helicopter isn't tracking, after a 1.5 s grace), one "last seen" ping goes out at that spot: a route line on the road and minimap with "Runner seen 640 m NE", or on BeamNG.Earth a destination in its own GPS ("Runner last seen"). There are no other pings.
   - The client log notes each change ("runner in sight (120 m)"), handy to check what blocks sight on BeamNG.Earth.
-- **Runner:** sees "SPOTTED" or "HIDDEN" plus "Nearest cop 1.2 km", which updates every 30 s and with every live update. The runner never sees the cops on the minimap or by name tag for the whole round (the minimap part is skipped on BeamNG.Earth); cops still see each other.
-- **Cop placement:** cops start a short drive from the runner (by road, following one-way roads), facing toward the runner, and spread out so they do not overlap. The search widens until it covers at least 2 km by road. A runner on a piece of road that isn't connected to the rest gets cops placed by straight-line distance. If no road is found at all, the cop gets a notice and starts where they are.
+- **Runner:** sees "SPOTTED" or "HIDDEN" plus "Nearest cop 1.2 km", which updates every 30 s and with every live update. The runner never sees the cops on the minimap or by name tag for the whole round (a cop car that turns up mid-round is hidden within a second; the minimap part is skipped on BeamNG.Earth); cops still see each other.
+- **Cop placement:** cops start a short drive from the runner (by road, following one-way roads), facing toward the runner, and spread out so they do not overlap. The search widens until it covers at least 2 km by road. On a divided road with a narrow median (up to 5 m), the runner counts as being on the carriageway its car points along, even when the other one is a little closer. A runner on a piece of road that isn't connected to the rest gets cops placed by straight-line distance, still at least the minimum start distance away and never on a gated road or a private road behind one. If no road is found at all, the cop gets a notice and starts where they are.
 - **Late joiners and reconnects:**
   - Someone who joins mid-round becomes a cop.
   - A cop who reconnects comes back near the road where they left.
@@ -137,14 +139,14 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 ## Leaderboards (saved permanently)
 
 - Shown in the Cops and Robbers Leaderboard app, and the top 3 in the result card after each round.
-- **Saved per run:** runner, time, map, car, the round's conditions (time of day, weather, day length, date, whether weather affected driving), the traffic per player, end reason (caught, called, escaped, disconnect), catchers, every cop in the round with their seconds of sight, the runner's hidden time and how often they lost the cops, the car mode and build step, and a timeline of what happened (cops released, lost the cops, crash penalties, illegal resets, teleports, parts changes, the end).
+- **Saved per run:** runner, time, map, car, the round's conditions (time of day, weather, day length, date, whether weather affected driving), the traffic per player and whether it was for the runner only, end reason (caught, called, escaped, disconnect), catchers, every cop in the round with their seconds of sight, the runner's hidden time and how often they lost the cops, the car mode and build step, and a timeline of what happened (cops released, lost the cops, crash penalties, illegal resets, teleports, parts changes, the end).
 - A cancelled round and a practice round are never recorded.
 - **Fresh start in 1.7.0:** the leaderboard file has a new format. An older file is moved to `data/leaderboard-1.6.json` (kept, not used).
 
 ## Leaderboard app
 
 - "Cops and Robbers Leaderboard" has the look of the game's multiplayer scoreboard: rows on dark cards, gold, silver and bronze rank badges, and your own row outlined in orange. Open it from the lobby card or Esc > UI Apps. It has a ✕, refreshes after every round and hides itself during a round.
-- **Filters:** map (this map by default, all maps, or any map that has runs, shown with its real name), car mode (all, random, evolving) and traffic (all, with traffic, no traffic; rounds from before traffic count as no traffic).
+- **Filters:** map (this map by default, all maps, or any map that has runs, shown with its real name), car mode (all, random, evolving) and traffic (all, traffic per player, traffic for the runner, no traffic; rounds from before traffic count as no traffic, and rounds with traffic from before 2.9.3 count as per player).
 - **Runners:** each player's best survival time with the car (and the map when showing all maps). When you are not in the visible top, your own row is pinned at the bottom with your rank.
 - **Cops:** catches per player, assists and the fastest catch.
 - **Players:** runs, best, catches and assists per player; click a player for all stats and their last rounds:
@@ -154,7 +156,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
   - **Hidden from cops:** the share of their chases the runner spent out of every cop's sight.
   - **Lost the cops:** how often they broke all cops' sight.
   - Rounds played with sight off (`sightMaxMeters = 0`) show "–" for the last two.
-- **Rounds:** every recorded round, newest first, grouped by day. Each row shows how it ended, who ran and who caught them, the time of day, car (followed by the conditions, for example "Gavril D-Series · Night · Rain · Traffic") and build step, the survival time, and a yellow line for anything that went wrong ("Kim reset illegally"). Click a round for its timeline and each cop's share of the chase with the runner in sight. Rounds saved before the timeline existed show only the result. Long lists load more with "Show more".
+- **Rounds:** every recorded round, newest first, grouped by day. Each row shows how it ended, who ran and who caught them, the time of day, car (followed by the conditions, for example "Gavril D-Series · Night · Rain · Traffic") and build step, the survival time, and a yellow line for anything that went wrong ("Kim reset illegally"). Click a round for its timeline and each cop's share of the chase with the runner in sight; its heading names the traffic ("Traffic: 5 per player", or "Traffic: 5 for the runner"). Rounds saved before the timeline existed show only the result. Long lists load more with "Show more".
 
 ## Traffic
 
@@ -173,7 +175,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Random:** with Time of day on random, a roll under the night chance gives night, otherwise sunrise, morning, noon, afternoon or sunset. With Weather on random, a roll under the bad weather chance gives rain, storm, fog or snow, otherwise clear or cloudy. Both chances are 25% by default, so hard rounds stay occasional.
 - **Same for everyone:** everyone in a round gets the same time, weather, rain or snow, and wind, also a player who rejoins mid-round. The game's environment menu is locked during the round. Practice rounds get a sky too, and the AI cars switch their headlights on at night.
 - **New sky:** a button next to New car in prep, only while time or weather is random. It picks new values without re-placing the cars. New car keeps the sky; each new round picks again. Press it several times quickly and the sky heads for the last pick.
-- **Clock:** with Day length Off the clock is stopped. Otherwise it stays stopped in prep and starts at GO, so the round starts in the time you saw, and a full day lasts the chosen length: Fast 15 min, Moderate 30 min (the default), Slow 2 h or Realtime 24 h, the game's own presets.
+- **Clock:** with Day length Off the clock is stopped. Otherwise it stays stopped in prep and starts at GO, so the round starts in the time you saw, and a full day lasts the chosen length: Fast 15 min, Moderate 30 min (the default), Slow 2 h or Realtime 24 h, the game's own presets. With the clock moving, every named time (sunrise to night) is set a little early, so the round reaches it during the chase: one game hour, but never more than 75 s of real time (a full hour at Fast and Moderate, 15 game minutes at Slow, about a minute at Realtime). A sunset round starts in daylight instead of going dark at once; a sunrise round starts just before dawn.
 - **Date:** each round gets a date that fits its weather: snow in December or January, fog in October or November, rain and storms in March, April, October or November, clear and cloudy any day. On a map south of the equator (Automation Test Track) the date moves six months, so snow still comes with short winter days. It sets sunrise, sunset and how long the night lasts, it is the same for everyone, and it shows on the prep card and in the New sky message ("Sunset · Snow · 14 Dec").
 - **Grip:** with Weather affects driving, rain turns asphalt and gravel wet and dirt to wet gravel; grass and rumble strips lose a little grip. A storm also turns dirt into mud. Snow covers everything you drive on. These are the game's own surfaces, so tires matter: drag tires slide more on wet roads than road tires. Clear, cloudy and fog change no grip. Surfaces the mod doesn't know (a mod map's own) stay dry.
 - **Shelter:** rain and snow stop in tunnels, under bridge decks and under canopies: 4 times a second the game looks up from the camera, and when there's a roof within 12 m straight above and cover on both sides (front or back, and left or right), the rain is hidden until you're back in the open. It switches after half a second. Street-light arms and traffic-light gantries cover one direction only and don't count. Under a high bridge it keeps raining.
@@ -223,7 +225,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Chase line:** role chip, survival time (`3:12 / 10:00` with a time limit), SPOTTED or HIDDEN for the runner (IN SIGHT, live or last seen for cops), the nearest cop or the cop's distance and direction, and the reset status ("Reset ready", "Stay still 4 s to reset", "Can't reset while being caught"). The distance is shown in the mono font. No key is named, because players use different reset buttons. Pressing reset when it is not allowed briefly highlights the line.
 - **Catch bar:** shown while the catch timer is running. It is red with "BEING CAUGHT" for the runner and blue with "HOLDING RUNNER" for cops, uses 1% steps, and moves smoothly between server updates.
 - **Countdowns:** "RUNNER STARTS IN", "COPS RELEASED IN" and "CRASH PENALTY" over a large number; then "GO! RUN!" (runner), "GO!" (cops) and "PENALTY OVER", each for 2 s. During the head start the runner's chase line shows "Cops released in N".
-- **Notices:** an icon and one line above the chase line (or the lobby card), 4 s each, at most 2 at once. Yellow for rule breaks and personal warnings ("Bob: crash penalty 10s", "Ann reset illegally", "Ann teleported", "Ann changed parts during the round: engine, intake", no road found, could not spawn AI, no vehicles), white for information (build changes).
+- **Notices:** an icon and one line above the chase line (or the lobby card), 4 s each, at most 2 at once. Yellow for rule breaks and personal warnings ("Bob: crash penalty 10s", "Ann reset illegally", "Ann teleported", "Ann changed parts during the round: engine, intake", "Only the round car is allowed", no road found, could not spawn AI, no vehicles), white for information (build changes).
 - **Result:** shown for about 10 s after a round. The title (RUNNER CAUGHT, ROUND ENDED, ESCAPED, RUNNER LEFT, ROUND CANCELLED), the runner's time, who caught them (or, for a cancelled round, why: "Runner left, round cancelled"), the map's top 3 with your row outlined, and "Next round in N" when Automatic rounds is on. Leaving the server clears it.
 - **Evolving mode:** during prep the bottom shows the runner's queued change as a card ("Your change" or "Bob's change") with Apply change for the runner only; after Apply the centre shows APPLYING CHANGES.
 - **Format:** Vue 3 apps built on the game's own components, colours and fonts (see `docs/DEPENDENCIES.md`).
@@ -238,7 +240,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
   - **Countdown, head start, chase:** the panel folds into a bar with the phase, the runner, **End chase** and **Cancel** (a second click during the chase), and ▾ to open it. It folds by itself on GO and opens again when the round ends.
   - **Someone's practice round:** the practice's own controls, plus the runner picker and **Start round with Bob** under "Start a real round" (starting one ends the practice).
   - **After a round:** the result line ("Bob caught after 8:41"), and with automatic rounds on, "Next round in 12 s with Kim (fewest runs)" with **Start now** and **Stop automatic rounds**.
-  - A reply line shows the server's answer to every click. Nothing goes to chat.
+  - A reply line shows the server's answer to every click, in yellow when it refuses ("Stop the round first", "Only the runner can apply the change", "Not available from the panel"). Nothing goes to chat.
 - **Car tab:** a Random car / Evolving build switch. In evolving mode a summary (car, build step, last change and who made it), New build (choose a car, or random; a second click when a build exists) and Reset build (a second click). For both modes: Include mod cars and the excluded cars. Locked during a round.
 - **Map tab:** "West Coast USA · 10 gas stations", **Add station here**, **Remove nearest** (disabled with "No station within 50 m to remove") and the nearest stations with their distance (flat distance on BeamNG.Earth, updated every 2 s while the tab is open). Works on BeamNG.Earth, where stations are also discovered automatically.
 - **Settings tab:**
@@ -266,10 +268,10 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | `resetWaitSeconds` | 7 | Stand still this long to reset anywhere |
 | `stillMaxSpeedKmh` | 1 | "Standing still" threshold |
 | `gasStationRadiusMeters` | 25 | Gas station reset area |
-| `copResetMinDistanceMeters` | 1000 | Cops this far from the runner may always reset |
+| `copResetMinDistanceMeters` | 1000 | Cops this far from the runner may always reset and get no crash penalty |
 | `copSpawnMinMeters` / `copSpawnMaxMeters` | 50 / 150 | Cop start distance from the runner, by road |
 | `crashSpeedLossKmh` | 50 | Speed lost within 0.5 s that counts as a crash |
-| `crashPenaltySeconds` | 10 | Freeze for the cop at fault |
+| `crashPenaltySeconds` | 10 | Freeze for the cop at fault, within `copResetMinDistanceMeters` of the runner |
 | `helicopter` | true | Police helicopter that searches for the runner and tracks them while it sees them |
 | `helicopterArrivalSeconds` | 60 | It arrives this long after the cops are released (0 = at release) |
 | `helicopterUpSeconds` | 120 | How long it flies before it refuels (more than 0) |
@@ -285,7 +287,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | `autoNextRound` | false | Prepare the next round automatically |
 | `autoNextDelaySeconds` | 15 | Delay before the next round is prepared |
 | `excludedModels` | citybus, us_semi, md_series, percheron, rockbouncer | Models that are never picked |
-| `explodeOnCatch` | false | The runner's car explodes when caught |
+| `explodeOnCatch` | false | The runner's car explodes when caught, and every player in the round sees it explode (not the AI runner in practice, which is removed at once) |
 | `includeModVehicles` | false | Also pick mod vehicles |
 | `timeOfDay` | random | `sunrise`, `morning`, `noon`, `afternoon`, `sunset`, `night` or `random` |
 | `nightChancePercent` | 25 | Chance of night when Time of day is random |

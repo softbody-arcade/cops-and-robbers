@@ -72,9 +72,10 @@ function M.setup(d)
   M.remove()
   local own = game.ownVehicle()
   local center = own and own:getPosition()
+  local heading = own and own:getDirectionVector()
   for _, a in ipairs(d.ai or {}) do
     local pos, rot
-    if center then pos, rot = roads.findCopSpot(center, d.copSpawnMin or 50, d.copSpawnMax or 150, a.index or 1) end
+    if center then pos, rot = roads.findCopSpot(center, d.copSpawnMin or 50, d.copSpawnMax or 150, a.index or 1, heading) end
     local veh = spawnCar(d.model, d.config, a, pos, rot)
     if veh then
       cars[a.id] = { id = a.id, role = a.role, name = a.name, color = a.color, gameId = veh:getID(), frozen = true, reported = false }
@@ -181,14 +182,14 @@ function M.objects()
   return list
 end
 
-function M.relocate(center)
+function M.relocate(center, heading)
   local ids, index = {}, 0
   if not center then return ids end
   for id, car in pairs(cars) do
     local obj = car.gameId and getObjectByID(car.gameId)
     if obj then
       index = index + 1
-      local pos, rot = roads.findCopSpot(center, REPLACE_MIN, REPLACE_MAX, index)
+      local pos, rot = roads.findCopSpot(center, REPLACE_MIN, REPLACE_MAX, index, heading)
       if pos then
         spawn.safeTeleport(obj, pos, rot)
         if car.frozen then obj:queueLuaCommand("controller.setFreeze(1)") end

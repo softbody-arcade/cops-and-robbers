@@ -40,7 +40,7 @@ function useMap(nodeList, links, opts)
   for _, l in ipairs(links) do
     local from, to = l[1], l[2]
     local data = { inNode = from, outNode = to, oneWay = l.oneWay or false, gated = l.gated or 0, len = 1 }
-    nodes[to].links[from] = data
+    nodes[to].links[from] = { inNode = from, outNode = to, oneWay = l.oneWay or false, type = l.type or "public" }
     graph[from][to] = data
     graph[to][from] = data
   end
@@ -335,4 +335,91 @@ test("a max above 2 km is still searched by road", function()
   local pos = roads.findCopSpot(vec3(0, 0, 0), 2400, 3000, 1)
   assertEq(pos.x, 1500)
   assertNear(pos.y, 900, 0.01)
+end)
+
+local function carriageways(gap)
+  local nodes, links = {}, {}
+  local north, south = {}, {}
+  for y = -500, 500, 100 do north[#north + 1] = { 0, y } end
+  for y = 500, -500, -100 do south[#south + 1] = { gap, y } end
+  local n = road(nodes, links, "n", north, true)
+  local s = road(nodes, links, "s", south, true)
+  links[#links + 1] = { n[#n], s[1], oneWay = true }
+  links[#links + 1] = { s[#s], n[1], oneWay = true }
+  useMap(nodes, links)
+end
+
+test("narrow median: a runner nearer the other carriageway gets cops on the one its heading fits", function()
+  carriageways(8)
+  for i = 1, 3 do
+    local pos, rot = roads.findCopSpot(vec3(5, 10, 0), 50, 150, i, vec3(0, 1, 0))
+    assertEq(pos.x, 0, "spot " .. i)
+    assertEq(pos.y < 10, true, "spot " .. i)
+    assertNear(rot.dir.y, 1, 1e-6, "spot " .. i)
+  end
+end)
+
+test("narrow median: a heading that fits the closest carriageway keeps it", function()
+  carriageways(8)
+  for i = 1, 3 do
+    local pos, rot = roads.findCopSpot(vec3(5, 10, 0), 50, 150, i, vec3(0, -1, 0))
+    assertEq(pos.x, 8, "spot " .. i)
+    assertEq(pos.y > 10, true, "spot " .. i)
+    assertNear(rot.dir.y, -1, 1e-6, "spot " .. i)
+  end
+end)
+
+test("a carriageway further than a narrow median's width is not taken for the runner's heading", function()
+  carriageways(20)
+  local pos = roads.findCopSpot(vec3(16, 10, 0), 50, 150, 1, vec3(0, 1, 0))
+  assertEq(pos.x, 20)
+end)
+
+test("a gated parallel road is not taken for the runner's heading", function()
+  local nodes, links = {}, {}
+  local north, south = {}, {}
+  for y = -500, 500, 100 do north[#north + 1] = { 0, y } end
+  for y = 500, -500, -100 do south[#south + 1] = { 8, y } end
+  road(nodes, links, "n", north, true)
+  road(nodes, links, "s", south, true)
+  for _, l in ipairs(links) do
+    if l[1] == "n6" then l.gated = 10000 end
+  end
+  useMap(nodes, links)
+  local pos = roads.findCopSpot(vec3(5, 10, 0), 50, 150, 1, vec3(0, 1, 0))
+  assertEq(pos.x, 8)
+end)
+
+test("a heading straight up or missing leaves the closest road", function()
+  carriageways(8)
+  assertEq(roads.findCopSpot(vec3(5, 10, 0), 50, 150, 1, vec3(0, 0, 1)).x, 8)
+  assertEq(roads.findCopSpot(vec3(5, 10, 0), 50, 150, 1).x, 8)
+end)
+
+test("the straight-line search keeps the minimum distance", function()
+  local nodes, links = {}, {}
+  road(nodes, links, "i", { { 0, 0 }, { 5, 0 } })
+  road(nodes, links, "c", { { -40, 10 }, { 40, 10 } })
+  road(nodes, links, "f", line(-500, 500, 200))
+  useMap(nodes, links, { closest = { "i1", "i2" } })
+  for i = 1, 4 do
+    local pos = roads.findCopSpot(vec3(0, 0, 0), 50, 150, i)
+    assertEq(pos:distance(vec3(0, 0, 0)) >= 50, true, "spot " .. i .. " at " .. pos.x .. "," .. pos.y)
+  end
+end)
+
+test("the straight-line search skips gated roads and the private roads behind them", function()
+  local nodes, links = {}, {}
+  road(nodes, links, "i", { { 0, 0 }, { 5, 0 } })
+  local public = road(nodes, links, "p", line(-500, 500, 200))
+  nodes.g = { 0, 60 }
+  links[#links + 1] = { public[6], "g", gated = 10000 }
+  road(nodes, links, "h", { { -300, 70 }, { 300, 70 } })
+  links[#links].type = "private"
+  links[#links + 1] = { "g", "h1", type = "private" }
+  useMap(nodes, links, { closest = { "i1", "i2" } })
+  for i = 1, 4 do
+    local pos = roads.findCopSpot(vec3(0, 0, 0), 50, 150, i)
+    assertEq(pos.y, 200, "spot " .. i .. " at " .. pos.x .. "," .. pos.y)
+  end
 end)

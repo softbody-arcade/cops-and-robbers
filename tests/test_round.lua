@@ -300,6 +300,58 @@ end
 
 local function kmh(x, v) return {pos={x=x,y=0,z=0}, vel={x=v/3.6,y=0,z=0}} end
 
+test("a cop far from the runner gets the reset status again after each reset", function()
+  local r = running()
+  local far = function() return {[1]=car(0), [2]=car(300), [3]=car(1500)} end
+  local fx = r:tick(11.25, far(), {})
+  local s = find(fx, "state", 3)
+  assertEq(s.resetAllowed, true); assertEq(s.resetHint, "Reset available (far from runner)")
+  fx = r:tick(11.5, far(), {})
+  assertEq(find(fx, "state", 3), nil)
+  assertEq(find(r:vehicleReset(11.6, 3), "broadcast"), nil)
+  fx = r:tick(11.75, far(), {})
+  s = find(fx, "state", 3)
+  assertEq(s ~= nil, true)
+  assertEq(s.resetAllowed, true); assertEq(s.resetHint, "Reset available (far from runner)")
+  assertEq(find(r:vehicleReset(11.85, 3), "broadcast"), nil)
+  assertEq(find(r:tick(12, far(), {}), "state", 3) ~= nil, true)
+end)
+
+test("a car at a gas station gets the reset status again after each reset", function()
+  local r = running()
+  local stations = { { x = 300, y = 0, z = 0 } }
+  local cars = function() return {[1]=car(0), [2]=car(300), [3]=car(600)} end
+  local s = find(r:tick(11.25, cars(), stations), "state", 2)
+  assertEq(s.resetAllowed, true); assertEq(s.resetHint, "Reset available (gas station)")
+  assertEq(find(r:tick(11.5, cars(), stations), "state", 2), nil)
+  assertEq(find(r:vehicleReset(11.6, 2), "broadcast"), nil)
+  s = find(r:tick(11.75, cars(), stations), "state", 2)
+  assertEq(s ~= nil, true)
+  assertEq(s.resetAllowed, true); assertEq(s.resetHint, "Reset available (gas station)")
+end)
+
+test("an illegal reset also gets the reset status again", function()
+  local r = running()
+  local cars = function() return {[1]=car(0), [2]=kmh(300, 50), [3]=car(600)} end
+  for _, t in ipairs({ 11.25, 11.5, 11.75, 12, 12.25, 12.5, 12.75 }) do r:tick(t, cars(), {}) end
+  assertEq(find(r:tick(13, cars(), {}), "state", 2), nil)
+  assertEq(find(r:vehicleReset(13.1, 2), "broadcast").msg, "Bob reset illegally")
+  local s = find(r:tick(13.25, cars(), {}), "state", 2)
+  assertEq(s ~= nil, true)
+  assertEq(s.resetAllowed, false); assertEq(s.resetHint, "Stop to reset")
+end)
+
+test("a relocation by the map gets the reset status again", function()
+  local r = running()
+  local far = function() return {[1]=car(0), [2]=car(300), [3]=car(1500)} end
+  assertEq(find(r:tick(11.25, far(), {}), "state", 3).resetAllowed, true)
+  assertEq(find(r:tick(11.5, far(), {}), "state", 3), nil)
+  r:relocated(11.6, 3)
+  local s = find(r:tick(11.75, far(), {}), "state", 3)
+  assertEq(s ~= nil, true)
+  assertEq(s.resetAllowed, true)
+end)
+
 test("cop crash gives a penalty and freezes", function()
   local r = running()
   r:tick(11.25, {[1]=kmh(0, 80), [2]=kmh(200, 120), [3]=kmh(500, 0)}, {})
@@ -310,6 +362,58 @@ test("cop crash gives a penalty and freezes", function()
   assertEq(find(fx, "state", 2).resetHint, "Crash penalty 10s")
   fx = r:tick(21.5, {[1]=kmh(0, 80), [2]=kmh(200, 0), [3]=kmh(500, 0)}, {})
   assertEq(find(fx, "penaltyEnd", 2) ~= nil, true)
+end)
+
+local function crashAt(copX, runnerThere)
+  local r = started()
+  local before = {[1]=kmh(0, 0), [2]=kmh(copX, 120), [3]=kmh(500, 0)}
+  r:tick(4, before, {}); r:tick(11, before, {}); r:tick(11.25, before, {})
+  local after = {[2]=kmh(copX, 10), [3]=kmh(500, 0)}
+  if runnerThere ~= false then after[1] = kmh(0, 0) end
+  return r, r:tick(11.5, after, {})
+end
+
+local function penaltyNotes(r)
+  local n = 0
+  for _, e in ipairs(r.timeline) do if e.kind == "penalty" then n = n + 1 end end
+  return n
+end
+
+test("a cop crashing 1.5 km from the runner gets no penalty and no notice", function()
+  local r, fx = crashAt(1500)
+  assertEq(find(fx, "penalty"), nil)
+  assertEq(penaltyNotes(r), 0)
+  assertEq(r.penalties[2], nil)
+  local s = find(fx, "state", 2)
+  assertEq(s == nil or s.resetHint ~= "Crash penalty 10s", true)
+end)
+
+test("a cop crashing 900 m from the runner gets the penalty", function()
+  local r, fx = crashAt(900)
+  assertEq(find(fx, "penalty", 2).seconds, 10)
+  assertEq(penaltyNotes(r), 1)
+end)
+
+test("a cop crashing at exactly the cop reset distance gets no penalty, one metre inside does", function()
+  local r, fx = crashAt(1000)
+  assertEq(find(fx, "penalty"), nil)
+  assertEq(penaltyNotes(r), 0)
+  local r2, fx2 = crashAt(999)
+  assertEq(find(fx2, "penalty", 2).seconds, 10)
+  assertEq(penaltyNotes(r2), 1)
+end)
+
+test("a cop crash with the runner's car missing that tick still gets the penalty", function()
+  local r, fx = crashAt(1500, false)
+  assertEq(find(fx, "penalty", 2).seconds, 10)
+  assertEq(penaltyNotes(r), 1)
+end)
+
+test("a crash ignored far from the runner is not counted again once the runner is near", function()
+  local r = crashAt(1500)
+  local fx = r:tick(11.75, {[1]=kmh(600, 0), [2]=kmh(1500, 10), [3]=kmh(500, 0)}, {})
+  assertEq(find(fx, "penalty"), nil)
+  assertEq(penaltyNotes(r), 0)
 end)
 
 test("runner crash has no penalty", function()
@@ -1464,6 +1568,20 @@ test("a run records the traffic it was played with", function()
   assertEq(find(quiet:endCalled(20, 2), "record").run.traffic, nil)
 end)
 
+test("a run records traffic for the runner only, and only with traffic", function()
+  local function recorded(opts)
+    local r = round.new((config.merge(nil)))
+    r:start(0, 1, 2, players, opts)
+    r:vehiclePicked(1, 2, "pickup", "cfg", players)
+    r:go(1, 3)
+    r:tick(4, stillCars(), {}); r:tick(11, stillCars(), {})
+    return find(r:endCalled(20, 2), "record").run
+  end
+  assertEq(recorded({ traffic = 5, trafficRunnerOnly = true }).trafficRunnerOnly, true)
+  assertEq(recorded({ traffic = 5 }).trafficRunnerOnly, nil)
+  assertEq(recorded({ traffic = 0, trafficRunnerOnly = true }).trafficRunnerOnly, nil)
+end)
+
 local FREE = "Free reset (cop crashed into you)"
 
 local function stateOf(fx, pid)
@@ -1490,7 +1608,7 @@ test("the free reset ends with the cop's penalty", function()
   r:tick(11.5, { [1] = kmh(0, 60), [2] = kmh(3, 0), [3] = kmh(500, 0) }, {})
   local allowed, hint
   for i = 1, 44 do
-    local fx = r:tick(11.5 + i * 0.25, { [1] = kmh(0, 60), [2] = kmh(3, 0), [3] = kmh(500, 0) }, {})
+    local fx = r:tick(11.5 + i * 0.25, { [1] = kmh(i * 0.25 * 60 / 3.6, 60), [2] = kmh(3, 0), [3] = kmh(500, 0) }, {})
     local a, h = stateOf(fx, 1)
     if h then allowed, hint = a, h end
   end

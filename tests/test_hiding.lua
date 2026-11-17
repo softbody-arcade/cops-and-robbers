@@ -21,7 +21,8 @@ end
 local function setup()
   package.loaded["copsAndRobbers/hiding"] = nil
   hiding = require("copsAndRobbers/hiding")
-  for _, k in ipairs({ "MPVehicleGE", "activeVehiclesIterator", "ui_apps_minimap_vehicles" }) do saved[k] = _G[k] end
+  for _, k in ipairs({ "MPVehicleGE", "activeVehiclesIterator", "ui_apps_minimap_vehicles", "log" }) do saved[k] = _G[k] end
+  _G.log = function() end
   vehicles = { ["2-0"] = {} }
   MPVehicleGE = { getVehicles = function() return vehicles end }
   activeVehiclesIterator = iterator
@@ -34,6 +35,7 @@ local function teardown()
   _G.MPVehicleGE = saved.MPVehicleGE
   _G.activeVehiclesIterator = saved.activeVehiclesIterator
   _G.ui_apps_minimap_vehicles = saved.ui_apps_minimap_vehicles
+  _G.log = saved.log
 end
 
 local function run(fn)
@@ -65,6 +67,32 @@ test("an error in the draw still restores the iterator and does not escape", fun
     hiding.tick(0)
     ui_apps_minimap_vehicles.drawOtherVehicles()
     assertEq(activeVehiclesIterator, iterator)
+  end)
+end)
+
+test("a draw error is logged once per load", function()
+  run(function()
+    local logs = {}
+    _G.log = function(level, tag, msg) logs[#logs + 1] = { level = level, tag = tag, msg = msg } end
+    local ok, err = pcall(function()
+      local function failing() error("boom") end
+      ui_apps_minimap_vehicles.drawOtherVehicles = failing
+      hiding.set({ vids = { [2] = true }, minimap = true })
+      hiding.tick(0)
+      ui_apps_minimap_vehicles.drawOtherVehicles()
+      ui_apps_minimap_vehicles.drawOtherVehicles()
+      hiding.unload()
+      package.loaded["copsAndRobbers/hiding"] = nil
+      hiding = require("copsAndRobbers/hiding")
+      hiding.set({ vids = { [2] = true }, minimap = true })
+      hiding.tick(0)
+      assert(ui_apps_minimap_vehicles.drawOtherVehicles ~= failing)
+      ui_apps_minimap_vehicles.drawOtherVehicles()
+    end)
+    assert(ok, err)
+    assertEq(#logs, 2)
+    assertEq(logs[1].level, "E"); assertEq(logs[1].tag, "cnr_hiding")
+    assertEq(logs[1].msg:find("boom", 1, true) ~= nil, true)
   end)
 end)
 
@@ -236,5 +264,54 @@ test("the re-assert restores every hidden key after a rebuilt vehicle table", fu
     hiding.tick(1)
     assertEq(vehicles["2-0"].hideNametag, true)
     assertEq(vehicles["3-0"].hideNametag, true)
+  end)
+end)
+
+local function namedDraw(name, calls)
+  return function()
+    calls[#calls + 1] = name
+    draw()
+  end
+end
+
+test("an older minimap table coming back draws with its own original, and unload gives each table its own", function()
+  run(function()
+    local calls = {}
+    local drawA, drawB = namedDraw("A", calls), namedDraw("B", calls)
+    local extA, extB = { drawOtherVehicles = drawA }, { drawOtherVehicles = drawB }
+    ui_apps_minimap_vehicles = extA
+    hiding.set({ vids = { [2] = true }, minimap = true })
+    hiding.tick(0)
+    ui_apps_minimap_vehicles = extB
+    hiding.tick(1)
+    ui_apps_minimap_vehicles = extA
+    hiding.tick(2)
+    extA.drawOtherVehicles()
+    assertEq(table.concat(calls, ","), "A")
+    assertEq(ids(), "1,3")
+    hiding.unload()
+    assertEq(extA.drawOtherVehicles, drawA)
+    assertEq(extB.drawOtherVehicles, drawB)
+  end)
+end)
+
+test("after the minimap reloads, the old table gets its original back and its old wrapper keeps to it", function()
+  run(function()
+    local calls = {}
+    local drawA, drawB = namedDraw("A", calls), namedDraw("B", calls)
+    local extA, extB = { drawOtherVehicles = drawA }, { drawOtherVehicles = drawB }
+    ui_apps_minimap_vehicles = extA
+    hiding.set({ vids = { [2] = true }, minimap = true })
+    hiding.tick(0)
+    local oldWrapper = extA.drawOtherVehicles
+    ui_apps_minimap_vehicles = extB
+    hiding.tick(1)
+    assertEq(extA.drawOtherVehicles, drawA)
+    assert(extB.drawOtherVehicles ~= drawB)
+    oldWrapper()
+    assertEq(table.concat(calls, ","), "A")
+    extB.drawOtherVehicles()
+    assertEq(table.concat(calls, ","), "A,B")
+    assertEq(ids(), "1,3")
   end)
 end)

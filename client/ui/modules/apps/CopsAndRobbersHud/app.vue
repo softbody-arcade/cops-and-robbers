@@ -28,7 +28,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from "vue"
+import { ref, computed, watch, onBeforeUnmount } from "vue"
 import CnrRoot from "../../copsAndRobbers/CnrRoot.vue"
 import { useCnrHud } from "../../copsAndRobbers/hud.js"
 import { useFit } from "../../copsAndRobbers/fit.js"
@@ -44,6 +44,8 @@ const box = ref(null)
 const stack = ref(null)
 const fit = useFit(box, stack)
 
+const GAP_MS = 1500
+
 const settingsOpen = ref(false)
 const colorDraft = ref("")
 const mode = computed(() => hud.value.mode)
@@ -54,9 +56,19 @@ const settingsShown = computed(() => settingsOpen.value && settingsAllowed.value
 
 const settings = computed(() => hud.value.settings || { headlights: false, siren: false, sirensAllowed: false })
 
+let gapTimer = null
+
+function stopGapTimer() {
+  if (gapTimer !== null) clearTimeout(gapTimer)
+  gapTimer = null
+}
+
 watch(settingsAllowed, allowed => {
-  if (!allowed) closeSettings()
+  stopGapTimer()
+  if (!allowed && settingsOpen.value) gapTimer = setTimeout(closeSettings, GAP_MS)
 })
+
+onBeforeUnmount(stopGapTimer)
 
 function openHelp() {
   ui({ action: "help", open: true })
@@ -73,6 +85,7 @@ function openSettings() {
 }
 
 function closeSettings() {
+  stopGapTimer()
   settingsOpen.value = false
   colorDraft.value = ""
 }

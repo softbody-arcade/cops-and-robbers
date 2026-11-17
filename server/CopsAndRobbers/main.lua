@@ -15,7 +15,7 @@ local panel = require("cnr.panel")
 local sky = require("cnr.sky")
 local traffic = require("cnr.traffic")
 
-local VERSION = "2.9.2"
+local VERSION = "2.9.3"
 local PREFIX = "[CnR] "
 local dataDir = pluginDir .. "data/"
 local stationsDir = dataDir .. "stations/"
@@ -122,13 +122,14 @@ end
 local function notify(pid, msg, tone)
   send(pid, "cnr_notice", { msg = msg, tone = tone or "info" })
 end
-local function reply(pid, msg)
+local function reply(pid, msg, tone)
   if panelMirror and pid == panelMirror then
-    send(pid, "cnr_panelReply", { text = msg })
+    send(pid, "cnr_panelReply", { text = msg, tone = tone })
   else
-    notify(pid, msg)
+    notify(pid, msg, tone)
   end
 end
+local function refuse(pid, msg) reply(pid, msg, "warn") end
 local function broadcast(msg, tone) notify(-1, msg, tone) end
 
 local function loadConfig()
@@ -451,7 +452,7 @@ local function boardState(sub, viewerKey)
   local f = {
     map = sub.map ~= "all" and sub.map or nil,
     mode = (sub.mode == "random" or sub.mode == "evolving") and sub.mode or nil,
-    traffic = (sub.traffic == "with" or sub.traffic == "without") and sub.traffic or nil,
+    traffic = (sub.traffic == "with" or sub.traffic == "runner" or sub.traffic == "without") and sub.traffic or nil,
   }
   local runners, mine = {}, nil
   for rank, entry in ipairs(leaderboard.runners(board, f, math.huge)) do
@@ -501,7 +502,7 @@ end
 local function applyEffects(effects)
   for _, e in ipairs(effects) do
     if e.kind == "reply" then
-      reply(e.pid, e.msg)
+      reply(e.pid, e.msg, e.tone)
     elseif e.kind == "broadcast" then
       if e.to then notify(e.to, e.msg, e.tone) else broadcast(e.msg, e.tone) end
     elseif e.kind == "pickVehicle" then
@@ -683,8 +684,8 @@ function handlers.start(pid, cmd)
   if current:isActive() and current.test then
     applyEffects(current:stop(now(), current.issuerId))
   end
-  if current:isActive() then return reply(pid, "A round is already running") end
-  if cfg.carMode == "evolving" and not currentBuild then return reply(pid, "Start a new build first") end
+  if current:isActive() then return refuse(pid, "A round is already running") end
+  if cfg.carMode == "evolving" and not currentBuild then return refuse(pid, "Start a new build first") end
   autoNextAt = nil
   lastIssuer = pid
   local players = MP.GetPlayers() or {}
@@ -692,13 +693,13 @@ function handlers.start(pid, cmd)
   local runnerId, err
   if query and query:lower() == "again" then
     runnerId = lastRunnerKey and pidForKey(lastRunnerKey)
-    if not runnerId then return reply(pid, "No previous runner online") end
+    if not runnerId then return refuse(pid, "No previous runner online") end
   else
     local countsByName = {}
     for p, name in pairs(players) do countsByName[name] = runCounts[playerKey(p)] or 0 end
     runnerId, err = commands.matchPlayer(query, players, nil, countsByName)
   end
-  if not runnerId then return reply(pid, err) end
+  if not runnerId then return refuse(pid, err) end
   requestStations(pid)
   activeVid = {}
   trafficOpen = {}
@@ -706,11 +707,11 @@ function handlers.start(pid, cmd)
   partsBaseline = {}
   missingCount = {}
   lastResult = nil
-  applyEffects(current:start(now(), runnerId, pid, players, { build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random, geoMode), traffic = traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), geoMode, false) }))
+  applyEffects(current:start(now(), runnerId, pid, players, { build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random, geoMode), traffic = traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), geoMode, false), trafficRunnerOnly = cfg.trafficRunnerOnly == true }))
 end
 
 function handlers.test(pid, cmd)
-  if current:isActive() then return reply(pid, "A round is already running") end
+  if current:isActive() then return refuse(pid, "A round is already running") end
   activeVid = {}
   trafficOpen = {}
   trafficVids = {}
@@ -718,7 +719,7 @@ function handlers.test(pid, cmd)
   missingCount = {}
   aiVid = {}
   local role = cmd.args[1] and cmd.args[1]:lower()
-  if cfg.carMode == "evolving" and not currentBuild then return reply(pid, "Start a new build first") end
+  if cfg.carMode == "evolving" and not currentBuild then return refuse(pid, "Start a new build first") end
   local opts = { test = true, role = role, build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random, geoMode) }
   applyEffects(current:start(now(), nil, pid, MP.GetPlayers() or {}, opts))
 end
@@ -766,7 +767,7 @@ function handlers.go(pid)
 end
 
 function handlers.next(pid)
-  if not autoNextAt then return reply(pid, "No round is scheduled") end
+  if not autoNextAt then return refuse(pid, "No round is scheduled") end
   startAutoRound()
 end
 
@@ -786,9 +787,9 @@ function handlers.reroll(pid)
 end
 
 function handlers.sky(pid)
-  if geoMode then return reply(pid, "Not available on BeamNG.Earth yet") end
-  if current.state ~= "prep" and current.state ~= "ready" then return reply(pid, "You can only change the sky before GO") end
-  if not sky.hasRandom(cfg) then return reply(pid, "Set time of day or weather to random first") end
+  if geoMode then return refuse(pid, "Not available on BeamNG.Earth yet") end
+  if current.state ~= "prep" and current.state ~= "ready" then return refuse(pid, "You can only change the sky before GO") end
+  if not sky.hasRandom(cfg) then return refuse(pid, "Set time of day or weather to random first") end
   local before = current.sky or {}
   local picked = sky.pick(cfg, math.random, geoMode)
   for _ = 1, 10 do
@@ -806,13 +807,13 @@ end
 function handlers.addstation(pid)
   if geoMode then
     local r = geoOf(pid)
-    if not r then return reply(pid, "You need to be in a vehicle") end
+    if not r then return refuse(pid, "You need to be in a vehicle") end
     geoStations[#geoStations + 1] = { lat = r.lat, lon = r.lon, r = GEO_STATION_RADIUS }
     saveStations()
     return reply(pid, string.format("Gas station added (%d on %s)", #geoStations, mapName))
   end
   local car = carFor(pid)
-  if not car then return reply(pid, "You need to be in a vehicle") end
+  if not car then return refuse(pid, "You need to be in a vehicle") end
   stations[#stations + 1] = { x = car.pos.x, y = car.pos.y, z = car.pos.z, r = 0 }
   saveStations()
   reply(pid, string.format("Gas station added (%d on %s)", #stations, mapName))
@@ -821,7 +822,7 @@ end
 function handlers.removestation(pid)
   if geoMode then
     local r = geoOf(pid)
-    if not r then return reply(pid, "You need to be in a vehicle") end
+    if not r then return refuse(pid, "You need to be in a vehicle") end
     local ref = geo.newRef(r.lat, r.lon)
     local bestIndex, bestDist
     for i, st in ipairs(geoStations) do
@@ -829,19 +830,19 @@ function handlers.removestation(pid)
       local d = math.sqrt(p.x * p.x + p.y * p.y)
       if d <= 50 and (not bestDist or d < bestDist) then bestIndex, bestDist = i, d end
     end
-    if not bestIndex then return reply(pid, "No gas station within 50 m") end
+    if not bestIndex then return refuse(pid, "No gas station within 50 m") end
     table.remove(geoStations, bestIndex)
     saveStations()
     return reply(pid, string.format("Gas station removed (%d left on %s)", #geoStations, mapName))
   end
   local car = carFor(pid)
-  if not car then return reply(pid, "You need to be in a vehicle") end
+  if not car then return refuse(pid, "You need to be in a vehicle") end
   local bestIndex, bestDist
   for i, s in ipairs(stations) do
     local d = vec.dist(car.pos, s)
     if d <= 50 and (not bestDist or d < bestDist) then bestIndex, bestDist = i, d end
   end
-  if not bestIndex then return reply(pid, "No gas station within 50 m") end
+  if not bestIndex then return refuse(pid, "No gas station within 50 m") end
   table.remove(stations, bestIndex)
   saveStations()
   reply(pid, string.format("Gas station removed (%d left on %s)", #stations, mapName))
@@ -849,7 +850,7 @@ end
 
 
 function handlers.reload(pid)
-  if current:isActive() then return reply(pid, "Stop the round before reloading") end
+  if current:isActive() then return refuse(pid, "Stop the round before reloading") end
   loadConfig()
   current = round.new(cfg)
   pushRules()
@@ -946,8 +947,8 @@ local function pushPanel(opener)
 end
 
 local function panelBuild(pid, msg)
-  local function answer(text) send(pid, "cnr_panelReply", { text = text }) end
-  if current:isActive() then return answer("Stop the round first") end
+  local function answer(text, tone) send(pid, "cnr_panelReply", { text = text, tone = tone }) end
+  if current:isActive() then return answer("Stop the round first", "warn") end
   if msg.op == "reset" then
     backupBuild()
     currentBuild = nil
@@ -956,7 +957,7 @@ local function panelBuild(pid, msg)
   end
   if msg.op ~= "new" then return end
   local nb = build.normalize({ model = msg.model, name = msg.name, parts = msg.parts, vars = msg.vars })
-  if not nb then return answer("That car can't start a build") end
+  if not nb then return answer("That car can't start a build", "warn") end
   backupBuild()
   currentBuild = build.new(nb.model, nb.name, nb.parts, nb.vars, type(msg.from) == "string" and msg.from or "random", os.time())
   saveBuild()
@@ -988,7 +989,7 @@ function cnrOnPanel(pid, data)
     panelSubs[pid] = nil
   elseif msg.action == "command" then
     local text = panel.allow(msg.text)
-    if not text then return send(pid, "cnr_panelReply", { text = "Not available from the panel" }) end
+    if not text then return send(pid, "cnr_panelReply", { text = "Not available from the panel", tone = "warn" }) end
     panelMirror = pid
     local ran, err = pcall(runCommand, pid, text)
     panelMirror = nil
@@ -1015,7 +1016,7 @@ function cnrOnPanel(pid, data)
     panelBuild(pid, msg)
   elseif msg.action == "apply" then
     local mayApply = pid == current.runnerId or (round.isAI(current.runnerId) and pid == current.issuerId)
-    if not mayApply then return send(pid, "cnr_panelReply", { text = "Only the runner can apply the change" }) end
+    if not mayApply then return send(pid, "cnr_panelReply", { text = "Only the runner can apply the change", tone = "warn" }) end
     panelMirror = pid
     local ran, err = pcall(function() applyEffects(current:apply(now(), pid)) end)
     panelMirror = nil
@@ -1146,7 +1147,7 @@ end
 
 function cnrOnVehicleSpawn(pid, vid, data)
   if not vehicleAllowed(pid, vid, data, true) then
-    reply(pid, "Only the round car is allowed")
+    refuse(pid, "Only the round car is allowed")
     return 1
   end
   if tracksActive(pid) and not trafficOpen[pid] then activeVid[pid] = vid end
@@ -1156,7 +1157,7 @@ end
 function cnrOnVehicleEdited(pid, vid, data)
   local allowed, decoded = vehicleAllowed(pid, vid, data, false)
   if not allowed then
-    reply(pid, "Only the round car is allowed")
+    refuse(pid, "Only the round car is allowed")
     return 1
   end
   local notOwn = vid ~= activeVid[pid] and (current.test or trafficOpen[pid])

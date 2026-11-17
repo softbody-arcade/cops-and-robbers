@@ -25,6 +25,8 @@ M.WEATHER = {
 }
 
 M.BLEND_SECONDS = 3
+M.START_LEAD = 1 / 24
+M.LEAD_SECONDS = 75
 local LOCK_DELAY = M.BLEND_SECONDS + 0.5
 local WIND_INTERVAL = 0.25
 local MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" }
@@ -80,7 +82,10 @@ local function roundState(env, p)
     solar.year, solar.month, solar.day = year, month, day
   end
   if p.time then
-    state.time = env.getSolarTimeOfDayValue(p.time, solar) or env.timeOfDayKeyToTime[p.time]
+    local t = env.getSolarTimeOfDayValue(p.time, solar) or env.timeOfDayKeyToTime[p.time]
+    local daySeconds = tonumber(p.daySeconds) or 0
+    if t and daySeconds > 0 then t = (t - math.min(M.START_LEAD, M.LEAD_SECONDS / daySeconds)) % 1 end
+    state.time = t
   else
     state.time, state.dayLength = init.time, init.dayLength
   end
