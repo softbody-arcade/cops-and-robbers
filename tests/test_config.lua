@@ -89,6 +89,13 @@ test("setValue raises the max with the min, and clamps a lowered max", function(
   assertEq(u.weatherChangeMaxMinutes, 5)
 end)
 
+test("setValue min above the default max raises the max, a lowered min leaves it", function()
+  local u = config.setValue({}, "weatherChangeMinMinutes", "10")
+  assertEq(u.weatherChangeMaxMinutes, 10)
+  u = config.setValue({ weatherChangeMinMinutes = 5, weatherChangeMaxMinutes = 8 }, "weatherChangeMinMinutes", "2")
+  assertEq(u.weatherChangeMinMinutes, 2); assertEq(u.weatherChangeMaxMinutes, 8)
+end)
+
 test("defaults table not mutated by merge", function()
   config.merge({headStartSeconds=99})
   assertEq(config.DEFAULTS.headStartSeconds, 7)

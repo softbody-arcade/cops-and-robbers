@@ -137,7 +137,11 @@ function M.applyValues(raw, values)
     keys[#keys + 1] = k
   end
   if #keys == 0 then return nil, "Nothing to save" end
-  table.sort(keys)
+  table.sort(keys, function(a, b)
+    local am, bm = a == "weatherChangeMinMinutes", b == "weatherChangeMinMinutes"
+    if am ~= bm then return am end
+    return a < b
+  end)
   for _, key in ipairs(keys) do
     if type(config.DEFAULTS[key]) == "table" and not validListValue(values[key]) then
       return nil, "Invalid value for " .. key
