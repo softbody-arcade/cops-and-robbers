@@ -26,6 +26,7 @@ function M.isAI(id)
 end
 local SETUP_GRACE_SECONDS = 5
 local RELOCATE_GRACE_SECONDS = 3
+local PLACE_TIMEOUT_SECONDS = 60
 local MAX_TIMELINE = 50
 local TELEPORT_BASE_METERS = 60
 local TELEPORT_MAX_SPEED = 100
@@ -79,6 +80,7 @@ function Round:clear()
   self.freeResetUntil = nil
   self.prevCars = {}
   self.leftPlayers = {}
+  self.placing = {}
   self.teleportAnnounced = {}
   self.lastTickAt = nil
   self.sight = sight.new()
@@ -366,6 +368,8 @@ function Round:tick(now, cars, stations, traffic)
         if untilTime and now >= untilTime then
           self.penalties[pid] = nil
           fx[#fx + 1] = { kind = "penaltyEnd", pid = pid }
+        elseif not untilTime and self:isPlacing(now, pid) then
+          if self.crashDetectors[pid] then self.crashDetectors[pid]:reset() end
         elseif not untilTime and self.crashDetectors[pid] and self.crashDetectors[pid]:update(now, cars[pid])
           and nearRunner(cars[pid], runnerCar, self.cfg) then
           local fault, nearest = crash.atFault(self.prevCars[pid], self:otherCars(pid))
@@ -424,11 +428,11 @@ function Round:tick(now, cars, stations, traffic)
     local allowedMove = TELEPORT_BASE_METERS + TELEPORT_MAX_SPEED * (now - self.lastTickAt)
     for _, pid in ipairs(sortedPids(self.players)) do
       local before, after, tracker = self.prevCars[pid], cars[pid], self.resetTrackers[pid]
-      if before and after and before.pos and after.pos and vec.dist(before.pos, after.pos) > allowedMove
-        and not (tracker and tracker:inGrace(now)) then
+      local moved = before and after and before.pos and after.pos and vec.dist(before.pos, after.pos)
+      if moved and moved > allowedMove and not (tracker and tracker:inGrace(now)) and not self:isPlacing(now, pid) then
         if not self.teleportAnnounced[pid] or now - self.teleportAnnounced[pid] >= TELEPORT_ANNOUNCE_GAP then
           self.teleportAnnounced[pid] = now
-          fx[#fx + 1] = { kind = "broadcast", msg = string.format("%s teleported", self.players[pid]), tone = "warn" }
+          fx[#fx + 1] = { kind = "broadcast", msg = string.format("%s teleported", self.players[pid]), tone = "warn", meters = moved }
           self:note(now, "teleport", self.players[pid])
         end
       end
@@ -479,6 +483,7 @@ function Round:playerJoined(now, pid, name)
   self.players[pid] = name
   if self.state == "picking" then return {} end
   local setup = self:setupFor(now, pid)
+  self.placing[pid] = { untilTime = now + PLACE_TIMEOUT_SECONDS }
   local fx = { setup }
   local left = self.leftPlayers[name]
   if left then
@@ -492,6 +497,19 @@ function Round:playerJoined(now, pid, name)
     end
   end
   return fx
+end
+
+function Round:isPlacing(now, pid)
+  local p = self.placing[pid]
+  return p ~= nil and now <= p.untilTime
+end
+
+function Round:vehiclePlaced(now, pid)
+  local p = self.placing[pid]
+  if not p or p.placedAt then return {} end
+  p.placedAt = now
+  p.untilTime = now + RELOCATE_GRACE_SECONDS
+  return self:relocated(now, pid)
 end
 
 function Round:sightReport(now, pid, seen)
@@ -597,6 +615,7 @@ function Round:playerLeft(now, pid)
   end
   self.copSight[pid] = nil
   self.players[pid] = nil
+  self.placing[pid] = nil
   self.resetTrackers[pid] = nil
   self.crashDetectors[pid] = nil
   self.penalties[pid] = nil
@@ -609,7 +628,7 @@ function Round:vehicleReset(now, pid)
   local tracker = self.resetTrackers[pid]
   if (self.state ~= "headstart" and self.state ~= "running") or not tracker then return {} end
   self.lastState[pid] = nil
-  if tracker:consume(now) then
+  if self:isPlacing(now, pid) or tracker:consume(now) then
     if pid == self.runnerId then self.freeResetUntil = nil end
     if self.crashDetectors[pid] then self.crashDetectors[pid]:reset() end
     return {}
@@ -656,7 +675,7 @@ function Round:stop(now, issuerId)
   return self:cancel(now, "Round cancelled")
 end
 
-for _, name in ipairs({ "start", "vehiclePicked", "go", "tick", "playerJoined", "playerLeft", "vehicleReset", "stop", "endCalled", "reroll", "relocated", "apply", "setupReceived", "vehicleReady" }) do
+for _, name in ipairs({ "start", "vehiclePicked", "go", "tick", "playerJoined", "playerLeft", "vehicleReset", "stop", "endCalled", "reroll", "relocated", "vehiclePlaced", "apply", "setupReceived", "vehicleReady" }) do
   local method = Round[name]
   Round[name] = function(self, ...)
     local issuer = self.test and self.issuerId

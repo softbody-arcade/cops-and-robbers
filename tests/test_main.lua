@@ -163,7 +163,19 @@ local function boot(opts)
   print = realPrint
   assert(ok, err)
 
-  function env.call(ev, ...) return _G[env.events[ev]](...) end
+  function env.call(ev, ...)
+    local outer = print
+    print = function(...)
+      local parts = {}
+      for i = 1, select("#", ...) do parts[#parts + 1] = tostring((select(i, ...))) end
+      env.logs[#env.logs + 1] = table.concat(parts, " ")
+      if outer ~= realPrint then outer(...) end
+    end
+    local results = table.pack(xpcall(_G[env.events[ev]], debug.traceback, ...))
+    print = outer
+    if not results[1] then error(results[2], 0) end
+    return table.unpack(results, 2, results.n)
+  end
   function env.lastSent(ev)
     for i = #env.sent, 1, -1 do if env.sent[i].ev == ev then return env.sent[i] end end
   end
@@ -2745,4 +2757,207 @@ test("a recorded run keeps traffic for the runner only", function()
   assertEq(text:find('"traffic":5', 1, true) ~= nil, true)
   assertEq(text:find('"trafficRunnerOnly"', 1, true), nil)
   everyone.cleanup()
+end)
+
+local JOINER_SPAWN = '3:Kim:3-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc"}}'
+
+local function step(env)
+  env.clock = env.clock + 0.25
+  env.call("cnr_tick")
+end
+
+local function joinerAt(env, x, kmh)
+  env.vidPositions["3-0"] = { pos = { x, 0, 0 }, vel = { (kmh or 0) / 3.6, 0, 0 } }
+end
+
+local function midChaseJoin(env)
+  env.names = { "Reinder", "Bob", "Kim" }
+  env.startRound()
+  placed(env, 1); placed(env, 2)
+  env.positions[2] = 900
+  chase(env)
+  env.call("onPlayerJoin", 3)
+  for _ = 1, 24 do step(env) end
+  assertEq(env.call("onVehicleSpawn", 3, 0, JOINER_SPAWN), 0)
+  env.vehicles[3] = { [0] = "x" }
+end
+
+test("a mid-chase joiner placed after the join grace is no teleport, illegal reset or crash", function()
+  local env = boot()
+  midChaseJoin(env)
+  joinerAt(env, 600)
+  step(env)
+  joinerAt(env, 100)
+  step(env)
+  env.call("onVehicleReset", 3, 0, "")
+  env.call("cnr_myVehicle", 3, '{"vid":0}')
+  for _ = 1, 8 do step(env) end
+  assertEq(env.noticeHas("Kim teleported"), false)
+  assertEq(env.noticeHas("Kim reset illegally"), false)
+  assertEq(env.noticeHas("Kim: crash penalty"), false)
+  env.cleanup()
+end)
+
+test("a mid-chase joiner reporting the placement before its new position arrives is no teleport", function()
+  local env = boot()
+  midChaseJoin(env)
+  joinerAt(env, 600)
+  step(env)
+  env.call("cnr_myVehicle", 3, '{"vid":0}')
+  env.call("onVehicleReset", 3, 0, "")
+  step(env)
+  joinerAt(env, 100)
+  for _ = 1, 8 do step(env) end
+  assertEq(env.noticeHas("Kim teleported"), false)
+  assertEq(env.noticeHas("Kim reset illegally"), false)
+  env.cleanup()
+end)
+
+test("a mid-chase joiner's car that is moving when the mod places it gets no crash penalty", function()
+  local env = boot()
+  midChaseJoin(env)
+  joinerAt(env, 600, 60)
+  step(env)
+  joinerAt(env, 100)
+  step(env)
+  env.call("cnr_myVehicle", 3, '{"vid":0}')
+  for _ = 1, 8 do step(env) end
+  assertEq(env.noticeHas("Kim: crash penalty"), false)
+  assertEq(sentTo(env, "cnr_penalty", 3), nil)
+  env.cleanup()
+end)
+
+test("a cop rejoining mid-chase is placed back on his road without a teleport or illegal reset", function()
+  local env = boot()
+  env.startRound()
+  placed(env, 1); placed(env, 2)
+  env.positions[2] = 900
+  chase(env)
+  env.call("onPlayerDisconnect", 2)
+  env.vehicles[2], env.positions[2] = nil, nil
+  for _ = 1, 8 do step(env) end
+  env.sent = {}
+  env.call("onPlayerJoin", 2)
+  assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 2)).resumePos.x, 900)
+  for _ = 1, 24 do step(env) end
+  assertEq(env.call("onVehicleSpawn", 2, 0, spawnOf(2, 0, "pickup", "vehicles/pickup/base.pc")), 0)
+  env.vehicles[2] = { [0] = "x" }
+  env.vidPositions["2-0"] = { pos = { 400, 0, 0 }, vel = { 0, 0, 0 } }
+  step(env)
+  env.vidPositions["2-0"] = { pos = { 905, 0, 0 }, vel = { 0, 0, 0 } }
+  step(env)
+  env.call("onVehicleReset", 2, 0, "")
+  env.call("cnr_myVehicle", 2, '{"vid":0}')
+  for _ = 1, 8 do step(env) end
+  assertEq(env.noticeHas("Bob teleported"), false)
+  assertEq(env.noticeHas("Bob reset illegally"), false)
+  env.cleanup()
+end)
+
+test("a placed joiner who jumps once the placement has settled is a teleport again", function()
+  local env = boot()
+  midChaseJoin(env)
+  joinerAt(env, 600)
+  step(env)
+  env.call("cnr_myVehicle", 3, '{"vid":0}')
+  joinerAt(env, 100, 20)
+  for _ = 1, 16 do step(env) end
+  assertEq(env.noticeHas("Kim teleported"), false)
+  joinerAt(env, 700, 20)
+  step(env)
+  assertEq(env.noticeHas("Kim teleported", "warn"), true)
+  env.cleanup()
+end)
+
+test("each step of a mid-round join is logged", function()
+  local env = boot()
+  midChaseJoin(env)
+  assertEq(env.logHas("setup sent to Kim: cop, running"), true)
+  assertEq(env.logHas("Kim spawned pickup (vid 0): allowed"), true)
+  assertEq(env.call("onVehicleSpawn", 3, 1, '3:Kim:3-1:{"jbm":"etk800","vcf":{}}'), 1)
+  assertEq(env.logHas("Kim spawned etk800 (vid 1): refused"), true)
+  env.call("onVehicleEdited", 3, 0, '3-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc"}}')
+  assertEq(env.logHas("Kim edited pickup (vid 0): allowed"), true)
+  joinerAt(env, 600)
+  step(env)
+  env.call("cnr_myVehicle", 3, '{"vid":0}')
+  assertEq(env.logHas("Kim placed the round car (vid 0)"), true)
+  joinerAt(env, 100, 120)
+  for _ = 1, 16 do step(env) end
+  joinerAt(env, 700, 120)
+  step(env)
+  assertEq(env.logHas("Kim teleported 600 m"), true)
+  joinerAt(env, 701, 0)
+  step(env)
+  assertEq(env.logHas("Kim: crash penalty 10s"), true)
+  env.cleanup()
+end)
+
+test("a rejoin's setup is logged as resuming", function()
+  local env = boot({ config = '{"helicopterArrivalSeconds": 0, "weather": "clear"}' })
+  runToChase(env)
+  env.call("onPlayerDisconnect", 2)
+  env.call("onPlayerJoin", 2)
+  assertEq(env.logHas("setup sent to Bob: cop, running, resuming"), true)
+  env.cleanup()
+end)
+
+test("a joiner whose game already has a car when the setup arrives is replaced and placed without a teleport", function()
+  local env = boot()
+  env.names = { "Reinder", "Bob", "Kim" }
+  env.startRound()
+  placed(env, 1); placed(env, 2)
+  env.positions[2] = 900
+  chase(env)
+  assertEq(env.call("onVehicleSpawn", 3, 0, '3:Kim:3-0:{"jbm":"etk800","vcf":{}}'), 0)
+  env.vehicles[3] = { [0] = "x" }
+  joinerAt(env, 600)
+  env.call("onPlayerJoin", 3)
+  for _ = 1, 24 do step(env) end
+  assertEq(env.call("onVehicleEdited", 3, 0, '3-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc"}}'), 0)
+  joinerAt(env, 100)
+  step(env)
+  env.call("onVehicleReset", 3, 0, "")
+  env.call("cnr_myVehicle", 3, '{"vid":0}')
+  for _ = 1, 8 do step(env) end
+  assertEq(env.noticeHas("Kim teleported"), false)
+  assertEq(env.noticeHas("Kim reset illegally"), false)
+  env.cleanup()
+end)
+
+local function logCount(env, text)
+  local n = 0
+  for _, l in ipairs(env.logs) do if l:find(text, 1, true) then n = n + 1 end end
+  return n
+end
+
+test("allowed spawns and edits are logged only while the car is placed", function()
+  local env = trafficBoot()
+  midChaseJoin(env)
+  assertEq(env.call("onVehicleEdited", 2, 0, '2-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc"}}'), 0)
+  assertEq(env.logHas("Bob edited"), false)
+  joinerAt(env, 600)
+  step(env)
+  env.call("cnr_myVehicle", 3, '{"vid":0}')
+  for _ = 1, 16 do step(env) end
+  assertEq(env.call("onVehicleEdited", 3, 0, '3-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc"}}'), 0)
+  assertEq(env.logHas("Kim edited"), false)
+  assertEq(env.call("onVehicleSpawn", 3, 1, '3:Kim:3-1:{"jbm":"etk800","vcf":{}}'), 0)
+  assertEq(env.call("onVehicleEdited", 3, 1, '3-1:{"jbm":"etk800","vcf":{}}'), 0)
+  assertEq(env.logHas("etk800"), false)
+  env.cleanup()
+end)
+
+test("a refused car is logged at most once per 10 s per player", function()
+  local env = boot()
+  midChaseJoin(env)
+  for _ = 1, 3 do assertEq(env.call("onVehicleSpawn", 2, 7, spawnOf(2, 7, "etk800")), 1) end
+  assertEq(logCount(env, "Bob spawned etk800 (vid 7): refused"), 1)
+  for _ = 1, 39 do step(env) end
+  assertEq(env.call("onVehicleEdited", 2, 0, '2-0:{"jbm":"etk800","vcf":{}}'), 1)
+  assertEq(env.logHas("Bob edited etk800 (vid 0): refused"), false)
+  step(env)
+  assertEq(env.call("onVehicleSpawn", 2, 7, spawnOf(2, 7, "etk800")), 1)
+  assertEq(logCount(env, "Bob spawned etk800 (vid 7): refused"), 2)
+  env.cleanup()
 end)
