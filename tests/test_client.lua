@@ -1750,7 +1750,7 @@ test("a mid-chase setup starts the clock at clockSeconds", function()
   local d = copy(SETUP); d.phase = "running"; d.chaseElapsed = 100
   d.sky = { time = "sunset", daySeconds = 1440, clockSeconds = 110, windDir = 0, windSeed = 1 }
   env.fire("cnr_roundSetup", d); env.tick(0.1)
-  assertNear(env.sky.state.time, (0.245 + 110 / 1440) % 1, 1e-6)
+  assertNear(env.sky.state.time, (0.245 - 1 / 24 + 110 / 1440) % 1, 1e-6)
 end)
 
 test("the round end gives the player's sky back, a map change only forgets it", function()

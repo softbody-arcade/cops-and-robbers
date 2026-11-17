@@ -50,6 +50,27 @@ test("the round's date is set with the time", function()
   assertEq(s.year, 2026); assertEq(s.month, 12); assertEq(s.day, 14); assertEq(s.time, 0.775)
 end)
 
+test("with a moving clock the round starts an hour before the named time", function()
+  local sky, fake = load()
+  local p = {}
+  for k, v in pairs(WINTER) do p[k] = v end
+  p.daySeconds = 1800
+  sky.apply(p)
+  assertEq(math.abs(fake.setStates[1].time - (0.775 - 1 / 24)) < 1e-9, true, tostring(fake.setStates[1].time))
+  local sky2, fake2 = load()
+  sky2.apply({ time = "noon", weather = "clear", year = 2026, month = 6, day = 14, windDir = 0, windSeed = 1, daySeconds = 900 })
+  assertEq(math.abs(fake2.setStates[1].time - (1 - 1 / 24)) < 1e-9, true, tostring(fake2.setStates[1].time))
+end)
+
+test("with the clock stopped the round starts at the named time", function()
+  local sky, fake = load()
+  local p = {}
+  for k, v in pairs(WINTER) do p[k] = v end
+  p.daySeconds = 0
+  sky.apply(p)
+  assertEq(fake.setStates[1].time, 0.775)
+end)
+
 test("the named time is worked out against the round's date", function()
   local sky, fake = load()
   sky.apply(WINTER)
@@ -268,7 +289,7 @@ test("the clock starts at GO with the round's day length", function()
   sky.startClock(600)
   local s = fake.setStates[#fake.setStates]
   assertEq(s.play, true); assertEq(s.dayLength, 1440)
-  assertNear(s.time, (0.245 + 600 / 1440) % 1, 1e-9)
+  assertNear(s.time, (0.245 - 1 / 24 + 600 / 1440) % 1, 1e-9)
 end)
 
 test("drop forgets without applying", function()
