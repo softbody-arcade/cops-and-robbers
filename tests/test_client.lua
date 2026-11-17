@@ -1877,7 +1877,7 @@ end)
 
 test("the role card shows the round's date", function()
   local env = bootClient()
-  local d = copy(SETUP); d.sky = { time = "night", weather = "rain", year = 2026, month = 12, day = 14, windDir = 0, windSeed = 7 }
+  local d = copy(SETUP); d.sky = { time = "night", weather = "rain", year = 2026, month = 12, day = 14, windDir = 0, windSeed = 7, temps = { { t = -0.1, hour = 6, c = 3 }, { t = 0.2, hour = 14, c = 5 } } }
   env.fire("cnr_roundSetup", d); env.tick(1)
   assertEq(env.hud().center.car, "Gavril Pickup · Night · Rain · 14 Dec · 3 to 5 °C")
 end)
@@ -1886,7 +1886,7 @@ test("New sky updates the card and says so", function()
   local env = bootClient()
   local d = copy(SETUP); d.sky = { weather = "rain", windDir = 0, windSeed = 7 }
   env.fire("cnr_roundSetup", d); env.tick(1)
-  env.fire("cnr_sky", { time = "noon", weather = "snow", year = 2026, month = 1, day = 3, windDir = 0, windSeed = 9 })
+  env.fire("cnr_sky", { time = "noon", weather = "snow", year = 2026, month = 1, day = 3, windDir = 0, windSeed = 9, temps = { { t = -0.1, hour = 6, c = -5 }, { t = 0.2, hour = 14, c = -1 } } })
   env.tick(0.2)
   assertEq(env.hud().center.car, "Gavril Pickup · Noon · Snow · 3 Jan · -5 to -1 °C")
   env.tick(3.5)

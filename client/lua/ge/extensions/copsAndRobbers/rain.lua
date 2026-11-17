@@ -121,6 +121,14 @@ function M.clear()
   cover, sinceCover, sinceWrite = shelter.new(), 0, 0
 end
 
+function M.resetRoof()
+  cover, sinceCover = shelter.new(), 0
+  if not cur then return end
+  cur.wroteDrops, cur.wroteVolume = nil, nil
+  local obj = scenetree.findObject(M.NAME)
+  if obj then setHidden(obj, false) end
+end
+
 function M.target(spec, seconds)
   if not M.active() then cover, sinceCover = shelter.new(), 0 end
   goal = spec
@@ -129,7 +137,7 @@ function M.target(spec, seconds)
     if spec then
       if not cur then create(spec) end
       if cur then
-        cur.spec, cur.ramp = spec, nil
+        cur.spec, cur.ramp, cur.fieldsIn = spec, nil, nil
         cur.drops = spec.numDrops
         local obj = scenetree.findObject(M.NAME)
         if obj then setSpecFields(obj, spec) end
@@ -144,8 +152,7 @@ function M.target(spec, seconds)
       fadeRamp()
     end
   elseif sameKind() then
-    local obj = scenetree.findObject(M.NAME)
-    if obj then setSpecFields(obj, spec) end
+    cur.fieldsIn = seconds / 2
     local ramp = nil
     if spec.volume and spec.numDrops ~= cur.drops then ramp = { v0 = baseVolume(), d0 = cur.drops, d1 = spec.numDrops } end
     cur.ramp = ramp
@@ -172,8 +179,17 @@ local function updateCover(dt)
   return true
 end
 
+local function switchFields(dt)
+  cur.fieldsIn = cur.fieldsIn - dt
+  if cur.fieldsIn > EPSILON then return end
+  cur.fieldsIn = nil
+  local obj = scenetree.findObject(M.NAME)
+  if obj then setSpecFields(obj, cur.spec) end
+end
+
 function M.update(dt)
   sinceWrite = sinceWrite + dt
+  if cur and cur.fieldsIn then switchFields(dt) end
   local reached = false
   if cur and not sameKind() then
     cur.drops = cur.drops - rateOut * dt
