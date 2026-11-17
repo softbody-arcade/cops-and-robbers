@@ -286,3 +286,38 @@ test("target is pure", function()
   flight.target(f, car, vec3(0, 0, 0))
   assertEq(f.orbit, orbit)
 end)
+
+test("seeded generators repeat", function()
+  local a, b = flight.seeded(42), flight.seeded(42)
+  for _ = 1, 10 do
+    local x, y = a(), b()
+    assertEq(x, y)
+    assertEq(x >= 0 and x < 1, true)
+  end
+  assertEq(flight.seeded(43)() ~= flight.seeded(42)(), true)
+  for _, s in ipairs({ 0, 2147483647 }) do
+    local g = flight.seeded(s)
+    for _ = 1, 5 do
+      local x = g()
+      assertEq(x == x and x >= 0 and x < 1, true)
+    end
+  end
+end)
+
+test("arrive and at draw the same side from the same generator", function()
+  local car = vec3(100, 200, 10)
+  for s = 1, 20 do
+    local a = flight.arrive(car, flight.seeded(s))
+    local b = flight.at(car, vec3(0, 0, 0), flight.seeded(s))
+    assertEq(a.side, b.side)
+  end
+end)
+
+test("arrive and at take the same bearing from the same generator", function()
+  local car = vec3(100, 200, 10)
+  for s = 1, 20 do
+    local a = flight.arrive(car, flight.seeded(s))
+    local b = flight.at(car, vec3(0, 0, 0), flight.seeded(s))
+    assertNear(a.orbit, b.orbit, 1e-9)
+  end
+end)

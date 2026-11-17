@@ -28,6 +28,16 @@ local function horizontalSpeed(v)
   return math.sqrt(v.x * v.x + v.y * v.y)
 end
 
+function M.seeded(seed)
+  local n = math.floor(tonumber(seed) or 1)
+  if n < 1 or n > 2147483646 then n = n % 2147483646 + 1 end
+  local x = n
+  return function()
+    x = x * 16807 % 2147483647
+    return x / 2147483647
+  end
+end
+
 local function pickSide(random)
   return random() < 0.5 and -1 or 1
 end
@@ -66,6 +76,7 @@ end
 
 function M.arrive(carPos, random, carVel)
   random = random or math.random
+  local side = pickSide(random)
   local heading = random() * 2 * math.pi
   local f = {
     pos = vec3(
@@ -73,7 +84,7 @@ function M.arrive(carPos, random, carVel)
       carPos.y + M.APPROACH_DISTANCE * math.sin(heading),
       carPos.z + M.APPROACH_HEIGHT),
     vel = vec3(0, 0, 0),
-    side = pickSide(random),
+    side = side,
     headingX = 1,
     headingY = 0,
     lastCar = vec3(carPos.x, carPos.y, carPos.z),

@@ -54,6 +54,7 @@ function M.set(state, d, clock)
   local seconds = tonumber(d.seconds)
   state.phase, state.reason = d.phase, d.reason
   state.endsAt = seconds and clock + seconds or nil
+  state.seed = tonumber(d.seed)
 end
 
 function M.tracking(state)
@@ -317,7 +318,7 @@ end
 
 local function dropFlight(state)
   if state.light then removeLight(state) end
-  state.flight, state.leftAt = nil, nil
+  state.flight, state.leftAt, state.flightRandom = nil, nil, nil
 end
 
 local function fly(state, phase, last, car, carVel, dt, clock, random)
@@ -325,6 +326,8 @@ local function fly(state, phase, last, car, carVel, dt, clock, random)
   if f then flight.step(f, car, carVel, dt) end
   if phase == "tracking" or phase == "searching" then
     if not f then
+      state.flightRandom = state.seed and flight.seeded(state.seed) or random
+      random = state.flightRandom
       if last == "arriving" or last == "refuelling" then
         state.flight = flight.arrive(car, random, carVel)
       else
@@ -336,7 +339,7 @@ local function fly(state, phase, last, car, carVel, dt, clock, random)
     end
   elseif phase == "refuelling" then
     if f and not f.leaving then
-      flight.leave(f, car, random)
+      flight.leave(f, car, state.flightRandom or random)
       state.leftAt = clock
     end
   elseif f then
@@ -451,6 +454,7 @@ function M.clear(state)
   pcall(removeLight, state)
   state.phase, state.reason, state.endsAt, state.failed, state.lightPhase = nil, nil, nil, nil, nil
   state.flight, state.leftAt, state.lastClock, state.lastCar, state.carVel = nil, nil, nil, nil, nil
+  state.flightRandom, state.seed = nil, nil
   state.beamFailed = nil
   M.resetCover(state)
 end

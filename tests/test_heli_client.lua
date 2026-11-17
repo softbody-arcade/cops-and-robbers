@@ -1120,3 +1120,73 @@ test("the glare's scale is exactly 1 at full brightness after the fly-in", funct
   assertEq(state.fx.bright, 1)
   assertEq(tonumber(obj.fields.flareScale), 1)
 end)
+
+local function game(stub, statuses, wrapLeave)
+  load()
+  state.random = stub
+  local bearings = {}
+  local fl = require("copsAndRobbers/heliFlight")
+  local orig = fl.leave
+  fl.leave = function(f, car, random)
+    local before = math.atan2(f.pos.y - car.y, f.pos.x - car.x)
+    orig(f, car, random)
+    local after = math.atan2(f.leaving.y - car.y, f.leaving.x - car.x)
+    local d = after - before
+    bearings.turn = math.atan2(math.sin(d), math.cos(d))
+  end
+  local out = {}
+  for i, s in ipairs(statuses) do
+    heli.set(state, s, (i - 1) * 0.05)
+    heli.lightTick(state, target, true, (i - 1) * 0.05)
+    if s.phase == "tracking" and not out.side then
+      out.side, out.pos = state.flight.side, copyPos(state.flight.pos)
+    end
+    if s.phase == "refuelling" then out.leaving, out.f = copyPos(state.flight.leaving), state.flight end
+  end
+  fl.leave = orig
+  out.turn = bearings.turn
+  return out
+end
+
+test("two games with the same seed fly the same helicopter", function()
+  local st = { { phase = "arriving" }, { phase = "tracking", seed = 777 }, { phase = "refuelling" } }
+  local a = game(seeded(1), st)
+  local b = game(seeded(2), st)
+  assertEq(a.side, b.side)
+  for _, k in ipairs({ "x", "y", "z" }) do
+    assertNear(a.pos[k], b.pos[k], 1e-9)
+    assertNear(a.leaving[k], b.leaving[k], 1e-9)
+  end
+end)
+
+test("a game joining mid-round takes the same side as one that saw the arrival", function()
+  local a = game(seeded(1), { { phase = "arriving" }, { phase = "tracking", seed = 777 }, { phase = "refuelling" } })
+  local b = game(seeded(2), { { phase = "tracking", seed = 777 }, { phase = "refuelling" } })
+  assertEq(a.side, b.side)
+  assertNear(a.turn, b.turn, 1e-9)
+end)
+
+test("without a seed the flight uses the existing random", function()
+  load()
+  state.random = seeded(3)
+  heli.set(state, { phase = "tracking" }, 0)
+  heli.lightTick(state, target, true, 0)
+  assertEq(state.flight ~= nil, true)
+  assertEq(state.flightRandom, state.random)
+end)
+
+test("a short refuel resumes and ignores the new seed", function()
+  load()
+  state.random = seeded(3)
+  heli.set(state, { phase = "tracking", seed = 5 }, 0)
+  heli.lightTick(state, target, true, 0)
+  local f, side, gen = state.flight, state.flight.side, state.flightRandom
+  assertEq(gen ~= state.random, true)
+  heli.set(state, { phase = "refuelling" }, 1)
+  heli.lightTick(state, target, true, 1)
+  heli.set(state, { phase = "tracking", seed = 6 }, 3)
+  heli.lightTick(state, target, true, 3)
+  assertEq(state.flight, f)
+  assertEq(state.flight.side, side)
+  assertEq(state.flightRandom, gen)
+end)
