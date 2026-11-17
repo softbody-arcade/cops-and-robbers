@@ -7,6 +7,7 @@ Tracker.__index = Tracker
 local DRAIN_FACTOR = 2
 local STUCK_WINDOW_SECONDS = 2
 local STUCK_METERS = 3
+local ROCK_FACTOR = 2
 
 function M.new(cfg)
   return setmetatable({ cfg = cfg, hold = 0, lastNow = nil, history = {} }, Tracker)
@@ -24,7 +25,12 @@ function Tracker:stuck(now, runner)
   history[#history + 1] = { t = now, pos = runner.pos }
   while #history >= 2 and now - history[2].t >= STUCK_WINDOW_SECONDS - 1e-9 do table.remove(history, 1) end
   local oldest = history[1]
-  return now - oldest.t >= STUCK_WINDOW_SECONDS - 1e-9 and vec.dist(runner.pos, oldest.pos) < STUCK_METERS
+  if now - oldest.t < STUCK_WINDOW_SECONDS - 1e-9 then return false end
+  local net = vec.dist(runner.pos, oldest.pos)
+  if net >= STUCK_METERS then return false end
+  local path = 0
+  for i = 2, #history do path = path + vec.dist(history[i].pos, history[i - 1].pos) end
+  return path >= ROCK_FACTOR * net
 end
 
 function Tracker:isHeld(runner, cops, stuck)

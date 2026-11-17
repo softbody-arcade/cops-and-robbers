@@ -76,9 +76,9 @@ end)
 
 local function moving(x, vxKmh) return car(x, vxKmh / 3.6) end
 
-test("a stuck runner rocking 1.5 m each way at up to 10 km/h is caught once 2 s of rocking count as held", function()
+test("a stuck runner rocking 1.5 m each way at up to 15 km/h is caught once 2 s of rocking count as held", function()
   local t = catch.new(cfg)
-  local w = 10 / 3.6 / 1.5
+  local w = 15 / 3.6 / 1.5
   local caughtAt
   for i = 0, 60 do
     local now = i * 0.25
@@ -101,19 +101,27 @@ test("a runner driving away at 20 km/h is never held, even with a cop alongside"
   end
 end)
 
-test("a runner creeping at 4 km/h with a cop alongside is held", function()
+test("a runner creeping straight at 4 km/h with a cop alongside is never held", function()
   local t = catch.new(cfg)
-  local p, c
-  for i = 0, 7 do
+  for i = 0, 80 do
     local x = i * 0.25 * 4 / 3.6
-    p = t:update(i * 0.25, moving(x, 4), { moving(x + 3, 4) })
+    local p, c = t:update(i * 0.25, moving(x, 4), { moving(x + 3, 4) })
+    assertEq(p, 0, "at " .. i * 0.25)
+    assertEq(c, false)
   end
-  assertEq(p, 0)
-  for i = 8, 37 do
-    local x = i * 0.25 * 4 / 3.6
-    p, c = t:update(i * 0.25, moving(x, 4), { moving(x + 3, 4) })
+end)
+
+test("a runner rocking 1.5 m each way while drifting 0.5 m per 2 s is still held", function()
+  local t = catch.new(cfg)
+  local w = 15 / 3.6 / 1.5
+  local caughtAt
+  for i = 0, 80 do
+    local now = i * 0.25
+    local x = 1.5 * math.sin(w * now) + 0.25 * now
+    local _, c = t:update(now, car(x, 1.5 * w * math.cos(w * now)), { car(5) })
+    if c and not caughtAt then caughtAt = now end
   end
-  assertEq(c, true)
+  assert(caughtAt, "never caught")
 end)
 
 test("a runner at a steady 6 km/h with a cop alongside is never held", function()

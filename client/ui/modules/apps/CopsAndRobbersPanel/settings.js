@@ -42,7 +42,7 @@ export const GROUPS = [
     { key: "catchRadiusMeters", label: "Catch distance", unit: "m", step: 1, min: 1, common: true,
       help: "A cop this close to the runner counts as holding" },
     { key: "catchMaxSpeedKmh", label: "Catch speed", unit: "km/h", step: 1, min: 1,
-      help: "The runner counts as held below this speed, or when they move less than 3 m in 2 s" },
+      help: "The runner counts as held below this speed, or when they rock back and forth within 3 m in 2 s" },
     { key: "explodeOnCatch", label: "Explode on catch", kind: "bool",
       help: "The runner's car blows up when they are caught" },
   ] },
