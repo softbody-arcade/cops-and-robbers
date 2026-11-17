@@ -96,6 +96,26 @@ test("a draw error is logged once per load", function()
   end)
 end)
 
+test("a draw error is logged again after unload without reloading the module", function()
+  run(function()
+    local logs = {}
+    _G.log = function(level, tag, msg) logs[#logs + 1] = msg end
+    local ok, err = pcall(function()
+      ui_apps_minimap_vehicles.drawOtherVehicles = function() error("boom") end
+      hiding.set({ vids = { [2] = true }, minimap = true })
+      hiding.tick(0)
+      ui_apps_minimap_vehicles.drawOtherVehicles()
+      hiding.unload()
+      ui_apps_minimap_vehicles.drawOtherVehicles = function() error("boom") end
+      hiding.set({ vids = { [2] = true }, minimap = true })
+      hiding.tick(10)
+      ui_apps_minimap_vehicles.drawOtherVehicles()
+    end)
+    assert(ok, err)
+    assertEq(#logs, 2)
+  end)
+end)
+
 test("with no target the draw sees every vehicle", function()
   run(function()
     hiding.set(nil)

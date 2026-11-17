@@ -184,3 +184,14 @@ test("the movement history stays bounded and works with ticks that never land 4 
   for i = 15, 200 do t:update(i * 0.3, car(0, 10 / 3.6), { car(5) }) end
   assertEq(#t.history <= 16, true, "history " .. #t.history)
 end)
+
+test("at the real 0.25 s tick the movement history holds the 4 s window and no more", function()
+  local t = catch.new(cfg)
+  local peak = 0
+  for i = 0, 400 do
+    t:update(i * 0.25, car(0, 10 / 3.6), { car(5) })
+    if #t.history > peak then peak = #t.history end
+  end
+  assertEq(peak, 17)
+  assertEq(#t.history, 17)
+end)

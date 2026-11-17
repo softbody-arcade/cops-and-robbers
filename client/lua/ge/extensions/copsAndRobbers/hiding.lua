@@ -105,6 +105,7 @@ end
 function M.unload()
   M.clear()
   unwrap()
+  drawFailed = false
 end
 
 return M
