@@ -147,8 +147,16 @@ local function setupPosition(d)
     if not pos then return resume, nil end
     return pos, rot
   end
-  if role ~= "cop" or d.inPlace then return nil end
+  if d.inPlace then return nil end
   local own = ownVehicle()
+  if role == "runner" then
+    local at = own and own:getPosition()
+    if not at then return nil end
+    local pos, rot = roads.nearestRoad(at, own:getDirectionVector())
+    if not pos then hudfeed.event("No road found nearby, you start where you are", clock, "warn") end
+    return pos, rot
+  end
+  if role ~= "cop" then return nil end
   local runner = d.runnerGeo and geo.toGame(d.runnerGeo) or (d.runnerPos and vec3(d.runnerPos.x, d.runnerPos.y, d.runnerPos.z))
   local center = runner or (own and own:getPosition())
   local runnerCar = runner and not d.geo and runnerObject()
