@@ -529,7 +529,7 @@ local function applyEffects(effects)
         copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
         sightMaxMeters = cfg.sightMaxMeters,
         runnerShown = e.runnerShown, heli = e.heli,
-        evolving = current.evolving or nil, rebuild = current.rebuildId,
+        evolving = current.evolving or nil, rebuild = current.rebuildId, practice = current.test or nil,
         sky = sky.payload(current.sky, cfg, current.countdownStartedAt and math.max(0, now() - current.countdownStartedAt) or nil),
       })
     elseif e.kind == "setupAI" then

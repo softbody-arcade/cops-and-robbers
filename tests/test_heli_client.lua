@@ -838,31 +838,87 @@ end)
 
 local drawn
 
+local function packedColor(r, g, b, a)
+  local function byte(v) return math.max(0, math.min(255, math.floor(v))) end
+  return byte(r) * 16777216 + byte(g) * 65536 + byte(b) * 256 + byte(a or 255)
+end
+
 local function stubBeam(cast)
-  drawn = { calls = 0, far = 0 }
-  _G.debugDrawer = { drawQuadSolid = function(_, a, b, c, d)
-    drawn.calls = drawn.calls + 1
-    for _, v in ipairs({ a, b, c, d }) do drawn.far = math.max(drawn.far, dist3(v, state.lightPos)) end
+  drawn = { calls = 0, tris = 0, far = 0, colors = {}, depth = true }
+  _G.debugDrawer = {}
+  package.loaded["utils/debugDraw"] = { drawTriSolid = function(a, b, c, clr, useZ)
+    if type(clr) ~= "number" then error("expect number colour, got " .. type(clr)) end
+    drawn.tris = drawn.tris + 1
+    drawn.calls = math.floor(drawn.tris / 2)
+    drawn.colors[clr] = true
+    drawn.depth = drawn.depth and useZ == true
+    drawn.last = { a, b, c }
+    for _, v in ipairs({ a, b, c }) do drawn.far = math.max(drawn.far, dist3(v, state.lightPos)) end
   end }
-  _G.color = function(r, g, b, a) return { r = r, g = g, b = b, a = a } end
+  _G.color = packedColor
   _G.core_camera = { getPosition = function() return vec3(pos.x + 100, pos.y + 100, pos.z) end }
   _G.castRayStatic = cast
 end
 
 local function beamTest(name, fn)
   test(name, function()
-    local saved = { _G.debugDrawer, _G.color, _G.core_camera, _G.castRayStatic }
+    local saved = { _G.debugDrawer, _G.color, _G.core_camera, _G.castRayStatic, package.loaded["utils/debugDraw"] }
     local ok, err = pcall(fn)
     _G.debugDrawer, _G.color, _G.core_camera, _G.castRayStatic = saved[1], saved[2], saved[3], saved[4]
+    package.loaded["utils/debugDraw"] = saved[5]
     if not ok then error(err, 0) end
   end)
 end
 
 local function drawsAt(c, isNight, opts)
-  drawn.calls, drawn.far = 0, 0
+  drawn.calls, drawn.tris, drawn.far = 0, 0, 0
   heli.lightTick(state, target, isNight, c, opts)
   return drawn.calls
 end
+
+beamTest("each beam quad is two depth-tested triangles in the quad's winding, with the game's packed colour", function()
+  load()
+  stubBeam()
+  local quads = {}
+  package.loaded["copsAndRobbers/beam"].draw = function(list, n, drawQuad, colorFn)
+    local q = list[1]
+    quads[1] = q
+    drawQuad(q.a, q.b, q.c, q.d, colorFn(217, 235, 255, q.alpha))
+    return 1
+  end
+  local tris = {}
+  package.loaded["utils/debugDraw"].drawTriSolid = function(a, b, c, clr, useZ)
+    tris[#tris + 1] = { a = a, b = b, c = c, clr = clr, useZ = useZ }
+  end
+  heli.set(state, { phase = "tracking" }, 0)
+  heli.lightTick(state, target, true, 0, { weather = "rain" })
+  assertEq(state.beamFailed, nil)
+  assertEq(#tris, 2)
+  local q = quads[1]
+  assertEq(tris[1].a == q.a and tris[1].b == q.b and tris[1].c == q.c, true)
+  assertEq(tris[2].a == q.a and tris[2].b == q.c and tris[2].c == q.d, true)
+  assertEq(tris[1].clr, packedColor(217, 235, 255, q.alpha))
+  assertEq(type(tris[1].clr), "number")
+  assertEq(tris[1].useZ, true)
+  assertEq(tris[2].useZ, true)
+end)
+
+beamTest("without the game's debug draw module the beam stops and the light stays", function()
+  load()
+  stubBeam()
+  package.loaded["utils/debugDraw"] = nil
+  local savedPath = package.path
+  package.path = ""
+  local ok, err = pcall(function()
+    heli.set(state, { phase = "tracking" }, 0)
+    heli.lightTick(state, target, true, 0)
+  end)
+  package.path = savedPath
+  if not ok then error(err, 0) end
+  assertEq(state.beamFailed, true)
+  assertEq(state.failed, nil)
+  assertEq(fake.objects[LIGHT] ~= nil, true)
+end)
 
 beamTest("at night while tracking the beam is drawn and the light has a glare", function()
   load()
@@ -916,7 +972,7 @@ beamTest("a drawer error stops the beam for the round and keeps the light and it
   heli.set(state, { phase = "tracking" }, 0)
   assertEq(drawsAt(0, true) > 0, true)
   local obj = fake.objects[LIGHT]
-  debugDrawer.drawQuadSolid = function() error("draw failed") end
+  package.loaded["utils/debugDraw"].drawTriSolid = function() error("draw failed") end
   heli.lightTick(state, target, true, 0.05)
   assertEq(state.beamFailed, true)
   assertEq(state.failed, nil)

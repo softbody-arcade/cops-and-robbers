@@ -73,7 +73,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Parts, tuning and paint:** locked for everyone during a round, whichever menu is used (the game's part, tuning and paint functions refuse and the HUD says so). Only the evolving runner may change parts and tuning, in prep until Apply. Color comes from the Settings card.
 - **Parts check on the server:** a client that gets around the lock anyway is caught by the server: "⚠ Ann changed parts during the round: engine, intake" is shown to everyone as a notice, once per player per round. The car is never replaced. Changes the mod makes itself (round setup, repaint, Apply rebuild) and the evolving runner's prep change never count; for a few seconds after the mod places a car, BeamMP's reports only set the new baseline.
 - **Physics:** slow motion and the node grabber.
-- **Cameras and modes:** switching vehicles, free camera, photo mode, walking mode.
+- **Cameras and modes:** switching vehicles, free camera (open in practice; dropping the car at the camera stays locked), photo mode, walking mode.
 - **Tools:** the editor, track builder, AI traffic, and the "fun stuff" (fire, boost, fling, force field and so on).
 - **Consoles:** the Lua console, the UI console and Lua reload.
 - **Big map:** "teleport to this point".

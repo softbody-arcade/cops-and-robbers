@@ -188,7 +188,7 @@
         <div class="li">
           <BngIcon :type="icons.lockClosed" />
           <span>
-            <b>Locked during a round:</b> teleporting and recovery, the parts, tuning and paint menus, switching cars, free camera,
+            <b>Locked during a round:</b> teleporting and recovery, the parts, tuning and paint menus, switching cars, free camera (open in practice),
             photo mode, walking, slow motion, the node grabber, the editor and AI traffic.
           </span>
         </div>

@@ -101,7 +101,7 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - The glare belongs to the light, so the beam setting doesn't touch it.
 - **Cost:**
   - Each ring's vertices are built once per frame. The colour objects are cached per alpha value. The quad list is kept between frames and reused, so no new quad entries are made each frame.
-  - Each quad is one `debugDrawer:drawQuadSolid` call, drawn only in the winding that faces the camera (one dot product per quad).
+  - Each quad is drawn once, only in the winding that faces the camera (one dot product per quad), as two triangles through the game's FFI `require("utils/debugDraw").drawTriSolid` with the packed `color()` number and the depth test on. (Built first with `debugDrawer:drawQuadSolid`, which refuses the packed colour in 0.40: "expect userdata, got number", found in the first in-game test.)
     - That's at most 5 layers × 10 lengths × 24 sides = 1,200 calls a frame, or 2,400 (both windings) when the camera position is unknown.
     - The game's own editor code draws both windings for the same reason (`editor/api/gui.lua`: "keep backface cull off").
   - Budget: at most 0.5 ms a frame for the beam (an in-game check).
@@ -132,7 +132,7 @@ Status: approved 2026-11-17 for 2.9.1. Revised the same day after a spec and pla
   - **`docs/FEATURES.md`:** the searchlight section: the flight, the beam, the glare, the setting.
   - **`docs/DEPENDENCIES.md`:**
     - update the SpotLight entry, which still says it "hovers 40 m above"
-    - add `debugDrawer:drawQuadSolid` with `color()`, `core_camera.getPosition()`, the vehicle's `getVelocity()`, `castRayStatic` for the occlusion, and the `BNG_LightFlare_1` flare datablock
+    - add the FFI `utils/debugDraw` `drawTriSolid` with the packed `color()`, `core_camera.getPosition()`, the vehicle's `getVelocity()`, `castRayStatic` for the occlusion, and the `BNG_LightFlare_1` flare datablock
   - **The 2.9.0 spec's searchlight lines** point here for the flight.
 
 ## Tests

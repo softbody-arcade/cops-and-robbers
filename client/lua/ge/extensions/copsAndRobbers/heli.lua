@@ -352,8 +352,11 @@ local function leftover(state, clock)
   return scenetree.findObject(M.LIGHT_NAME) ~= nil
 end
 
+local drawTri
+
 local function drawQuad(a, b, c, d, clr)
-  debugDrawer:drawQuadSolid(a, b, c, d, clr)
+  drawTri(a, b, c, clr, true)
+  drawTri(a, c, d, clr, true)
 end
 
 local function castBeam(state, lightPos, aimPos, clock)
@@ -371,6 +374,7 @@ local function drawBeam(state, clock, weather)
   castBeam(state, lightPos, aimPos, clock)
   local camPos = core_camera and core_camera.getPosition and core_camera.getPosition() or nil
   local n = beam.quads(lightPos, aimPos, beam.strength(weather, state.fx.bright), state.beamHit, camPos, state.beamQuads)
+  drawTri = require("utils/debugDraw").drawTriSolid
   beam.draw(state.beamQuads, n, drawQuad, color)
 end
 

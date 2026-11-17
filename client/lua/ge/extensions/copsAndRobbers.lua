@@ -193,7 +193,7 @@ local function onRoundSetup(data)
   resetAllowed = false
   lastHint = nil
   lastPose = nil
-  inputs.lock(true, requestReset)
+  inputs.lock(true, requestReset, d.practice == true)
   inputs.setResetKey()
   local mayChange = d.phase == "prep" and evolving and role == "runner"
   inputs.setPartsMenu(mayChange)

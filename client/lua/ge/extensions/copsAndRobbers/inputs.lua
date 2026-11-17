@@ -12,6 +12,7 @@ local EXTRA_LOCKED_ACTIONS = {
 }
 local RESET_BUTTONS = { reset_physics = true, recover_vehicle = true, recover_vehicle_alt = true, recover_to_last_road = true, loadHome = true }
 local GATED_ACTIONS = { reset_physics = true, parts_selector = true, recover_vehicle = true, recover_vehicle_alt = true, recover_to_last_road = true, loadHome = true }
+local FREE_CAM_ACTIONS = { toggleCamera = true, dropCameraAtPlayer = true }
 local RESET_ACTIONS = { "reset_physics" }
 local PARTS_ACTIONS = { "parts_selector" }
 local VEHICLE_PATCH_INTERVAL = 2
@@ -80,10 +81,10 @@ end
 local originalBigMapTeleport, originalResetGameplay, originalLastRoad
 local lastVehiclePatch = -math.huge
 
-local function lockedActions()
+local function lockedActions(freeCam)
   local seen, list = {}, {}
   local function add(name)
-    if type(name) == "string" and not seen[name] and not GATED_ACTIONS[name] then
+    if type(name) == "string" and not seen[name] and not GATED_ACTIONS[name] and not (freeCam and FREE_CAM_ACTIONS[name]) then
       seen[name] = true
       list[#list + 1] = name
     end
@@ -134,8 +135,8 @@ local function hookResetButtons(on, requestReset)
   end
 end
 
-function M.lock(on, requestReset)
-  core_input_actionFilter.setGroup("cnr_locked", lockedActions())
+function M.lock(on, requestReset, freeCam)
+  core_input_actionFilter.setGroup("cnr_locked", lockedActions(freeCam))
   core_input_actionFilter.addAction(0, "cnr_locked", on)
   guardBigMapTeleport(on)
   hookResetButtons(on, requestReset)

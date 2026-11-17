@@ -2544,10 +2544,14 @@ test("at night the searchlight hangs from the helicopter circling the runner's c
 end)
 
 test("turning the beam off stops the quads while the light and its glare stay", function()
-  local saved = { _G.debugDrawer, _G.color, _G.core_camera, _G.castRayStatic }
+  local saved = { _G.debugDrawer, _G.color, _G.core_camera, _G.castRayStatic, package.loaded["utils/debugDraw"] }
   local quads = 0
-  _G.debugDrawer = { drawQuadSolid = function() quads = quads + 1 end }
-  _G.color = function(r, g, b, a) return { r = r, g = g, b = b, a = a } end
+  _G.debugDrawer = {}
+  package.loaded["utils/debugDraw"] = { drawTriSolid = function(_, _, _, clr)
+    if type(clr) ~= "number" then error("expect number colour, got " .. type(clr)) end
+    quads = quads + 0.5
+  end }
+  _G.color = function(r, g, b, a) return r * 16777216 + g * 65536 + b * 256 + (a or 255) end
   _G.core_camera = { getPosition = function() return vec3(1100, 1100, 10) end }
   _G.castRayStatic = nil
   local ok, err = pcall(function()
@@ -2572,6 +2576,7 @@ test("turning the beam off stops the quads while the light and its glare stay", 
     assertEq(quads > 0, true, tostring(quads))
   end)
   _G.debugDrawer, _G.color, _G.core_camera, _G.castRayStatic = saved[1], saved[2], saved[3], saved[4]
+  package.loaded["utils/debugDraw"] = saved[5]
   if not ok then error(err, 0) end
 end)
 
@@ -2610,6 +2615,34 @@ test("the searchlight is gone after the round, a cancel, leaving, a map change a
       end
     end
   end
+end)
+
+local function inLockGroup(env, action)
+  for _, name in ipairs(env.actionGroups.cnr_locked or {}) do
+    if name == action then return true end
+  end
+  return false
+end
+
+test("free cam stays locked in a real round", function()
+  local env = bootClient()
+  env.fire("cnr_roundSetup", copy(SETUP))
+  assertEq(env.actionFilter.cnr_locked, true)
+  assertEq(inLockGroup(env, "toggleCamera"), true)
+  assertEq(inLockGroup(env, "dropCameraAtPlayer"), true)
+  assertEq(inLockGroup(env, "dropPlayerAtCamera"), true)
+end)
+
+test("free cam is open in practice, while moving the car to the camera stays locked", function()
+  local env = bootClient()
+  local d = copy(SETUP)
+  d.practice = true
+  env.fire("cnr_roundSetup", d)
+  assertEq(env.actionFilter.cnr_locked, true)
+  assertEq(inLockGroup(env, "toggleCamera"), false)
+  assertEq(inLockGroup(env, "dropCameraAtPlayer"), false)
+  assertEq(inLockGroup(env, "dropPlayerAtCamera"), true)
+  assertEq(inLockGroup(env, "switch_next_vehicle"), true)
 end)
 
 local AI_RUNNER = -10
