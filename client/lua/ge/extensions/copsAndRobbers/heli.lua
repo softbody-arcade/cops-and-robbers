@@ -481,6 +481,7 @@ function M.wantsNight(state)
 end
 
 M.soundLevel = search.soundLevel
+M.flying = search.flying
 
 function M.clear(state)
   pcall(removeLight, state)

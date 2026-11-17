@@ -37,7 +37,11 @@ function bootClient(opts)
   end
   math.atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
   _G.vec3 = v3
-  _G.quatFromDir = function(dir, up) return { dir = dir, up = up } end
+  _G.quatFromDir = function(dir, up)
+    local q = { dir = dir, up = up, x = 0, y = 0, z = 0, w = 1 }
+    function q:setFromDir(d, u) self.dir, self.up = d, u end
+    return q
+  end
   _G.jsonEncode = function(t) return t end
   _G.jsonDecode = function(d)
     if type(d) == "table" then return d end

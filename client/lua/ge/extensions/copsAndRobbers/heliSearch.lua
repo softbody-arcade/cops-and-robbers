@@ -375,10 +375,16 @@ function M.roadAim(state, clock)
   return roadSearch.aimPoint(s.run, clock - (state.sweepAt or clock), vec3(p.x, p.y, p.z - flight.HELI_HEIGHT))
 end
 
-function M.soundLevel(state, clock)
-  if not state.flight then return 0 end
+function M.flying(state, clock)
+  local f = state.flight
+  if not f then return nil end
   local since = state.missingSince
-  if since and clock - since > M.TARGET_MISSING_SECONDS then return 0 end
+  if since and clock - since > M.TARGET_MISSING_SECONDS then return nil end
+  return f
+end
+
+function M.soundLevel(state, clock)
+  if not M.flying(state, clock) then return 0 end
   local left = state.leftAt
   if left then return math.min(1, math.max(0, (flight.DEPART_SECONDS - (clock - left)) / flight.DEPART_FADE_SECONDS)) end
   return 1
