@@ -371,7 +371,7 @@ end)
 
 test("a carriageway further than a narrow median's width is not taken for the runner's heading", function()
   carriageways(20)
-  local pos = roads.findCopSpot(vec3(16, 10, 0), 50, 150, 1, vec3(0, 1, 0))
+  local pos = roads.findCopSpot(vec3(16, 10, 0), 50, 150, 1, vec3(0, -1, 0))
   assertEq(pos.x, 20)
 end)
 
@@ -422,4 +422,43 @@ test("the straight-line search skips gated roads and the private roads behind th
     local pos = roads.findCopSpot(vec3(0, 0, 0), 50, 150, i)
     assertEq(pos.y, 200, "spot " .. i .. " at " .. pos.x .. "," .. pos.y)
   end
+end)
+
+local function straight(x1, x2)
+  local nodes, links = {}, {}
+  road(nodes, links, "r", line(x1, x2), false)
+  useMap(nodes, links)
+end
+
+test("forward cone: no cop starts ahead of the runner while other spots exist", function()
+  straight(-500, 500)
+  for i = 1, 6 do
+    local pos = roads.findCopSpot(vec3(0, 0, 0), 50, 150, i, vec3(1, 0, 0))
+    assertEq(pos ~= nil, true, "spot " .. i)
+    assertEq(pos.x <= 0, true, "spot " .. i .. " x " .. tostring(pos.x))
+  end
+end)
+
+test("forward cone: spots to the side of the heading are allowed", function()
+  local nodes, links = {}, {}
+  road(nodes, links, "s", { { 0, -300 }, { 0, -200 }, { 0, -100 }, { 0, 0 }, { 0, 100 }, { 0, 200 }, { 0, 300 } }, false)
+  useMap(nodes, links)
+  local pos = roads.findCopSpot(vec3(0, 0, 0), 50, 150, 1, vec3(1, 0, 0))
+  assertEq(pos.x, 0)
+  assertEq(math.abs(pos.y) >= 50, true)
+end)
+
+test("forward cone: when every spot is ahead they are still used", function()
+  straight(60, 500)
+  local pos = roads.findCopSpot(vec3(0, 0, 0), 50, 150, 1, vec3(1, 0, 0))
+  assertEq(pos ~= nil, true)
+  assertEq(pos.x > 0, true)
+end)
+
+test("forward cone: no heading changes nothing", function()
+  straight(0, 500)
+  local pos = roads.findCopSpot(vec3(0, 0, 0), 50, 150, 1)
+  assertNear(pos.x, 50, 0.01)
+  pos = roads.findCopSpot(vec3(0, 0, 0), 50, 150, 1, vec3(0, 0, 0))
+  assertNear(pos.x, 50, 0.01)
 end)

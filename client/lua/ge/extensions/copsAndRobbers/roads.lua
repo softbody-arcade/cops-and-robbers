@@ -261,15 +261,40 @@ local function pickFrom(candidates, ringList, index)
   return nil
 end
 
+local FORWARD_CONE = math.cos(math.rad(45))
+
+local function outsideCone(spots, center, heading)
+  local h = heading and flatDir(heading)
+  if not h or not spots then return nil end
+  local out = {}
+  for _, spot in ipairs(spots) do
+    local off = flatDir(spot.pos - center)
+    if not off or dot(off, h) < FORWARD_CONE then out[#out + 1] = spot end
+  end
+  if #out == #spots then return nil end
+  return out
+end
+
 function M.findCopSpot(center, minD, maxD, index, heading)
   local ringList = rings(minD, maxD)
   local limit = ringList[#ringList][2]
-  local spots = roadSpots(center, limit, heading)
-  if spots then
-    local pos, rot = pickFrom(spots, ringList, index)
+  local roadList = roadSpots(center, limit, heading)
+  local roadOut = outsideCone(roadList, center, heading)
+  if roadOut then
+    local pos, rot = pickFrom(roadOut, ringList, index)
     if pos then return pos, rot end
   end
-  return pickFrom(lineSpots(center, minD, limit), ringList, index)
+  if roadList then
+    local pos, rot = pickFrom(roadList, ringList, index)
+    if pos then return pos, rot end
+  end
+  local lineList = lineSpots(center, minD, limit)
+  local lineOut = outsideCone(lineList, center, heading)
+  if lineOut then
+    local pos, rot = pickFrom(lineOut, ringList, index)
+    if pos then return pos, rot end
+  end
+  return pickFrom(lineList, ringList, index)
 end
 
 local function closestNodeFallback(pos)
