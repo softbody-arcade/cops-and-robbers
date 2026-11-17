@@ -120,6 +120,8 @@ function fakeEnvironment(opts)
     end
     return obj
   end
+  _G.Sim = { upcast = function(obj) return obj end }
+  _G.MatrixF = function() return {} end
   _G.scenetree = {
     findObject = function(name) return fake.objects[name] end,
     MissionGroup = { addObject = function() end },

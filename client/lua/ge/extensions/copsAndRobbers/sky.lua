@@ -184,6 +184,7 @@ function M.apply(p)
       wasLocked = not env.canChange()
     end
   end
+  local newRound = round == nil
   local at = tonumber(p.clockSeconds) or 0
   local state, curveNow = roundState(env, p, at)
   local from, to, progress, index = skyChanges.at(p, at)
@@ -194,7 +195,7 @@ function M.apply(p)
   env.enableChanges(true)
   local ok, err = pcall(function()
     blend(env, state)
-    rain.resetRoof()
+    if newRound then rain.resetRoof() end
     if index > 0 and progress < 1 then
       rain.target(precipitation(from), 0)
       rain.target(precipitation(to), skyChanges.CHANGE_SECONDS * (1 - progress))

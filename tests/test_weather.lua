@@ -354,6 +354,15 @@ test("fog lifts when it warms above 12 C", function()
   assertEq(tod > 0.75 and tod < 0.875, true)
 end)
 
+test("a fog crossing at the turning point just filled refills it with the new weather", function()
+  local r = weather.build({ time = "night", weather = "fog", month = 10 }, noSlots(), script({ 0.75 }, 0.5))
+  assertEq(r.temps[2].c, 12)
+  local ch = r.changes[1]
+  assertEq(ch.cross, true); assertEq(ch.to, "clear")
+  assertNear(ch.at, r.temps[2].t * 900, 1e-6)
+  assertEq(r.temps[3].c, 22)
+end)
+
 test("a crossing during a change waits for its end", function()
   local kinds = { "rain", "snow", "storm", "fog", "cloudy" }
   local months = { 1, 3, 12, 10 }
@@ -414,6 +423,14 @@ test("no missed crossing: a fitted weather fits until the next change, and a cro
       list[#list + 1] = { r = weather.build(s, c, weather.seeded(seed)), ds = weather.DAY_SECONDS[dayLength], c = c, s = s }
     end
   end
+  for seed = 1, 4 do
+    for _, month in ipairs({ 3, 11 }) do
+      local c = cfg({ roundTimeLimitSeconds = 1800, dayLength = "fast", weatherChangeMinMinutes = 25, weatherChangeMaxMinutes = 25 })
+      local s = { time = TIMES[seed], weather = "storm", month = month }
+      list[#list + 1] = { r = weather.build(s, c, weather.seeded(seed)), ds = weather.DAY_SECONDS.fast, c = c, s = s }
+    end
+  end
+  local storms, delayed = 0, 0
   for _, k in ipairs(list) do
     local r, ds = k.r, k.ds
     local from, to = r.releaseAt, weather.endAt(k.c)
@@ -430,6 +447,8 @@ test("no missed crossing: a fitted weather fits until the next change, and a cro
       while r.changes[ci] and r.changes[ci].at <= t + 1e-9 do
         local ch = r.changes[ci]
         if ch.cross then
+          if cur == "storm" then storms = storms + 1 end
+          if ci > 1 and ch.at - r.changes[ci - 1].at < weather.CHANGE_SECONDS + 1e-9 then delayed = delayed + 1 end
           assertEq(fit(cur, ch.at - 1e-3) and fit(cur, ch.at + 1e-3), false)
         end
         cur, fitted, runUntil = ch.to, false, ch.at + weather.CHANGE_SECONDS
@@ -444,4 +463,6 @@ test("no missed crossing: a fitted weather fits until the next change, and a cro
       end
     end
   end
+  assertEq(storms > 0, true)
+  assertEq(delayed > 0, true)
 end)
