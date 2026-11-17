@@ -8,6 +8,7 @@ One entry per piece of work that has started: what it is, its branch (or "design
 - [ ] Helicopter searching and sound (target 2.9.4): every flight starts searching where it last knew the runner was (the call-in spot at arrival, the last known spot after a refuel), a tunnel exit ahead when the runner is lost under a roof (turning around dodges it), the cops' sight guides it, it finds the runner only by seeing them within 400 m, and the searchlight is never cut and sweeps while searching; a rotor sound at the helicopter with a "Helicopter sound" switch (qubodup's CC0 loop, probe-verified). Spec: `docs/superpowers/specs/2026-11-17-visible-searchlight-beam-design.md` (Searching, Helicopter sound). Plan: `docs/superpowers/plans/2026-11-17-helicopter-search-and-sound.md`, revised after two review passes. Branch `helicopter-search` (worktree)
   - [ ] Searchlight edge cases left from 2.9.0 (`heli.lua`): `createLight` leaks the object if a field set throws before it is registered; night falling while the helicopter tracks pops the light in without a fade
   - [ ] The helicopter's last-seen ping goes out about 2.5 s after the runner is lost (the 2 s rule plus the 0.5 s smoothing); check `docs/FEATURES.md` and the 2.9.0 spec's in-game check 2 no longer say "where the runner went under" or "the tunnel mouth"
+
 ## In-game checks
 Things only a player in the game can confirm, each with what to look for. Add them here when work is merged or deployed without the check; delete a line once it is checked, and turn anything that fails into an Issue.
 
