@@ -926,7 +926,7 @@ local function panelState()
     loading = loading, autoNext = autoNext, lastResult = lastResult,
     stationCount = #(geoMode and geoStations or stations), geo = geoMode,
     skyRandom = not geoMode and sky.hasRandom(cfg),
-    trafficNote = traffic.note(cfg.trafficPerPlayer, maxCars(), geoMode, online),
+    trafficNote = traffic.note(cfg.trafficPerPlayer, maxCars(), geoMode, online, cfg.trafficRunnerOnly == true),
   })
 end
 
