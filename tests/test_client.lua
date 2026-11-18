@@ -33,10 +33,9 @@ test("a cop round places the car, reports it and shows the prep line", function(
   assertEq(h.prep.waiting, "Waiting for the host to press GO")
 end)
 
-test("a rejoining player reports the round car once BeamMP assigns its late server ID", function()
+test("a player reports the round car once BeamMP assigns its late server ID", function()
   local env = bootClient()
   local setup = copy(SETUP)
-  setup.phase, setup.resumePos = "running", { x = 900, y = 9, z = 15 }
   local ready = false
   MPVehicleGE.getVehicleByGameID = function(id)
     if ready then return { serverVehicleString = "1-" .. id } end
@@ -1780,14 +1779,6 @@ test("the runner's chase line counts down to the cops' release", function()
   env.fire("cnr_release", {})
   env.tick(1.2)
   assertEq(env.hud().status.releaseIn, nil); assertEq(env.hud().status.time, "0:01")
-end)
-
-test("a runner who rejoins in the head start sees the release countdown on the chase line", function()
-  local env = bootClient()
-  env.fire("cnr_roundSetup", { role = "runner", runnerId = 1, model = "pickup", config = "vehicles/pickup/base.pc", phase = "headstart", headStartRemaining = 4 })
-  env.tick(0.2)
-  assertEq(env.hud().center, nil)
-  assertEq(env.hud().status.releaseIn, 4)
 end)
 
 test("hello pushes right away", function()
@@ -3739,12 +3730,13 @@ test("a runner never sees the cops' name tags or minimap markers, from setup to 
   end)
 end)
 
-test("a rejoining cop gets the hidden runner from setup", function()
+test("a cop hides and shows the runner as sightings change", function()
   withMinimap({ 100, 300 }, function(draw)
     local env = bootClient()
     local d = copy(SETUP)
-    d.phase, d.runnerShown, d.resumePos = "running", false, { x = 40, y = 0, z = 0 }
     env.fire("cnr_roundSetup", d)
+    env.fire("cnr_runnerGo", { headStartSeconds = 7 })
+    env.fire("cnr_runnerShown", { shown = false })
     env.addObject(300, vec3(0, 0, 0))
     env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
     env.fire("cnr_roundCars", { keys = { "1-0", "2-0" } })
@@ -3864,19 +3856,6 @@ test("a cop uses the runner's XYZ for placement and falls back to the cop's car"
     assertEq(center.z, available and 12 or 5)
     assertEq(env.lastSent("cnr_myVehicle").vid, 100)
   end
-end)
-
-test("a rejoining cop uses the saved XYZ when there is no road nearby", function()
-  local env = bootClient()
-  local d = copy(SETUP)
-  d.phase, d.resumePos = "running", { x = 900, y = 9, z = 15 }
-  local roads = package.loaded["copsAndRobbers/roads"]
-  roads.nearestRoad = function() return nil end
-  env.fire("cnr_roundSetup", d)
-  env.tick(1)
-  assertEq(env.teleported, 1)
-  assertEq(env.veh.pos.x, 900); assertEq(env.veh.pos.y, 9); assertEq(env.veh.pos.z, 15)
-  assertEq(env.lastSent("cnr_myVehicle").vid, 100)
 end)
 
 test("a cop's start spot is searched along the runner car's heading", function()
@@ -5207,8 +5186,16 @@ test("round result, leave, mission end and unload release the lightning scene", 
   end
 end)
 
-local function thunderSky(clock)
-  return {weather = "thunderstorm", lightningSeed = 55, clockSeconds = clock, driving = false}
+local function thunderSky(clock, seed, minimum, maximum)
+  local p = {weather = "thunderstorm", lightningSeed = seed or 55, clockSeconds = clock, driving = false,
+    lightningMinSeconds = minimum, lightningMaxSeconds = maximum, lightningPositions = {}}
+  local schedule = require("cnr.strikeSchedule")
+  for _, event in ipairs(schedule.between(schedule.new(p.lightningSeed), p, 0, 700)) do
+    local angle = math.rad(event.bearing)
+    p.lightningPositions[#p.lightningPositions + 1] = {id = event.id, at = event.at,
+      x = event.range * math.sin(angle), y = event.range * math.cos(angle), z = 0}
+  end
+  return p
 end
 
 local function withThunder(fn)
@@ -5216,7 +5203,7 @@ local function withThunder(fn)
   local previousScene = package.loaded["copsAndRobbers/lightningScene"]
   local previousStrikes = package.loaded["copsAndRobbers/strikes"]
   local env = bootClient({files = {["settings/cnr_settings.json"] = {sound = false}}})
-  local oldCamera, oldColor, oldDraw = core_camera, color, package.loaded["utils/debugDraw"]
+  local oldCamera, oldColor, oldDraw, oldCast = core_camera, color, package.loaded["utils/debugDraw"], castRayStatic
   local loadMaterials = loadJsonMaterialsFile
   local triangles = 0
   _G.core_camera = {getPosition = function() return vec3(0, 0, 0) end}
@@ -5229,7 +5216,7 @@ local function withThunder(fn)
   local strikes = require("copsAndRobbers/strikes")
   local events = strikes.between(strikes.new(55), thunderSky(), 0, 100)
   local ok, err = pcall(fn, env, events, function() return triangles end)
-  _G.core_camera, _G.color, package.loaded["utils/debugDraw"] = oldCamera, oldColor, oldDraw
+  _G.core_camera, _G.color, package.loaded["utils/debugDraw"], _G.castRayStatic = oldCamera, oldColor, oldDraw, oldCast
   _G.loadJsonMaterialsFile = loadMaterials
   package.loaded["copsAndRobbers/lightning"] = previousLightning
   package.loaded["copsAndRobbers/lightningScene"] = previousScene
@@ -5253,16 +5240,15 @@ local function thunderPlays(env)
   return count
 end
 
-test("GO and joined lightning frames use the runner for each role", function()
+test("GO and joined lightning frames use the shared sky for each role", function()
   for _, role in ipairs({"runner", "cop", "spectator", "AI spectator", "missing runner"}) do
     withThunder(function(env)
       local sky = thunderSky(613.4)
       local lightning = require("copsAndRobbers/lightning")
       local frame
-      lightning.tick = function(_, p, lo, hi, target, flashes, covered, intersects)
-        frame = {p = p, lo = lo, hi = hi, target = target, flashes = flashes, covered = covered, intersects = intersects}
+      lightning.tick = function(_, p, lo, hi, flashes, covered, intersects)
+        frame = {p = p, lo = lo, hi = hi, flashes = flashes, covered = covered, intersects = intersects}
       end
-      local target
       if role == "runner" then
         local d = copy(SETUP)
         d.role, d.runnerId, d.sky = "runner", 1, sky
@@ -5270,26 +5256,19 @@ test("GO and joined lightning frames use the runner for each role", function()
         env.M.onUpdate(0.1)
         assertEq(frame and frame.p, nil)
         env.fire("cnr_countdown", {seconds = 3})
-        target = env.veh
       elseif role == "AI spectator" then
         watchPractice(env, {phase = "running", sky = sky})
       elseif role == "spectator" then
         spectate(env, {phase = "running", sky = sky})
         roundCars(env)
-        target = env.objects[201]
       else
         chaseWith(env, sky)
-        if role == "cop" then
-          roundCars(env)
-          target = env.objects[201]
-        end
+        if role == "cop" then roundCars(env) end
       end
       env.M.onUpdate(0.1)
-      if role == "AI spectator" then target = assert(env.spawned[1]).veh end
       assertEq(frame and frame.p, sky, role)
       assertNear(frame.lo, role == "runner" and 0 or 613.4, 1e-8, role)
       assertNear(frame.hi, role == "runner" and 0.1 or 613.5, 1e-8, role)
-      assertEq(frame.target, target, role)
       assertEq(frame.flashes, true, role)
       assertEq(frame.covered, false, role)
       assertEq(frame.intersects, true, role)
@@ -5297,11 +5276,129 @@ test("GO and joined lightning frames use the runner for each role", function()
   end
 end)
 
+test("a countdown player and delayed spectator render the same pulse on the server clock", function()
+  for _, spectator in ipairs({false, true}) do
+    withThunder(function(env, _, glow)
+      local previousEngine = Engine
+      local serverAt = spectator and 9.8 or 0.1
+      local uptime = spectator and 3000 or 500
+      _G.Engine = {Platform = {getRuntime = function() return uptime + serverAt end}}
+      local ok, err = pcall(function()
+        local sky = thunderSky(spectator and 8.9 or nil, 55, 5, 5)
+        sky.lightningClockSync = true
+        if spectator then
+          spectate(env, {phase = "running", sky = sky})
+        else
+          local d = copy(SETUP)
+          d.sky = sky
+          env.fire("cnr_roundSetup", d)
+          env.fire("cnr_countdown", {seconds = 3})
+        end
+        env.M.onUpdate(0.016)
+        local probe = env.lastSent("cnr_lightningClock")
+        assertEq(probe and probe.seed, 55)
+        local oneWay = spectator and 0.04 or 0.012
+        local sampledAt = serverAt + oneWay
+        serverAt = sampledAt + oneWay
+        env.fire("cnr_lightningClock", {seed = probe.seed, id = probe.id, elapsed = sampledAt})
+        if not spectator then
+          serverAt = 5.01
+          env.M.onUpdate(0.3)
+          assert(glow() > 0)
+        end
+        serverAt = 9.99
+        env.M.onUpdate(0.011)
+        assertEq(env.sky.objects.cnr_lightning_flash, nil)
+        if spectator then assertEq(thunderPlays(env), 0) end
+        serverAt = 10.02
+        env.M.onUpdate(0.017)
+        local light = env.sky.objects.cnr_lightning_flash
+        assertEq(light and light.fields.isEnabled, "1")
+      end)
+      _G.Engine = previousEngine
+      assert(ok, err)
+    end)
+  end
+end)
+
+test("expired clock samples and older replies cannot rewind a storm or replay past strikes", function()
+  withThunder(function(env, _, glow)
+    local previousEngine, uptime = Engine, 300
+    _G.Engine = {Platform = {getRuntime = function() return uptime end}}
+    local ok, err = pcall(function()
+      local p = thunderSky(2, 55, 5, 5)
+      p.lightningClockSync = true
+      spectate(env, {phase = "running", sky = p})
+      env.M.onUpdate(0.01)
+      local first = assert(env.lastSent("cnr_lightningClock"))
+      uptime = 310
+      env.fire("cnr_lightningClock", {seed = 55, id = first.id, elapsed = 4.99})
+      env.M.onUpdate(8)
+      local second = assert(env.lastSent("cnr_lightningClock"))
+      assertEq(second.id ~= first.id, true)
+      assertEq(glow(), 0)
+      env.fire("cnr_lightningClock", {seed = 55, id = first.id, elapsed = 50})
+      env.fire("cnr_lightningClock", {seed = 1, id = second.id, elapsed = 50})
+      uptime = 310.04
+      env.fire("cnr_lightningClock", {seed = 55, id = second.id, elapsed = 14.72})
+      uptime = 310.29
+      env.M.onUpdate(0.25)
+      assertEq(glow(), 0)
+      assertEq(thunderPlays(env), 0)
+      uptime = 310.31
+      env.M.onUpdate(0.02)
+      assert(glow() > 0)
+      local seen = glow()
+      env.fire("cnr_lightningClock", {seed = 55, id = second.id, elapsed = 9})
+      uptime = 310.9
+      env.M.onUpdate(0.59)
+      assertEq(glow(), seen)
+    end)
+    _G.Engine = previousEngine
+    assert(ok, err)
+  end)
+end)
+
+test("the runner, a cop and a late spectator see one bolt at the announced landmark", function()
+  for _, role in ipairs({"runner", "cop", "spectator"}) do
+    withThunder(function(env)
+      local p = thunderSky(role == "spectator" and 4.9 or 0, 55, 5, 5)
+      local landing = {id = p.lightningPositions[1].id, at = 5, x = 820, y = -375, z = 12}
+      p.lightningPositions = role == "spectator" and {landing} or nil
+      local camera = role == "runner" and vec3(120, 20, 80) or vec3(-1100, 500, 20)
+      core_camera.getPosition = function() return camera end
+      local rays = {}
+      _G.castRayStatic = function(origin, direction, distance)
+        if direction.z < 0 and distance == 5000 then
+          rays[#rays + 1] = origin
+          return 2425
+        end
+        return distance
+      end
+      if role == "spectator" then
+        spectate(env, {phase = "running", sky = p})
+      else
+        local d = copy(SETUP)
+        d.role, d.runnerId, d.sky = role, role == "runner" and 1 or 2, p
+        env.fire("cnr_roundSetup", d)
+        if role == "cop" then roundCars(env) end
+        env.fire("cnr_countdown", {seconds = 3})
+        env.fire("cnr_lightningPositions", {lightningSeed = 55, positions = {landing}})
+        env.fire("cnr_lightningPositions", {lightningSeed = 56, positions = {}})
+      end
+      env.M.onUpdate(role == "spectator" and 0.101 or 5.001)
+      assertEq(#rays, 1, role)
+      assertEq(rays[1].x, 820, role)
+      assertEq(rays[1].y, -375, role)
+      assert(boltRods(env) > 0, role)
+    end)
+  end
+end)
+
 test("a fixed five-second storm flashes five seconds after the countdown starts", function()
   withThunder(function(env, _, lines)
     local d = copy(SETUP)
-    d.sky = thunderSky(0)
-    d.sky.lightningMinSeconds, d.sky.lightningMaxSeconds = 5, 5
+    d.sky = thunderSky(0, 55, 5, 5)
     env.fire("cnr_roundSetup", d)
     env.M.onUpdate(12)
     assertEq(lines(), 0)
@@ -5431,9 +5528,7 @@ local function withBridge(fn)
       return distance
     end
     local ok, err = pcall(function()
-      local sky = thunderSky(9.865)
-      sky.lightningSeed = 700
-      sky.lightningMinSeconds, sky.lightningMaxSeconds = 10, 10
+      local sky = thunderSky(9.865, 700, 10, 10)
       chaseWith(env, sky)
       env.M.onUpdate(0.01)
       assertEq(rays, 1)

@@ -12,6 +12,7 @@ local tables = require("cnr.tables")
 local build = require("cnr.build")
 local panel = require("cnr.panel")
 local sky = require("cnr.sky")
+local strikeSchedule = require("cnr.strikeSchedule")
 local traffic = require("cnr.traffic")
 
 local VERSION = "2.14.4"
@@ -50,7 +51,6 @@ local REFUSAL_LOG_SECONDS = 10
 local refusalLoggedAt = {}
 local colorStore = {}
 local sitOut = {}
-local spectators = {}
 local aiSpawnsLeft = 0
 local gridClients = {}
 local START_ROAD_SEARCH = 2000
@@ -112,7 +112,7 @@ local lastLobbyError
 
 local function send(pid, event, payload)
   if type(pid) ~= "number" or (pid < 0 and pid ~= -1) then return end
-  MP.TriggerClientEvent(pid, event, Util.JsonEncode(payload or {}))
+  return MP.TriggerClientEvent(pid, event, Util.JsonEncode(payload or {}))
 end
 local function notify(pid, msg, tone)
   send(pid, "cnr_notice", { msg = msg, tone = tone or "info" })
@@ -372,6 +372,30 @@ local function carFor(pid)
   return { pos = pos, vel = vel }
 end
 
+local function announceLightning(runner)
+  local s = current.sky
+  if not (s and s.strikeCursor) then return end
+  local elapsed = s.lightningTimer:GetCurrent()
+  local horizon = elapsed + 1.25
+  s.lastRunnerPos = runner and runner.pos or s.lastRunnerPos
+  local events = strikeSchedule.between(s.strikeCursor, s, math.max(s.lightningHorizon or 0, elapsed - 2), horizon)
+  s.lightningHorizon = horizon
+  if #events == 0 then return end
+  local positions = {}
+  for _, p in ipairs(s.lightningPositions or {}) do
+    if p.at >= elapsed - 2 then positions[#positions + 1] = p end
+  end
+  local start = current.startGrid and current.startGrid[1]
+  local ref = s.lastRunnerPos or start and start.pos or {x = 0, y = 0, z = 0}
+  for _, event in ipairs(events) do
+    local angle = math.rad(event.bearing)
+    positions[#positions + 1] = {id = event.id, at = event.at, x = ref.x + event.range * math.sin(angle),
+      y = ref.y + event.range * math.cos(angle), z = ref.z}
+  end
+  s.lightningPositions = positions
+  send(current.test and current.issuerId or -1, "cnr_lightningPositions", {lightningSeed = s.lightningSeed, positions = positions})
+end
+
 local function trafficCars()
   local list = {}
   for pid, set in pairs(trafficVids) do
@@ -465,24 +489,14 @@ local function applyEffects(effects)
       send(e.pid, "cnr_planStart", { id = e.id, count = e.count, anchor = e.anchor,
         copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters })
     elseif e.kind == "setup" then
-      spectators[e.pid] = nil
-      if e.role == "runner" and not current.test then
-        local key = playerKey(e.pid)
-        lastRunnerKey = key
-        plannedRunnerKey = nil
-        currentRunnerKey = key
-      end
       local anchor = e.startPose ~= nil and current.startGrid[1]
       local runnerCar = not anchor and carFor(current.runnerId)
-      placing(e.pid)
-      log(string.format("setup sent to %s: %s, %s%s", MP.GetPlayerName(e.pid) or tostring(e.pid), e.role, tostring(e.phase), e.resumePos and ", resuming" or ""))
-      send(e.pid, "cnr_roundSetup", {
+      local delivered, reason = send(e.pid, "cnr_roundSetup", {
         startPose = e.startPose,
         runnerId = current.runnerId, runnerName = current:runnerName(), role = e.role, copIndex = e.copIndex,
         model = current.vehicle.model, config = current.vehicle.config,
         phase = e.phase, countdownRemaining = e.countdownRemaining, chaseElapsed = e.chaseElapsed,
         headStartRemaining = e.headStartRemaining, inPlace = e.inPlace,
-        resumePos = e.resumePos,
         color = e.colorHex and colorTable((colors.parseHex(e.colorHex))) or colorFor(e.pid),
         runnerPos = anchor and anchor.pos or runnerCar and runnerCar.pos or nil,
         copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
@@ -491,8 +505,21 @@ local function applyEffects(effects)
         evolving = current.evolving or nil, rebuild = current.rebuildId, practice = current.test or nil,
         sky = sky.payload(current.sky, cfg, current.countdownStartedAt and math.max(0, now() - current.countdownStartedAt) or nil),
       })
+      if delivered == false then
+        log(string.format("setup failed for %s: %s", MP.GetPlayerName(e.pid) or tostring(e.pid), tostring(reason)))
+        applyEffects(current:setupFailed(now(), e.pid))
+        if not current:isActive() then return end
+      else
+        placing(e.pid)
+        log(string.format("setup sent to %s: %s, %s", MP.GetPlayerName(e.pid) or tostring(e.pid), e.role, tostring(e.phase)))
+        if e.role == "runner" and not current.test then
+          local key = playerKey(e.pid)
+          lastRunnerKey = key
+          plannedRunnerKey = nil
+          currentRunnerKey = key
+        end
+      end
     elseif e.kind == "spectate" then
-      if not current.test then spectators[e.pid] = true end
       log(string.format("%s spectates (%s)", MP.GetPlayerName(e.pid) or tostring(e.pid), tostring(e.phase)))
       send(e.pid, "cnr_spectate", {
         runnerId = current.runnerId, runnerName = current:runnerName(), phase = e.phase,
@@ -512,6 +539,11 @@ local function applyEffects(effects)
         aiOnly = e.aiOnly,
       })
     elseif e.kind == "countdown" then
+      if sky.hasThunderstorm(current.sky) then
+        current.sky.lightningTimer = MP.CreateTimer()
+        current.sky.strikeCursor = strikeSchedule.new(current.sky.lightningSeed)
+        announceLightning(carFor(current.runnerId))
+      end
       send(e.to or -1, "cnr_countdown", { seconds = e.seconds })
     elseif e.kind == "runnerGo" then
       send(e.to or -1, "cnr_runnerGo", { headStartSeconds = e.headStartSeconds })
@@ -544,7 +576,6 @@ local function applyEffects(effects)
       activeVid = {}
       trafficOpen = {}
       trafficVids = {}
-      spectators = {}
       aiSpawnsLeft = 0
       clearRoundCars()
       partsBaseline = {}
@@ -1115,27 +1146,23 @@ local function tracksActive(pid)
   return current:isActive() and not (current.test and pid == current.issuerId)
 end
 
-local function logVehicle(pid, action, vid, allowed, decoded)
-  if allowed then
-    if not decoded or not current:isPlacing(now(), pid) then return end
-  else
-    local last = refusalLoggedAt[pid]
-    if last and now() - last < REFUSAL_LOG_SECONDS then return end
-    refusalLoggedAt[pid] = now()
-  end
-  log(string.format("%s %s %s (vid %s): %s", MP.GetPlayerName(pid) or tostring(pid), action,
-    tostring(decoded and decoded.jbm or "?"), tostring(vid), allowed and "allowed" or "refused"))
+local function logVehicleRefusal(pid, action, vid, decoded)
+  local last = refusalLoggedAt[pid]
+  if last and now() - last < REFUSAL_LOG_SECONDS then return end
+  refusalLoggedAt[pid] = now()
+  log(string.format("%s %s %s (vid %s): refused", MP.GetPlayerName(pid) or tostring(pid), action,
+    tostring(decoded and decoded.jbm or "?"), tostring(vid)))
 end
 
 function cnrOnVehicleSpawn(pid, vid, data)
-  if spectators[pid] then
-    logVehicle(pid, "spawned", vid, false, parseVehicleData(data))
+  if current.vehicle and not current.test and current.players[pid] == nil then
+    logVehicleRefusal(pid, "spawned", vid, parseVehicleData(data))
     refuse(pid, "You can't spawn a car while spectating")
     return 1
   end
   local allowed, decoded, why = vehicleAllowed(pid, vid, data, true)
-  logVehicle(pid, "spawned", vid, allowed, decoded)
   if not allowed then
+    logVehicleRefusal(pid, "spawned", vid, decoded)
     refuse(pid, why or "Only the round car is allowed")
     return 1
   end
@@ -1145,8 +1172,8 @@ end
 
 function cnrOnVehicleEdited(pid, vid, data)
   local allowed, decoded, why = vehicleAllowed(pid, vid, data, false)
-  logVehicle(pid, "edited", vid, allowed, decoded)
   if not allowed then
+    logVehicleRefusal(pid, "edited", vid, decoded)
     refuse(pid, why or "Only the round car is allowed")
     return 1
   end
@@ -1219,7 +1246,6 @@ function cnrOnPlayerDisconnect(pid)
   stationsRequested[pid] = nil
   refusalLoggedAt[pid] = nil
   sitOut[pid] = nil
-  spectators[pid] = nil
   panelSubs[pid] = nil
   boardSubs[pid] = nil
   applyEffects(current:playerLeft(now(), pid))
@@ -1235,6 +1261,16 @@ end
 
 local function finite(n)
   return type(n) == "number" and math.abs(n) < math.huge
+end
+
+function cnrOnLightningClock(pid, data)
+  local timer = current.sky and current.sky.lightningTimer
+  if not timer or not current:isActive() then return end
+  local players = MP.GetPlayers() or {}
+  if not players[pid] or (current.test and pid ~= current.issuerId) then return end
+  local ok, d = pcall(Util.JsonDecode, data)
+  if not ok or type(d) ~= "table" or d.seed ~= current.sky.lightningSeed or not finite(d.id) then return end
+  send(pid, "cnr_lightningClock", {seed = d.seed, id = d.id, elapsed = timer:GetCurrent()})
 end
 
 local function gamePoint(p)
@@ -1306,7 +1342,6 @@ function cnrOnMyVehicle(pid, data)
   activeVid[pid] = vid
   placed(pid)
   log(string.format("%s placed the round car (vid %s)", MP.GetPlayerName(pid) or tostring(pid), tostring(vid)))
-  applyEffects(current:vehiclePlaced(now(), pid))
   applyEffects(current:vehicleReady(now(), pid, tonumber(decoded.rebuild)))
   if not current.test and not trafficOpen[pid] then
     local vehicles = MP.GetPlayerVehicles(pid)
@@ -1424,6 +1459,7 @@ function cnrTick()
   if not current:isActive() then return end
   local cars = {}
   for pid in pairs(current.players) do cars[pid] = carFor(pid) end
+  announceLightning(cars[current.runnerId])
   applyEffects(current:tick(now(), cars, stations, trafficCars()))
 end
 
@@ -1455,6 +1491,7 @@ MP.RegisterEvent("cnr_color", "cnrOnColor")
 MP.RegisterEvent("cnr_sitOut", "cnrOnSitOut")
 MP.RegisterEvent("cnr_sight", "cnrOnSight")
 MP.RegisterEvent("cnr_cover", "cnrOnCover")
+MP.RegisterEvent("cnr_lightningClock", "cnrOnLightningClock")
 MP.RegisterEvent("cnr_board", "cnrOnBoard")
 MP.RegisterEvent("cnr_setup", "cnrOnSetup")
 MP.RegisterEvent("cnr_change", "cnrOnChange")

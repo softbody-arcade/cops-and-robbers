@@ -10,7 +10,7 @@ local LIGHT_DISTANCE = 300
 local serial = 0
 
 function M.new()
-  return {visuals = {}, pending = {}, playing = {}, logged = {}}
+  return {visuals = {}, pending = {}, playing = {}, logged = {}, awaiting = {}}
 end
 
 local function remove(obj)
@@ -22,6 +22,7 @@ function M.hasVisualTail(s)
 end
 
 function M.hide(s)
+  for _, item in ipairs(s.awaiting) do item.visible = false end
   for _, visual in ipairs(s.visuals) do lightningScene.remove(visual.scene) end
   remove(s.light)
   s.light, s.enabled = nil, nil
@@ -32,7 +33,7 @@ function M.clear(s)
   M.hide(s)
   for _, slot in pairs(s.playing) do remove(slot.obj) end
   s.seed, s.cursor = nil, nil
-  s.pending, s.playing, s.logged = {}, {}, {}
+  s.pending, s.playing, s.logged, s.awaiting = {}, {}, {}, {}
 end
 
 local function report(s, part, err)
@@ -121,11 +122,8 @@ local function getCamera()
   if ok then return pos end
 end
 
-local function landingAt(event, ref)
-  local angle = math.rad(event.bearing)
-  local x = ref.x + event.range * math.sin(angle)
-  local y = ref.y + event.range * math.cos(angle)
-  local z = ref.z
+local function landingAt(pos)
+  local x, y, z = pos.x, pos.y, pos.z
   if castRayStatic then
     local ok, hit = pcall(castRayStatic, vec3(x, y, 2500), vec3(0, 0, -1), 5000)
     if ok and type(hit) == "number" and hit >= 0 and hit < 5000 then z = 2500 - hit end
@@ -133,8 +131,8 @@ local function landingAt(event, ref)
   return vec3(x, y, z)
 end
 
-local function capture(s, event, ref, cam, visible, now)
-  local landing = landingAt(event, ref)
+local function capture(s, event, pos, cam, visible, now)
+  local landing = landingAt(pos)
   local dx, dy, dz = landing.x - cam.x, landing.y - cam.y, landing.z - cam.z
   local distance = math.sqrt(dx * dx + dy * dy + dz * dz)
   local clip, delay, volume = strikes.sound(event.soundRoll, distance)
@@ -209,7 +207,7 @@ local function render(s, now, cam)
   end
 end
 
-function M.tick(s, p, lo, hi, runnerObj, flashes, covered, intersectsStorm)
+function M.tick(s, p, lo, hi, flashes, covered, intersectsStorm)
   local seed = p and p.lightningSeed
   if seed ~= s.seed then
     if s.seed then M.clear(s) end
@@ -225,14 +223,22 @@ function M.tick(s, p, lo, hi, runnerObj, flashes, covered, intersectsStorm)
     if #events > 0 then
       cam = getCamera()
       if cam then
-        local ref
-        if runnerObj then
-          local ok, pos = pcall(function() return runnerObj:getPosition() end)
-          if ok then ref = pos end
+        for _, event in ipairs(events) do
+          s.awaiting[#s.awaiting + 1] = {event = event, camera = vec3(cam.x, cam.y, cam.z), visible = visible}
         end
-        for _, event in ipairs(events) do capture(s, event, ref or cam, cam, visible, hi) end
       end
     end
+  end
+  local i = 1
+  while i <= #s.awaiting do
+    local item = s.awaiting[i]
+    item.visible = item.visible and visible
+    local pos
+    for _, candidate in ipairs(p.lightningPositions or {}) do
+      if candidate.id == item.event.id then pos = candidate; break end
+    end
+    if pos then capture(s, item.event, pos, item.camera, item.visible, hi) end
+    if pos or hi - item.event.at > 2 then table.remove(s.awaiting, i) else i = i + 1 end
   end
   if s.pending[1] or next(s.playing) then serviceSound(s, hi) end
   if M.hasVisualTail(s) then

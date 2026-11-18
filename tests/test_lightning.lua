@@ -4,7 +4,7 @@ local strikes = require("copsAndRobbers/strikes")
 local LIGHT = "cnr_lightning_flash"
 local MATERIAL = "cnrLightningBoltRod"
 local function strike(at, range, roll)
-  return {at = at, range = range, bearing = 0, soundRoll = roll or 0, shapeSeed = 47,
+  return {at = at, id = at, range = range, bearing = 0, soundRoll = roll or 0, shapeSeed = 47,
     pulses = {{start = 0, length = 0.18, level = 1}, {start = 0.25, length = 0.22, level = 0.5}}}
 end
 
@@ -52,6 +52,17 @@ local function scene(fn)
       for _, event in ipairs(e.events) do
         if event.at > lo and event.at <= hi then events[#events + 1] = event end
       end
+      if not e.manualPositions then
+        p.lightningPositions = {}
+        local origin = e.anchor or vec3(0, 0, 0)
+        for _, event in ipairs(events) do
+          local angle = math.rad(event.bearing)
+          p.lightningPositions[#p.lightningPositions + 1] = {
+            at = event.at, id = event.id, x = origin.x + event.range * math.sin(angle),
+            y = origin.y + event.range * math.cos(angle), z = origin.z,
+          }
+        end
+      end
       return events
     end
     strikes.bolt = function(seed) e.shapes = e.shapes + 1; return bolt(seed) end
@@ -61,7 +72,7 @@ local function scene(fn)
     local s = lightning.new()
     e.p, e.clock, e.flashes, e.cover, e.storm = {weather = "thunderstorm", lightningSeed = 7}, 0, true, false, true
     function e.tick(hi)
-      lightning.tick(s, e.p, e.clock, hi, e.runner, e.flashes, e.cover, e.storm)
+      lightning.tick(s, e.p, e.clock, hi, e.flashes, e.cover, e.storm)
       e.clock = hi
     end
     fn(e, lightning, s)
@@ -83,7 +94,7 @@ end
 
 test("light uses the seeded midpoint and sound uses strike-time camera distance", function()
   scene(function(e, lightning, s)
-    e.runner = {getPosition = function() return vec3(20, 30, 45) end}
+    e.anchor = vec3(20, 30, 45)
     e.camera, e.hit, e.events = vec3(20, 30, 400), 2400, {strike(1, 1200)}
     e.tick(1)
     assertEq(#e.rays, 1)
@@ -133,7 +144,7 @@ end)
 test("the inclusive bolt cutoff uses 3D distance and overhead flashes follow the camera", function()
   for _, height in ipairs({2400, 2400.1}) do
     scene(function(e)
-      e.runner = {getPosition = function() return vec3(0, 0, 0) end}
+      e.anchor = vec3(0, 0, 0)
       e.camera, e.hit, e.events = vec3(0, 0, height), 2500, {strike(1, 3200)}
       e.tick(1)
       local light = assert(e.objects[LIGHT])
@@ -160,7 +171,7 @@ end)
 test("missing ground uses the reference position and height", function()
   for _, hit in ipairs({false, 5000}) do
     scene(function(e)
-      e.runner = {getPosition = function() return vec3(-100, 72, -20) end}
+      e.anchor = vec3(-100, 72, -20)
       e.hit, e.events = hit or nil, {strike(1, 3200)}
       e.tick(1)
       assertEq(e.rays[1][1].x, -100); assertEq(e.rays[1][1].y, 3272)
@@ -393,7 +404,7 @@ test("crossing the end of thunderstorm easing shares roof clearance until the la
       elseif mode == "roof" then assertEq(covered, true)
       else assertEq(covered, nil) end
       e.camera, e.events = vec3(0, 0, 0), {strike(159.95, 343)}
-      lightning.tick(s, frame, lo, hi, nil, true, covered, storm)
+      lightning.tick(s, frame, lo, hi, true, covered, storm)
       assertEq(e.objects[LIGHT] ~= nil, mode == "open")
       assertEq(e.rodCount(false) > 0, mode == "open")
       assertEq(e.glow > 0, mode == "open")
@@ -402,10 +413,43 @@ test("crossing the end of thunderstorm easing shares roof clearance until the la
       frame, lo, hi, covered, storm = sky.lightningFrame()
       assertEq(storm, false)
       if mode == "open" then assertEq(covered, true) end
-      lightning.tick(s, frame, lo, hi, nil, true, covered, storm)
+      lightning.tick(s, frame, lo, hi, true, covered, storm)
       assertEq(e.objects[LIGHT], nil); assertEq(e.rodCount(), 0)
-      lightning.tick(s, frame, hi, 161, nil, true, covered, false)
+      lightning.tick(s, frame, hi, 161, true, covered, false)
       assertEq(#e.played, 1)
     end)
   end
+end)
+
+test("an unannounced strike waits for its position and keeps its original listener distance", function()
+  scene(function(e)
+    e.manualPositions = true
+    e.events = {strike(1, 343)}
+    e.tick(1)
+    assertEq(#e.rays, 0)
+    assertEq(e.objects[LIGHT], nil)
+    e.camera.y = 343
+    e.p.lightningPositions = {{id = 1, at = 1, x = 0, y = 343, z = 0}}
+    e.tick(1.05)
+    assertEq(#e.rays, 1)
+    assertLightPosition(e.objects[LIGHT], 206.7140505098, 136.0469187759, 450)
+    e.tick(1.99)
+    assertEq(#e.played, 0)
+    e.tick(2)
+    assertEq(#e.played, 1)
+  end)
+end)
+
+test("hiding a strike while its position is in transit keeps its thunder only", function()
+  scene(function(e, lightning, s)
+    e.manualPositions = true
+    e.events = {strike(1, 343)}
+    e.tick(1)
+    lightning.hide(s)
+    e.p.lightningPositions = {{id = 1, at = 1, x = 0, y = 343, z = 0}}
+    e.tick(1.1)
+    assertEq(e.objects[LIGHT], nil)
+    e.tick(2)
+    assertEq(#e.played, 1)
+  end)
 end)

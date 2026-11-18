@@ -201,12 +201,6 @@ local function onPickVehicle(data)
 end
 
 local function setupPosition(d)
-  local resume = d.resumePos and vec3(d.resumePos.x, d.resumePos.y, d.resumePos.z)
-  if resume then
-    local pos, rot = roads.nearestRoad(resume)
-    if not pos then return resume, nil end
-    return pos, rot
-  end
   if d.startPose ~= nil then
     local pos, rot = startGrid.pose(d.startPose)
     if not d.startPose or d.startPose.offRoad then
@@ -1019,7 +1013,7 @@ local function onUpdate(dtReal, dtSim)
   local target = role == "runner" and ownVehicle() or runnerObj
   if active or spectating then
     local p, lo, hi, covered, intersectsStorm = sky.lightningFrame()
-    lightning.tick(lightningState, p, lo, hi, target, prefs.lightning ~= false, covered, intersectsStorm)
+    lightning.tick(lightningState, p, lo, hi, prefs.lightning ~= false, covered, intersectsStorm)
   end
   updateSight(runnerObj)
   updateHiding(runnerObj)
@@ -1113,6 +1107,7 @@ local function onExtensionLoaded()
   AddEventHandler("cnr_roundSetup", onRoundSetup)
   AddEventHandler("cnr_spectate", onSpectate)
   AddEventHandler("cnr_release", onRelease)
+  AddEventHandler("cnr_lightningClock", function(data) sky.syncLightningClock(jsonDecode(data)) end)
   AddEventHandler("cnr_heli", function(data) setHeli(jsonDecode(data)) end)
   AddEventHandler("cnr_countdown", onCountdown)
   AddEventHandler("cnr_runnerGo", onRunnerGo)
@@ -1120,6 +1115,7 @@ local function onExtensionLoaded()
   AddEventHandler("cnr_penalty", onPenalty)
   AddEventHandler("cnr_setupAI", onSetupAI)
   AddEventHandler("cnr_sky", onSky)
+  AddEventHandler("cnr_lightningPositions", function(data) sky.setLightningPositions(jsonDecode(data)) end)
   AddEventHandler("cnr_trafficStart", function(data)
     local d = jsonDecode(data) or {}
     traffic.start(d.count, not runnerOut, clock)

@@ -1,6 +1,7 @@
+local schedule = require("copsAndRobbers/strikeSchedule")
 local M = {}
 
-M.CHANGE_SECONDS = 60
+M.CHANGE_SECONDS = schedule.CHANGE_SECONDS
 M.DRY_SECONDS = 180
 M.WINDOW_SECONDS = 120
 M.GROUNDED = { storm = true, thunderstorm = true, fog = true, snow = true }
@@ -17,24 +18,12 @@ local function changesOf(p)
   return p and p.changes or {}
 end
 
-function M.at(p, t)
-  local list = changesOf(p)
-  local n = 0
-  for i, ch in ipairs(list) do
-    if ch.at <= t then n = i else break end
-  end
-  if n == 0 then return p.weather, p.weather, 1, 0 end
-  local from = n > 1 and list[n - 1].to or p.weather
-  return from, list[n].to, math.min(1, (t - list[n].at) / M.CHANGE_SECONDS), n
-end
+M.at = schedule.weatherAt
+M.smooth = schedule.smooth
 
 function M.current(p, t)
   local _, to = M.at(p, t)
   return to
-end
-
-function M.smooth(x)
-  return x * x * (3 - 2 * x)
 end
 
 function M.notice(from, to)

@@ -70,6 +70,15 @@ function M.hasRandom(cfg)
   return cfg.timeOfDay == "random" or cfg.weather == "random"
 end
 
+function M.hasThunderstorm(s)
+  if not s then return false end
+  if s.weather == "thunderstorm" then return true end
+  for _, change in ipairs(s.changes or {}) do
+    if change.to == "thunderstorm" then return true end
+  end
+  return false
+end
+
 function M.payload(s, cfg, clockSeconds)
   if s == nil or next(s) == nil then return nil end
   local p = {
@@ -81,9 +90,11 @@ function M.payload(s, cfg, clockSeconds)
     windDir = s.windDir,
     windSeed = s.windSeed,
     lightningSeed = s.lightningSeed,
+    lightningPositions = s.lightningPositions,
     lightningMinSeconds = s.lightningMinSeconds or config.DEFAULTS.lightningMinSeconds,
     lightningMaxSeconds = s.lightningMaxSeconds or config.DEFAULTS.lightningMaxSeconds,
     clockSeconds = clockSeconds,
+    lightningClockSync = M.hasThunderstorm(s) or nil,
     daySeconds = M.DAY_SECONDS[cfg.dayLength],
     changes = s.changes,
     temps = s.temps,
