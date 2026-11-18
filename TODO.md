@@ -7,6 +7,9 @@ Priorities run from `!!!!` (highest) through `!!!` (high), `!!` (normal), and `!
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
+- [ ] !!! `fix/trailers-current` — integrating both trailer fixes with current round placement and rejoin behavior.
+  - Sitting out with a truck and trailer parked at an angle straightens the trailer on return, which can move it into a building. Restore both vehicles in their parked positions, still hitched.
+  - Choosing Play can leave a personal trailer or spare car on the map. In normal and practice rounds, remove active players’ spare vehicles after successful placement so only round vehicles and traffic remain. Active players keep their round cars afterward. Players sitting out get their parked vehicles back.
 - [ ] ! `fix/ui-app-placement` — implementing and testing.
   - How to play, Panel and Leaderboard forget their size and position when closed and reopened. The shared close action removes the layout entry and reopening uses the app defaults (`apps.lua`, `placement.lua`). Decide whether to remember each app’s placement per HUD layout.
 - [ ] ! `fix/ui-panel-tabs` — implementing and testing.
@@ -14,6 +17,10 @@ One entry per piece of work that has started: what it is, its branch (or "design
 - [ ] ! `fix/ui-hud-sizing` — implementing and testing.
   - `useFit` (`fit.js`) only shrinks text and never grows it in a large app. Decide whether it should
   - HUD styles repeated across components: `.title`, `.tone-*` and `.mono` (HudCenter, HudResult, HudChase) and the root container (Hud, Announcements and How to play `app.vue`). Move them into the shared kit; needs a visual check in game. (`.hud-btn` and `.swatch` are already shared: `.cnr-btn`, `.cnr-swatch` in `CnrRoot.vue`)
+
+- [ ] ! `fix/weather-housekeeping` — fixing locked sky restoration and the remaining weather review items.
+  - `drop` during a restore blend freezes the sky half-way for a player whose environment was locked. It's reachable only from `onClientEndMission`, where the level unloads anyway (`sky.lua`)
+  - Weather polish left from the 2.11.0 reviews, all can-wait: `sky.forecast` allocates every frame; `stepCurve` builds 3 tables per step; `windAt` calls `wind.at` twice when the weather doesn't change; the 1 s scan grid is redundant once a weather fits; the round clock expression is repeated in `round.lua`
 
 ## In-game checks
 Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to decide what needs a player. Record deferred checks here with the action, expected observation and open question. Remove a check once verified and record failures under Issues.
@@ -42,8 +49,3 @@ Run these together on 2.14.7 (`9f9c656`) or later. The two solo checks fit in th
 - [ ] ! Workflow request. Make it easy to see which subagents are currently working when the session list also contains completed agents.
 
 ## Issues
-- [ ] !!! Sitting out with a truck and trailer parked at an angle straightens the trailer on return, which can move it into a building. Restore both vehicles in their parked positions, still hitched. Deferred fix on `fix/restore-trailer-hitch`.
-- [ ] !!! Choosing Play can leave a personal trailer or spare car on the map. In normal and practice rounds, remove active players’ spare vehicles after successful placement so only round vehicles and traffic remain. Active players keep their round cars afterward. Players sitting out get their parked vehicles back. Deferred fix on `fix/active-round-trailer`.
-- [ ] ! The game's Vehicle Radar app shows hidden cars nearby (about 30 m, up to about 54 m ahead with its offset slider): it walks `be:getObject(i)` directly (`vehicleRadarApp.lua:187`), so the hiding can't filter it. The user accepted this (2026-11-17); fix only if an easy way turns up
-- [ ] ! `drop` during a restore blend freezes the sky half-way for a player whose environment was locked. It's reachable only from `onClientEndMission`, where the level unloads anyway (`sky.lua`)
-- [ ] ! Weather polish left from the 2.11.0 reviews, all can-wait: `sky.forecast` allocates every frame; `stepCurve` builds 3 tables per step; `windAt` calls `wind.at` twice when the weather doesn't change; the 1 s scan grid is redundant once a weather fits; the round clock expression is repeated in `round.lua`
