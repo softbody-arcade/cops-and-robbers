@@ -88,14 +88,16 @@ local function load(opts)
     directoryCreate = function(_, dir) dirs[#dirs + 1] = dir end,
     fileExists = function(_, path) return files[path] ~= nil end,
     findFiles = function(_, dir, pattern, depth)
-      assertEq(depth, 0)
       local ext = ({ ["/temp/cnr/"] = "dae", ["/temp/temp/cnr/"] = "cdae" })[dir]
       assertEq(ext ~= nil, true, dir)
       assertEq(pattern, "pigeon_heli_*." .. ext)
       local out = {}
       for path in pairs(files) do
-        local name = path:sub(#dir + 1)
-        if path:sub(1, #dir) == dir and not name:find("/", 1, true) and name:find("^pigeon_heli_.*%." .. ext .. "$") then
+        local relative = path:sub(#dir + 1)
+        local _, levels = relative:gsub("/", "")
+        local name = relative:match("([^/]+)$")
+        if path:sub(1, #dir) == dir and (opts.includeNested or depth == -1 or levels <= depth)
+          and name:find("^pigeon_heli_.*%." .. ext .. "$") then
           out[#out + 1] = path
         end
       end
@@ -198,10 +200,10 @@ test("an unchanged copy is not rewritten on a later session and older copies and
   local gone = { "/temp/cnr/pigeon_heli_123.dae", "/temp/cnr/pigeon_heli_1794951770_1.dae", "/temp/temp/cnr/pigeon_heli_123.cdae",
     "/temp/temp/cnr/pigeon_heli_1794951770_1.cdae" }
   local kept = { cache, "/temp/cnr/notes.txt", "/temp/cnr/pigeon_heli_x.dae", "/temp/cnr/pigeon_heli_.dae", "/temp/cnr/sub/pigeon_heli_5.dae",
-    "/temp/temp/cnr/pigeon_heli_9.dae" }
+    "/temp/temp/cnr/sub/pigeon_heli_5.cdae", "/temp/temp/cnr/pigeon_heli_9.dae" }
   for _, f in ipairs(gone) do files[f] = "old" end
   for _, f in ipairs(kept) do files[f] = "keep" end
-  load({ keepFiles = true })
+  load({ keepFiles = true, includeNested = true })
   local s = van.new()
   assertEq(van.prepare(s), path)
   assertEq(#written, 0)
@@ -216,10 +218,12 @@ test("an unchanged copy is not rewritten on a later session and older copies and
   assertEq(files[path] ~= "broken", true)
 end)
 
-test("a partial trim or a livery or lamp material that didn't load warns once and still flies", function()
+test("a partial trim or an unavailable livery or lamp material warns once and still flies", function()
   local cases = {
     partial = { setUp = function() files[SOURCE] = PARTIAL end, says = "2 of 72 parts", body = "pigeon.skin.birdabduction", lamp = "pigeon_lights" },
     livery = { setUp = function() unloaded["pigeon.skin.birdabduction"] = true end, says = "livery not loaded", body = "pigeon", lamp = "pigeon_lights" },
+    missingBody = { setUp = function() files[SOURCE] = FULL:gsub("pigeon%-material", "alternate-material") end,
+      says = "livery not found", bodyId = "alternate-material", body = "pigeon", lamp = "pigeon_lights" },
     lamps = { setUp = function() unloaded.pigeon_lights = true end, says = "0 of 7 lamp", body = "pigeon.skin.birdabduction", lamp = "pigeon_headlights" },
   }
   for name, c in pairs(cases) do
@@ -232,7 +236,7 @@ test("a partial trim or a livery or lamp material that didn't load warns once an
     assertEq(logs[1].level, "W", name)
     assertEq(contains(logs[1].msg, c.says), true, name .. ": " .. logs[1].msg)
     local text = files[path]
-    assertEq(contains(text, '<material id="pigeon-material" name="' .. c.body .. '">'), true, name)
+    assertEq(contains(text, '<material id="' .. (c.bodyId or "pigeon-material") .. '" name="' .. c.body .. '">'), true, name)
     assertEq(contains(text, '<material id="pigeon_headlights-material" name="' .. c.lamp .. '">'), true, name)
     for i = 0, 5 do van.tick(s, flight(0, 0, 100), i * 0.1, true) end
     assertEq(created(), 1, name)

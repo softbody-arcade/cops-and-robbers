@@ -225,76 +225,55 @@ local function roadSpots(center, limit, heading)
   return sortSpots(spots)
 end
 
-local function pickSpot(candidates, lo, hi, index)
-  local chosen = {}
-  for _, c in ipairs(candidates) do
-    if c.d > hi + 0.01 then break end
-    if c.d >= lo and c.d <= hi then
-      local free = true
-      for _, prev in ipairs(chosen) do
-        if prev.pos:distance(c.pos) < COP_SPACING then free = false break end
-      end
-      if free then
-        chosen[#chosen + 1] = c
-        if #chosen == index then return c end
-      end
-    end
-  end
-  return nil
-end
-
-local function rings(minD, maxD)
-  local list = { { minD, maxD } }
-  local hi = math.max(maxD, 1)
-  while hi < MAX_SPAWN_RING do
-    hi = hi * 2
-    list[#list + 1] = { minD, hi }
-  end
-  return list
-end
-
-local function pickFrom(candidates, ringList, index)
-  for _, ring in ipairs(ringList) do
-    local spot = pickSpot(candidates, ring[1], ring[2], index)
-    if spot then return spot.pos, quatFromDir(spot.dir, vec3(0, 0, 1)) end
-  end
-  return nil
-end
-
 local FORWARD_CONE = math.cos(math.rad(45))
 
-local function outsideCone(spots, center, heading)
+local function orderedSpots(spots, center, heading, minD, limit)
+  local preferred, ahead = {}, {}
   local h = heading and flatDir(heading)
-  if not h or not spots then return nil end
-  local out = {}
-  for _, spot in ipairs(spots) do
-    local off = flatDir(spot.pos - center)
-    if not off or dot(off, h) < FORWARD_CONE then out[#out + 1] = spot end
+  for _, spot in ipairs(spots or {}) do
+    if spot.d >= minD and spot.d <= limit and spot.pos:distance(center) <= limit then
+      local off = h and flatDir(spot.pos - center)
+      local list = off and dot(off, h) >= FORWARD_CONE and ahead or preferred
+      list[#list + 1] = spot
+    end
   end
-  if #out == #spots then return nil end
-  return out
+  for _, spot in ipairs(ahead) do preferred[#preferred + 1] = spot end
+  return preferred
+end
+
+local function available(spot, chosen)
+  for _, other in ipairs(chosen) do
+    if other.pos:distance(spot.pos) < COP_SPACING then return false end
+  end
+  return true
+end
+
+function M.copSpotFinder(center, minD, maxD, heading)
+  local limit = math.max(maxD, 1)
+  while limit < MAX_SPAWN_RING do limit = limit * 2 end
+  local candidates = orderedSpots(roadSpots(center, limit, heading), center, heading, minD, limit)
+  local chosen, cursor, usingLines = {}, 1, false
+  return function(index)
+    while #chosen < index do
+      local spot = candidates[cursor]
+      if spot then
+        cursor = cursor + 1
+        if available(spot, chosen) then chosen[#chosen + 1] = spot end
+      elseif usingLines then
+        return
+      else
+        candidates = orderedSpots(lineSpots(center, minD, limit), center, heading, minD, limit)
+        cursor, usingLines = 1, true
+      end
+    end
+    local spot = chosen[index]
+    if spot then return spot.pos, spot.dir end
+  end
 end
 
 function M.findCopSpot(center, minD, maxD, index, heading)
-  local ringList = rings(minD, maxD)
-  local limit = ringList[#ringList][2]
-  local roadList = roadSpots(center, limit, heading)
-  local roadOut = outsideCone(roadList, center, heading)
-  if roadOut then
-    local pos, rot = pickFrom(roadOut, ringList, index)
-    if pos then return pos, rot end
-  end
-  if roadList then
-    local pos, rot = pickFrom(roadList, ringList, index)
-    if pos then return pos, rot end
-  end
-  local lineList = lineSpots(center, minD, limit)
-  local lineOut = outsideCone(lineList, center, heading)
-  if lineOut then
-    local pos, rot = pickFrom(lineOut, ringList, index)
-    if pos then return pos, rot end
-  end
-  return pickFrom(lineList, ringList, index)
+  local pos, dir = M.copSpotFinder(center, minD, maxD, heading)(index)
+  if pos then return pos, quatFromDir(dir, vec3(0, 0, 1)) end
 end
 
 local function closestNodeFallback(pos)
@@ -313,7 +292,7 @@ local function closestNodeFallback(pos)
   return best, bestLink
 end
 
-function M.nearestRoad(pos, heading)
+function M.nearestRoad(pos, heading, followOneWay)
   local n1, n2 = map.findClosestRoad(pos)
   if not n1 then n1, n2 = closestNodeFallback(pos) end
   if not n1 then return nil end
@@ -321,8 +300,19 @@ function M.nearestRoad(pos, heading)
   local a, b = nodes[n1], nodes[n2]
   if not a or not b then return nil end
   local dir = (b.pos - a.pos):normalized()
-  if heading and dir.x * heading.x + dir.y * heading.y < 0 then dir = dir * -1 end
-  return a.pos, quatFromDir(dir, vec3(0, 0, 1))
+  local links = followOneWay and graph()
+  local link = links and links[n1] and links[n1][n2]
+  if link and link.oneWay then
+    if link.inNode == n2 then dir = dir * -1 end
+  elseif heading and dir.x * heading.x + dir.y * heading.y < 0 then
+    dir = dir * -1
+  end
+  local at = a.pos
+  if followOneWay and at:distance(pos) > ROAD_SEARCH_MAX then
+    at = closestOn(pos, a.pos, b.pos)
+    if at:distance(pos) > ROAD_SEARCH_MAX then return nil end
+  end
+  return at, quatFromDir(dir, vec3(0, 0, 1)), dir
 end
 
 return M

@@ -2,6 +2,7 @@ local M = {}
 
 local game = require("copsAndRobbers/game")
 local inputs = require("copsAndRobbers/inputs")
+local startGrid = require("copsAndRobbers/startGrid")
 local roads = require("copsAndRobbers/roads")
 local vehicles = require("copsAndRobbers/vehicles")
 local ai = require("copsAndRobbers/ai")
@@ -26,7 +27,7 @@ local spectator = require("copsAndRobbers/spectator")
 local CLIENT_VERSION = "2.12.0"
 local LIGHTS_OFF = "electrics.set_lightbar_signal(0)"
 local SETUP_DELAY = 0.5
-local PLACEMENT_TIMEOUT = 5
+local PLACEMENT_TIMEOUT = startGrid.timeout
 local FREEZE_REASSERT = 0.5
 local POSE_JUMP = 30
 local GEO_SEND_INTERVAL = 0.25
@@ -63,6 +64,7 @@ local lastStatusAt = 0
 local infoParts
 local infoSeenAt
 local pendingPlacement
+local personalCarId
 local rebuildId
 local suppressResetUntil = 0
 local lastPose
@@ -113,13 +115,28 @@ local function teleport(veh, pos, rot)
   spawn.safeTeleport(veh, pos, rot)
 end
 
-local function placeVehicle(model, config, pos, rot, color)
-  if ownVehicle() then
-    core_vehicles.replaceVehicle(model, vehicles.options(config, color))
+local function placeVehicle(model, config, pos, rot, color, initialGrid, personal)
+  local opt = vehicles.options(config, color)
+  local veh
+  if not initialGrid then personal = ownVehicle() end
+  if personal then
+    veh = core_vehicles.replaceVehicle(model, opt)
+    if initialGrid and veh and pos then teleport(veh, pos, rot) end
   else
-    core_vehicles.spawnNewVehicle(model, vehicles.options(config, color))
+    if initialGrid then opt.pos, opt.rot = pos, rot end
+    veh = core_vehicles.spawnNewVehicle(model, opt)
   end
-  pendingPlacement = { at = clock + SETUP_DELAY, deadline = clock + PLACEMENT_TIMEOUT, pos = pos, rot = rot, rebuild = rebuildId }
+  if initialGrid then
+    personalCarId = veh and veh:getID()
+    if not personalCarId then
+      pendingPlacement = nil
+      hudfeed.event("Could not spawn your round car", clock, "warn")
+      return
+    end
+    pos, rot = nil, nil
+  end
+  pendingPlacement = { at = clock + SETUP_DELAY, deadline = clock + PLACEMENT_TIMEOUT, pos = pos, rot = rot,
+    gameId = initialGrid and personalCarId or nil, rebuild = rebuildId }
 end
 
 local function startStatus()
@@ -138,6 +155,21 @@ local function watchCenter()
   return at, forward and vec3(forward.x, forward.y, 0) or nil
 end
 
+local function onPlanStart(data)
+  local d = jsonDecode(data) or {}
+  local pos, dir = spectator.spot()
+  if not pos then
+    local own = spectator.personalCar()
+    if own and not ai.nameOf(own:getID()) then
+      pos, dir = own:getPosition(), own:getDirectionVector()
+    else
+      pos, dir = watchCenter()
+    end
+  end
+  local slots = startGrid.plan(d, pos, dir)
+  if slots then sendServer("cnr_startGrid", { id = d.id, slots = slots }) end
+end
+
 local function onSetupAI(data)
   local d = jsonDecode(data) or {}
   local center, heading
@@ -152,9 +184,10 @@ local function onSetupAI(data)
     end
   end
   inputs.lockSpawns(false)
-  ai.setup(d, center, heading)
+  local ok, err = pcall(ai.setup, d, center, heading, clock)
   inputs.lockSpawns(watchingAI)
   hidingBuiltAt = -math.huge
+  if not ok then error(err, 0) end
 end
 
 local function onPickVehicle(data)
@@ -172,6 +205,14 @@ local function setupPosition(d)
   if resume then
     local pos, rot = roads.nearestRoad(resume)
     if not pos then return resume, nil end
+    return pos, rot
+  end
+  if d.startPose ~= nil then
+    local pos, rot = startGrid.pose(d.startPose)
+    if not d.startPose or d.startPose.offRoad then
+      local msg = role == "runner" and "No road found nearby, you start where you are" or "No road found near the runner, you start where you are"
+      hudfeed.event(msg, clock, "warn")
+    end
     return pos, rot
   end
   if d.inPlace then return nil end
@@ -256,8 +297,17 @@ local function onRoundSetup(data)
   inputs.lockEditing(mayChange and "paint" or "all")
   checkBinding(true)
 
+  local personal
+  if d.startPose ~= nil then
+    if d.practice then ai.remove() end
+    personal = personalCarId and getObjectByID(personalCarId) or spectator.personalCar()
+    local seated = getPlayerVehicle(0)
+    if not personal and seated and seated:getJBeamFilename() == "unicycle" then personal = ownVehicle() end
+    if personal and personal ~= seated then be:enterVehicle(0, personal) end
+  end
   local pos, rot = setupPosition(d)
-  placeVehicle(d.model, roundConfig, pos, rot, d.color)
+  placeVehicle(d.model, roundConfig, pos, rot, d.color, d.startPose ~= nil, personal)
+  if pendingPlacement and d.startPose and not pos then pendingPlacement.startPose = d.startPose end
 
   sky.apply(d.sky)
   local skyLabel = sky.prepLabel(d.sky)
@@ -524,6 +574,7 @@ end
 local function onMode(data)
   local d = jsonDecode(data) or {}
   geoMode = d.geo == true
+  if d.startGrid then sendServer("cnr_startGridReady", {}) end
   hudfeed.sitOut(false)
   geo.resetPlaces()
   guihooks.trigger("CnRPanel", {})
@@ -616,6 +667,7 @@ local function endRound(leaving)
   penaltyActive = false
   timerEnd = nil
   roundModel, roundConfig, roundColor = nil, nil, nil
+  personalCarId = nil
   pendingPlacement = nil
   resetAllowed, serverResetAllowed, resetLockUntil = false, false, nil
   lastPose = nil
@@ -735,7 +787,18 @@ end
 local function updatePendingPlacement()
   local p = pendingPlacement
   if not p or clock < p.at then return end
-  local veh = ownVehicle()
+  local veh
+  if p.gameId then veh = getObjectByID(p.gameId) else veh = ownVehicle() end
+  if veh and p.startPose then
+    p.pos, p.rot = startGrid.pose(p.startPose)
+    if p.pos then
+      p.startPose = nil
+    elseif clock < p.deadline then
+      return
+    else
+      hudfeed.event("Starting position unavailable on BeamNG.Earth", clock, "warn")
+    end
+  end
   local vid = veh and game.serverVid(veh)
   if veh and vid then
     pendingPlacement = nil
@@ -743,7 +806,7 @@ local function updatePendingPlacement()
     local restore = modes.restoreCommand(modes.forModel(modesState, roundModel))
     if restore then veh:queueLuaCommand(restore) end
     modesHoldUntil = clock + MODES_SETTLE
-    if frozen then setFreeze(true) end
+    if frozen then veh:queueLuaCommand("controller.setFreeze(1)") end
     sendServer("cnr_myVehicle", { vid = vid, rebuild = p.rebuild })
     lightsPlaced = true
   elseif clock >= p.deadline then
@@ -818,7 +881,7 @@ local function updateGeo()
   if not geoMode then return end
   if clock - lastGeoSent >= GEO_SEND_INTERVAL then
     lastGeoSent = clock
-    geo.sendGeo(ai.objects())
+    geo.sendGeo(ai.objects(), spectating)
   end
   geo.lookupStations(clock)
 end
@@ -1099,6 +1162,7 @@ local function onExtensionLoaded()
   traffic.setNotify(function(msg, tone) hudfeed.event(msg, clock, tone) end)
   hudfeed.onLobbyRefresh(checkBinding)
   if not AddEventHandler then return end
+  AddEventHandler("cnr_planStart", onPlanStart)
   AddEventHandler("cnr_pickVehicle", onPickVehicle)
   AddEventHandler("cnr_roundSetup", onRoundSetup)
   AddEventHandler("cnr_spectate", onSpectate)

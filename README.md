@@ -21,7 +21,7 @@ repair in place for the runner and move cops to the nearest road.
 
 ## The apps
 
-The mod talks to players only through five apps. It sends no chat messages or pop-ups, and has no chat commands. Everything is clickable with the mouse cursor shown.
+The mod talks to players only through five apps. It sends no chat messages or pop-ups, and has no chat commands. Everything is clickable with the mouse.
 
 | App | How it opens |
 |---|---|

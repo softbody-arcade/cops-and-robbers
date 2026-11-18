@@ -92,6 +92,15 @@ test("nearest road backup finds a node whose links are stored elsewhere", functi
   assertEq(pos.x, 10)
 end)
 
+test("the watched runner follows a one-way link even when the closest-road lookup returns its exit first", function()
+  useMap({ a = { 0, 0 }, b = { 100, 0 } }, { { "a", "b", oneWay = true } }, { closest = { "b", "a" } })
+  local pos, heading = vec3(80, 0, 0), vec3(-1, 0, 0)
+  local _, _, watched = roads.nearestRoad(pos, heading, true)
+  local _, _, human = roads.nearestRoad(pos, heading)
+  assertEq(watched.x, 1)
+  assertEq(human.x, -1)
+end)
+
 local function road(nodes, links, prefix, points, oneWay, flip)
   local ids = {}
   for i, p in ipairs(points) do
@@ -461,4 +470,30 @@ test("forward cone: no heading changes nothing", function()
   assertNear(pos.x, 50, 0.01)
   pos = roads.findCopSpot(vec3(0, 0, 0), 50, 150, 1, vec3(0, 0, 0))
   assertNear(pos.x, 50, 0.01)
+end)
+
+test("later cop slots reuse neither the preferred approach nor an earlier fallback", function()
+  useMap({ a = { -55, 0 }, b = { 0, 0 }, c = { 51, 0 }, d = { 200, 0 } },
+    { { "a", "b" }, { "b", "c" }, { "c", "d" } })
+  local find = roads.copSpotFinder(vec3(0, 0, 0), 50, 150, vec3(1, 0, 0))
+  local third = find(3)
+  local first, second = find(1), find(2)
+  assertEq(first.x, -55)
+  assertEq(second.x, 51)
+  assertEq(third:distance(second) >= 8 and third:distance(first) >= 8, true)
+end)
+
+test("a start on a long road uses the nearby road surface when the first node is far away", function()
+  useMap({ a = { -5000, 0 }, b = { 5000, 0 } }, { { "a", "b" } })
+  local p = roads.nearestRoad(vec3(15, 2, 0), vec3(1, 0, 0), true)
+  assertNear(p.x, 15, 0.01)
+  assertNear(p.y, 0, 0.01)
+end)
+
+test("the disconnected-road fallback keeps space around slots from the reachable road", function()
+  useMap({ a = { -60, 0 }, b = { 0, 0 }, c = { -51, 1 }, d = { -200, 1 } },
+    { { "a", "b" }, { "c", "d" } }, { closest = { "a", "b" } })
+  local find = roads.copSpotFinder(vec3(0, 0, 0), 50, 150)
+  assertEq(find(1).x, -60)
+  assertEq(find(2).x, -51)
 end)

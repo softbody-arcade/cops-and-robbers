@@ -73,7 +73,7 @@ function M.gpsInfo()
   return nil
 end
 
-function M.sendGeo(aiObjects)
+function M.sendGeo(aiObjects, spectating)
   local api = M.api()
   if not api or (api.rebasing and api.rebasing()) then return end
   local cars = {}
@@ -83,7 +83,7 @@ function M.sendGeo(aiObjects)
     local v = obj:getVelocity()
     cars[#cars + 1] = { id = id, lat = lat, lon = lon, h = h, ve = v.x, vn = v.y, vu = v.z }
   end
-  local veh = game.ownVehicle()
+  local veh = not spectating and game.ownVehicle()
   if veh then add(veh, nil) end
   for _, entry in ipairs(aiObjects or {}) do add(entry.obj, entry.id) end
   if #cars > 0 then game.sendServer("cnr_geo", { cars = cars }) end

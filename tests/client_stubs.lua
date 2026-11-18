@@ -101,7 +101,7 @@ function bootClient(opts)
   _G.MPConfig = { getPlayerServerID = function() return 1 end }
   _G.core_vehicles = {
     getModel = function() return { model = { Name = "Pickup", Brand = "Gavril", Type = "Car" }, configs = {} } end,
-    replaceVehicle = function(model, opt) env.replaced[#env.replaced + 1] = { model = model, opt = opt } end,
+    replaceVehicle = function(model, opt) env.replaced[#env.replaced + 1] = { model = model, opt = opt }; return env.veh end,
     spawnNewVehicle = function(model, opt)
       env.nextId = env.nextId + 1
       local veh = fakeVehicle(env, env.nextId, opt and opt.pos)

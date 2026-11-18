@@ -13,9 +13,12 @@ end
 
 local function ownCars()
   local list, seen = {}, {}
+  local parking = gameplay_parking
+  local parkedCars = parking and parking.getParkedCarsData and parking.getParkedCarsData() or {}
   local function add(veh)
-    if veh and not seen[veh:getID()] then
-      seen[veh:getID()] = true
+    local id = veh and veh:getID()
+    if id and not parkedCars[id] and not seen[id] and not isTraffic(id) then
+      seen[id] = true
       list[#list + 1] = veh
     end
   end
@@ -24,11 +27,17 @@ local function ownCars()
   local ids = {}
   for id in pairs(own) do
     local n = tonumber(id)
-    if n and not isTraffic(n) then ids[#ids + 1] = n end
+    if n then ids[#ids + 1] = n end
   end
   table.sort(ids)
   for _, id in ipairs(ids) do add(getObjectByID(id)) end
   return list
+end
+
+function M.personalCar()
+  for _, car in ipairs(ownCars()) do
+    if car:getJBeamFilename() ~= "unicycle" then return car end
+  end
 end
 
 local function snapshot(veh)

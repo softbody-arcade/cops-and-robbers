@@ -1,3 +1,4 @@
+local startGrid = require("copsAndRobbers/startGrid")
 local game = require("copsAndRobbers/game")
 local roads = require("copsAndRobbers/roads")
 local vehicles = require("copsAndRobbers/vehicles")
@@ -102,7 +103,7 @@ local function spawnCar(model, config, a, pos, rot)
   return veh
 end
 
-function M.setup(d, center, heading)
+function M.setup(d, center, heading, clock)
   M.remove()
   aiOnly = d.aiOnly == true
   if not center then
@@ -113,8 +114,12 @@ function M.setup(d, center, heading)
   local copCenter, copIndex = center, 0
   for _, a in ipairs(d.ai or {}) do
     local pos, rot
-    if center and aiOnly and a.role == "runner" then
-      pos, rot = roads.nearestRoad(center, heading)
+    if a.startPose ~= nil then
+      pos, rot = startGrid.pose(a.startPose)
+    elseif center and aiOnly and a.role == "runner" then
+      local runnerHeading
+      pos, rot, runnerHeading = roads.nearestRoad(center, heading, true)
+      heading = runnerHeading or heading
       copCenter = pos or center
     elseif center then
       copIndex = copIndex + 1
@@ -122,7 +127,11 @@ function M.setup(d, center, heading)
     end
     local veh = spawnCar(d.model, d.config, a, pos, rot)
     if veh then
-      cars[a.id] = { id = a.id, role = a.role, name = a.name, color = a.color, gameId = veh:getID(), frozen = true, reported = false }
+      local car = { id = a.id, role = a.role, name = a.name, color = a.color, gameId = veh:getID(), frozen = true, reported = false }
+      if a.startPose and not pos then
+        car.startPose, car.poseDeadline = a.startPose, clock + startGrid.timeout
+      end
+      cars[a.id] = car
     end
   end
 end
@@ -183,7 +192,15 @@ function M.tick(clock)
   for _, car in pairs(cars) do
     local obj = car.gameId and getObjectByID(car.gameId)
     if obj then
-      if not car.reported then
+      if car.startPose then
+        local pos, rot = startGrid.pose(car.startPose)
+        if pos and car.frozen then spawn.safeTeleport(obj, pos, rot) end
+        if pos or not car.frozen or clock >= car.poseDeadline then
+          if not pos then notify("Starting position unavailable on BeamNG.Earth", "warn") end
+          car.startPose = nil
+        end
+      end
+      if not car.startPose and not car.reported then
         local vid = game.serverVid(obj)
         if vid then
           car.reported = true

@@ -44,6 +44,9 @@ test("helicopter events drive the status item", function()
   assertEq(env.hud().status.heli.time, "1:00")
   env.tick(10)
   assertEq(env.hud().status.heli.time, "0:50")
+  env.fire("cnr_heli", {})
+  env.tick(0.2)
+  assertEq(env.hud().status.heli, nil)
 end)
 
 test("a mid-round setup carries the helicopter and a new round clears it", function()
@@ -3280,6 +3283,13 @@ test("turning Helicopter model on makes the copy at the click when the round has
   assertEq(copies(env), 0)
   env.M.ui({ action = "setting", key = "model", value = true })
   assertEq(copies(env), 1)
+  local write, writes = _G.writeFile, 0
+  _G.writeFile = function(...) writes = writes + 1; return write(...) end
+  local ok, err = pcall(env.M.ui, { action = "setting", key = "model", value = true })
+  _G.writeFile = write
+  if not ok then error(err, 0) end
+  assertEq(writes, 0, "second model-on click rewrote the copy")
+  assertEq(#env.materials, 3, "second model-on click repeated preparation")
   assertEq(env.sky.objects[HELI_VAN], nil)
 end)
 
@@ -3331,6 +3341,57 @@ test("the Pigeon van flies with the helicopter by day and night and is gone afte
       end
     end
   end
+end)
+
+test("grounding the helicopter keeps the van on its departing flight for eight seconds", function()
+  local env = nightTracking("runner", 7, { gameFiles = pigeon() })
+  local van = env.sky.objects[HELI_VAN]
+  local start = van.pos
+  env.fire("cnr_heli", { phase = "grounded", reason = "storm" })
+  env.tick(7.9)
+  assertEq(env.sky.objects[HELI_VAN], van)
+  assertEq(dist3(van.pos, env.veh.pos) > dist3(start, env.veh.pos), true)
+  assertEq(dist3(van.pos, env.sky.objects[HELI_LIGHT].pos) < 0.5, true)
+  env.tick(0.3)
+  assertEq(env.sky.objects[HELI_VAN], nil)
+end)
+
+test("a flight error drops the van until a new helicopter status", function()
+  local env = nightTracking("runner", nil, { gameFiles = pigeon() })
+  local first = env.sky.objects[HELI_VAN]
+  assertEq(first ~= nil, true)
+  local flight = require("copsAndRobbers/heliFlight")
+  local step = flight.step
+  flight.step = function() error("injected flight error") end
+  local ok, err = pcall(env.tick, 0.1)
+  flight.step = step
+  if not ok then error(err, 0) end
+  assertEq(env.sky.objects[HELI_VAN], nil)
+  env.tick(1)
+  assertEq(env.sky.objects[HELI_VAN], nil)
+  env.fire("cnr_heli", { phase = "tracking", seconds = 80 })
+  env.tick(0.1)
+  local again = env.sky.objects[HELI_VAN]
+  assertEq(again ~= nil and again ~= first, true)
+end)
+
+test("a second round flies a new van using the first round's prepared copy", function()
+  local env = nightTracking("runner", nil, { gameFiles = pigeon() })
+  local first = env.sky.objects[HELI_VAN]
+  local path = first.fields.shapeName
+  env.fire("cnr_roundEnd", { reason = "cancelled", runnerId = 1 })
+  assertEq(env.sky.objects[HELI_VAN], nil)
+  env.files["/vehicles/pigeon/pigeon.dae"] = nil -- Rebuilding the copy would now fail.
+  local d = copy(SETUP)
+  d.phase, d.role, d.runnerId = "running", "runner", 1
+  d.heli = { phase = "tracking", seconds = 100 }
+  env.fire("cnr_roundSetup", d)
+  env.tick(1)
+  local again = env.sky.objects[HELI_VAN]
+  assertEq(again ~= nil and again ~= first, true)
+  assertEq(again.fields.shapeName, path)
+  assertEq(env.files[path] ~= nil, true)
+  assertEq(again.moves > 1, true)
 end)
 
 test("Helicopter model off removes the van and its lights at once, on brings them back", function()
@@ -3669,6 +3730,29 @@ test("a runner never sees the cops' name tags or minimap markers, from setup to 
   end)
 end)
 
+test("a rejoining cop gets the hidden runner from setup; Earth keeps its minimap marker", function()
+  for _, earth in ipairs({ false, true }) do
+    withMinimap({ 100, 300 }, function(draw)
+      local env = bootClient()
+      env.fire("cnr_mode", { geo = earth })
+      local d = copy(SETUP)
+      d.phase, d.runnerShown, d.resumePos = "running", false, { x = 40, y = 0, z = 0 }
+      env.fire("cnr_roundSetup", d)
+      env.addObject(300, vec3(0, 0, 0))
+      env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
+      env.fire("cnr_roundCars", { keys = { "1-0", "2-0" } })
+      env.tick(1.2)
+      assertEq(env.mpVehicles["2-0"].hideNametag, true)
+      assertEq(draw(), earth and "100,300" or "100")
+      env.fire("cnr_runnerShown", { shown = true })
+      env.tick(0.2)
+      assertEq(env.mpVehicles["2-0"].hideNametag, nil)
+      assertEq(draw(), "100,300")
+      env.M.onExtensionUnloaded()
+    end)
+  end
+end)
+
 test("leaving the server shows the cops to a runner again", function()
   local env = bootClient()
   runnerWithCops(env)
@@ -3678,18 +3762,27 @@ test("leaving the server shows the cops to a runner again", function()
   assertEq(env.mpVehicles["4-0"].hideNametag, nil)
 end)
 
-test("a cop car that turns up mid-round is hidden from the runner within 1 s", function()
-  withMinimap({ 100, 300, 400, 500 }, function(draw)
-    local env = bootClient()
-    runnerWithCops(env)
-    env.fire("cnr_roundCars", { keys = { "1-0", "3-0", "4-0", "5-0" } })
-    env.tick(0.1)
-    env.mpVehicles["5-0"] = { gameVehicleID = 500, isSpawned = true }
-    env.tick(1)
-    assertEq(env.mpVehicles["5-0"].hideNametag, true)
-    assertEq(draw(), "100")
-    env.M.onExtensionUnloaded()
-  end)
+test("a cop joining during the chase is hidden when its key arrives, even if the vehicle arrives later", function()
+  for _, late in ipairs({ false, true }) do
+    withMinimap({ 100, 300, 400, 500 }, function(draw)
+      local env = bootClient()
+      runnerWithCops(env)
+      env.fire("cnr_release", {})
+      local cop = { gameVehicleID = 500, isSpawned = true }
+      if not late then env.mpVehicles["5-0"] = cop end
+      assertEq(draw(), "100,500")
+      env.fire("cnr_roundCars", { keys = { "1-0", "3-0", "4-0", "5-0" } })
+      env.tick(0.1)
+      if late then
+        assertEq(draw(), "100,500")
+        env.mpVehicles["5-0"] = cop
+        env.tick(1)
+      end
+      assertEq(cop.hideNametag, true)
+      assertEq(draw(), "100")
+      env.M.onExtensionUnloaded()
+    end)
+  end
 end)
 
 test("the runner's cop sets are rebuilt at most once a second, not every frame", function()
@@ -4239,6 +4332,26 @@ test("a sitting-out player's own traffic is removed on spectate and never comes 
   end)
 end)
 
+test("spectating leaves parking-system cars alone and restores only the personal car", function()
+  withCamera(function()
+    local env = bootClient()
+    local entered = env.veh
+    local ambient = env.addObject(140, vec3(20, 30, 0))
+    env.addObject(150, vec3(30, 40, 0)).model = "etk800"
+    env.ownCars = { [140] = true, [150] = true }
+    local oldParking = gameplay_parking
+    _G.gameplay_parking = { getParkedCarsData = function() return { [entered.id] = {}, [140] = {} } end }
+    local ok, err = pcall(spectate, env)
+    _G.gameplay_parking = oldParking
+    assert(ok, err)
+    assertEq(env.objects[entered.id], entered); assertEq(env.objects[140], ambient)
+    assertEq(env.objects[150], nil)
+    env.fire("cnr_roundEnd", { reason = "cancelled" })
+    assertEq(#env.spawned, 1); assertEq(env.spawned[1].model, "etk800")
+    assertEq(env.spawned[1].opt.autoEnterVehicle, true)
+  end)
+end)
+
 test("a walking player's walker is removed but only the real car comes back", function()
   withCamera(function()
     local env = bootClient()
@@ -4325,9 +4438,9 @@ local function spyRoads()
     calls.cop[#calls.cop + 1] = { center = center, index = index, heading = heading }
     return find(center, minD, maxD, index, heading)
   end
-  roads.nearestRoad = function(pos, heading)
+  roads.nearestRoad = function(pos, heading, followOneWay)
     calls.road[#calls.road + 1] = { pos = pos, heading = heading }
-    return near(pos, heading)
+    return near(pos, heading, followOneWay)
   end
   return calls
 end
@@ -4353,8 +4466,41 @@ test("watching AI practice: the runner starts on the road by your parked car and
     assertEq(calls.road[1].pos.y, 20); assertEq(calls.road[1].heading.x, 1)
     assertEq(env.spawned[1].opt.pos.y, 60); assertEq(env.spawned[1].opt.autoEnterVehicle, false)
     assertEq(#calls.cop, 2)
-    assertEq(calls.cop[1].center.y, 60); assertEq(calls.cop[1].index, 1); assertEq(calls.cop[1].heading.x, 1)
+    assertEq(calls.cop[1].center.y, 60); assertEq(calls.cop[1].index, 1); assertEq(calls.cop[1].heading.y, 1)
     assertEq(calls.cop[2].center.y, 60); assertEq(calls.cop[2].index, 2)
+  end)
+end)
+
+test("watching AI practice on the West Coast one-way turn starts both cops behind the runner", function()
+  withCamera(function()
+    local env = bootClient()
+    env.veh.pos = vec3(-360.06, 619.75, 75.05)
+    function env.veh:getDirectionVector() return vec3(-1, 0, 0) end
+    local waypoints = {
+      { "wp25", -432.85, 681.35 }, { "wp19", -395.25, 643.95 }, { "wp31", -380.15, 636.80 },
+      { "wp30", -364.93, 621.97 }, { "wp29", -355.37, 621.09 },
+    }
+    local nodes, graph = {}, {}
+    for i, wp in ipairs(waypoints) do
+      local id = wp[1]
+      nodes[id], graph[id] = { pos = vec3(wp[2], wp[3], 74.9) }, {}
+      if i > 1 then
+        local previous = waypoints[i - 1][1]
+        local link = { inNode = previous, outNode = id, oneWay = true }
+        graph[previous][id], graph[id][previous] = link, link
+      end
+    end
+    map.getMap = function() return { nodes = nodes } end
+    map.getGraphpath = function() return { graph = graph } end
+    map.findClosestRoad = function() return "wp30", "wp29" end
+    watchPractice(env)
+    local runner = env.spawned[1].opt
+    for i = 2, 3 do
+      local offset = env.spawned[i].opt.pos - runner.pos
+      assertEq(offset.x * runner.rot.dir.x + offset.y * runner.rot.dir.y < 0, true, "cop starts behind")
+    end
+    assertEq(runner.rot.dir.x > 0.99, true, "runner faces the legal exit toward wp29")
+    assertEq(env.spawned[2].opt.pos:distance(env.spawned[3].opt.pos) >= 8, true)
   end)
 end)
 
@@ -4607,6 +4753,35 @@ end)
 local WATCH_SPAWN = "You can't spawn a car while watching the AI"
 local WATCH_REMOVE = "You can't remove a car while watching the AI"
 
+test("a failed watched AI setup restores the spawn lock", function()
+  withCamera(function()
+    local env = bootClient()
+    spectate(env)
+    package.loaded["copsAndRobbers/ai"].setup = function() error("failed to place AI") end
+    assertEq(pcall(env.fire, "cnr_setupAI", aiOnlySetup()), false)
+    assertEq(core_vehicles.spawnNewVehicle("etk800", {}), nil)
+    assertEq(#env.spawned, 0)
+  end)
+end)
+
+test("Earth reports an entered AI car only under its AI id", function()
+  withCamera(function()
+    local env = bootClient()
+    earthStub(env)
+    env.fire("cnr_mode", { geo = true })
+    MPVehicleGE.isOwn = function() return true end
+    watchPractice(env)
+    env.player = env.spawned[1].veh
+    env.tick(1)
+    local cars = env.lastSent("cnr_geo").cars
+    _G.beamngEarth_api = nil
+    assertEq(#cars, 3)
+    local ids = {}
+    for _, car in ipairs(cars) do ids[car.id] = true end
+    for _, id in ipairs({ -10, -11, -12 }) do assertEq(ids[id], true) end
+  end)
+end)
+
 test("while you watch AI practice the game can't spawn, replace, clone or remove a car", function()
   withCamera(function()
     local env = bootClient()
@@ -4668,4 +4843,134 @@ test("practice where you drive, and spectating a real round, leave the game's sp
     core_vehicles.spawnNewVehicle("etk800", {})
     assertEq(#spec.spawned, 1)
   end)
+end)
+
+test("the Earth starting pose survives a different origin and orientation on the receiving cop", function()
+  local env = bootClient()
+  local rebasing = false
+  local saved = _G.beamngEarth_api
+  local ok, err = pcall(function()
+    _G.beamngEarth_api = {
+      version = function() return 1 end,
+      rebasing = function() return rebasing end,
+      toGeo = function(x, y, z) return 50 + y / 10000, 5 + x / 10000, 12 + z end,
+      toGame = function(lat, lon, h) return (lat - 50) * 10000 + 100, (5 - lon) * 10000 - 200, h - 40 end,
+    }
+    env.fire("cnr_planStart", { geo = true, id = 3, count = 3, copSpawnMin = 50, copSpawnMax = 150 })
+    local slots = env.lastSent("cnr_startGrid").slots
+    local d = copy(SETUP)
+    d.startPose = slots[2]
+    local faced
+    spawn.safeTeleport = function(veh, pos, rot) veh.pos, faced = pos, rot.dir end
+    rebasing = true
+    env.fire("cnr_roundSetup", d)
+    assertEq(faced, nil, "wait for a stable Earth origin")
+    env.tick(0.6)
+    assertEq(env.lastSent("cnr_myVehicle"), nil)
+    rebasing = false
+    env.tick(0.1)
+    assertNear(env.veh.pos.x, 100 + (d.startPose.geo.lat - 50) * 10000, 1e-5)
+    assertNear(env.veh.pos.y, -200, 1e-5)
+    assertNear(env.veh.pos.z, -28, 1e-5)
+    assertNear(faced.x, -1, 1e-6)
+    assertNear(faced.y, 0, 1e-6)
+    assertEq(env.lastSent("cnr_myVehicle").vid, 100)
+  end)
+  _G.beamngEarth_api = saved
+  if not ok then error(err, 0) end
+end)
+
+test("the starting anchor uses your parked car when watching a remote car", function()
+  local env = bootClient()
+  env.player = env.addObject(320, vec3(100, 300, 0))
+  env.veh.pos = vec3(0, 20, 0)
+  env.veh.getDirectionVector = function() return vec3(0, -1, 0) end
+  env.fire("cnr_planStart", { id = 3, count = 1, copSpawnMin = 50, copSpawnMax = 150 })
+  local p = env.lastSent("cnr_startGrid").slots[1]
+  assertEq(type(p), "table")
+  assertEq(p.dir.y, -1)
+  assertEq(p.pos.y, 60)
+end)
+
+test("a fresh personal spawn keeps its own vehicle ID when focus moves to a practice AI before the acknowledgement", function()
+  local env = bootClient()
+  env.objects[100] = nil
+  local d = copy(SETUP)
+  d.startPose = { pos = { x = 18, y = 40, z = 2 }, dir = { x = 0, y = -1, z = 0 } }
+  env.fire("cnr_roundSetup", d)
+  local mine = env.spawned[1].veh
+  assertEq(mine.pos.x, 18)
+  local other = env.addObject(450, vec3(800, 900, 0))
+  MPVehicleGE.isOwn = function() return true end
+  env.player = other
+  env.tick(0.6)
+  assertEq(env.lastSent("cnr_myVehicle").vid, mine:getID())
+  assertEq(other.pos.x, 800)
+end)
+
+test("an AI runner also waits out an Earth rebase before reporting its placement", function()
+  local env = bootClient()
+  local saved = _G.beamngEarth_api
+  local rebasing = true
+  local ok, err = pcall(function()
+    _G.beamngEarth_api = { version = function() return 1 end, rebasing = function() return rebasing end,
+      toGame = function(lat, lon, h) return lon * 100, lat * 100, h end }
+    local pose = { geo = { lat = 1, lon = 4, h = 3 }, toward = { lat = 1.01, lon = 4, h = 3 } }
+    env.fire("cnr_setupAI", { model = "pickup", config = SETUP.config, ai = { { id = -10, role = "runner", startPose = pose } } })
+    env.tick(0.6)
+    assertEq(env.lastSent("cnr_aiVehicles"), nil)
+    rebasing = false
+    env.tick(0.1)
+    assertNear(env.spawned[1].veh.pos.x, 400, 0.001)
+    assertEq(env.lastSent("cnr_aiVehicles").ai[1].vid, env.spawned[1].veh:getID())
+  end)
+  _G.beamngEarth_api = saved
+  if not ok then error(err, 0) end
+end)
+
+test("the starting grid follows a two-way heading and the configured cop distance", function()
+  for _, sign in ipairs({ -1, 1 }) do
+    local client = bootClient()
+    client.veh.getDirectionVector = function() return vec3(0, sign, 0) end
+    client.fire("cnr_planStart", { id = 8, count = 3, copSpawnMin = 90, copSpawnMax = 130 })
+    local slots = client.lastSent("cnr_startGrid").slots
+    assertEq(slots[1].dir.y, sign)
+    for i = 2, 3 do
+      local d = math.abs(slots[i].pos.y - slots[1].pos.y)
+      assertEq(d >= 90 and d <= 130, true)
+    end
+    assertEq(math.abs(slots[2].pos.y - slots[3].pos.y) >= 8, true)
+  end
+end)
+
+test("without roads the runner uses the starting camera and both cop slots retain their fallback", function()
+  local client = bootClient()
+  client.objects[100] = nil
+  map.findClosestRoad = function() return nil end
+  map.getMap = function() return { nodes = {} } end
+  map.getGraphpath = function() return { graph = {} } end
+  local cam = core_camera
+  core_camera = { getPosition = function() return vec3(125, 34, 77) end, getForward = function() return vec3(0, -1, -0.2) end }
+  client.fire("cnr_planStart", { id = 5, count = 3, copSpawnMin = 50, copSpawnMax = 150 })
+  core_camera = cam
+  local slots = client.lastSent("cnr_startGrid").slots
+  assertEq(slots[1].offRoad, true)
+  assertEq(slots[1].pos.x, 125)
+  assertEq(slots[1].dir.y, -1)
+  assertEq(slots[2], false)
+  assertEq(slots[3], false)
+end)
+
+test("a player seated in locally owned traffic gets a separate round car", function()
+  local env = bootClient()
+  env.objects[100] = nil
+  local car = env.addObject(450, vec3(800, 900, 0))
+  env.gameTraffic[450] = { isAi = true }
+  env.player = car
+  local d = copy(SETUP)
+  d.startPose = { pos = { x = 18, y = 40, z = 2 }, dir = { x = 0, y = -1, z = 0 } }
+  env.fire("cnr_roundSetup", d)
+  assertEq(#env.replaced, 0)
+  assertEq(#env.spawned, 1)
+  assertEq(car.pos.x, 800)
 end)

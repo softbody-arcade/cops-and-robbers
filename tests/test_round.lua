@@ -582,9 +582,9 @@ test("practice while sitting out: an AI runner and two AI cops, the issuer spect
   local ai = setupAI.ai
   assertEq(#ai, 3)
   local a1 = round.AI_FIRST
-  assertEq(ai[1].id, a1); assertEq(ai[1].role, "runner"); assertEq(ai[1].name, "AI runner"); assertEq(ai[1].colorHex, "#d83a2c"); assertEq(ai[1].index, 1)
-  assertEq(ai[2].id, a1 - 1); assertEq(ai[2].role, "cop"); assertEq(ai[2].name, "AI cop 1"); assertEq(ai[2].colorHex, "#1f6fe0"); assertEq(ai[2].index, 2)
-  assertEq(ai[3].id, a1 - 2); assertEq(ai[3].role, "cop"); assertEq(ai[3].name, "AI cop 2"); assertEq(ai[3].colorHex, "#6fb0ff"); assertEq(ai[3].index, 3)
+  assertEq(ai[1].id, a1); assertEq(ai[1].role, "runner"); assertEq(ai[1].name, "AI runner"); assertEq(ai[1].colorHex, "#d83a2c"); assertEq(ai[1].index, 0)
+  assertEq(ai[2].id, a1 - 1); assertEq(ai[2].role, "cop"); assertEq(ai[2].name, "AI cop 1"); assertEq(ai[2].colorHex, "#1f6fe0"); assertEq(ai[2].index, 1)
+  assertEq(ai[3].id, a1 - 2); assertEq(ai[3].role, "cop"); assertEq(ai[3].name, "AI cop 2"); assertEq(ai[3].colorHex, "#6fb0ff"); assertEq(ai[3].index, 2)
   assertEq(r.runnerId, a1)
   assertEq(r.players[1], nil); assertEq(r.players[2], nil)
   assertEq(r.issuerId, 1)
@@ -790,13 +790,6 @@ test("time limit ends the round as escaped", function()
   fx = r:tick(71, far, {})
   assertEq(find(fx, "roundEnd").reason, "escaped")
   assertEq(find(fx, "record").run.endReason, "escaped")
-end)
-
-test("no periodic last seen any more", function()
-  local r = started()
-  r:tick(4, stillCars(), {}); r:tick(11, stillCars(), {})
-  local far = {[1]=kmh(0, 50), [2]=kmh(300, 50), [3]=kmh(900, 50)}
-  for t = 12, 70, 1 do assertEq(find(r:tick(t, far, {}), "lastSeen"), nil) end
 end)
 
 test("catch credits cops within the radius", function()
@@ -1217,10 +1210,89 @@ test("the helicopter alone sends live updates to every cop with a route", functi
   assertEq(find(r:tick(13, close, {}), "live") ~= nil, true)
 end)
 
+test("a refuel while runner telemetry is missing pings the last tracked fix only", function()
+  local r = chasing({helicopterArrivalSeconds=0, helicopterUpSeconds=30})
+  local cars = farCars()
+  assertEq(find(r:tick(40, cars, {}), "live").pos.x, 0)
+  cars = farCars()
+  cars[1].pos.x, cars[1].geo = 17, { lat = 52, lon = 5, h = 12 }
+  assertEq(find(r:tick(40.25, cars, {}), "live"), nil)
+  local absent = farCars()
+  absent[1] = nil
+  assertEq(find(r:tick(40.5, absent, {}), "lastSeen"), nil)
+  local fx = r:tick(41, absent, {})
+  assertEq(find(fx, "heli").phase, "refuelling")
+  assertEq(find(fx, "runnerShown").shown, false)
+  assertEq(count(fx, "lastSeen"), 1)
+  local lost = find(fx, "lastSeen")
+  assertEq(lost.pos.x, 17); assertEq(lost.geo.lat, 52)
+  cars = farCars()
+  cars[1].pos.x = 100
+  fx = r:tick(42, cars, {})
+  assertEq(find(fx, "lastSeen"), nil); assertEq(find(fx, "live"), nil)
+end)
+
+test("the escape tick does not change runner visibility when the helicopter refuels", function()
+  local r = chasing({helicopterArrivalSeconds=0, helicopterUpSeconds=30, roundTimeLimitSeconds=30})
+  assertEq(r.shown, true)
+  local fx = r:tick(41, farCars(), {})
+  assertEq(find(fx, "roundEnd").reason, "escaped")
+  assertEq(find(fx, "runnerShown"), nil)
+end)
+
+test("a missing fix does not cancel cop sight; a loss across the gap uses the observed position", function()
+  local r = chasing({helicopterArrivalSeconds=0, helicopterUpSeconds=30})
+  local cars = farCars()
+  cars[1].pos.x = 17
+  r:sightReport(40, 2, true)
+  assertEq(find(r:tick(40, cars, {}), "spotted").spotted, true)
+  local absent = farCars()
+  absent[1] = nil
+  local fx = r:tick(41, absent, {})
+  assertEq(find(fx, "heli").phase, "refuelling")
+  assertEq(find(fx, "spotted"), nil); assertEq(find(fx, "lastSeen"), nil)
+  r:sightReport(41, 2, false)
+  cars = farCars()
+  cars[1].pos.x = 100
+  fx = r:tick(45, cars, {})
+  assertEq(find(fx, "spotted").spotted, false)
+  assertEq(find(fx, "lastSeen").pos.x, 17)
+  assertEq(find(r:tick(46, cars, {}), "lastSeen"), nil)
+end)
+
 test("live goes out once per tick when sight and helicopter both track", function()
   local r = chasing({helicopterArrivalSeconds=0})
   r:sightReport(12, 2, true)
   for t = 12, 20 do assertEq(count(r:tick(t, farCars(), {}), "live"), 1) end
+end)
+
+test("a live tracking tick builds at most one sorted cop list", function()
+  local r = chasing({helicopterArrivalSeconds=0})
+  local copPids, calls = r.copPids, 0
+  function r:copPids()
+    calls = calls + 1
+    return copPids(self)
+  end
+  r:sightReport(12, 2, true)
+  assertEq(count(r:tick(12, farCars(), {}), "live"), 1)
+  assertEq(calls <= 1, true, "copPids calls: " .. calls)
+end)
+
+test("the escape tick shares the sorted cop list with the run record", function()
+  local r = chasing({helicopter=false, roundTimeLimitSeconds=1})
+  local copPids, calls = r.copPids, 0
+  function r:copPids()
+    calls = calls + 1
+    return copPids(self)
+  end
+  r:sightReport(12, 2, true)
+  local fx = r:tick(12, farCars(), {})
+  assertEq(find(fx, "roundEnd").reason, "escaped")
+  local run = find(fx, "record").run
+  assertEq(table.concat(run.copIds, ","), "2,3")
+  assertEq(run.copSight[1], 1)
+  assertEq(run.copSight[2], 0)
+  assertEq(calls <= 1, true, "copPids calls: " .. calls)
 end)
 
 test("the helicopter starts at release with the round's weather", function()
@@ -1486,6 +1558,26 @@ test("an evolving start skips picking and sets everyone up with the build", func
   assertEq(find(fx, "pickVehicle"), nil)
   assertEq(count(fx, "setup"), 3)
   assertEq(r.vehicle.config, BUILD.config); assertEq(r.vehicle.model, "pickup")
+end)
+
+test("an evolving practice with an AI runner skips the change: it starts ready and GO counts down", function()
+  for _, opts in ipairs({ { test = true, role = "cop", build = BUILD }, { test = true, aiOnly = true, build = BUILD } }) do
+    local r = round.new((config.merge(nil)))
+    local fx = r:start(0, nil, 2, players, opts)
+    assertEq(r.state, "ready")
+    local first = fx[1]
+    assertEq(first.phase, "ready")
+    assertEq(find(r:apply(1, 2), "reply").msg, "Apply only works during prep in evolving mode")
+    assertEq(r.state, "ready")
+    assertEq(find(r:go(1, 2), "countdown") ~= nil, true)
+  end
+end)
+
+test("an evolving practice as runner keeps the change step", function()
+  local r = round.new((config.merge(nil)))
+  r:start(0, nil, 2, players, { test = true, role = "runner", build = BUILD })
+  assertEq(r.state, "prep")
+  assertEq(find(r:go(1, 2), "reply").msg, "Apply the change first")
 end)
 
 test("apply asks the runner for his setup, then rebuilds every car until all are ready", function()
