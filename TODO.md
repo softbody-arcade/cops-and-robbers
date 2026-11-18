@@ -7,8 +7,14 @@ Priorities run from `!!!!` (highest) through `!!!` (high), `!!` (normal), and `!
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
-- [ ] !!! Fix round starts that leave the replacement car upside down when the previous car was on its roof. Investigating initial placement in `copsAndRobbers.lua` on `fix/upright-round-start`.
-- [ ] ! Verify the full time-of-day curve when Day length is Off (`test/day-length-off`).
+- [ ] !!! Upright round-car replacement (`fix/upright-round-start`, `31b2649`) passed independent review and is on the local server. Check that starting on your roof places the new car on its wheels facing the assigned direction. For an in-place start, check it keeps your horizontal heading.
+- [ ] !!! `fix/restore-trailer-hitch` — Sitting out disconnects a previously hitched trailer. Confirmed in game on West Coast USA with `fixes-16` at `89c351e` (2026-11-18, check 3). After the round restores both vehicles, the trailer should remain hitched when the tow vehicle pulls away. Check spectator save/restore in `spectator.lua` and verify the latch in game.
+- [ ] !! Resolve the five double-priority issues on `fix/double-priority`.
+  - The client's 5 s `PLACEMENT_TIMEOUT` (`copsAndRobbers.lua`) starts before the round car spawns: if the first spawn freezes the game for 5 s or more, the placement is dropped with no report, so the joiner stays at the spawn point, gets no traffic and isn't in the round cars (unproven; found while debugging the mid-round join, fixes-7)
+  - Very slow rocking still escapes the catch: rocking ±1.5 m at 5 km/h peaks is caught only after about 15 s, and with a slow drift (0.25 m/s) not at all (`catch.lua`, `ROCK_FACTOR = 2`, `STUCK_WINDOW_SECONDS = 4`). If players use it, lower `ROCK_FACTOR` to about 1.5
+  - Weather details left from the 2.11.0 reviews, all can-wait: lights and the beam switch at the start of a clearing change, while the rain or fog is still strong for 30-60 s (plan-mandated); a joiner's rain isn't the in-between amount for up to 30 s
+  - Leaderboard Cops tab: cops with only assists get no row (`leaderboard.lua` `cops`). Showing them needs a sort and empty-state decision, since the tab ranks catches
+  - Leaving the server removes every app the mod placed, also one the player removed and then added back themselves (`apps.lua` leave). Decide what counts as the mod's
 
 ## In-game checks
 Things only a player in the game can confirm, each with what to look for. Add them here when work is merged or deployed without the check; delete a line once it is checked, and turn anything that fails into an Issue.
@@ -35,12 +41,6 @@ Things only a player in the game can confirm, each with what to look for. Add th
 - [ ] ! Cop sight that follows visibility: the sight range is worked out from what the game knows (fog thickness, how dark it is, street lights near the runner, whether the runner's lights are on, rain). Comes after night and weather rounds
 
 ## Issues
-- [ ] !!! Sitting out disconnects a previously hitched trailer. Confirmed in game on West Coast USA with `fixes-16` at `89c351e` (2026-11-18, check 3). After the round restores both vehicles, the trailer should remain hitched when the tow vehicle pulls away. Check spectator save/restore in `spectator.lua` and verify the latch in game.
-- [ ] !! The client's 5 s `PLACEMENT_TIMEOUT` (`copsAndRobbers.lua`) starts before the round car spawns: if the first spawn freezes the game for 5 s or more, the placement is dropped with no report, so the joiner stays at the spawn point, gets no traffic and isn't in the round cars (unproven; found while debugging the mid-round join, fixes-7)
-- [ ] !! Very slow rocking still escapes the catch: rocking ±1.5 m at 5 km/h peaks is caught only after about 15 s, and with a slow drift (0.25 m/s) not at all (`catch.lua`, `ROCK_FACTOR = 2`, `STUCK_WINDOW_SECONDS = 4`). If players use it, lower `ROCK_FACTOR` to about 1.5
-- [ ] !! Weather details left from the 2.11.0 reviews, all can-wait: lights and the beam switch at the start of a clearing change, while the rain or fog is still strong for 30-60 s (plan-mandated); a joiner's rain isn't the in-between amount for up to 30 s
-- [ ] !! Leaderboard Cops tab: cops with only assists get no row (`leaderboard.lua` `cops`). Showing them needs a sort and empty-state decision, since the tab ranks catches
-- [ ] !! Leaving the server removes every app the mod placed, also one the player removed and then added back themselves (`apps.lua` leave). Decide what counts as the mod's
 - [ ] ! BeamMP's client spawn queue holds back a rejoining player's car on every other game until that player's own car is under 2 m/s for 3 s, so during a chase a rejoining cop or runner stays invisible to the others (BeamMP client 4.23.1 `MPVehicleGE.lua`). The user chose not to force-load it (2026-11-17, spectators instead for new joiners); a rejoining runner is the case that hurts
 - [ ] ! The game's Vehicle Radar app shows hidden cars nearby (about 30 m, up to about 54 m ahead with its offset slider): it walks `be:getObject(i)` directly (`vehicleRadarApp.lua:187`), so the hiding can't filter it. The user accepted this (2026-11-17); fix only if an easy way turns up
 - [ ] ! Trees sometimes hide the runner from the helicopter's line of sight; the user thinks that's fair with thermals for now (2026-11-17). Revisit if it feels unfair
