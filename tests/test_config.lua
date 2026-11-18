@@ -103,6 +103,39 @@ test("setValue min above the default max raises the max, a lowered min leaves it
   assertEq(u.weatherChangeMinMinutes, 2); assertEq(u.weatherChangeMaxMinutes, 8)
 end)
 
+test("lightning intervals default to 10 to 40 seconds and require positive whole seconds", function()
+  local defaults = config.merge({})
+  assertEq(defaults.lightningMinSeconds, 10)
+  assertEq(defaults.lightningMaxSeconds, 40)
+  for _, bad in ipairs({ 0, -2, 1.5, math.huge, "x" }) do
+    local c, warnings = config.merge({ lightningMinSeconds = bad, lightningMaxSeconds = bad })
+    assertEq(c.lightningMinSeconds, 10)
+    assertEq(c.lightningMaxSeconds, 40)
+    assertEq(#warnings, 2)
+    for _, key in ipairs({ "lightningMinSeconds", "lightningMaxSeconds" }) do
+      local updated = config.setValue({}, key, tostring(bad))
+      assertEq(updated, nil)
+    end
+  end
+  local c, warnings = config.merge({ lightningMinSeconds = 1, lightningMaxSeconds = 1 })
+  assertEq(c.lightningMinSeconds, 1)
+  assertEq(c.lightningMaxSeconds, 1)
+  assertEq(#warnings, 0)
+end)
+
+test("lightning keeps the maximum at least the minimum on load and on single edits", function()
+  local c, warnings = config.merge({ lightningMinSeconds = 6, lightningMaxSeconds = 5 })
+  assertEq(c.lightningMaxSeconds, 6)
+  assertEq(#warnings, 1)
+  local updated = assert(config.setValue({}, "lightningMinSeconds", "45"))
+  assertEq(updated.lightningMaxSeconds, 45)
+  updated = assert(config.setValue(updated, "lightningMinSeconds", "5"))
+  assertEq(updated.lightningMinSeconds, 5)
+  assertEq(updated.lightningMaxSeconds, 45)
+  updated = assert(config.setValue(updated, "lightningMaxSeconds", "3"))
+  assertEq(updated.lightningMaxSeconds, 5)
+end)
+
 test("defaults table not mutated by merge", function()
   config.merge({headStartSeconds=99})
   assertEq(config.DEFAULTS.headStartSeconds, 7)

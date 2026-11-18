@@ -1,3 +1,4 @@
+local config = require("cnr.config")
 local weather = require("cnr.weather")
 
 local M = {}
@@ -53,6 +54,8 @@ function M.pick(cfg, random, year)
     year = year or tonumber(os.date("%Y")),
     month = month,
     day = day,
+    lightningMinSeconds = cfg.lightningMinSeconds,
+    lightningMaxSeconds = cfg.lightningMaxSeconds,
     windDir = random(0, 359),
     windSeed = random(1, 2147483646),
   }
@@ -78,6 +81,8 @@ function M.payload(s, cfg, clockSeconds)
     windDir = s.windDir,
     windSeed = s.windSeed,
     lightningSeed = s.lightningSeed,
+    lightningMinSeconds = s.lightningMinSeconds or config.DEFAULTS.lightningMinSeconds,
+    lightningMaxSeconds = s.lightningMaxSeconds or config.DEFAULTS.lightningMaxSeconds,
     clockSeconds = clockSeconds,
     daySeconds = M.DAY_SECONDS[cfg.dayLength],
     changes = s.changes,

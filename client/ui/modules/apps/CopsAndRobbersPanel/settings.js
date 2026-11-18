@@ -1,6 +1,8 @@
 import { ref } from "vue"
 import { formatTime } from "../../copsAndRobbers/format.js"
 
+const canThunder = v => v("weather") === "thunderstorm" || v("weather") === "random" || v("weatherChanges") === true
+
 export const GROUPS = [
   { title: "Round", items: [
     { key: "headStartSeconds", label: "Head start", unit: "s", step: 1, min: 0, common: true,
@@ -31,6 +33,10 @@ export const GROUPS = [
       help: "Rain, storms, thunderstorms and snow change grip and bring gusty wind" },
     { key: "weatherChanges", label: "Weather changes", kind: "bool",
       help: "The weather can change during the chase. A planned roll can keep the current weather" },
+    { key: "lightningMinSeconds", label: "Minimum strike interval", unit: "s", step: 1, min: 1, when: canThunder,
+      help: "Shortest wait between lightning strikes in a full thunderstorm" },
+    { key: "lightningMaxSeconds", label: "Maximum strike interval", unit: "s", step: 1, min: 1, when: canThunder,
+      help: "Longest wait between strikes. Match the minimum for a fixed interval" },
     { key: "weatherChangeMinMinutes", label: "Shortest wait to roll", unit: "min", step: 1, min: 1, when: v => v("weatherChanges"),
       help: "Minimum wait for the next weather roll after cop release, the previous roll or a forced change" },
     { key: "weatherChangeMaxMinutes", label: "Longest wait to roll", unit: "min", step: 1, min: 1, when: v => v("weatherChanges"),

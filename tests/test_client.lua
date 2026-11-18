@@ -4932,6 +4932,29 @@ test("GO and joined lightning frames use the runner for each role", function()
   end
 end)
 
+test("a fixed five-second storm flashes five seconds after the countdown starts", function()
+  withThunder(function(env, _, lines)
+    local d = copy(SETUP)
+    d.sky = thunderSky(0)
+    d.sky.lightningMinSeconds, d.sky.lightningMaxSeconds = 5, 5
+    env.fire("cnr_roundSetup", d)
+    env.M.onUpdate(12)
+    assertEq(lines(), 0)
+    env.fire("cnr_countdown", {seconds = 3})
+    env.M.onUpdate(3)
+    env.fire("cnr_runnerGo", {headStartSeconds = 7})
+    env.M.onUpdate(1.75)
+    assertEq(lines(), 0)
+    env.M.onUpdate(0.25)
+    assert(lines() > 0)
+    local drawn = lines()
+    env.M.onUpdate(4.75)
+    assertEq(lines(), drawn)
+    env.M.onUpdate(0.25)
+    assert(lines() > drawn)
+  end)
+end)
+
 test("turning lightning off cancels the current flash and preserves its thunder", function()
   withThunder(function(env, events, lines)
     chaseWith(env, thunderSky(0))
@@ -5039,8 +5062,9 @@ local function withBridge(fn)
       return distance
     end
     local ok, err = pcall(function()
-      local sky = thunderSky(0)
+      local sky = thunderSky(9.865)
       sky.lightningSeed = 700
+      sky.lightningMinSeconds, sky.lightningMaxSeconds = 10, 10
       chaseWith(env, sky)
       env.M.onUpdate(0.01)
       assertEq(rays, 1)

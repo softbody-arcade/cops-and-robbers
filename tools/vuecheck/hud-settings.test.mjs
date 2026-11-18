@@ -14,19 +14,23 @@ const controls = {
 const mocks = {
   vue: Vue,
   "@/common/components/base": controls,
-  "@/common/directives": { vBngTextInput: {} },
-  "../../copsAndRobbers/format.js": { hexToHsl() {}, hslToHex() {} },
+  "@/common/directives": { vBngTextInput: {}, vBngTooltip: {} },
   "../../copsAndRobbers/hud.js": { useCnrHud: () => ({ hud, ui: action => actions.push(action) }) },
   "../../copsAndRobbers/fit.js": { useFit: () => ({}) },
 }
 
-async function component(name) {
-  const url = new URL(`../../client/ui/modules/apps/CopsAndRobbersHud/${name}`, import.meta.url)
-  const { descriptor } = parse(readFileSync(url, "utf8"), { filename: name })
-  const { content } = compileScript(descriptor, { id: name, inlineTemplate: true })
+async function loadUi(url) {
+  let content = readFileSync(url, "utf8")
+  if (url.pathname.endsWith(".vue")) {
+    const name = basename(url.pathname)
+    const { descriptor } = parse(content, { filename: name })
+    content = compileScript(descriptor, { id: name, inlineTemplate: true }).content
+  }
   const module = new SourceTextModule(content)
   await module.link(async path => {
-    if (path.startsWith("./Hud") || path.endsWith("/CnrCard.vue")) return component(path)
+    if (!mocks[path] && (path.endsWith(".js") || path.startsWith("./Hud") || path.endsWith("/CnrCard.vue"))) {
+      return loadUi(new URL(path, url))
+    }
     const bindings = mocks[path] || { default: basename(path, ".vue") }
     return new SyntheticModule(Object.keys(bindings), function () {
       for (const [key, value] of Object.entries(bindings)) this.setExport(key, value)
@@ -59,7 +63,8 @@ function buttonFor(root, label) {
   return descendants(root).find(el => el.type === "button" && descendants(el).some(n => n.text === label))
 }
 
-const module = await component("app.vue")
+const apps = new URL("../../client/ui/modules/apps/", import.meta.url)
+const module = await loadUi(new URL("CopsAndRobbersHud/app.vue", apps))
 await module.evaluate()
 for (const state of [
   { mode: "lobby", lobby: {} },
@@ -95,3 +100,41 @@ for (const state of [
   app.unmount()
 }
 console.log("HUD Settings opens and changes Lightning flashes in lobby, prep, both chase roles and spectator mode")
+
+const panel = await loadUi(new URL("CopsAndRobbersPanel/PanelSettings.vue", apps))
+const settings = await loadUi(new URL("CopsAndRobbersPanel/settings.js", apps))
+await panel.evaluate()
+await settings.evaluate()
+const state = Vue.ref({ can: { settings: true }, settings: {
+  weather: "thunderstorm", weatherChanges: false, lightningMinSeconds: 5, lightningMaxSeconds: 5,
+} })
+const store = settings.namespace.useSettings(state, () => {}, () => {})
+const root = node("root")
+const app = renderer.createApp(panel.namespace.default, { state: state.value, store })
+app.mount(root)
+
+function strikeRows(visible) {
+  const nodes = descendants(root)
+  for (const label of ["Minimum strike interval", "Maximum strike interval"]) {
+    const index = nodes.findIndex(el => el.text === label)
+    assert.equal(index >= 0, visible, label)
+    if (visible) {
+      const section = nodes.slice(0, index).findLast(el => el.props.class === "p-sec")
+      assert.equal(section?.text, "Sky")
+      assert.ok(descendants(nodes[index].parent).some(el => el.text === "5 s"))
+    }
+  }
+}
+
+strikeRows(false)
+descendants(root).find(el => el.text.startsWith("More settings (")).parent.props.onClick()
+await Vue.nextTick()
+for (const [weather, weatherChanges, visible] of [
+  ["thunderstorm", false, true], ["random", false, true], ["clear", true, true], ["storm", false, false],
+]) {
+  Object.assign(state.value.settings, { weather, weatherChanges })
+  await Vue.nextTick()
+  strikeRows(visible)
+}
+app.unmount()
+console.log("Host panel shows strike intervals under More settings when thunderstorms are possible")
