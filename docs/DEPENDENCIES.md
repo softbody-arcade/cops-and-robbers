@@ -22,7 +22,7 @@ Checked against: the game-engine facts in this file were last checked on 2026-11
    - **Catching:** the catch bar fills when you hold the AI runner.
    - **Sky:** with Time of day Night and Weather Rain (panel), rain shows, the AI cars have headlights, and everything is back after End chase. The prep card shows the round's date (a December or January one for Snow). Set Time of day and Weather back to Random afterwards: the panel writes the connected server's `config.json`.
    - **Traffic** (needs `MaxCars` of 4 or more for practice): traffic cars spawn in prep and stand still until GO; they have no name tags and there are no police, emergency vehicles or taxis among them; driving into one gives "crash penalty 10s (traffic)"; all are gone after End chase. With Night and Clear weather, traffic standing still before GO is lit; with Night and Fog, traffic is lit while standing and while driving; with Rain it slows on wet roads and gusts push it.
-   - **End:** End chase shows the result card. Leaving the server removes our apps from the layout.
+   - **End:** End chase shows the result card. Leaving the server removes the apps placed by the mod and keeps apps added in the layout editor.
 5. Open the control panel (Host panel button on the lobby card) and check:
    - The status line is filled in.
    - A stepper change saves ("Saved: ...").
@@ -294,13 +294,13 @@ Then do the checks for whatever actually updated.
 - **UI scale:** the game sets the root font size to 16px × UI scale, so our styles use `rem` (and `em` in `app.json` placements).
 - **Layouts** (`ui_appLayouts`):
   - `getCurrentLayout()`, which returns `filename`, `apps` and `userFileExists`.
-  - `getAvailableLayouts()`, `addApp(filename, app, placement)` (it writes silently), `removeApp(filename, index0)`, `setCurrentLayout(filename)` and `resetLayout(filename)`.
+  - `getAvailableLayouts()`, `saveLayout(layout)`, `setCurrentLayout(filename)` and `resetLayout(filename)`.
   - User layouts live in `/settings/ui_apps/layouts/` and the stock originals in `/settings/ui_apps/originalLayouts/`.
-  - BeamMP ships its `beammp` layout inside `mods/multiplayer/beammp.zip` at the user path (`settings/ui_apps/layouts/default/beammp.uilayout.json`), not as an original. So `userFileExists` is already true, `resetLayout` has no original, and `addApp` writes a disk file that hides the zip's. We tell them apart with `FS:getFileOriginInfo(path).archivePath`.
+  - BeamMP ships its `beammp` layout inside `mods/multiplayer/beammp.zip` at the user path (`settings/ui_apps/layouts/default/beammp.uilayout.json`), not as an original. So `userFileExists` is already true, `resetLayout` has no original, and saving writes a disk file that hides the zip's. We tell them apart with `FS:getFileOriginInfo(path).archivePath`.
 - **How the apps open** (`apps.lua`, `placement.lua`):
   - Announcements and the HUD are sticky: placed automatically on join and put back if the player removes them.
-  - How to play is added on demand (the lobby and prep buttons, and on a player's first join); the Panel and the Leaderboard are added and removed by the lobby card buttons or opened by the player in Esc > UI Apps. All are removed on leaving the server.
-  - Opening and closing is `ui_appLayouts.addApp(ui_appLayouts.getCurrentLayout().filename, "<app>", placement)` and `removeApp(filename, index0)`, where the index is found in `getCurrentLayout().apps` by `appName`.
+  - How to play is added on demand (the lobby and prep buttons, and on a player's first join); the Panel and the Leaderboard are added and removed by the lobby card buttons or opened by the player in Esc > UI Apps. Leaving removes entries the mod placed. Apps added in the layout editor stay.
+  - The mod saves automatic entries with `settings.cnrAutoPlaced = true`. The game’s layout editor preserves app settings when moving or reordering an app. Removing and adding an app in the editor creates a fresh entry without the marker, even between mod checks. A close button also removes the selected app from the current layout.
 - **Click-through** (verified in game): `interactive: "no"` in `app.json`, a `pointer-events: none` container and `pointer-events: auto` on the cards and buttons. Clicks still reach the game and other apps under the empty area, and other apps can still be selected and moved in the layout editor. Our apps also set `css` placements (`left: 50%` for centred apps, sizes in `em`).
 - **UI Apps picker:** `isAuxiliary: true` hides an app unless "Include auxiliary content" is on (`ui/appSelector/general.lua`). Announcements, the HUD and How to play are auxiliary; the Panel and the Leaderboard are not, so they show in the picker. In simple-menu mode apps with `interactive: "required"` are hidden too.
 - **Shared kit** (verified in game): `client/ui/modules/copsAndRobbers/` (`CnrRoot.vue`, `CnrCard.vue`, `RoleChip.vue`, `hud.js`, `fit.js`, `format.js`) is imported by relative path from an app, e.g. `../../copsAndRobbers/CnrCard.vue`. Relative imports also work between files of one app.
@@ -322,7 +322,7 @@ Then do the checks for whatever actually updated.
 - **Panel and leaderboard:**
   - The panel's buttons do something, which proves `engineLua` reaches `copsAndRobbers.panel`.
   - The tabs show the right headings, the leaderboard's filter row sits under its tabs, and the dropdowns open inside the app and show real map names.
-- **Layout files:** leaving the server removes all our apps from the layout file in `settings/ui_apps/layouts/`. A stock layout copy we created gets deleted again, and so does the disk copy of BeamMP's `beammp` layout (check that `settings/ui_apps/layouts/default/beammp.uilayout.json` is gone from the user folder after leaving).
+- **Layout files:** leaving the server removes automatically placed apps from the layout file in `settings/ui_apps/layouts/`. A stock layout copy we created gets deleted again, and so does the disk copy of BeamMP's `beammp` layout (check that `settings/ui_apps/layouts/default/beammp.uilayout.json` is gone from the user folder after leaving).
 - **Placement format:** read the header comment of `placementResolve.js` again. If it changed, update the placements in `apps.lua` and the `css` in every `app.json`.
 
 ## Development tools

@@ -33,6 +33,57 @@ test("a cop round places the car, reports it and shows the prep line", function(
   assertEq(h.prep.waiting, "Waiting for the host to press GO")
 end)
 
+test("a rejoining player reports the round car once BeamMP assigns its late server ID", function()
+  local env = bootClient()
+  local setup = copy(SETUP)
+  setup.phase, setup.resumePos = "running", { x = 900, y = 9, z = 15 }
+  local ready = false
+  MPVehicleGE.getVehicleByGameID = function(id)
+    if ready then return { serverVehicleString = "1-" .. id } end
+  end
+  env.fire("cnr_roundSetup", setup)
+  env.tick(8)
+  assertEq(env.lastSent("cnr_myVehicle"), nil)
+  local roundCar = env.veh
+  env.veh = env.addObject(301, vec3(0, 0, 0))
+  ready = true
+  env.tick(0.25)
+  local report = env.lastSent("cnr_myVehicle")
+  assertEq(report and report.vid, roundCar:getID())
+  assertEq(env.teleported, 1)
+  env.tick(1)
+  assertEq(env.teleported, 1)
+end)
+
+test("prep freezes the local round car and GO releases it while BeamMP registration is pending", function()
+  local env = bootClient()
+  local setup = copy(SETUP)
+  setup.role = "runner"
+  MPVehicleGE.getVehicleByGameID = function() return nil end
+  env.fire("cnr_roundSetup", setup)
+  MPVehicleGE.isOwn = function() return false end
+  env.tick(1)
+  local function freezes(value)
+    local count = 0
+    for _, command in ipairs(env.veh.commands) do
+      if command == "controller.setFreeze(" .. value .. ")" then count = count + 1 end
+    end
+    return count
+  end
+  assertEq(freezes(1) > 0, true)
+  local initial = freezes(1)
+  env.tick(7)
+  assertEq(freezes(1) > initial, true)
+  initial = freezes(1)
+  env.fire("cnr_runnerGo", { headStartSeconds = 5 })
+  env.tick(1)
+  assertEq(freezes(0), 1); assertEq(freezes(1), initial)
+  MPVehicleGE.getVehicleByGameID = function() return { serverVehicleString = "1-3" } end
+  env.tick(1)
+  assertEq(env.lastSent("cnr_myVehicle").vid, 3)
+  assertEq(freezes(1), initial)
+end)
+
 test("helicopter events drive the status item", function()
   local env = bootClient()
   startCop(env)
@@ -374,9 +425,10 @@ local function fakeLayouts()
     getAvailableLayouts = function()
       return { { filename = name, apps = L.disk[name].apps }, { filename = other, apps = L.disk[other].apps } }
     end,
-    addApp = function(file, app, placement)
-      table.insert(L.disk[file].apps, { appName = app, placement = placement })
-      L.added[#L.added + 1] = placement
+    saveLayout = function(layout)
+      L.disk[layout.filename].apps = layout.apps
+      local last = layout.apps[#layout.apps]
+      if last then L.added[#L.added + 1] = last.placement end
       return true
     end,
     removeApp = function(file, idx0) table.remove(L.disk[file].apps, idx0 + 1); return true end,
@@ -481,6 +533,24 @@ test("leaving the server removes the HUD apps, How to play and the apps it opene
   assertEq(has(L, "copsAndRobbersHowToPlay"), false)
   assertEq(has(L, "copsAndRobbersLeaderboard"), false)
   assertEq(has(L, "copsAndRobbersPanel"), true)
+end)
+
+test("disconnect cleans optional apps left by a crashed session even when never reopened", function()
+  local L = fakeLayouts()
+  local board = "copsAndRobbersLeaderboard"
+  local manual = { appName = board, placement = { top = "7em" } }
+  L.disk[L.other].apps = {
+    { appName = board, settings = { cnrAutoPlaced = true } },
+    manual,
+    { appName = "copsAndRobbersPanel", settings = { cnrAutoPlaced = true } },
+    { appName = "copsAndRobbersHowToPlay", settings = { cnrAutoPlaced = true } },
+  }
+  local env = bootClient({ layouts = L })
+  env.tick(4, 0.5)
+  env.M.onBeamMPServerLeave()
+  assertEq(#L.disk[L.other].apps, 1)
+  assertEq(L.disk[L.other].apps[1].appName, board)
+  assertEq(L.disk[L.other].apps[1].placement.top, "7em")
 end)
 
 test("a layout switch is picked up right away, not after the slow check", function()
@@ -1564,7 +1634,7 @@ end)
 
 local function withLeftoverHowTo()
   local L = fakeLayouts()
-  table.insert(L.disk[L.name].apps, { appName = "copsAndRobbersHowToPlay" })
+  table.insert(L.disk[L.name].apps, { appName = "copsAndRobbersHowToPlay", settings = { cnrAutoPlaced = true } })
   local env = bootClient({ layouts = L, files = { [HELP_FILE] = { seen = true } } })
   join(env)
   env.tick(4, 0.5)
@@ -2402,6 +2472,20 @@ test("a weather change during the chase shows its notice and moves the lights an
   assertEq(notices.n, 1)
 end)
 
+test("traffic headlights stay on until the daytime rain has cleared", function()
+  local env = bootClient()
+  chaseWith(env, { time = "noon", weather = "rain", clockSeconds = 40, changes = { { at = 30, to = "cloudy", forecastFrom = 0 } } })
+  env.fire("cnr_trafficStart", { count = 2 })
+  env.tick(10, 0.5)
+  local cars = trafficObjects(env)
+  assertEq(#cars, 2)
+  for _, car in ipairs(cars) do assertEq(hasCommand(car, "electrics.setLightsState(1)"), true) end
+  env.tick(35, 0.5)
+  for _, car in ipairs(cars) do assertEq(hasCommand(car, "electrics.setLightsState(0)"), false) end
+  env.tick(10, 0.5)
+  for _, car in ipairs(cars) do assertEq(hasCommand(car, "electrics.setLightsState(0)"), true) end
+end)
+
 test("a mid-chase joiner starts with the weather in effect and no notice for a change already past", function()
   local env = bootClient()
   local traffic = package.loaded["copsAndRobbers/traffic"]
@@ -2480,6 +2564,8 @@ test("practice AI cars switch their headlights on in bad weather by day", functi
   env.tick(3)
   local car = env.spawned[1].veh
   assertEq(hasCommand(car, "electrics.setLightsState(1)"), true)
+  assertEq(hasCommand(car, "electrics.setLightsState(0)"), false)
+  env.tick(60)
   assertEq(hasCommand(car, "electrics.setLightsState(0)"), false)
   env.tick(10)
   assertEq(hasCommand(car, "electrics.setLightsState(0)"), true)

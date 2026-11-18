@@ -215,27 +215,17 @@ local function switchFields(dt)
   if obj then setSpecFields(obj, cur.spec) end
 end
 
-function M.update(dt, needRoof)
-  local startingRain = not cur and goal ~= nil and not roofDemand
-  local prime = needRoof and not roofDemand
-  roofDemand = needRoof
-  if not cur and not goal and not needRoof then
-    roofReading = nil
-    return
-  end
-  sinceWrite = sinceWrite + dt
+local function advanceDrops(dt)
   if cur and cur.fieldsIn then switchFields(dt) end
   local reached = false
   if cur and not sameKind() then
+    local remaining = rateOut > 0 and cur.drops / rateOut or 0
     cur.drops = cur.drops - rateOut * dt
     if cur.drops <= EPSILON then
+      dt = math.max(0, dt - remaining)
       removeAll()
       reached = true
     end
-  end
-  if startingRain then
-    roofReading = readCover()
-    cover.covered = roofReading == true
   end
   if goal and not cur and not create(goal) then goal = nil end
   if sameKind() and cur.drops ~= goal.numDrops then
@@ -248,6 +238,38 @@ function M.update(dt, needRoof)
       cur.drops = cur.drops + (diff > 0 and step or -step)
     end
   end
+  return reached
+end
+
+function M.resume(from, to, seconds, elapsed)
+  local primeCover = not M.active() and not roofDemand
+  M.target(from, 0)
+  M.target(to, seconds)
+  if not M.active() then return end
+  if primeCover then
+    roofReading = readCover()
+    cover.covered = roofReading == true
+    local obj = scenetree.findObject(M.NAME)
+    if cur and obj then setHidden(obj, cover.covered) end
+  end
+  advanceDrops(elapsed)
+  if cur then writeDrops() end
+end
+
+function M.update(dt, needRoof)
+  local startingRain = not cur and goal ~= nil and not roofDemand
+  local prime = needRoof and not roofDemand
+  roofDemand = needRoof
+  if not cur and not goal and not needRoof then
+    roofReading = nil
+    return
+  end
+  sinceWrite = sinceWrite + dt
+  if startingRain then
+    roofReading = readCover()
+    cover.covered = roofReading == true
+  end
+  local reached = advanceDrops(dt)
   local changed = not startingRain and (cur or needRoof) and updateCover(dt, prime)
   if not cur and not needRoof then roofReading = nil end
   if cur and (changed or reached or sinceWrite >= M.FADE_INTERVAL - EPSILON) then writeDrops() end

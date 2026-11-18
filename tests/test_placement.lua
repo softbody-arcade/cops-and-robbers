@@ -21,6 +21,11 @@ local function fakeGame(layoutApps, currentName)
       for _, l in pairs(g.disk) do list[#list + 1] = deepcopy(l) end
       return list
     end,
+    saveLayout = function(layout)
+      if g.failAdd then return end
+      g.adds = g.adds + 1
+      g.disk[layout.filename] = deepcopy(layout)
+    end,
     addApp = function(name, app, pl)
       if g.failAdd then return false end
       g.adds = g.adds + 1
@@ -71,13 +76,29 @@ test("does nothing before activation and after leaving", function()
 end)
 
 test("leave removes leftovers from every layout, also from earlier sessions", function()
-  local g = fakeGame({ beammp = { { appName = "hud" } }, freeroam = { { appName = "hud" }, { appName = "x" } } }, "beammp")
+  local g = fakeGame({ beammp = { { appName = "hud", settings = { cnrAutoPlaced = true } } }, freeroam = { { appName = "hud", settings = { cnrAutoPlaced = true } }, { appName = "x" } } }, "beammp")
   local s = placement.new("hud", PLACE)
   placement.activate(s)
   assertEq(placement.tick(s, g.env), true)
   placement.leave(s, g.env)
   assertEq(count(g, "beammp"), 0); assertEq(count(g, "freeroam"), 0)
   assertEq(#g.disk.freeroam.apps, 1)
+end)
+
+test("leave preserves a manual replacement even when no placement tick observed the edit", function()
+  local g = fakeGame({ beammp = {}, other = {} }, "beammp")
+  local s = placement.new("hud", PLACE, { sticky = true })
+  placement.activate(s)
+  placement.tick(s, g.env)
+  g.api.removeApp("beammp", 0)
+  g.api.addApp("beammp", "hud", PLACE)
+  g.api.setCurrentLayout("other")
+  placement.tick(s, g.env)
+  g.api.addApp("other", "hud", PLACE)
+  placement.leave(s, g.env)
+  assertEq(count(g, "beammp"), 1)
+  assertEq(count(g, "other"), 1)
+  assertEq(g.disk.other.apps[1].settings, nil)
 end)
 
 test("a player removing the app is respected (stale cache does not hide it)", function()
@@ -91,7 +112,7 @@ test("a player removing the app is respected (stale cache does not hide it)", fu
   assertEq(count(g, "beammp"), 0)
 end)
 
-test("a failing addApp reports not placed", function()
+test("a failed layout write reports not placed", function()
   local g = fakeGame({ beammp = {} }, "beammp")
   g.failAdd = true
   local s = placement.new("hud", PLACE)
