@@ -621,11 +621,11 @@ function Round:trackTick(now, cars, runnerCar, seeing, nearest, fx)
         if vec.dist(runnerCar.pos, car.pos) <= limit then noRoute[pid] = true end
       end
     end
-    fx[#fx + 1] = { kind = "live", pos = runnerCar.pos, geo = runnerCar.geo, noRoute = noRoute, nearestCop = nearest }
+    fx[#fx + 1] = { kind = "live", pos = runnerCar.pos, noRoute = noRoute, nearestCop = nearest }
   elseif self.tracked then
     self.tracked = false
     self.liveAt = nil
-    fx[#fx + 1] = { kind = "lastSeen", pos = runnerCar.pos, geo = runnerCar.geo, nearestCop = nearest }
+    fx[#fx + 1] = { kind = "lastSeen", pos = runnerCar.pos, nearestCop = nearest }
   end
 end
 

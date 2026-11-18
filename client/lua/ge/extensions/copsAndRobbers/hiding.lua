@@ -35,7 +35,7 @@ end
 
 local function makeWrapper(original)
   return function(...)
-    local vids = target and target.minimap and target.vids
+    local vids = target and target.vids
     if not vids or not next(vids) then return original(...) end
     local realIterator = activeVehiclesIterator
     activeVehiclesIterator = function(ctx)

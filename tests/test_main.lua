@@ -512,12 +512,13 @@ test("/cnr start next and again", function()
   env.cleanup()
 end)
 
-test("losing sight pings the cops once, with the position", function()
+test("losing sight pings the cops once with the runner's XYZ position", function()
   local env = boot({ config = '{"helicopter": false}' })
   runToChase(env)
   env.positions[2] = 50
   for _ = 1, 4 do env.clock = env.clock + 0.25; env.call("cnr_sight", 2, '{"seen":true}'); env.call("cnr_tick") end
   env.sent = {}
+  env.vidPositions["1-0"] = { pos = { 6, 8, 12 }, vel = { 0, 0, 0 } }
   env.call("cnr_sight", 2, '{"seen":false}')
   for _ = 1, 24 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
   local count = 0
@@ -525,7 +526,9 @@ test("losing sight pings the cops once, with the position", function()
   assertEq(count, 1)
   local seen = env.lastSent("cnr_lastSeen")
   assertEq(seen.pid, 2)
-  assertEq(seen.data:find('"pos"', 1, true) ~= nil, true)
+  local ping = decodeJson(seen.data)
+  assertEq(ping.pos.x, 6); assertEq(ping.pos.y, 8); assertEq(ping.pos.z, 12)
+  assertEq(ping.live, nil); assertEq(ping.route, nil)
   env.cleanup()
 end)
 
@@ -648,177 +651,6 @@ test("pick request carries the excluded models", function()
   env.cleanup()
 end)
 
-local EARTH = "/levels/beamng_earth/info.json"
-local LAT, LON = 52.0, 5.0
-local M_PER_DEG = 111250
-
-local function geoCar(northMeters, kmh, id)
-  local c = string.format('{"lat":%.9f,"lon":%.9f,"h":0,"ve":0,"vn":%.4f,"vu":0', LAT + northMeters / M_PER_DEG, LON, (kmh or 0) / 3.6)
-  if id then c = c .. string.format(',"id":%d', id) end
-  return c .. "}"
-end
-
-local function report(env, pid, ...)
-  env.call("cnr_geo", pid, '{"cars":[' .. table.concat({ ... }, ",") .. ']}')
-end
-
-test("earth mode is announced on load and join", function()
-  local env = boot({ map = EARTH })
-  local m = env.lastSent("cnr_mode")
-  assertEq(m.pid, -1); assertEq(m.data:find('"geo":true', 1, true) ~= nil, true)
-  env.sent = {}
-  env.call("onPlayerJoin", 2)
-  assertEq(env.lastSent("cnr_mode").pid, 2)
-  env.cleanup()
-  local wc = boot()
-  assertEq(wc.lastSent("cnr_mode").data:find('"geo":false', 1, true) ~= nil, true)
-  wc.cleanup()
-end)
-
-test("earth catch uses geo reports, not raw positions", function()
-  local env = boot({ map = EARTH })
-  env.positions[1], env.positions[2] = 0, 5000
-  env.panel(2, "start rein")
-  report(env, 1, geoCar(0)); report(env, 2, geoCar(5))
-  env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
-  local setup
-  for _, m in ipairs(env.sent) do if m.ev == "cnr_roundSetup" and m.pid == 2 then setup = m.data end end
-  assertEq(setup:find('"geo":true', 1, true) ~= nil, true)
-  assertEq(setup:find('"runnerGeo"', 1, true) ~= nil, true)
-  env.go()
-  for _ = 1, 90 do
-    env.clock = env.clock + 0.25
-    report(env, 1, geoCar(0)); report(env, 2, geoCar(5))
-    env.call("cnr_tick")
-  end
-  assertEq(env.caught(), true)
-  env.cleanup()
-end)
-
-test("stale geo reports do not count", function()
-  local env = boot({ map = EARTH })
-  env.panel(2, "start rein")
-  report(env, 1, geoCar(0)); report(env, 2, geoCar(5))
-  env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
-  env.go()
-  for _ = 1, 90 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
-  assertEq(env.caught(), false)
-  env.cleanup()
-end)
-
-test("earth AI cars are reported by the test issuer", function()
-  local env = boot({ map = EARTH, vehicles = { [1] = { [0] = "x" } } })
-  env.panel(1, "test runner")
-  report(env, 1, geoCar(0))
-  env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
-  env.go()
-  for _ = 1, 90 do
-    env.clock = env.clock + 0.25
-    report(env, 1, geoCar(0), geoCar(5, 0, -10), geoCar(900, 0, -11))
-    env.call("cnr_tick")
-  end
-  assertEq(env.caught(), true)
-  env.cleanup()
-end)
-
-test("earth last seen carries lat/lon", function()
-  local env = boot({ map = EARTH, config = '{"helicopter": false}' })
-  env.panel(2, "start rein")
-  report(env, 1, geoCar(0)); report(env, 2, geoCar(300))
-  env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
-  env.go()
-  local function step()
-    env.clock = env.clock + 0.25
-    report(env, 1, geoCar(0)); report(env, 2, geoCar(300))
-    env.call("cnr_tick")
-  end
-  for _ = 1, 60 do step() end
-  env.call("cnr_sight", 2, '{"seen":true}')
-  step()
-  env.sent = {}
-  env.call("cnr_sight", 2, '{"seen":false}')
-  for _ = 1, 8 do step() end
-  local seen = env.lastSent("cnr_lastSeen")
-  assertEq(seen ~= nil and seen.pid == 2, true)
-  assertEq(seen.data:find('"lat"', 1, true) ~= nil, true)
-  env.cleanup()
-end)
-
-test("earth sight pings still go out when the runner's report turns stale during the tick", function()
-  local env = boot({ map = EARTH })
-  env.panel(2, "start rein")
-  report(env, 1, geoCar(0)); report(env, 2, geoCar(300))
-  env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
-  env.go()
-  local function step()
-    env.clock = env.clock + 0.25
-    report(env, 1, geoCar(0)); report(env, 2, geoCar(300))
-    env.call("cnr_tick")
-  end
-  for _ = 1, 60 do step() end
-  local Round = getmetatable(require("cnr.round").new({}))
-  local tick = Round.tick
-  Round.tick = function(...)
-    local fx = tick(...)
-    env.clock = env.clock + 3
-    return fx
-  end
-  local ok, err = pcall(function()
-    env.sent = {}
-    env.call("cnr_sight", 2, '{"seen":true}')
-    step()
-    local live = env.lastSent("cnr_lastSeen")
-    assertEq(live ~= nil and live.data:find('"live":true', 1, true) ~= nil, true)
-    env.sent = {}
-    env.call("cnr_sight", 2, '{"seen":false}')
-    step()
-    local lost = env.lastSent("cnr_lastSeen")
-    assertEq(lost ~= nil and lost.data:find('"lat"', 1, true) ~= nil, true)
-  end)
-  Round.tick = tick
-  env.cleanup()
-  if not ok then error(err, 0) end
-end)
-
-test("earth relocations grant grace for own car and test AI", function()
-  local env = boot({ map = EARTH, vehicles = { [1] = { [0] = "x" } } })
-  env.panel(1, "test runner")
-  report(env, 1, geoCar(0))
-  env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
-  env.go()
-  for _ = 1, 44 do env.clock = env.clock + 0.25; report(env, 1, geoCar(0), geoCar(300, 0, -10), geoCar(900, 0, -11)); env.call("cnr_tick") end
-  env.sent = {}
-  env.call("cnr_relocated", 1, '{"ids":[-10]}')
-  env.call("cnr_relocated", 1, '{}')
-  env.call("onVehicleReset", 1, 0, "")
-  env.clock = env.clock + 0.25
-  report(env, 1, geoCar(5000), geoCar(5300, 0, -10), geoCar(900, 0, -11))
-  env.call("cnr_tick")
-  assertEq(env.noticeHas("illegally"), false)
-  assertEq(env.noticeHas("teleported"), false)
-  env.cleanup()
-end)
-
-test("earth: an illegal reset waits a second for a relocation report", function()
-  local env = boot({ map = EARTH })
-  env.panel(2, "start rein")
-  report(env, 1, geoCar(0)); report(env, 2, geoCar(900))
-  env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
-  env.go()
-  for _ = 1, 44 do env.clock = env.clock + 0.25; report(env, 1, geoCar(0, 60)); report(env, 2, geoCar(900, 60)); env.call("cnr_tick") end
-  env.sent = {}
-  env.call("onVehicleReset", 1, 0, "")
-  env.clock = env.clock + 0.25; report(env, 1, geoCar(0, 60)); report(env, 2, geoCar(900, 60)); env.call("cnr_tick")
-  env.call("cnr_relocated", 1, "{}")
-  for _ = 1, 8 do env.clock = env.clock + 0.25; report(env, 1, geoCar(0, 60)); report(env, 2, geoCar(900, 60)); env.call("cnr_tick") end
-  assertEq(env.noticeHas("reset illegally"), false)
-  for _ = 1, 8 do env.clock = env.clock + 0.25; report(env, 1, geoCar(0, 60)); report(env, 2, geoCar(900, 60)); env.call("cnr_tick") end
-  env.call("onVehicleReset", 1, 0, "")
-  for _ = 1, 8 do env.clock = env.clock + 0.25; report(env, 1, geoCar(0, 60)); report(env, 2, geoCar(900, 60)); env.call("cnr_tick") end
-  assertEq(env.noticeHas("Reinder reset illegally", "warn") or env.noticeHas("ReinderN reset illegally", "warn"), true)
-  env.cleanup()
-end)
-
 test("players are recognised by BeamMP account across name changes", function()
   local env = boot({ files = { ["data/colors.json"] = '{"beammp:7":"#ff0000"}' } })
   env.ids = { [1] = { beammp = "7" }, [2] = { beammp = "9" } }
@@ -896,11 +728,38 @@ test("manual start cancels a pending automatic round", function()
   env.cleanup()
 end)
 
-test("version is shown in the log and the mode event", function()
+test("the mode event carries just the version at load and join", function()
   local env = boot()
   assertEq(env.logHas("Cops and Robbers " .. CNR_VERSION .. " loaded"), true)
-  assertEq(env.lastSent("cnr_mode").data:find('"version":"' .. CNR_VERSION .. '"', 1, true) ~= nil, true)
+  local loaded = env.lastSent("cnr_mode")
+  env.call("onPlayerJoin", 2)
+  local joined = env.lastSent("cnr_mode")
+  assertEq(loaded.pid, -1); assertEq(joined.pid, 2)
+  for _, event in ipairs({ loaded, joined }) do
+    local payload = decodeJson(event.data)
+    assertEq(payload.version, CNR_VERSION)
+    payload.version = nil
+    assertEq(next(payload), nil)
+  end
   env.cleanup()
+end)
+
+test("round setup sends the runner's XYZ when a vehicle sample is available", function()
+  for _, available in ipairs({ true, false }) do
+    local env = boot()
+    if available then env.vidPositions["1-0"] = { pos = { 6, 8, 12 }, vel = { 1, 2, 3 } } end
+    env.panel(2, "start rein")
+    env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+    local setup = env.lastSent("cnr_roundSetup")
+    assertEq(setup.pid, 2)
+    local pos = decodeJson(setup.data).runnerPos
+    if available then
+      assertEq(pos.x, 6); assertEq(pos.y, 8); assertEq(pos.z, 12)
+    else
+      assertEq(pos, nil)
+    end
+    env.cleanup()
+  end
 end)
 
 test("leaderboard with a wrong shape is moved aside", function()
@@ -1393,20 +1252,32 @@ local function runningRound(env)
   for _ = 1, 44 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
 end
 
-test("a cop's sight report makes cops get live updates and the runner spotted", function()
+test("a cop's sight report sends live XYZ to the cop and distance to the runner", function()
   local env = boot()
   runningRound(env)
+  env.names = { "Reinder", "Bob", "Kim" }
+  env.call("onPlayerJoin", 3)
+  assertEq(env.lastSent("cnr_spectate").pid, 3)
   env.sent = {}
+  env.vidPositions["1-0"] = { pos = { 6, 8, 12 }, vel = { 0, 0, 0 } }
+  env.vidPositions["2-0"] = { pos = { 6, 8, 42 }, vel = { 0, 0, 0 } }
   env.call("cnr_sight", 2, '{"seen":true}')
   env.clock = env.clock + 0.25
   env.call("cnr_tick")
   local live = env.lastSent("cnr_lastSeen")
-  assertEq(live.pid, 2)
-  assertEq(live.data:find('"live":true', 1, true) ~= nil, true)
-  assertEq(live.data:find('"route":', 1, true) ~= nil, true)
+  for _, event in ipairs(env.sent) do
+    if event.ev == "cnr_lastSeen" then assertEq(event.pid, 2) end
+  end
+  local ping = decodeJson(live.data)
+  assertEq(ping.live, true)
+  assertEq(ping.route, false)
+  assertEq(ping.pos.x, 6); assertEq(ping.pos.y, 8); assertEq(ping.pos.z, 12)
+  local nearest = env.lastSent("cnr_nearestCop")
+  assertEq(nearest.pid, 1)
+  assertEq(decodeJson(nearest.data).dist, 30)
   local spotted = env.lastSent("cnr_spotted")
   assertEq(spotted.pid, 1)
-  assertEq(spotted.data:find('"spotted":true', 1, true) ~= nil, true)
+  assertEq(decodeJson(spotted.data).spotted, true)
   env.cleanup()
 end)
 
@@ -2824,14 +2695,15 @@ test("a cop rejoining mid-chase is placed back on his road without a teleport or
   local env = boot()
   env.startRound()
   placed(env, 1); placed(env, 2)
-  env.positions[2] = 900
+  env.vidPositions["2-0"] = { pos = { 900, 9, 15 }, vel = { 0, 0, 0 } }
   chase(env)
   env.call("onPlayerDisconnect", 2)
-  env.vehicles[2], env.positions[2] = nil, nil
+  env.vehicles[2], env.positions[2], env.vidPositions["2-0"] = nil, nil, nil
   for _ = 1, 8 do step(env) end
   env.sent = {}
   env.call("onPlayerJoin", 2)
-  assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 2)).resumePos.x, 900)
+  local resume = decodeJson(sentTo(env, "cnr_roundSetup", 2)).resumePos
+  assertEq(resume.x, 900); assertEq(resume.y, 9); assertEq(resume.z, 15)
   for _ = 1, 24 do step(env) end
   assertEq(env.call("onVehicleSpawn", 2, 0, spawnOf(2, 0, "pickup", "vehicles/pickup/base.pc")), 0)
   env.vehicles[2] = { [0] = "x" }
@@ -2844,6 +2716,34 @@ test("a cop rejoining mid-chase is placed back on his road without a teleport or
   for _ = 1, 8 do step(env) end
   assertEq(env.noticeHas("Bob teleported"), false)
   assertEq(env.noticeHas("Bob reset illegally"), false)
+  env.cleanup()
+end)
+
+test("a cop rejoining without a saved vehicle sample still gets placement grace", function()
+  local env = boot()
+  env.startRound()
+  placed(env, 1); placed(env, 2)
+  env.positions[2] = 900
+  chase(env)
+  env.vehicles[2], env.positions[2] = nil, nil
+  step(env)
+  env.call("onPlayerDisconnect", 2)
+  env.sent = {}
+  env.call("onPlayerJoin", 2)
+  local setup = decodeJson(sentTo(env, "cnr_roundSetup", 2))
+  assertEq(setup.role, "cop")
+  assertEq(setup.resumePos, nil)
+  assertEq(env.call("onVehicleSpawn", 2, 0, spawnOf(2, 0, "pickup", "vehicles/pickup/base.pc")), 0)
+  env.vehicles[2] = { [0] = "x" }
+  env.vidPositions["2-0"] = { pos = { 900, 0, 0 }, vel = { 20, 0, 0 } }
+  step(env)
+  env.call("onVehicleReset", 2, 0, "")
+  env.call("cnr_myVehicle", 2, '{"vid":0}')
+  env.vidPositions["2-0"] = { pos = { 100, 0, 0 }, vel = { 0, 0, 0 } }
+  step(env)
+  assertEq(env.noticeHas("Bob teleported"), false)
+  assertEq(env.noticeHas("Bob reset illegally"), false)
+  assertEq(sentTo(env, "cnr_penalty", 2), nil)
   env.cleanup()
 end)
 

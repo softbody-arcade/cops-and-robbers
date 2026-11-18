@@ -8,7 +8,6 @@ local FREEZE_REASSERT = 0.5
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
 local HEADLIGHTS_ON = "electrics.setLightsState(1)"
 local HEADLIGHTS_OFF = "electrics.setLightsState(0)"
-local REPLACE_MIN, REPLACE_MAX = 80, 200
 local FLEE_CHECK = 1
 local HOLD_INPUTS = "if input and input.setAllowedInputSource then for _, t in ipairs({ 'steering', 'throttle', 'brake', 'parkingbrake', 'clutch' }) do input.setAllowedInputSource(t, 'ai', true) input.setAllowedInputSource(t, 'local', false) end end"
 
@@ -240,24 +239,6 @@ function M.objects()
     if obj then list[#list + 1] = { id = car.id, obj = obj } end
   end
   return list
-end
-
-function M.relocate(center, heading)
-  local ids, index = {}, 0
-  if not center then return ids end
-  for id, car in pairs(cars) do
-    local obj = car.gameId and getObjectByID(car.gameId)
-    if obj then
-      index = index + 1
-      local pos, rot = roads.findCopSpot(center, REPLACE_MIN, REPLACE_MAX, index, heading)
-      if pos then
-        spawn.safeTeleport(obj, pos, rot)
-        if car.frozen then obj:queueLuaCommand("controller.setFreeze(1)") end
-        ids[#ids + 1] = id
-      end
-    end
-  end
-  return ids
 end
 
 return M
