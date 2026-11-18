@@ -70,7 +70,10 @@ local function saveHitches(byId)
         tag = tags[a] and tags[a][nodeA]
       end
       if vehicles.couplerTagsOptions[tag] and offsets[a] and offsets[a][nodeA] and offsets[b] and offsets[b][nodeB] then
-        byId[b].hitch = { tow = byId[a], ball = offsets[a][nodeA], socket = offsets[b][nodeB], tag = tag }
+        byId[b].hitch = {
+          tow = byId[a], towNode = nodeA, trailerNode = nodeB,
+          ball = offsets[a][nodeA], socket = offsets[b][nodeB], tag = tag
+        }
       end
     end
   end
@@ -116,34 +119,55 @@ function M.restore()
   return allBack
 end
 
+local function hitchStatus(tow, towNode, trailer, trailerNode)
+  local occupied = false
+  for _, pair in ipairs(core_vehicles.attachedCouplers or {}) do
+    local a, b, nodeA, nodeB = pair[1], pair[2], pair[3], pair[4]
+    if a == trailer or b == tow then a, b, nodeA, nodeB = b, a, nodeB, nodeA end
+    if a == tow and b == trailer and nodeA == towNode and nodeB == trailerNode then return "attached" end
+    if (a == tow and b == trailer) or (a == tow and nodeA == towNode) or (b == trailer and nodeB == trailerNode) then
+      occupied = true
+    end
+  end
+  if occupied then return "occupied" end
+end
+
+local function updateHitch(car, expired)
+  local hitch, tow = car.hitch, car.hitch.tow
+  if not (car.id and tow.id and getObjectByID(car.id) and getObjectByID(tow.id)) then return true end
+  local status = hitchStatus(tow.id, hitch.towNode, car.id, hitch.trailerNode)
+  if status == "attached" then return true end
+  if expired then
+    log("W", "cnr_spectate", "timed out restoring trailer hitch between " .. tow.id .. " and " .. car.id)
+    return true
+  end
+  if hitch.placed or status == "occupied" or tow.hitch then return false end
+  if MPVehicleGE.isOwn(tow.id) and MPVehicleGE.isOwn(car.id) then
+    local ok, err = pcall(spawn.placeTrailer, tow.id, hitch.ball, car.id, hitch.socket, hitch.tag)
+    if not ok then
+      log("W", "cnr_spectate", "could not place parked trailer " .. car.id .. ": " .. tostring(err))
+      return true
+    end
+    hitch.placed = true
+  end
+  return false
+end
+
 function M.updateHitches(dt)
   if not restoring then return end
   hitchWait = hitchWait + dt
   if hitchWait < HITCH_SETTLE_SECONDS then return end
-  local coupled = core_vehicles.vehsCouplings or {}
   local pending = false
   for _, car in ipairs(restoring) do
-    local hitch = car.hitch
-    if hitch then
-      local tow = hitch.tow
-      if not (car.id and tow.id and getObjectByID(car.id) and getObjectByID(tow.id)) then
-        car.hitch = nil
-      elseif not tow.hitch and MPVehicleGE.isOwn(tow.id) and MPVehicleGE.isOwn(car.id) then
-        if not (coupled[tow.id] and coupled[tow.id][car.id]) then
-          spawn.placeTrailer(tow.id, hitch.ball, car.id, hitch.socket, hitch.tag)
-        end
+    if car.hitch then
+      if updateHitch(car, hitchWait >= HITCH_TIMEOUT_SECONDS) then
         car.hitch = nil
       else
         pending = true
       end
     end
   end
-  if not pending then
-    restoring = nil
-  elseif hitchWait >= HITCH_TIMEOUT_SECONDS then
-    log("W", "cnr_spectate", "timed out restoring a parked trailer hitch")
-    restoring = nil
-  end
+  if not pending then restoring = nil end
 end
 
 function M.drop()

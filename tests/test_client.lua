@@ -4008,7 +4008,11 @@ local function parkedTrailer()
   end
   spectate(env)
   env.fire("cnr_roundEnd", { reason = "cancelled" })
-  return env, placements
+  local warnings = {}
+  _G.log = function(level, tag, message)
+    if level == "W" and tag == "cnr_spectate" then warnings[#warnings + 1] = message end
+  end
+  return env, placements, warnings
 end
 
 test("sitting out restores the saved hitch once both new vehicles are owned", function()
@@ -4027,10 +4031,62 @@ end)
 test("a trailer which latched during spawn is left in place", function()
   local env, placements = parkedTrailer()
   local tow, trailer = env.spawned[1].veh.id, env.spawned[2].veh.id
-  core_vehicles.vehsCouplings = { [tow] = { [trailer] = true } }
+  core_vehicles.attachedCouplers = { {tow, trailer, 22, 11} }
   MPVehicleGE.isOwn = function() return true end
   env.tick(1)
   assertEq(#placements, 0)
+end)
+
+test("a delayed latch confirms the exact saved nodes without moving the trailer again", function()
+  local env, placements, warnings = parkedTrailer()
+  local tow, trailer = env.spawned[1].veh.id, env.spawned[2].veh.id
+  MPVehicleGE.isOwn = function() return true end
+  env.tick(2)
+  assertEq(#placements, 1)
+  core_vehicles.attachedCouplers = { {trailer, tow, 11, 22} }
+  env.tick(11)
+  assertEq(#placements, 1); assertEq(#warnings, 0)
+end)
+
+test("a missing latch or one on different nodes times out once", function()
+  for _, wrongNodes in ipairs({false, true}) do
+    local env, placements, warnings = parkedTrailer()
+    local tow, trailer = env.spawned[1].veh.id, env.spawned[2].veh.id
+    MPVehicleGE.isOwn = function() return true end
+    env.tick(1)
+    if wrongNodes then core_vehicles.attachedCouplers = { {tow, trailer, 22, 33} } end
+    env.tick(20, 1)
+    assertEq(#placements, 1); assertEq(#warnings, 1)
+    assert(warnings[1]:find("timed out", 1, true))
+  end
+end)
+
+test("restoring leaves an occupied hitch where it is", function()
+  local env, placements, warnings = parkedTrailer()
+  local tow, trailer = env.spawned[1].veh.id, env.spawned[2].veh.id
+  MPVehicleGE.isOwn = function() return true end
+  core_vehicles.attachedCouplers = { {trailer, tow, 33, 22} }
+  env.tick(12, 1)
+  assertEq(#placements, 0); assertEq(#warnings, 1)
+end)
+
+test("an expired hitch request never moves the trailer", function()
+  local env, placements, warnings = parkedTrailer()
+  env.tick(2)
+  MPVehicleGE.isOwn = function() return true end
+  env.M.onUpdate(12, 12)
+  env.tick(1)
+  assertEq(#placements, 0); assertEq(#warnings, 1)
+end)
+
+test("a trailer placement error ends the request without interrupting the update", function()
+  local env, _, warnings = parkedTrailer()
+  MPVehicleGE.isOwn = function() return true end
+  local calls = 0
+  spawn.placeTrailer = function() calls = calls + 1; error("placement failed") end
+  env.tick(12, 1)
+  assertEq(calls, 1); assertEq(#warnings, 1)
+  assert(warnings[1]:find("placement failed", 1, true))
 end)
 
 test("a pending hitch is forgotten on leave or when a restored vehicle disappears", function()
