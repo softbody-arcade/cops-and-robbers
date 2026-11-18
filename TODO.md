@@ -7,12 +7,12 @@ Priorities run from `!!!!` (highest) through `!!!` (high), `!!` (normal), and `!
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 - [ ] !!! Lightning frequency (design): expose minimum and maximum seconds between strikes in host settings. Preserve the shared seeded schedule for players and late spectators. Defaults and behavior during weather transitions are under discussion.
-- [ ] !! Nearby lightning shadows (`nearby-lightning-shadows`): spec and plan reviewed at `70c4c5e`. Plan and build approved. Implementing close-strike shadows for independent review, merge and local staging.
-- [ ] !! Rain briefly flashes under a roof during a dry-to-rain New sky in prep (`fixes-prep-rain`). Reproduce the visible first drops and verify cover on the initial rain update.
+- [ ] !! Rain briefly flashes under a roof during a dry-to-rain New sky in prep (`fixes-prep-rain`). Reproduce the visible first drops and verify cover on the initial rain update. Implemented and independently reviewed at `2800e19`. Awaiting its own playtest build.
 
 ## In-game checks
 Things only a player in the game can confirm, each with what to look for. Add them here when work is merged or deployed without the check; delete a line once it is checked, and turn anything that fails into an Issue.
 
+- [ ] !!! **Close lightning shadows, local 2.13.1 (`ad54994`).** On West Coast USA use Night + Thunderstorm with flashes enabled. From beside a car or tree, check that a bolt less than 1 km away (thunder in about 3 s or less) casts shadows away from it, consistent across pulses. Check brightness and any frame hitch, compare a distant flash, move into a tunnel and end the round to check cleanup.
 - [ ] !!! Compare practice and normal starts with the same runner pose and cop range. Try a one-way street and a constrained intersection. Confirm AI and human roles use identical positions/headings and separate cop slots.
 - [ ] !!! Verify the combined release on West Coast USA: start a human chase, watched-AI practice and a normal practice. Check live/lost routes, nearest cop, hidden tags/minimap, catch/reset behavior and weather/traffic controls. Add/remove a station and verify a finished run survives restart. On Italy, confirm independent stations and map-filtered history.
 - [ ] !!! Open Your settings in chase and spectator views. Check that it occupies the HUD, wide layouts show two columns, narrow layouts scroll, and closing restores the current chase or spectator view.
