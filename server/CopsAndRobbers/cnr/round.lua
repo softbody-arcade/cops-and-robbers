@@ -101,7 +101,7 @@ function Round:clear()
   self.sightTickAt = nil
   self.heli = nil
   self.runnerCovered = true
-  self.tracked = false
+  self.lastTrackedCar = nil
   self.shown = true
   self.nearestAt = nil
   self.hiddenSeconds = 0
@@ -429,9 +429,10 @@ function Round:tick(now, cars, stations, traffic)
       local s = helicopter.status(self.heli, now)
       fx[#fx + 1] = { kind = "heli", phase = s.phase, seconds = s.seconds, reason = s.reason, seed = s.seed, guided = s.guided }
     end
-    if not caught and runnerCar then
-      local nearest = self:nearestCop(cars, runnerCar)
-      local seeing = self:sightTick(now, cars, runnerCar, fx)
+    if not caught then
+      local pids = self:copPids()
+      local nearest = runnerCar and self:nearestCop(cars, runnerCar, pids)
+      local seeing = self:sightTick(now, cars, runnerCar, pids, fx)
       self:trackTick(now, cars, runnerCar, seeing, nearest, fx)
       if nearest and now - self.nearestAt >= NEAREST_COP_SECONDS - 1e-9 then
         self.nearestAt = now
@@ -475,16 +476,17 @@ function Round:tick(now, cars, stations, traffic)
   self.lastTickAt = now
   self.prevCars = cars
   self.prevTraffic = traffic
-  local shown = self.cfg.sightMaxMeters <= 0 or (self.state ~= "headstart" and self.state ~= "running") or self.tracked
-  if shown ~= self.shown then
-    self.shown = shown
-    fx[#fx + 1] = { kind = "runnerShown", shown = shown }
-  end
   local limit = self.cfg.roundTimeLimitSeconds
   if caught then
     for _, e in ipairs(self:finish(now, "caught")) do fx[#fx + 1] = e end
   elseif self.state == "running" and limit > 0 and now - self.releasedAt >= limit - 1e-9 then
     for _, e in ipairs(self:finish(now, "escaped")) do fx[#fx + 1] = e end
+  else
+    local shown = self.cfg.sightMaxMeters <= 0 or self.lastTrackedCar ~= nil
+    if shown ~= self.shown then
+      self.shown = shown
+      fx[#fx + 1] = { kind = "runnerShown", shown = shown }
+    end
   end
   return fx
 end
@@ -564,9 +566,9 @@ function Round:copPids()
   return pids
 end
 
-function Round:nearestCop(cars, runnerCar)
+function Round:nearestCop(cars, runnerCar, pids)
   local nearest
-  for _, pid in ipairs(self:copPids()) do
+  for _, pid in ipairs(pids) do
     local car = cars[pid]
     if car and car.pos and not self.penalties[pid] then
       local d = vec.dist(runnerCar.pos, car.pos)
@@ -576,14 +578,14 @@ function Round:nearestCop(cars, runnerCar)
   return nearest
 end
 
-function Round:sightTick(now, cars, runnerCar, fx)
+function Round:sightTick(now, cars, runnerCar, pids, fx)
   local cfg = self.cfg
   local seeing = {}
-  if cfg.sightMaxMeters <= 0 then return seeing end
+  if not runnerCar or cfg.sightMaxMeters <= 0 then return seeing end
   local dt = self.sightTickAt and math.min(MAX_SIGHT_STEP, math.max(0, now - self.sightTickAt)) or 0
   self.sightTickAt = now
   local inSight = false
-  for _, pid in ipairs(self:copPids()) do
+  for _, pid in ipairs(pids) do
     local car = cars[pid]
     local d = car and car.pos and vec.dist(runnerCar.pos, car.pos)
     if d and d <= cfg.sightMaxMeters + SIGHT_RANGE_MARGIN and sight.sees(self.sight, pid, now, cfg.sightGraceSeconds) then
@@ -609,22 +611,24 @@ function Round:trackTick(now, cars, runnerCar, seeing, nearest, fx)
   local cfg = self.cfg
   local tracked = self.inSight or (self.heli ~= nil and helicopter.tracking(self.heli))
   if tracked then
-    self.tracked = true
+    if not runnerCar then return end
+    self.lastTrackedCar = runnerCar
     if self.liveAt and now - self.liveAt < cfg.sightLiveIntervalSeconds - 1e-9 then return end
     self.liveAt = now
     local noRoute = {}
-    for _, pid in ipairs(self:copPids()) do
+    for pid in pairs(seeing) do
       local car = cars[pid]
-      if car and car.pos and car.vel and seeing[pid] then
+      if car.vel then
         local limit = sight.noRouteDistance(vec.speedKmh(car.vel) / 3.6, cfg.sightNoRouteSeconds, cfg.sightNoRouteMinMeters)
         if vec.dist(runnerCar.pos, car.pos) <= limit then noRoute[pid] = true end
       end
     end
     fx[#fx + 1] = { kind = "live", pos = runnerCar.pos, geo = runnerCar.geo, noRoute = noRoute, nearestCop = nearest }
-  elseif self.tracked then
-    self.tracked = false
+  elseif self.lastTrackedCar then
+    local last = (self.prevCars[self.runnerId] and runnerCar) or self.lastTrackedCar
+    self.lastTrackedCar = nil
     self.liveAt = nil
-    fx[#fx + 1] = { kind = "lastSeen", pos = runnerCar.pos, geo = runnerCar.geo, nearestCop = nearest }
+    fx[#fx + 1] = { kind = "lastSeen", pos = last.pos, geo = last.geo, nearestCop = nearest }
   end
 end
 

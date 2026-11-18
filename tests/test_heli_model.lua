@@ -265,7 +265,8 @@ test("the van is three times the Pigeon and the lights sit outside its body", fu
     assertEq(math.abs(l.x) < BOX.x and l.y > BOX.y1 and l.y < BOX.y2, true)
   end
   assertEq(#model.LIGHTS, 5)
-  assertEq(model.ANCHOR_Z < 0.24, true)
+  local BODY_FLOOR_Z = 0.24 -- Pigeon model metres, before scaling the van.
+  assertEq(model.ANCHOR_Z < BODY_FLOOR_Z, true, "the searchlight must hang below the van floor")
 end)
 
 test("the beacon flashes 0.15 s each second", function()

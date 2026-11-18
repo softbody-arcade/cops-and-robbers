@@ -44,6 +44,9 @@ test("helicopter events drive the status item", function()
   assertEq(env.hud().status.heli.time, "1:00")
   env.tick(10)
   assertEq(env.hud().status.heli.time, "0:50")
+  env.fire("cnr_heli", {})
+  env.tick(0.2)
+  assertEq(env.hud().status.heli, nil)
 end)
 
 test("a mid-round setup carries the helicopter and a new round clears it", function()
@@ -3280,6 +3283,13 @@ test("turning Helicopter model on makes the copy at the click when the round has
   assertEq(copies(env), 0)
   env.M.ui({ action = "setting", key = "model", value = true })
   assertEq(copies(env), 1)
+  local write, writes = _G.writeFile, 0
+  _G.writeFile = function(...) writes = writes + 1; return write(...) end
+  local ok, err = pcall(env.M.ui, { action = "setting", key = "model", value = true })
+  _G.writeFile = write
+  if not ok then error(err, 0) end
+  assertEq(writes, 0, "second model-on click rewrote the copy")
+  assertEq(#env.materials, 3, "second model-on click repeated preparation")
   assertEq(env.sky.objects[HELI_VAN], nil)
 end)
 
@@ -3331,6 +3341,57 @@ test("the Pigeon van flies with the helicopter by day and night and is gone afte
       end
     end
   end
+end)
+
+test("grounding the helicopter keeps the van on its departing flight for eight seconds", function()
+  local env = nightTracking("runner", 7, { gameFiles = pigeon() })
+  local van = env.sky.objects[HELI_VAN]
+  local start = van.pos
+  env.fire("cnr_heli", { phase = "grounded", reason = "storm" })
+  env.tick(7.9)
+  assertEq(env.sky.objects[HELI_VAN], van)
+  assertEq(dist3(van.pos, env.veh.pos) > dist3(start, env.veh.pos), true)
+  assertEq(dist3(van.pos, env.sky.objects[HELI_LIGHT].pos) < 0.5, true)
+  env.tick(0.3)
+  assertEq(env.sky.objects[HELI_VAN], nil)
+end)
+
+test("a flight error drops the van until a new helicopter status", function()
+  local env = nightTracking("runner", nil, { gameFiles = pigeon() })
+  local first = env.sky.objects[HELI_VAN]
+  assertEq(first ~= nil, true)
+  local flight = require("copsAndRobbers/heliFlight")
+  local step = flight.step
+  flight.step = function() error("injected flight error") end
+  local ok, err = pcall(env.tick, 0.1)
+  flight.step = step
+  if not ok then error(err, 0) end
+  assertEq(env.sky.objects[HELI_VAN], nil)
+  env.tick(1)
+  assertEq(env.sky.objects[HELI_VAN], nil)
+  env.fire("cnr_heli", { phase = "tracking", seconds = 80 })
+  env.tick(0.1)
+  local again = env.sky.objects[HELI_VAN]
+  assertEq(again ~= nil and again ~= first, true)
+end)
+
+test("a second round flies a new van using the first round's prepared copy", function()
+  local env = nightTracking("runner", nil, { gameFiles = pigeon() })
+  local first = env.sky.objects[HELI_VAN]
+  local path = first.fields.shapeName
+  env.fire("cnr_roundEnd", { reason = "cancelled", runnerId = 1 })
+  assertEq(env.sky.objects[HELI_VAN], nil)
+  env.files["/vehicles/pigeon/pigeon.dae"] = nil -- Rebuilding the copy would now fail.
+  local d = copy(SETUP)
+  d.phase, d.role, d.runnerId = "running", "runner", 1
+  d.heli = { phase = "tracking", seconds = 100 }
+  env.fire("cnr_roundSetup", d)
+  env.tick(1)
+  local again = env.sky.objects[HELI_VAN]
+  assertEq(again ~= nil and again ~= first, true)
+  assertEq(again.fields.shapeName, path)
+  assertEq(env.files[path] ~= nil, true)
+  assertEq(again.moves > 1, true)
 end)
 
 test("Helicopter model off removes the van and its lights at once, on brings them back", function()
@@ -3669,6 +3730,29 @@ test("a runner never sees the cops' name tags or minimap markers, from setup to 
   end)
 end)
 
+test("a rejoining cop gets the hidden runner from setup; Earth keeps its minimap marker", function()
+  for _, earth in ipairs({ false, true }) do
+    withMinimap({ 100, 300 }, function(draw)
+      local env = bootClient()
+      env.fire("cnr_mode", { geo = earth })
+      local d = copy(SETUP)
+      d.phase, d.runnerShown, d.resumePos = "running", false, { x = 40, y = 0, z = 0 }
+      env.fire("cnr_roundSetup", d)
+      env.addObject(300, vec3(0, 0, 0))
+      env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
+      env.fire("cnr_roundCars", { keys = { "1-0", "2-0" } })
+      env.tick(1.2)
+      assertEq(env.mpVehicles["2-0"].hideNametag, true)
+      assertEq(draw(), earth and "100,300" or "100")
+      env.fire("cnr_runnerShown", { shown = true })
+      env.tick(0.2)
+      assertEq(env.mpVehicles["2-0"].hideNametag, nil)
+      assertEq(draw(), "100,300")
+      env.M.onExtensionUnloaded()
+    end)
+  end
+end)
+
 test("leaving the server shows the cops to a runner again", function()
   local env = bootClient()
   runnerWithCops(env)
@@ -3678,18 +3762,27 @@ test("leaving the server shows the cops to a runner again", function()
   assertEq(env.mpVehicles["4-0"].hideNametag, nil)
 end)
 
-test("a cop car that turns up mid-round is hidden from the runner within 1 s", function()
-  withMinimap({ 100, 300, 400, 500 }, function(draw)
-    local env = bootClient()
-    runnerWithCops(env)
-    env.fire("cnr_roundCars", { keys = { "1-0", "3-0", "4-0", "5-0" } })
-    env.tick(0.1)
-    env.mpVehicles["5-0"] = { gameVehicleID = 500, isSpawned = true }
-    env.tick(1)
-    assertEq(env.mpVehicles["5-0"].hideNametag, true)
-    assertEq(draw(), "100")
-    env.M.onExtensionUnloaded()
-  end)
+test("a cop joining during the chase is hidden when its key arrives, even if the vehicle arrives later", function()
+  for _, late in ipairs({ false, true }) do
+    withMinimap({ 100, 300, 400, 500 }, function(draw)
+      local env = bootClient()
+      runnerWithCops(env)
+      env.fire("cnr_release", {})
+      local cop = { gameVehicleID = 500, isSpawned = true }
+      if not late then env.mpVehicles["5-0"] = cop end
+      assertEq(draw(), "100,500")
+      env.fire("cnr_roundCars", { keys = { "1-0", "3-0", "4-0", "5-0" } })
+      env.tick(0.1)
+      if late then
+        assertEq(draw(), "100,500")
+        env.mpVehicles["5-0"] = cop
+        env.tick(1)
+      end
+      assertEq(cop.hideNametag, true)
+      assertEq(draw(), "100")
+      env.M.onExtensionUnloaded()
+    end)
+  end
 end)
 
 test("the runner's cop sets are rebuilt at most once a second, not every frame", function()

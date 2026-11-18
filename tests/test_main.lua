@@ -536,16 +536,23 @@ test("the runner gets cnr_nearestCop every 30 s", function()
   for _ = 1, 130 do env.clock = env.clock + 0.25; env.positions[2] = 900; env.call("cnr_tick") end
   local count = 0
   for _, m in ipairs(env.sent) do if m.ev == "cnr_nearestCop" then count = count + 1; assertEq(m.pid, 1) end end
-  assertEq(count >= 1, true)
+  assertEq(count, 1)
   env.cleanup()
 end)
 
 test("heli phases reach every player", function()
   local env = boot({ config = '{"helicopterArrivalSeconds": 0, "weather": "clear"}' })
   runToChase(env, true)
-  local seen = {}
-  for _, m in ipairs(env.sent) do if m.ev == "cnr_heli" then seen[m.pid] = decodeJson(m.data).phase end end
-  assertEq(seen[-1], "tracking")
+  local delivered = { [1] = 0, [2] = 0 }
+  for _, m in ipairs(env.sent) do
+    if m.ev == "cnr_heli" then
+      assertEq(decodeJson(m.data).phase, "tracking")
+      for pid in pairs(MP.GetPlayers()) do
+        if m.pid == -1 or m.pid == pid then delivered[pid] = delivered[pid] + 1 end
+      end
+    end
+  end
+  assertEq(delivered[1], 1); assertEq(delivered[2], 1)
   env.cleanup()
 end)
 
@@ -566,8 +573,8 @@ test("runnerShown goes to cops only", function()
   env.cleanup()
 end)
 
-test("practice as runner sends no runnerShown", function()
-  local env = boot({ vehicles = { [1] = { [0] = "x" } } })
+test("practice as runner sends the heli to the issuer only and no runnerShown", function()
+  local env = boot({ vehicles = { [1] = { [0] = "x" } }, config = '{"weather":"clear"}' })
   env.panel(1, "test runner")
   env.positions[1] = 0
   env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
@@ -576,6 +583,14 @@ test("practice as runner sends no runnerShown", function()
   assertEq(env.lastSent("cnr_runnerGo").pid, 1)
   assertEq(env.lastSent("cnr_release").pid, 1)
   assertEq(env.lastSent("cnr_runnerShown"), nil)
+  local heliCount = 0
+  for _, m in ipairs(env.sent) do
+    if m.ev == "cnr_heli" then
+      assertEq(m.pid, 1); assertEq(decodeJson(m.data).phase, "arriving")
+      heliCount = heliCount + 1
+    end
+  end
+  assertEq(heliCount, 1)
   env.cleanup()
 end)
 
@@ -587,8 +602,9 @@ test("a rejoining cop gets runnerShown and heli in setup", function()
   env.call("onPlayerJoin", 2)
   local setup = env.lastSent("cnr_roundSetup")
   assertEq(setup ~= nil and setup.pid == 2, true)
-  assertEq(setup.data:find('"runnerShown":', 1, true) ~= nil, true)
-  assertEq(setup.data:find('"heli":', 1, true) ~= nil, true)
+  local d = decodeJson(setup.data)
+  assertEq(d.role, "cop"); assertEq(d.runnerShown, false)
+  assertEq(d.heli.phase, "searching")
   env.cleanup()
 end)
 

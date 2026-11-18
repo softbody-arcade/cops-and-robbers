@@ -792,13 +792,6 @@ test("time limit ends the round as escaped", function()
   assertEq(find(fx, "record").run.endReason, "escaped")
 end)
 
-test("no periodic last seen any more", function()
-  local r = started()
-  r:tick(4, stillCars(), {}); r:tick(11, stillCars(), {})
-  local far = {[1]=kmh(0, 50), [2]=kmh(300, 50), [3]=kmh(900, 50)}
-  for t = 12, 70, 1 do assertEq(find(r:tick(t, far, {}), "lastSeen"), nil) end
-end)
-
 test("catch credits cops within the radius", function()
   local r = running()
   local cars = {[1]=car(0), [2]=car(5), [3]=car(8)}
@@ -1217,10 +1210,72 @@ test("the helicopter alone sends live updates to every cop with a route", functi
   assertEq(find(r:tick(13, close, {}), "live") ~= nil, true)
 end)
 
+test("a refuel while runner telemetry is missing pings the last tracked fix only", function()
+  local r = chasing({helicopterArrivalSeconds=0, helicopterUpSeconds=30})
+  local cars = farCars()
+  assertEq(find(r:tick(40, cars, {}), "live").pos.x, 0)
+  cars = farCars()
+  cars[1].pos.x, cars[1].geo = 17, { lat = 52, lon = 5, h = 12 }
+  assertEq(find(r:tick(40.25, cars, {}), "live"), nil)
+  local absent = farCars()
+  absent[1] = nil
+  assertEq(find(r:tick(40.5, absent, {}), "lastSeen"), nil)
+  local fx = r:tick(41, absent, {})
+  assertEq(find(fx, "heli").phase, "refuelling")
+  assertEq(find(fx, "runnerShown").shown, false)
+  assertEq(count(fx, "lastSeen"), 1)
+  local lost = find(fx, "lastSeen")
+  assertEq(lost.pos.x, 17); assertEq(lost.geo.lat, 52)
+  cars = farCars()
+  cars[1].pos.x = 100
+  fx = r:tick(42, cars, {})
+  assertEq(find(fx, "lastSeen"), nil); assertEq(find(fx, "live"), nil)
+end)
+
+test("the escape tick does not change runner visibility when the helicopter refuels", function()
+  local r = chasing({helicopterArrivalSeconds=0, helicopterUpSeconds=30, roundTimeLimitSeconds=30})
+  assertEq(r.shown, true)
+  local fx = r:tick(41, farCars(), {})
+  assertEq(find(fx, "roundEnd").reason, "escaped")
+  assertEq(find(fx, "runnerShown"), nil)
+end)
+
+test("a missing fix does not cancel cop sight; a loss across the gap uses the observed position", function()
+  local r = chasing({helicopterArrivalSeconds=0, helicopterUpSeconds=30})
+  local cars = farCars()
+  cars[1].pos.x = 17
+  r:sightReport(40, 2, true)
+  assertEq(find(r:tick(40, cars, {}), "spotted").spotted, true)
+  local absent = farCars()
+  absent[1] = nil
+  local fx = r:tick(41, absent, {})
+  assertEq(find(fx, "heli").phase, "refuelling")
+  assertEq(find(fx, "spotted"), nil); assertEq(find(fx, "lastSeen"), nil)
+  r:sightReport(41, 2, false)
+  cars = farCars()
+  cars[1].pos.x = 100
+  fx = r:tick(45, cars, {})
+  assertEq(find(fx, "spotted").spotted, false)
+  assertEq(find(fx, "lastSeen").pos.x, 17)
+  assertEq(find(r:tick(46, cars, {}), "lastSeen"), nil)
+end)
+
 test("live goes out once per tick when sight and helicopter both track", function()
   local r = chasing({helicopterArrivalSeconds=0})
   r:sightReport(12, 2, true)
   for t = 12, 20 do assertEq(count(r:tick(t, farCars(), {}), "live"), 1) end
+end)
+
+test("a live tracking tick builds at most one sorted cop list", function()
+  local r = chasing({helicopterArrivalSeconds=0})
+  local copPids, calls = r.copPids, 0
+  function r:copPids()
+    calls = calls + 1
+    return copPids(self)
+  end
+  r:sightReport(12, 2, true)
+  assertEq(count(r:tick(12, farCars(), {}), "live"), 1)
+  assertEq(calls <= 1, true, "copPids calls: " .. calls)
 end)
 
 test("the helicopter starts at release with the round's weather", function()
