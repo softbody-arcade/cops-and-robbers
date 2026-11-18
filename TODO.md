@@ -7,6 +7,7 @@ Priorities run from `!!!!` (highest) through `!!!` (high), `!!` (normal), and `!
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 - [ ] !!! Lightning frequency (`lightning-frequency`): approved for implementation and local testing. Host panel → Settings → More settings → Sky sets minimum and maximum seconds between strikes, default 10–40. Equal bounds give a fixed cadence in a full Thunderstorm; transitions keep their existing thinning.
+- [ ] !!! Louder thunder (`thunder-loudness`): the latest local mix is still too quiet. Raise the audible level substantially and compare outdoors and under cover.
 - [ ] !! Lighter ordinary rain (`lighter-normal-rain`): ordinary Rain should use half the drops and mist of Storm. Compare ordinary Rain and Storm from the same viewpoint.
 - [ ] !! Rain briefly flashes under a roof during a dry-to-rain New sky in prep (`fixes-prep-rain`). Reproduce the visible first drops and verify cover on the initial rain update. Implemented and independently reviewed at `2800e19`. Awaiting its own playtest build.
 
