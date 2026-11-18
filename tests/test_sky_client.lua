@@ -1028,19 +1028,25 @@ local function gripRound(extra)
   return sky, fake, p
 end
 
-test("grip gets wet over the change and dries over 180 s after it", function()
+test("asphalt and dirt grip get wet over the change and dry over 180 s after it", function()
   local sky, fake = gripRound()
+  local dirt = fake.models.DIRT.cdata
   local t = 4
+  assertEq(dirt.staticFrictionCoefficient, 0.70)
   t = runFor(sky, t, 50 - t, 0.5)
   assertNear(asphalt(fake), (0.98 + 0.92) / 2, 0.06 * 0.06 + 0.001)
+  assertNear(dirt.staticFrictionCoefficient, (0.70 + 0.62) / 2, 0.005)
   t = runFor(sky, t, 80 - t, 0.5)
   assertNear(asphalt(fake), 0.92, 1e-6)
+  assertNear(dirt.staticFrictionCoefficient, 0.62, 1e-6)
   t = runFor(sky, t, 200 - t, 0.5)
   assertNear(asphalt(fake), 0.92, 1e-6)
   t = runFor(sky, t, 350 - t, 0.5)
   assertNear(asphalt(fake), (0.98 + 0.92) / 2, 0.003)
+  assertNear(dirt.staticFrictionCoefficient, (0.70 + 0.62) / 2, 0.005)
   t = runFor(sky, t, 440 - t, 0.5)
   assertNear(asphalt(fake), 0.98, 1e-6)
+  assertNear(dirt.staticFrictionCoefficient, 0.70, 1e-6)
 end)
 
 test("between wet kinds the blend runs over the change", function()
