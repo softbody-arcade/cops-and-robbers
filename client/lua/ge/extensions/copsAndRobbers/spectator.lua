@@ -79,9 +79,12 @@ local function saveHitches(byId)
       end
       if vehicles.couplerTagsOptions[tag] and offsets[a] and offsets[a][nodeA] and offsets[b] and offsets[b][nodeB] then
         byId[b].hitch = {
-          tow = byId[a], towNode = nodeA, trailerNode = nodeB,
-          ball = offsets[a][nodeA], socket = offsets[b][nodeB], tag = tag
+          tow = byId[a], towNode = nodeA, trailerNode = nodeB, tag = tag
         }
+        for _, id in ipairs({a, b}) do
+          local veh = getObjectByID(id)
+          byId[id].rot = quatFromDir(veh:getDirectionVector(), veh:getDirectionVectorUp())
+        end
       end
     end
   end
@@ -141,10 +144,19 @@ local function hitchStatus(tow, towNode, trailer, trailerNode)
   if occupied then return "occupied" end
 end
 
+local function alignHitch(tow, trailer, hitch, lockRadius)
+  local ball = tow:getPosition() + tow:getNodePosition(hitch.towNode)
+  local pos = ball - trailer:getNodePosition(hitch.trailerNode)
+  if pos:distance(trailer:getPosition()) > lockRadius then
+    trailer:setClusterPosRelRot(-1, pos.x, pos.y, pos.z, 0, 0, 0, 1)
+  end
+end
+
 local function updateHitch(car, expired)
   local hitch, tow = car.hitch, car.hitch.tow
   local vehicle = tow.id and getObjectByID(tow.id)
-  if not (vehicle and car.id and getObjectByID(car.id)) then return true end
+  local trailer = car.id and getObjectByID(car.id)
+  if not (vehicle and trailer) then return true end
   local caches = core_vehicles.vehsCouplerCache
   if caches[tow.id] ~= tow.couplerCache or caches[car.id] ~= car.couplerCache then return true end
   local status = hitchStatus(tow.id, hitch.towNode, car.id, hitch.trailerNode)
@@ -156,7 +168,12 @@ local function updateHitch(car, expired)
   if not (tow.couplerCache and car.couplerCache) or status == "occupied" or tow.hitch then return false end
   if not (MPVehicleGE.isOwn(tow.id) and MPVehicleGE.isOwn(car.id)) then return false end
   if not hitch.placed then
-    local ok, err = pcall(spawn.placeTrailer, tow.id, hitch.ball, car.id, hitch.socket)
+    local ball = tow.couplerCache[hitch.towNode]
+    if not (ball and ball.couplerTag == hitch.tag and car.couplerCache[hitch.trailerNode]) then
+      log("W", "cnr_spectate", "missing saved coupler node on restored rig " .. tow.id .. " and " .. car.id)
+      return true
+    end
+    local ok, err = pcall(alignHitch, vehicle, trailer, hitch, ball.couplerLockRadius or 0.025)
     if not ok then
       log("W", "cnr_spectate", "could not place parked trailer " .. car.id .. ": " .. tostring(err))
       return true
