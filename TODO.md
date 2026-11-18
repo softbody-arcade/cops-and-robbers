@@ -29,6 +29,8 @@ Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to 
 - [ ] ! Infection mode: game starts with 1 cop and caught runners become cops
 - [ ] ! Leaderboard filter by conditions (All / Normal / Night / Bad weather), next to the car-mode filter, so storm records don't compete with clear-day runs unless wanted. Runs already record their conditions (night and weather rounds)
 - [ ] ! Dry roads in tunnels: in rain, storm and snow rounds the road grip is the same inside a tunnel as outside, because the mod changes the map-wide surface types (`surfaces.lua`). The roof check that hides the rain (`shelter.lua`) could switch the surfaces back to dry while the player's own car is under a roof, with a short delay at tunnel mouths so grip doesn't flicker. Grip is simulated per player, so only your own car's grip changes noticeably; on your machine every road is briefly dry while you're under the roof
+- [ ] ! Let the runner get out of their car and flee on foot during a chase. Work out how cops spot and catch the runner once they leave the car.
+- [ ] ! Give cops a longer sight range in the direction they are looking, with a shorter range to the sides and rear. Decide whether to use the cop’s camera direction or the heading of their car.
 - [ ] ! Cop sight that follows visibility: the sight range is worked out from what the game knows (fog thickness, how dark it is, street lights near the runner, whether the runner's lights are on, rain). Comes after night and weather rounds
 
 - [ ] ! Workflow request. Make it easy to see which subagents are currently working when the session list also contains completed agents.
