@@ -9,6 +9,7 @@ end
 
 local function scene(fn)
   local cast, camera, pack, draw = castRayStatic, core_camera, color, package.loaded["utils/debugDraw"]
+  local savedLightning = package.loaded["copsAndRobbers/lightning"]
   local between, bolt = strikes.between, strikes.bolt
   local ok, err = pcall(function()
     local e = fakeEnvironment()
@@ -47,6 +48,7 @@ local function scene(fn)
     fn(e, lightning, s)
   end)
   _G.castRayStatic, _G.core_camera, _G.color, package.loaded["utils/debugDraw"] = cast, camera, pack, draw
+  package.loaded["copsAndRobbers/lightning"] = savedLightning
   strikes.between, strikes.bolt = between, bolt
   assert(ok, err)
 end
