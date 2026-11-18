@@ -4844,3 +4844,133 @@ test("practice where you drive, and spectating a real round, leave the game's sp
     assertEq(#spec.spawned, 1)
   end)
 end)
+
+test("the Earth starting pose survives a different origin and orientation on the receiving cop", function()
+  local env = bootClient()
+  local rebasing = false
+  local saved = _G.beamngEarth_api
+  local ok, err = pcall(function()
+    _G.beamngEarth_api = {
+      version = function() return 1 end,
+      rebasing = function() return rebasing end,
+      toGeo = function(x, y, z) return 50 + y / 10000, 5 + x / 10000, 12 + z end,
+      toGame = function(lat, lon, h) return (lat - 50) * 10000 + 100, (5 - lon) * 10000 - 200, h - 40 end,
+    }
+    env.fire("cnr_planStart", { geo = true, id = 3, count = 3, copSpawnMin = 50, copSpawnMax = 150 })
+    local slots = env.lastSent("cnr_startGrid").slots
+    local d = copy(SETUP)
+    d.startPose = slots[2]
+    local faced
+    spawn.safeTeleport = function(veh, pos, rot) veh.pos, faced = pos, rot.dir end
+    rebasing = true
+    env.fire("cnr_roundSetup", d)
+    assertEq(faced, nil, "wait for a stable Earth origin")
+    env.tick(0.6)
+    assertEq(env.lastSent("cnr_myVehicle"), nil)
+    rebasing = false
+    env.tick(0.1)
+    assertNear(env.veh.pos.x, 100 + (d.startPose.geo.lat - 50) * 10000, 1e-5)
+    assertNear(env.veh.pos.y, -200, 1e-5)
+    assertNear(env.veh.pos.z, -28, 1e-5)
+    assertNear(faced.x, -1, 1e-6)
+    assertNear(faced.y, 0, 1e-6)
+    assertEq(env.lastSent("cnr_myVehicle").vid, 100)
+  end)
+  _G.beamngEarth_api = saved
+  if not ok then error(err, 0) end
+end)
+
+test("the starting anchor uses your parked car when watching a remote car", function()
+  local env = bootClient()
+  env.player = env.addObject(320, vec3(100, 300, 0))
+  env.veh.pos = vec3(0, 20, 0)
+  env.veh.getDirectionVector = function() return vec3(0, -1, 0) end
+  env.fire("cnr_planStart", { id = 3, count = 1, copSpawnMin = 50, copSpawnMax = 150 })
+  local p = env.lastSent("cnr_startGrid").slots[1]
+  assertEq(type(p), "table")
+  assertEq(p.dir.y, -1)
+  assertEq(p.pos.y, 60)
+end)
+
+test("a fresh personal spawn keeps its own vehicle ID when focus moves to a practice AI before the acknowledgement", function()
+  local env = bootClient()
+  env.objects[100] = nil
+  local d = copy(SETUP)
+  d.startPose = { pos = { x = 18, y = 40, z = 2 }, dir = { x = 0, y = -1, z = 0 } }
+  env.fire("cnr_roundSetup", d)
+  local mine = env.spawned[1].veh
+  assertEq(mine.pos.x, 18)
+  local other = env.addObject(450, vec3(800, 900, 0))
+  MPVehicleGE.isOwn = function() return true end
+  env.player = other
+  env.tick(0.6)
+  assertEq(env.lastSent("cnr_myVehicle").vid, mine:getID())
+  assertEq(other.pos.x, 800)
+end)
+
+test("an AI runner also waits out an Earth rebase before reporting its placement", function()
+  local env = bootClient()
+  local saved = _G.beamngEarth_api
+  local rebasing = true
+  local ok, err = pcall(function()
+    _G.beamngEarth_api = { version = function() return 1 end, rebasing = function() return rebasing end,
+      toGame = function(lat, lon, h) return lon * 100, lat * 100, h end }
+    local pose = { geo = { lat = 1, lon = 4, h = 3 }, toward = { lat = 1.01, lon = 4, h = 3 } }
+    env.fire("cnr_setupAI", { model = "pickup", config = SETUP.config, ai = { { id = -10, role = "runner", startPose = pose } } })
+    env.tick(0.6)
+    assertEq(env.lastSent("cnr_aiVehicles"), nil)
+    rebasing = false
+    env.tick(0.1)
+    assertNear(env.spawned[1].veh.pos.x, 400, 0.001)
+    assertEq(env.lastSent("cnr_aiVehicles").ai[1].vid, env.spawned[1].veh:getID())
+  end)
+  _G.beamngEarth_api = saved
+  if not ok then error(err, 0) end
+end)
+
+test("the starting grid follows a two-way heading and the configured cop distance", function()
+  for _, sign in ipairs({ -1, 1 }) do
+    local client = bootClient()
+    client.veh.getDirectionVector = function() return vec3(0, sign, 0) end
+    client.fire("cnr_planStart", { id = 8, count = 3, copSpawnMin = 90, copSpawnMax = 130 })
+    local slots = client.lastSent("cnr_startGrid").slots
+    assertEq(slots[1].dir.y, sign)
+    for i = 2, 3 do
+      local d = math.abs(slots[i].pos.y - slots[1].pos.y)
+      assertEq(d >= 90 and d <= 130, true)
+    end
+    assertEq(math.abs(slots[2].pos.y - slots[3].pos.y) >= 8, true)
+  end
+end)
+
+test("without roads the runner uses the starting camera and both cop slots retain their fallback", function()
+  local client = bootClient()
+  client.objects[100] = nil
+  map.findClosestRoad = function() return nil end
+  map.getMap = function() return { nodes = {} } end
+  map.getGraphpath = function() return { graph = {} } end
+  local cam = core_camera
+  core_camera = { getPosition = function() return vec3(125, 34, 77) end, getForward = function() return vec3(0, -1, -0.2) end }
+  client.fire("cnr_planStart", { id = 5, count = 3, copSpawnMin = 50, copSpawnMax = 150 })
+  core_camera = cam
+  local slots = client.lastSent("cnr_startGrid").slots
+  assertEq(slots[1].offRoad, true)
+  assertEq(slots[1].pos.x, 125)
+  assertEq(slots[1].dir.y, -1)
+  assertEq(slots[2], false)
+  assertEq(slots[3], false)
+end)
+
+test("a player seated in locally owned traffic gets a separate round car", function()
+  local env = bootClient()
+  env.objects[100] = nil
+  local car = env.addObject(450, vec3(800, 900, 0))
+  env.gameTraffic[450] = { isAi = true }
+  env.player = car
+  local d = copy(SETUP)
+  d.startPose = { pos = { x = 18, y = 40, z = 2 }, dir = { x = 0, y = -1, z = 0 } }
+  env.fire("cnr_roundSetup", d)
+  assertEq(#env.replaced, 0)
+  assertEq(#env.spawned, 1)
+  assertEq(car.pos.x, 800)
+end)

@@ -256,7 +256,7 @@ end
 local function pickFrom(candidates, ringList, index)
   for _, ring in ipairs(ringList) do
     local spot = pickSpot(candidates, ring[1], ring[2], index)
-    if spot then return spot.pos, quatFromDir(spot.dir, vec3(0, 0, 1)) end
+    if spot then return spot.pos, spot.dir end
   end
   return nil
 end
@@ -275,26 +275,30 @@ local function outsideCone(spots, center, heading)
   return out
 end
 
-function M.findCopSpot(center, minD, maxD, index, heading)
+function M.copSpotFinder(center, minD, maxD, heading)
   local ringList = rings(minD, maxD)
   local limit = ringList[#ringList][2]
   local roadList = roadSpots(center, limit, heading)
   local roadOut = outsideCone(roadList, center, heading)
-  if roadOut then
-    local pos, rot = pickFrom(roadOut, ringList, index)
-    if pos then return pos, rot end
+  local lineList, lineOut
+  return function(index)
+    local pos, dir
+    if roadOut then pos, dir = pickFrom(roadOut, ringList, index) end
+    if not pos and roadList then pos, dir = pickFrom(roadList, ringList, index) end
+    if pos then return pos, dir end
+    if not lineList then
+      lineList = lineSpots(center, minD, limit)
+      lineOut = outsideCone(lineList, center, heading)
+    end
+    if lineOut then pos, dir = pickFrom(lineOut, ringList, index) end
+    if pos then return pos, dir end
+    return pickFrom(lineList, ringList, index)
   end
-  if roadList then
-    local pos, rot = pickFrom(roadList, ringList, index)
-    if pos then return pos, rot end
-  end
-  local lineList = lineSpots(center, minD, limit)
-  local lineOut = outsideCone(lineList, center, heading)
-  if lineOut then
-    local pos, rot = pickFrom(lineOut, ringList, index)
-    if pos then return pos, rot end
-  end
-  return pickFrom(lineList, ringList, index)
+end
+
+function M.findCopSpot(center, minD, maxD, index, heading)
+  local pos, dir = M.copSpotFinder(center, minD, maxD, heading)(index)
+  if pos then return pos, quatFromDir(dir, vec3(0, 0, 1)) end
 end
 
 local function closestNodeFallback(pos)

@@ -3461,3 +3461,194 @@ test("a watched practice refuses the issuer's own spawns and model changes, but 
   assertEq(env.call("onVehicleSpawn", 1, 12, 'USER:Reinder:1-12:{"jbm":"etk800","vcf":{}}'), 0)
   env.cleanup()
 end)
+
+local function westCoastStart(client)
+  client.veh.pos = vec3(-360.06, 619.75, 75.05)
+  client.veh.getDirectionVector = function() return vec3(-1, 0, 0) end
+  local points = {
+    { "wp25", -432.85, 681.35 }, { "wp19", -395.25, 643.95 }, { "wp31", -380.15, 636.80 },
+    { "wp30", -364.93, 621.97 }, { "wp29", -355.37, 621.09 },
+  }
+  local nodes, graph = {}, {}
+  for i, p in ipairs(points) do
+    nodes[p[1]], graph[p[1]] = { pos = vec3(p[2], p[3], 74.9) }, {}
+    if i > 1 then
+      local u = points[i - 1][1]
+      local link = { inNode = u, oneWay = true }
+      graph[u][p[1]], graph[p[1]][u] = link, link
+    end
+  end
+  map.getMap = function() return { nodes = nodes } end
+  map.getGraphpath = function() return { graph = graph } end
+  map.findClosestRoad = function() return "wp30", "wp29" end
+end
+
+test("the runner and both cop slots use identical West Coast poses across normal and all three practice modes", function()
+  dofile("tests/client_stubs.lua")
+  local reference
+  for _, mode in ipairs({ "normal", "runner", "cop", "watch" }) do
+    local env = boot()
+    env.names = { "Reinder", "Bob", "Alice" }
+    env.positions[1] = 8000
+    local planner = bootClient()
+    westCoastStart(planner)
+    planner.fire("cnr_mode", { startGrid = true })
+    assertEq(planner.lastSent("cnr_startGridReady") ~= nil, true, "planner announces support")
+    env.call("cnr_startGridReady", 1, "{}")
+    if mode == "watch" then sitOut(env, 1, true) end
+    local picker = mode == "normal" and 2 or 1
+    env.panel(picker, mode == "normal" and "start rein" or "test " .. (mode == "watch" and "cop" or mode))
+    env.call("cnr_vehiclePicked", picker, PICK)
+    local request = env.lastSent("cnr_planStart")
+    assertEq(request and request.pid, 1)
+    planner.fire("cnr_planStart", decodeJson(request.data))
+    local reply = planner.lastSent("cnr_startGrid")
+    env.call("cnr_startGrid", 1, encode(reply))
+
+    local function drive(client, pid, poses)
+      local function store(slot, pos, rot)
+        assertEq(pos ~= nil and rot ~= nil, true, mode .. " has a pose for slot " .. slot)
+        poses[slot] = { pos.x, pos.y, pos.z, rot.dir.x, rot.dir.y, rot.dir.z }
+      end
+      for _, ev in ipairs(env.sent) do
+        if ev.pid == pid then
+          local d = decodeJson(ev.data)
+          if ev.ev == "cnr_roundSetup" then
+            local slot = d.role == "runner" and 1 or d.copIndex + 1
+            spawn.safeTeleport = function(veh, pos, rot) veh.pos = pos; store(slot, pos, rot) end
+            client.fire(ev.ev, d)
+          elseif ev.ev == "cnr_spectate" or ev.ev == "cnr_setupAI" then
+            client.fire(ev.ev, d)
+            if ev.ev == "cnr_setupAI" then
+              for i, a in ipairs(d.ai) do
+                local spawned = client.spawned[#client.spawned - #d.ai + i].opt
+                store(a.role == "runner" and 1 or a.index + 1, spawned.pos, spawned.rot)
+              end
+            end
+          end
+        end
+      end
+      client.tick(1)
+    end
+    for pick = 1, 2 do
+      if pick == 2 then
+        env.sent = {}
+        env.panel(picker, "reroll")
+        env.call("cnr_vehiclePicked", picker, PICK)
+        assertEq(env.lastSent("cnr_planStart"), nil, "New car retains its original grid")
+      end
+      local poses = {}
+      drive(mode == "normal" and bootClient() or planner, 1, poses)
+      if mode == "normal" then
+        for pid = 2, 3 do
+          local cop = bootClient()
+          cop.veh.pos = vec3(999, -800, 500)
+          drive(cop, pid, poses)
+        end
+      end
+      assertEq(#poses, 3, mode)
+      assertNear(poses[1][1], -364.93, 0.001)
+      assertEq(poses[1][4] > 0.99, true, "runner faces the legal exit")
+      assertEq(poses[2][1] < poses[1][1] and poses[3][1] < poses[1][1], true, "both cops start behind")
+      assertEq(poses[2][1] ~= poses[3][1], true)
+      reference = reference or poses
+      for i = 1, 3 do
+        for j = 1, 6 do assertNear(poses[i][j], reference[i][j], 1e-8, mode .. " slot " .. i) end
+      end
+    end
+    env.cleanup()
+  end
+end)
+
+test("starting grid replies must match the outstanding pick, planner, slot count and coordinate system", function()
+  local env = boot({ map = "/levels/beamng_earth/info.json" })
+  env.names = { "Reinder", "Bob", "Chloe" }
+  env.call("cnr_startGridReady", 1, "{}")
+  local function pick()
+    env.panel(2, "start rein")
+    env.call("cnr_vehiclePicked", 2, PICK)
+    return decodeJson(env.lastSent("cnr_planStart").data)
+  end
+  local first = pick()
+  env.go()
+  assertEq(env.lastSent("cnr_countdown"), nil)
+  env.panel(2, "stop")
+  local nextPick = pick()
+  local pose = { geo = { lat = 50, lon = 5, h = 100 }, toward = { lat = 50.00001, lon = 5, h = 100 } }
+  local function reply(pid, id, slots)
+    env.call("cnr_startGrid", pid, encode({ id = id, slots = slots }))
+  end
+  local slots = { pose, pose, false }
+  reply(1, first.id, slots)
+  reply(2, nextPick.id, slots)
+  reply(1, nextPick.id, { pose, pose })
+  reply(1, nextPick.id, { pose, { pos = pose.geo, dir = pose.toward }, false })
+  reply(1, nextPick.id, { pose, { geo = pose.geo, toward = pose.geo }, false })
+  reply(1, nextPick.id, { pose, { pos = { x = 1, y = 2, z = 3 }, dir = { x = 1, y = 0, z = 0 } }, false })
+  assertEq(env.lastSent("cnr_roundSetup"), nil)
+  env.clock = 2
+  env.call("cnr_tick")
+  assertEq(countSent(env, "cnr_planStart", 1), 3, "retry the current pick")
+  reply(1, nextPick.id, slots)
+  reply(1, nextPick.id, slots)
+  assertEq(countSent(env, "cnr_roundSetup", 1), 1)
+  assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 3)).startPose, false, "a cop with no road keeps the safe fallback")
+  env.panel(2, "stop")
+  pick()
+  env.clock = 30
+  env.call("cnr_tick")
+  assertEq(decodeJson(env.lastSent("cnr_roundEnd").data).reason, "cancelled")
+  pick()
+  env.call("onPlayerDisconnect", 1)
+  assertEq(decodeJson(env.lastSent("cnr_roundEnd").data).reason, "cancelled")
+  env.cleanup()
+end)
+
+test("a joining cop extends the starting grid around its first anchor and a returning cop resumes separately", function()
+  local env = boot()
+  env.names = { "Reinder", "Bob" }
+  env.call("cnr_startGridReady", 1, "{}")
+  env.startRound()
+  local plan = decodeJson(env.lastSent("cnr_planStart").data)
+  local dir = { x = -1, y = 0, z = 0 }
+  local runner = { pos = { x = 12, y = 24, z = 2 }, dir = dir }
+  local cop = { pos = { x = 100, y = 0, z = 0 }, dir = dir }
+  env.names[3] = "Chloe"
+  env.call("onPlayerJoin", 3)
+  env.call("cnr_startGrid", 1, encode({ id = plan.id, slots = { runner, cop } }))
+  local extended = decodeJson(env.lastSent("cnr_planStart").data)
+  assertEq(extended.count, 3)
+  assertEq(extended.anchor.pos.x, 12)
+  env.call("cnr_startGrid", 1, encode({ id = extended.id, slots = { runner, cop, false } }))
+  assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 3)).startPose, false)
+  env.go()
+  env.clock = 60
+  env.call("cnr_tick")
+  env.clock = 120
+  env.call("cnr_tick")
+  env.call("onPlayerDisconnect", 2)
+  env.names[2], env.names[4] = nil, "Bob"
+  env.call("onPlayerJoin", 4)
+  local resume = decodeJson(sentTo(env, "cnr_roundSetup", 4))
+  assertEq(resume.startPose, nil)
+  assertEq(resume.resumePos.x, env.positions[2])
+  env.cleanup()
+end)
+
+test("an evolving practice places the human cop and both AIs as soon as its grid arrives", function()
+  local env = boot()
+  evolving(env); newBuild(env)
+  env.call("cnr_startGridReady", 1, "{}")
+  env.panel(1, "test cop")
+  local request = env.lastSent("cnr_planStart")
+  assertEq(request.pid, 1)
+  local places = {}
+  for i = 1, 3 do places[i] = { pos = { x = 10 * i, y = 0, z = 0 }, dir = { x = 1, y = 0, z = 0 } } end
+  env.call("cnr_startGrid", 1, encode({ id = decodeJson(request.data).id, slots = places }))
+  local human = decodeJson(sentTo(env, "cnr_roundSetup", 1))
+  local ai = decodeJson(sentTo(env, "cnr_setupAI", 1)).ai
+  assertEq(human.phase, "ready"); assertEq(human.startPose.pos.x, 20)
+  assertEq(ai[1].role, "runner"); assertEq(ai[1].startPose.pos.x, 10)
+  assertEq(ai[2].role, "cop"); assertEq(ai[2].startPose.pos.x, 30)
+  env.cleanup()
+end)

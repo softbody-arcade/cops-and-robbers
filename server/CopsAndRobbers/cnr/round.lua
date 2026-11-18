@@ -33,6 +33,7 @@ local TELEPORT_BASE_METERS = 60
 local TELEPORT_MAX_SPEED = 100
 local TELEPORT_ANNOUNCE_GAP = 5
 local lastRebuildId = 0
+local lastGridId = 0
 
 local function copy(t)
   local c = {}
@@ -71,6 +72,7 @@ function Round:clear()
   self.runnerId = nil
   self.issuerId = nil
   self.vehicle = nil
+  self.gridPlanner, self.pendingGrid, self.startGrid = nil, nil, nil
   self.evolving = false
   self.buildStep, self.buildName = nil, nil
   self.sky = nil
@@ -239,6 +241,7 @@ function Round:start(now, runnerId, issuerId, players, opts)
     self.sittingOut = copy(opts and opts.sittingOut)
     self.players = without(players, self.sittingOut)
   end
+  self.gridPlanner = opts and opts.gridPlanner
   self.state = "picking"
   self.issuerId = issuerId
   self.pickStartedAt = now
@@ -301,10 +304,19 @@ function Round:vehicleReady(now, pid, rebuildId)
 end
 
 function Round:vehiclePicked(now, pid, model, config, players)
-  if self.state ~= "picking" or pid ~= self.issuerId then return {} end
+  if self.state ~= "picking" or pid ~= self.issuerId or self.pendingGrid then return {} end
   if not self.test then self.players = without(players, self.sittingOut, self.watching) end
   if not self.test and not self.players[self.runnerId] then
     return self:cancel(now, "Runner left, round cancelled")
+  end
+  local count = #sortedPids(self.players)
+  if self.gridPlanner and (not self.startGrid or #self.startGrid < count) then
+    lastGridId = lastGridId + 1
+    local request = { kind = "planStart", pid = self.gridPlanner, id = lastGridId, count = count,
+      anchor = self.startGrid and self.startGrid[1] }
+    self.pendingGrid = { request = request, model = model, config = config, sentAt = now }
+    self.pickStartedAt = now
+    return { request }
   end
   self.state = (self.evolving and M.isAI(self.runnerId)) and "ready" or "prep"
   self.vehicle = { model = model, config = config }
@@ -325,13 +337,13 @@ function Round:vehiclePicked(now, pid, model, config, players)
     else
       local own = self:setupFor(now, pid)
       own.colorHex = colorFor(pid)
-      own.inPlace = true
+      own.inPlace = not self.startGrid or nil
       fx[#fx + 1] = own
     end
     local ai = {}
     for _, id in ipairs(ids) do
       local e = self:setupFor(now, id)
-      ai[#ai + 1] = { id = id, role = e.role, index = #ai + 1, colorHex = colorFor(id), name = self.players[id] }
+      ai[#ai + 1] = { id = id, role = e.role, index = e.copIndex, colorHex = colorFor(id), name = self.players[id] }
     end
     fx[#fx + 1] = { kind = "setupAI", pid = pid, ai = ai, aiOnly = self.aiOnly or nil }
   else
@@ -340,7 +352,22 @@ function Round:vehiclePicked(now, pid, model, config, players)
       if self.players[p] == nil then fx[#fx + 1] = self:spectateFor(now, p) end
     end
   end
+  if self.startGrid then
+    for _, e in ipairs(fx) do
+      if e.kind == "setup" then e.startPose = self.startGrid[e.copIndex + 1] end
+      if e.kind == "setupAI" then
+        for _, a in ipairs(e.ai) do a.startPose = self.startGrid[a.index + 1] end
+      end
+    end
+  end
   return fx
+end
+
+function Round:gridReceived(now, slots, players)
+  local picking = self.pendingGrid
+  self.pendingGrid = nil
+  self.startGrid = slots
+  return self:vehiclePicked(now, self.issuerId, picking.model, picking.config, players)
 end
 
 function Round:go(now, pid)
@@ -363,7 +390,11 @@ function Round:tick(now, cars, stations, traffic)
   local heliNew = false
   if self.state == "picking" then
     if now - self.pickStartedAt >= PICK_TIMEOUT_SECONDS then
-      return self:cancel(now, "Vehicle pick timed out")
+      return self:cancel(now, self.pendingGrid and "Starting positions timed out" or "Vehicle pick timed out")
+    end
+    if self.pendingGrid and now - self.pendingGrid.sentAt >= 1 then
+      self.pendingGrid.sentAt = now
+      return { self.pendingGrid.request }
     end
     return fx
   end

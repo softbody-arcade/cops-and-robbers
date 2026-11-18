@@ -582,9 +582,9 @@ test("practice while sitting out: an AI runner and two AI cops, the issuer spect
   local ai = setupAI.ai
   assertEq(#ai, 3)
   local a1 = round.AI_FIRST
-  assertEq(ai[1].id, a1); assertEq(ai[1].role, "runner"); assertEq(ai[1].name, "AI runner"); assertEq(ai[1].colorHex, "#d83a2c"); assertEq(ai[1].index, 1)
-  assertEq(ai[2].id, a1 - 1); assertEq(ai[2].role, "cop"); assertEq(ai[2].name, "AI cop 1"); assertEq(ai[2].colorHex, "#1f6fe0"); assertEq(ai[2].index, 2)
-  assertEq(ai[3].id, a1 - 2); assertEq(ai[3].role, "cop"); assertEq(ai[3].name, "AI cop 2"); assertEq(ai[3].colorHex, "#6fb0ff"); assertEq(ai[3].index, 3)
+  assertEq(ai[1].id, a1); assertEq(ai[1].role, "runner"); assertEq(ai[1].name, "AI runner"); assertEq(ai[1].colorHex, "#d83a2c"); assertEq(ai[1].index, 0)
+  assertEq(ai[2].id, a1 - 1); assertEq(ai[2].role, "cop"); assertEq(ai[2].name, "AI cop 1"); assertEq(ai[2].colorHex, "#1f6fe0"); assertEq(ai[2].index, 1)
+  assertEq(ai[3].id, a1 - 2); assertEq(ai[3].role, "cop"); assertEq(ai[3].name, "AI cop 2"); assertEq(ai[3].colorHex, "#6fb0ff"); assertEq(ai[3].index, 2)
   assertEq(r.runnerId, a1)
   assertEq(r.players[1], nil); assertEq(r.players[2], nil)
   assertEq(r.issuerId, 1)

@@ -322,6 +322,7 @@ Then do the checks for whatever actually updated.
 - The hook `onBeamNGEarthRebased(info)`, where `info.purpose` is `"teleport"` or something else.
 - We send no sky on `beamng_earth`: a change through `core_environment` flips the player's Earth sky to Manual and saves it in their Earth settings.
 - We run no round traffic on `beamng_earth`: its `navgraph.lua` manages any traffic that runs. `guard()` moves traffic cars that stood still 45 s, `onTeleport()` hides all traffic until the new road graph arrives (round setup moves cops far), and `checkRegion()` sets traffic up again with the player's own amount and police choice. Working around that would need BeamNG.Earth internals beyond its mod API.
+- For starting positions, the runner's game (the host in practice) converts both the road position and a point one metre ahead with `toGeo`. Each recipient uses `toGame` on both points to recover its local position and heading.
 - Each player has their own floating origin. That's why positions travel as lat/lon, and why the server converts with WGS84 → ENU (`cnr/geo.lua`).
 
 **On update, check:**
