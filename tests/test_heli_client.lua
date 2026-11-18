@@ -2149,7 +2149,7 @@ test("the range follows the aim point", function()
   assertEq(math.abs(tonumber(obj.fields.range) - want) <= heli.RANGE_STEP, true, obj.fields.range .. " " .. want)
 end)
 
-test("a refuel that starts while the target is missing flies away and drops the flight after 8 s", function()
+test("a refuel with the target missing throughout sets a departure waypoint and drops the flight after 8 s", function()
   load()
   state.random = seeded(3)
   local a = copyPos(pos)
@@ -2163,10 +2163,6 @@ test("a refuel that starts while the target is missing flies away and drops the 
   assertNear(horiz(f.leaving, a), 600, 1e-6)
   assertNear(f.leaving.z - a.z, 150, 1e-6)
   assertEq(state.leftAt, left)
-  local distanceAtDeparture = dist3(f.pos, f.leaving)
-  c = flyTo(c, left + 5)
-  assertEq(state.flight, f)
-  assertEq(dist3(f.pos, f.leaving) < distanceAtDeparture - 50, true)
   local dropped
   while c < left + 12 - 1e-9 do
     c = c + 0.05
@@ -2183,6 +2179,23 @@ test("a refuel that starts while the target is missing flies away and drops the 
   assertEq(state.flight ~= nil and state.flight ~= f, true)
   assertNear(horiz(state.flight.pos, a), heli.APPROACH_DISTANCE, 1)
   samePos(state.flight.spot, a, 1e-9)
+end)
+
+test("a target returning during refuel lets the helicopter continue towards its original departure waypoint", function()
+  load()
+  state.random = seeded(3)
+  status(0, "tracking")
+  local c = flyTo(0, 2) + 0.05
+  local f = state.flight
+  heli.set(state, { phase = "refuelling" }, c)
+  heli.lightTick(state, nil, false, c)
+  local waypoint = copyPos(f.leaving)
+  local before = dist3(f.pos, waypoint)
+  heli.lightTick(state, nil, false, c + 1)
+  flyTo(c + 1, c + 6)
+  assertEq(state.flight, f)
+  samePos(f.leaving, waypoint, 1e-6)
+  assertEq(dist3(f.pos, waypoint) < before - 50, true)
 end)
 
 test("a guided return after a long refuel flies in to the runner, not to the old spot", function()
