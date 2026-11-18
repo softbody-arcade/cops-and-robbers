@@ -281,6 +281,7 @@ local function schedule(c, cfg, random, releaseAt, endAt)
         u = math.max(u, beforeBoundary)
       end
       local nextSecond = releaseAt + math.floor(u - releaseAt) + 1
+      if nextSecond <= u then nextSecond = nextSecond + 1 end
       v = math.min(v, nextSecond)
     end
     local x
