@@ -1,33 +1,29 @@
 <template>
   <CnrRoot ref="box" class="cnr-hud">
-    <div ref="stack" class="hud-stack" :style="fit">
-      <template v-if="hud.visible">
-        <HudNotices v-if="!settingsShown" :notices="hud.notices" />
-        <template v-if="mode === 'lobby' && hud.lobby">
-          <HudTab v-if="hud.lobby.hudHidden" :warnings="hud.lobby.warnings" @show="setHidden(false)" />
-          <HudLobby v-else v-show="!settingsOpen" :lobby="hud.lobby" @settings="openSettings" @help="openHelp" @toggle="toggleApp" @hide="setHidden(true)" @sit-out="setSitOut" />
-        </template>
-        <template v-if="mode === 'round'">
-          <HudChange v-if="hud.change" :change="hud.change" @apply="ui({ action: 'apply' })" />
-          <template v-if="hud.prep">
-            <HudPrep v-show="!settingsOpen" :prep="hud.prep" @settings="openSettings" @help="openHelp" @toggle="toggleApp" />
-          </template>
-          <HudChase v-if="chaseShown" :status="hud.status" :bar="hud.catch" />
-          <HudSpectate v-if="hud.spectate" :spectate="hud.spectate" @help="openHelp" @toggle="toggleApp" @sit-out="setSitOut" />
-          <BngButton v-if="!hud.prep && !settingsOpen" class="cnr-btn round-settings" :accent="ACCENTS.secondary" @click="openSettings">
-            <span class="cnr-swatch" :class="{ empty: !settings.color }" :style="settings.color ? { background: settings.color } : null"></span>
-            <span>Settings</span>
-          </BngButton>
-        </template>
-        <HudSettings
-          v-if="settingsShown"
-          v-model:draft="colorDraft"
-          :settings="settings"
-          @pick="hex => ui({ action: 'color', hex })"
-          @clear="clearColor"
-          @setting="(key, value) => ui({ action: 'setting', key, value })"
-          @close="closeSettings"
-        />
+    <HudSettings
+      v-if="settingsShown"
+      v-model:draft="colorDraft"
+      :settings="settings"
+      @pick="hex => ui({ action: 'color', hex })"
+      @clear="clearColor"
+      @setting="(key, value) => ui({ action: 'setting', key, value })"
+      @close="closeSettings"
+    />
+    <div v-else-if="hud.visible" ref="stack" class="hud-stack" :style="fit">
+      <HudNotices :notices="hud.notices" />
+      <template v-if="mode === 'lobby' && hud.lobby">
+        <HudTab v-if="hud.lobby.hudHidden" :warnings="hud.lobby.warnings" @show="setHidden(false)" />
+        <HudLobby v-else :lobby="hud.lobby" @settings="openSettings" @help="openHelp" @toggle="toggleApp" @hide="setHidden(true)" @sit-out="setSitOut" />
+      </template>
+      <template v-if="mode === 'round'">
+        <HudChange v-if="hud.change" :change="hud.change" @apply="ui({ action: 'apply' })" />
+        <HudPrep v-if="hud.prep" :prep="hud.prep" @settings="openSettings" @help="openHelp" @toggle="toggleApp" />
+        <HudChase v-if="chaseShown" :status="hud.status" :bar="hud.catch" />
+        <HudSpectate v-if="hud.spectate" :spectate="hud.spectate" @help="openHelp" @toggle="toggleApp" @sit-out="setSitOut" />
+        <BngButton v-if="!hud.prep" class="cnr-btn round-settings" :accent="ACCENTS.secondary" @click="openSettings">
+          <span class="cnr-swatch" :class="{ empty: !settings.color }" :style="settings.color ? { background: settings.color } : null"></span>
+          <span>Settings</span>
+        </BngButton>
       </template>
     </div>
   </CnrRoot>
