@@ -3985,6 +3985,64 @@ test("a sitting-out player's car is parked on spectate and comes back where it s
   end)
 end)
 
+local function parkedTrailer()
+  local env = bootClient()
+  env.addObject(90, vec3(0, -4, 0)).model = "cargotrailer"
+  env.addObject(150, vec3(8, -4, 0)).model = "cargotrailer"
+  env.addObject(180, vec3(0, 4, 0))
+  env.ownCars = { [90] = true, [150] = true }
+  core_vehicles.attachedCouplers = { {90, 100, 11, 22}, {100, 180, 22, 11}, {100, 100, 22, 30} }
+  core_vehicles.vehsCouplerTags = { [100] = { [22] = "tow_hitch" } }
+  local ball, socket = vec3(0, 2, 0), vec3(0, -3, 0)
+  core_vehicles.vehsCouplerOffset = { [90] = { [11] = socket }, [100] = { [22] = ball } }
+  core_vehicles.couplerTagsOptions = { tow_hitch = "autoCouple" }
+  local remove = env.veh.delete
+  function env.veh:delete()
+    core_vehicles.attachedCouplers, core_vehicles.vehsCouplerOffset = {}, {}
+    remove(self)
+  end
+  local placements = {}
+  spawn.placeTrailer = function(tow, towOffset, trailer, trailerOffset, tag)
+    assertEq(towOffset, ball); assertEq(trailerOffset, socket); assertEq(tag, "tow_hitch")
+    placements[#placements + 1] = {tow, trailer}
+  end
+  spectate(env)
+  env.fire("cnr_roundEnd", { reason = "cancelled" })
+  return env, placements
+end
+
+test("sitting out restores the saved hitch once both new vehicles are owned", function()
+  local env, placements = parkedTrailer()
+  assertEq(#env.spawned, 3)
+  local tow, trailer = env.spawned[1].veh.id, env.spawned[2].veh.id
+  MPVehicleGE.isOwn = function(id) return id == tow end
+  env.tick(1)
+  assertEq(#placements, 0)
+  MPVehicleGE.isOwn = function() return true end
+  env.tick(1)
+  assertEq(#placements, 1); assertEq(placements[1][1], tow); assertEq(placements[1][2], trailer)
+  assertEq(env.objects[180] ~= nil, true)
+end)
+
+test("a trailer which latched during spawn is left in place", function()
+  local env, placements = parkedTrailer()
+  local tow, trailer = env.spawned[1].veh.id, env.spawned[2].veh.id
+  core_vehicles.vehsCouplings = { [tow] = { [trailer] = true } }
+  MPVehicleGE.isOwn = function() return true end
+  env.tick(1)
+  assertEq(#placements, 0)
+end)
+
+test("a pending hitch is forgotten on leave or when a restored vehicle disappears", function()
+  for _, leave in ipairs({true, false}) do
+    local env, placements = parkedTrailer()
+    if leave then env.M.onBeamMPServerLeave() else env.spawned[2].veh:delete() end
+    MPVehicleGE.isOwn = function() return true end
+    env.tick(1)
+    assertEq(#placements, 0)
+  end
+end)
+
 test("a cancelled round puts the parked car back too", function()
   withCamera(function()
     local env = bootClient()

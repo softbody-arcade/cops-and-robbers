@@ -2,7 +2,9 @@ local game = require("copsAndRobbers/game")
 
 local M = {}
 
-local parked
+local parked, restoring
+local hitchWait = 0
+local HITCH_SETTLE_SECONDS, HITCH_TIMEOUT_SECONDS = 0.2, 10
 
 local function isTraffic(id)
   local gt = gameplay_traffic
@@ -56,17 +58,42 @@ local function snapshot(veh)
   return { model = veh:getJBeamFilename(), config = config, pos = vec3(p.x, p.y, p.z), dir = vec3(d.x, d.y, 0), rot = game.uprightRotation(veh) }
 end
 
+local function saveHitches(byId)
+  local vehicles = core_vehicles
+  for _, pair in ipairs(vehicles and vehicles.attachedCouplers or {}) do
+    local a, b, nodeA, nodeB = pair[1], pair[2], pair[3], pair[4]
+    if a ~= b and byId[a] and byId[b] then
+      local tags, offsets = vehicles.vehsCouplerTags, vehicles.vehsCouplerOffset
+      local tag = tags[a] and tags[a][nodeA]
+      if not tag then
+        a, b, nodeA, nodeB = b, a, nodeB, nodeA
+        tag = tags[a] and tags[a][nodeA]
+      end
+      if vehicles.couplerTagsOptions[tag] and offsets[a] and offsets[a][nodeA] and offsets[b] and offsets[b][nodeB] then
+        byId[b].hitch = { tow = byId[a], ball = offsets[a][nodeA], socket = offsets[b][nodeB], tag = tag }
+      end
+    end
+  end
+end
+
 function M.park()
   if parked then return end
+  restoring = nil
   parked = {}
   local cars = ownCars()
   if #cars == 0 then return end
   local cmds = rawget(_G, "commands")
   if game.ownVehicle() and cmds and cmds.setFreeCamera then cmds.setFreeCamera() end
+  local byId = {}
   for _, veh in ipairs(cars) do
-    if veh:getJBeamFilename() ~= "unicycle" then parked[#parked + 1] = snapshot(veh) end
-    veh:delete()
+    if veh:getJBeamFilename() ~= "unicycle" then
+      local car = snapshot(veh)
+      parked[#parked + 1] = car
+      byId[veh:getID()] = car
+    end
   end
+  saveHitches(byId)
+  for _, veh in ipairs(cars) do veh:delete() end
 end
 
 function M.restore()
@@ -76,7 +103,12 @@ function M.restore()
   local allBack = true
   for i, car in ipairs(list) do
     local ok, veh = pcall(core_vehicles.spawnNewVehicle, car.model, { config = car.config, pos = car.pos, rot = car.rot, autoEnterVehicle = i == 1 })
-    if not ok or not veh then allBack = false end
+    if ok and veh then
+      car.id = veh:getID()
+      if car.hitch then restoring, hitchWait = list, 0 end
+    else
+      allBack = false
+    end
   end
   if not allBack and log then log("W", "cnr_spectate", "a parked car could not be put back") end
   local cmds = rawget(_G, "commands")
@@ -84,8 +116,38 @@ function M.restore()
   return allBack
 end
 
+function M.updateHitches(dt)
+  if not restoring then return end
+  hitchWait = hitchWait + dt
+  if hitchWait < HITCH_SETTLE_SECONDS then return end
+  local coupled = core_vehicles.vehsCouplings or {}
+  local pending = false
+  for _, car in ipairs(restoring) do
+    local hitch = car.hitch
+    if hitch then
+      local tow = hitch.tow
+      if not (car.id and tow.id and getObjectByID(car.id) and getObjectByID(tow.id)) then
+        car.hitch = nil
+      elseif not tow.hitch and MPVehicleGE.isOwn(tow.id) and MPVehicleGE.isOwn(car.id) then
+        if not (coupled[tow.id] and coupled[tow.id][car.id]) then
+          spawn.placeTrailer(tow.id, hitch.ball, car.id, hitch.socket, hitch.tag)
+        end
+        car.hitch = nil
+      else
+        pending = true
+      end
+    end
+  end
+  if not pending then
+    restoring = nil
+  elseif hitchWait >= HITCH_TIMEOUT_SECONDS then
+    log("W", "cnr_spectate", "timed out restoring a parked trailer hitch")
+    restoring = nil
+  end
+end
+
 function M.drop()
-  parked = nil
+  parked, restoring = nil, nil
 end
 
 function M.parked()
