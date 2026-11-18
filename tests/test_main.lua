@@ -112,7 +112,12 @@ local function boot(opts)
       return opts.map or "/levels/west_coast_usa/info.json"
     end,
     CreateTimer = function()
-      return { GetCurrent = function() return env.clock end, Start = function() end }
+      local start = env.clock
+      return { GetCurrent = function()
+        local elapsed = env.clock - start
+        if opts.floatTimer then return (string.unpack("f", string.pack("f", elapsed))) end
+        return elapsed
+      end, Start = function() start = env.clock end }
     end,
     SendChatMessage = function(pid, msg) env.chats[#env.chats + 1] = { pid, msg } end,
     TriggerClientEvent = function(pid, ev, data) env.sent[#env.sent + 1] = { pid = pid, ev = ev, data = data } end,
@@ -971,6 +976,45 @@ test("the round setup tells the client a practice round is practice, and a real 
   real.startRound()
   assertEq(decodeJson(real.lastSent("cnr_roundSetup").data).practice, nil)
   real.cleanup()
+end)
+
+test("a joined spectator receives the fractional storm clock at probe time", function()
+  local env = boot({config = '{"weather":"thunderstorm"}', floatTimer = true})
+  env.startRound()
+  local p = decodeJson(env.lastSent("cnr_roundSetup").data).sky
+  assertEq(p.lightningClockSync, true)
+  local request = encode({seed = p.lightningSeed, id = 4})
+  env.call("cnr_lightningClock", 1, request)
+  assertEq(env.lastSent("cnr_lightningClock"), nil)
+  local uptime = 7 * 24 * 3600
+  env.clock = uptime + 9.576
+  env.go()
+  env.clock = uptime + 21.132
+  env.names = {"Reinder", "Bob", "Kim"}
+  env.call("onPlayerJoin", 3)
+  env.clock = uptime + 21.269
+  env.call("cnr_lightningClock", 3, request)
+  local message = env.lastSent("cnr_lightningClock")
+  assertEq(message and message.pid, 3)
+  local reply = decodeJson(message.data)
+  assertEq(reply.id, 4)
+  assertEq(reply.seed, p.lightningSeed)
+  assertNear(reply.elapsed, 11.693, 1e-5)
+  env.cleanup()
+end)
+
+test("the storm clock is private to the practice issuer", function()
+  local env = boot({config = '{"weather":"thunderstorm"}'})
+  env.panel(1, "test runner")
+  env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  local p = decodeJson(env.lastSent("cnr_roundSetup").data).sky
+  env.go()
+  local request = encode({seed = p.lightningSeed, id = 1})
+  env.call("cnr_lightningClock", 2, request)
+  assertEq(env.lastSent("cnr_lightningClock"), nil)
+  env.call("cnr_lightningClock", 1, request)
+  assertEq(env.lastSent("cnr_lightningClock").pid, 1)
+  env.cleanup()
 end)
 
 test("a mid-chase rejoin gets clockSeconds", function()
@@ -3010,6 +3054,18 @@ test("a sitting-out player gets cnr_spectate at the pick, with the round's sky",
   assertEq(d.phase, "prep"); assertEq(d.runnerId, 1); assertEq(d.runnerName, "Reinder")
   assertEq(d.sky.time, "night"); assertEq(d.sky.weather, "rain")
   assertEq(env.logHas("Kim spectates (prep)"), true)
+  env.cleanup()
+end)
+
+test("a player sitting out before the pick receives the storm clock after GO", function()
+  local env = threePlayers({config = '{"weather":"thunderstorm"}'})
+  sitOut(env, 3, true)
+  env.startRound()
+  local d = decodeJson(sentTo(env, "cnr_spectate", 3))
+  env.go()
+  env.call("cnr_lightningClock", 3, encode({seed = d.sky.lightningSeed, id = 2}))
+  local reply = env.lastSent("cnr_lightningClock")
+  assertEq(reply and reply.pid, 3)
   env.cleanup()
 end)
 

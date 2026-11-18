@@ -512,6 +512,7 @@ local function applyEffects(effects)
         aiOnly = e.aiOnly,
       })
     elseif e.kind == "countdown" then
+      if sky.hasThunderstorm(current.sky) then current.sky.lightningTimer = MP.CreateTimer() end
       send(e.to or -1, "cnr_countdown", { seconds = e.seconds })
     elseif e.kind == "runnerGo" then
       send(e.to or -1, "cnr_runnerGo", { headStartSeconds = e.headStartSeconds })
@@ -1237,6 +1238,15 @@ local function finite(n)
   return type(n) == "number" and math.abs(n) < math.huge
 end
 
+function cnrOnLightningClock(pid, data)
+  local timer = current.sky and current.sky.lightningTimer
+  if not timer or not current:isActive() then return end
+  if not (current.players[pid] or spectators[pid] or (current.test and pid == current.issuerId)) then return end
+  local ok, d = pcall(Util.JsonDecode, data)
+  if not ok or type(d) ~= "table" or d.seed ~= current.sky.lightningSeed or not finite(d.id) then return end
+  send(pid, "cnr_lightningClock", {seed = d.seed, id = d.id, elapsed = timer:GetCurrent()})
+end
+
 local function gamePoint(p)
   if type(p) == "table" and finite(p.x) and finite(p.y) and finite(p.z) then
     return { x = p.x, y = p.y, z = p.z }
@@ -1455,6 +1465,7 @@ MP.RegisterEvent("cnr_color", "cnrOnColor")
 MP.RegisterEvent("cnr_sitOut", "cnrOnSitOut")
 MP.RegisterEvent("cnr_sight", "cnrOnSight")
 MP.RegisterEvent("cnr_cover", "cnrOnCover")
+MP.RegisterEvent("cnr_lightningClock", "cnrOnLightningClock")
 MP.RegisterEvent("cnr_board", "cnrOnBoard")
 MP.RegisterEvent("cnr_setup", "cnrOnSetup")
 MP.RegisterEvent("cnr_change", "cnrOnChange")

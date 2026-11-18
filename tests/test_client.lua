@@ -5297,6 +5297,91 @@ test("GO and joined lightning frames use the runner for each role", function()
   end
 end)
 
+test("a countdown player and delayed spectator render the same pulse on the server clock", function()
+  for _, spectator in ipairs({false, true}) do
+    withThunder(function(env, _, glow)
+      local previousEngine = Engine
+      local serverAt = spectator and 9.8 or 0.1
+      local uptime = spectator and 3000 or 500
+      _G.Engine = {Platform = {getRuntime = function() return uptime + serverAt end}}
+      local ok, err = pcall(function()
+        local sky = thunderSky(spectator and 8.9 or nil)
+        sky.lightningClockSync = true
+        sky.lightningMinSeconds, sky.lightningMaxSeconds = 5, 5
+        if spectator then
+          spectate(env, {phase = "running", sky = sky})
+        else
+          local d = copy(SETUP)
+          d.sky = sky
+          env.fire("cnr_roundSetup", d)
+          env.fire("cnr_countdown", {seconds = 3})
+        end
+        env.M.onUpdate(0.016)
+        local probe = env.lastSent("cnr_lightningClock")
+        assertEq(probe and probe.seed, 55)
+        local oneWay = spectator and 0.04 or 0.012
+        local sampledAt = serverAt + oneWay
+        serverAt = sampledAt + oneWay
+        env.fire("cnr_lightningClock", {seed = probe.seed, id = probe.id, elapsed = sampledAt})
+        if not spectator then
+          serverAt = 5.01
+          env.M.onUpdate(0.3)
+          assert(glow() > 0)
+        end
+        serverAt = 9.99
+        env.M.onUpdate(0.011)
+        assertEq(env.sky.objects.cnr_lightning_flash, nil)
+        if spectator then assertEq(thunderPlays(env), 0) end
+        serverAt = 10.02
+        env.M.onUpdate(0.017)
+        local light = env.sky.objects.cnr_lightning_flash
+        assertEq(light and light.fields.isEnabled, "1")
+      end)
+      _G.Engine = previousEngine
+      assert(ok, err)
+    end)
+  end
+end)
+
+test("expired clock samples and older replies cannot rewind a storm or replay past strikes", function()
+  withThunder(function(env, _, glow)
+    local previousEngine, uptime = Engine, 300
+    _G.Engine = {Platform = {getRuntime = function() return uptime end}}
+    local ok, err = pcall(function()
+      local p = thunderSky(2)
+      p.lightningClockSync = true
+      p.lightningMinSeconds, p.lightningMaxSeconds = 5, 5
+      spectate(env, {phase = "running", sky = p})
+      env.M.onUpdate(0.01)
+      local first = assert(env.lastSent("cnr_lightningClock"))
+      uptime = 310
+      env.fire("cnr_lightningClock", {seed = 55, id = first.id, elapsed = 4.99})
+      env.M.onUpdate(8)
+      local second = assert(env.lastSent("cnr_lightningClock"))
+      assertEq(second.id ~= first.id, true)
+      assertEq(glow(), 0)
+      env.fire("cnr_lightningClock", {seed = 55, id = first.id, elapsed = 50})
+      env.fire("cnr_lightningClock", {seed = 1, id = second.id, elapsed = 50})
+      uptime = 310.04
+      env.fire("cnr_lightningClock", {seed = 55, id = second.id, elapsed = 14.72})
+      uptime = 310.29
+      env.M.onUpdate(0.25)
+      assertEq(glow(), 0)
+      assertEq(thunderPlays(env), 0)
+      uptime = 310.31
+      env.M.onUpdate(0.02)
+      assert(glow() > 0)
+      local seen = glow()
+      env.fire("cnr_lightningClock", {seed = 55, id = second.id, elapsed = 9})
+      uptime = 310.9
+      env.M.onUpdate(0.59)
+      assertEq(glow(), seen)
+    end)
+    _G.Engine = previousEngine
+    assert(ok, err)
+  end)
+end)
+
 test("a fixed five-second storm flashes five seconds after the countdown starts", function()
   withThunder(function(env, _, lines)
     local d = copy(SETUP)

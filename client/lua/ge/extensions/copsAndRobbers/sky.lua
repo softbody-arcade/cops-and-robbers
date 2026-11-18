@@ -2,6 +2,7 @@ local wind = require("copsAndRobbers/wind")
 local surfaces = require("copsAndRobbers/surfaces")
 local rain = require("copsAndRobbers/rain")
 local skyChanges = require("copsAndRobbers/skyChanges")
+local strikeClock = require("copsAndRobbers/strikeClock")
 local units = require("copsAndRobbers/units")
 
 local M = {}
@@ -36,6 +37,7 @@ local MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", 
 local DAYS_IN_MONTH = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
 
 local saved, wasLocked, round, clockStart, target
+local syncedStrikes
 local stormSpans, frameLo, frameHi, frameCovered, frameStorm
 local weatherFrom, weatherTo, weatherProgress
 local lockTimer, lockAfter, restoring
@@ -44,7 +46,7 @@ local sinceStep, wrote, curveIndex, rainIndex, seenIndex, windOn, failed = 0, ni
 
 local function forget()
   wind.reset()
-  stormSpans, frameLo = nil, nil
+  stormSpans, frameLo, syncedStrikes = nil, nil, nil
   weatherFrom, weatherTo, weatherProgress = nil, nil, nil
   saved, wasLocked, round, clockStart, target = nil, false, nil, nil, nil
   roundTime, started, sinceWind = 0, false, 0
@@ -248,6 +250,13 @@ function M.apply(p, prep)
   weatherFrom, weatherTo, weatherProgress = from, to, progress
   round, clockStart, target = p, state.time, state
   stormSpans, roundTime = thunderstormSpans(p), at
+  if p.lightningClockSync and stormSpans and #stormSpans > 0 then
+    if prep or not syncedStrikes or syncedStrikes.seed ~= p.lightningSeed then
+      syncedStrikes = strikeClock.new(p.lightningSeed)
+    end
+  else
+    syncedStrikes = nil
+  end
   if started then runningDay(state, clockStart, p.daySeconds, at) end
   wrote, curveIndex = { state.cloudCover, state.fogDensity, state.windSpeed }, curveNow
   rainIndex, seenIndex, sinceStep = index, index, 0
@@ -375,6 +384,10 @@ local function pushWind(dt)
   be:setGroundWind(vec3(x, y, z))
 end
 
+function M.syncLightningClock(reply)
+  if started then strikeClock.receive(syncedStrikes, reply) end
+end
+
 function M.lightningFrame()
   if frameLo then return round, frameLo, frameHi, frameCovered, frameStorm end
 end
@@ -385,8 +398,12 @@ function M.update(dt, hasVisualTail)
     local lo = roundTime
     roundTime = roundTime + dt
     if stormSpans then
-      frameLo, frameHi = lo, roundTime
-      frameStorm = intersectsStorm(lo, roundTime)
+      if syncedStrikes then
+        frameLo, frameHi = strikeClock.frame(syncedStrikes)
+      else
+        frameLo, frameHi = lo, roundTime
+      end
+      frameStorm = frameLo ~= nil and intersectsStorm(frameLo, frameHi)
     end
   end
   local ok, err = pcall(rain.update, dt, frameLo ~= nil and (frameStorm or hasVisualTail))
