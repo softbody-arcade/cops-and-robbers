@@ -3531,15 +3531,13 @@ test("back from a grounding it searches from the last known state", function()
   assertEq(state.flight, nil)
   assertNear(horiz(pos, a), 300, 1e-6)
   c = c + 0.05
-  status(c, "arriving")
-  c = c + 0.05
   status(c, "searching")
   assertEq(state.search.mode, "contain")
   samePos(state.flight.spot, a, 1e-9)
 end)
 
 for _, ph in ipairs({ "tracking", "searching" }) do
-  test("grounded straight to " .. ph .. " (0 s arrival) flies in and ramps the light", function()
+  test("grounded straight to " .. ph .. " flies in and ramps the light", function()
     load()
     state.random = seeded(8)
     night(0, "tracking")

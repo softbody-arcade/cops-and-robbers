@@ -61,9 +61,7 @@ function M.update(h, now, covered, guided, grounded)
   local before, seedBefore, guidedBefore = phaseName(h), h.seed, h.guided == true
   if h.phase == "grounded" then
     h.reason = nil
-    h.phase = "arriving"
-    h.phaseEnd = now + h.cfg.helicopterArrivalSeconds
-    before = nil
+    enterUp(h, now, covered)
   end
   h.guided = guided == true
   while h.phaseEnd and now >= h.phaseEnd do

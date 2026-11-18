@@ -1291,7 +1291,7 @@ local function skyRound(sk, overrides)
   return r
 end
 
-test("the heli effect goes grounded when a change to storm starts and arriving when the change away ends", function()
+test("a storm interrupts the arrival and the helicopter launches when the change back to rain ends", function()
   local r = skyRound({ weather = "rain", changes = { { at = 40, to = "storm" }, { at = 200, to = "rain" } } }, { helicopterArrivalSeconds = 60, helicopterUpSeconds = 1000 })
   local seen = {}
   for t = 11, 262 do
@@ -1300,7 +1300,7 @@ test("the heli effect goes grounded when a change to storm starts and arriving w
   end
   assertEq(seen[1], "10 arriving")
   assertEq(seen[2], "40 grounded")
-  assertEq(seen[3], "260 arriving")
+  assertEq(seen[3], "260 tracking")
 end)
 
 test("a round that starts in fog returns when the fog clears", function()
@@ -1311,7 +1311,7 @@ test("a round that starts in fog returns when the fog clears", function()
     if e then seen[#seen + 1] = (t - 1) .. " " .. e.phase .. " " .. tostring(e.reason) end
   end
   assertEq(seen[1], "10 grounded fog")
-  assertEq(seen[2], "160 arriving nil")
+  assertEq(seen[2], "160 tracking nil")
 end)
 
 test("a run records the worst weather and the start weather", function()
