@@ -27,7 +27,8 @@ local function ownCars()
   local parkedCars = parking and parking.getParkedCarsData and parking.getParkedCarsData() or {}
   local function add(veh)
     local id = veh and veh:getID()
-    if id and not parkedCars[id] and not seen[id] and not isTraffic(id) then
+    if id and not seen[id] and not parkedCars[id] and not isTraffic(id)
+      and veh.vehicleGroup ~= "autoParking" and veh.vehicleGroup ~= "autoTraffic" then
       seen[id] = true
       list[#list + 1] = veh
     end
@@ -47,6 +48,14 @@ end
 function M.personalCar()
   for _, car in ipairs(ownCars()) do
     if car:getJBeamFilename() ~= "unicycle" then return car end
+  end
+end
+
+function M.removeExtras(roundId, aiCars)
+  local keep = { [roundId] = true }
+  for _, car in ipairs(aiCars) do keep[car.obj:getID()] = true end
+  for _, car in ipairs(ownCars()) do
+    if not keep[car:getID()] then car:delete() end
   end
 end
 
@@ -87,14 +96,17 @@ local function saveHitches(byId)
   end
 end
 
-function M.park()
-  if parked then return end
-  restoring = nil
-  parked = {}
+function M.park(includeNewCars)
+  if not parked then
+    restoring = nil
+    parked = {}
+  elseif not includeNewCars then
+    return
+  end
   local cars = ownCars()
   if #cars == 0 then return end
   local cmds = rawget(_G, "commands")
-  if game.ownVehicle() and cmds and cmds.setFreeCamera then cmds.setFreeCamera() end
+  if cars[1] == game.ownVehicle() and cmds and cmds.setFreeCamera then cmds.setFreeCamera() end
   local byId = {}
   for _, veh in ipairs(cars) do
     if veh:getJBeamFilename() ~= "unicycle" then

@@ -61,6 +61,7 @@ local infoParts
 local infoSeenAt
 local pendingPlacement
 local personalCarId
+local parkingBystander, nextCarCleanup
 local rebuildId
 local suppressResetUntil = 0
 local lastPose
@@ -112,6 +113,7 @@ local function teleport(veh, pos, rot)
 end
 
 local function placeVehicle(model, config, pos, rot, color, initialGrid, personal)
+  nextCarCleanup = nil
   local opt = vehicles.options(config, color)
   local veh
   if not initialGrid then personal = ownVehicle() end
@@ -122,17 +124,15 @@ local function placeVehicle(model, config, pos, rot, color, initialGrid, persona
     if initialGrid then opt.pos, opt.rot = pos, rot end
     veh = core_vehicles.spawnNewVehicle(model, opt)
   end
-  if initialGrid then
-    personalCarId = veh and veh:getID()
-    if not personalCarId then
-      pendingPlacement = nil
-      hudfeed.event("Could not spawn your round car", clock, "warn")
-      return
-    end
-    pos, rot = nil, nil
+  if not veh then
+    pendingPlacement = nil
+    hudfeed.event("Could not spawn your round car", clock, "warn")
+    return
   end
+  personalCarId = veh:getID()
+  if initialGrid then pos, rot = nil, nil end
   pendingPlacement = { at = clock + SETUP_DELAY, deadline = clock + PLACEMENT_TIMEOUT, pos = pos, rot = rot,
-    gameId = initialGrid and personalCarId or nil, rebuild = rebuildId }
+    gameId = personalCarId, rebuild = rebuildId }
 end
 
 local function startStatus()
@@ -267,7 +267,7 @@ end
 
 local function onRoundSetup(data)
   local d = jsonDecode(data) or {}
-  spectating = false
+  spectating, parkingBystander = false, false
   spectator.drop()
   hudfeed.clearRound()
   hudfeed.clearResult()
@@ -361,6 +361,25 @@ local function onSpectate(data)
   elseif phase == "running" then
     startStatus()
     chaseStart = clock - (tonumber(d.chaseElapsed) or 0)
+  end
+end
+
+local function restoreParkedCars()
+  if not spectator.restore() then
+    hudfeed.event("Your car could not be put back", clock, "warn")
+  end
+end
+
+local function onParkBystanderCars(data)
+  if active or spectating then return end
+  local d = jsonDecode(data) or {}
+  if d.on == true and not parkingBystander then
+    parkingBystander = true
+    spectator.park()
+    nextCarCleanup = clock + 1
+  elseif d.on == false and parkingBystander then
+    parkingBystander, nextCarCleanup = false, nil
+    restoreParkedCars()
   end
 end
 
@@ -609,14 +628,14 @@ local function onState(data)
 end
 
 local function endRound(leaving)
-  spectating = false
+  spectating, parkingBystander, nextCarCleanup = false, false, nil
   watchedId = nil
   ai.remove()
   inputs.lockSpawns(false)
   if leaving then
     spectator.drop()
-  elseif not spectator.restore() then
-    hudfeed.event("Your car could not be put back", clock, "warn")
+  else
+    restoreParkedCars()
   end
   hudfeed.clearRound()
   heli.clear(heliState)
@@ -766,8 +785,7 @@ end
 local function updatePendingPlacement()
   local p = pendingPlacement
   if not p or clock < p.at then return end
-  local veh
-  if p.gameId then veh = getObjectByID(p.gameId) else veh = ownVehicle() end
+  local veh = getObjectByID(p.gameId)
   local vid = veh and game.serverVid(veh)
   if veh and vid then
     pendingPlacement = nil
@@ -776,6 +794,7 @@ local function updatePendingPlacement()
     if restore then veh:queueLuaCommand(restore) end
     modesHoldUntil = clock + MODES_SETTLE
     if frozen then veh:queueLuaCommand("controller.setFreeze(1)") end
+    nextCarCleanup = clock
     sendServer("cnr_myVehicle", { vid = vid, rebuild = p.rebuild })
     lightsPlaced = true
   elseif clock >= p.deadline then
@@ -991,6 +1010,14 @@ local function onUpdate(dtReal, dtSim)
     hudfeed.event(change.notice, clock, "info")
   end
   updatePendingPlacement()
+  if nextCarCleanup and clock >= nextCarCleanup then
+    nextCarCleanup = clock + 1
+    if parkingBystander then
+      spectator.park(true)
+    elseif active and personalCarId then
+      spectator.removeExtras(personalCarId, ai.objects())
+    end
+  end
   updateResetLock()
   updateOwnCar()
   local report = ai.tick(clock)
@@ -1101,6 +1128,7 @@ local function onExtensionLoaded()
   AddEventHandler("cnr_pickVehicle", onPickVehicle)
   AddEventHandler("cnr_roundSetup", onRoundSetup)
   AddEventHandler("cnr_spectate", onSpectate)
+  AddEventHandler("cnr_parkBystanderCars", onParkBystanderCars)
   AddEventHandler("cnr_release", onRelease)
   AddEventHandler("cnr_heli", function(data) setHeli(jsonDecode(data)) end)
   AddEventHandler("cnr_countdown", onCountdown)
