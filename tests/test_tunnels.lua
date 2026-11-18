@@ -27,11 +27,17 @@ local function roadsOf(nodes, links, n1, n2, dist, calls)
   }
 end
 
+local CAR = v(150, 0, 0)
+
+local function probeAbove(pos, ground)
+  return pos.x == ground.x and pos.y == ground.y and pos.z == ground.z + 1.5
+end
+
 local function roofedIds(nodes, set)
   return function(pos)
-    if pos.x == 150 and pos.y == 0 then return true end
+    if probeAbove(pos, CAR) then return true end
     for id, node in pairs(nodes) do
-      if set[id] and node.pos.x == pos.x and node.pos.y == pos.y then return true end
+      if set[id] and probeAbove(pos, node.pos) then return true end
     end
     return false
   end
@@ -42,10 +48,6 @@ local function roofedRange(nodes, from, to)
   for i = from, to do set[i] = true end
   return roofedIds(nodes, set)
 end
-
-local function allRoofed(pos) return true end
-
-local CAR = v(150, 0, 0)
 
 local function ids(list)
   local out = {}
@@ -134,6 +136,77 @@ test("ids in a tie are ordered as strings", function()
   assertEq(tunnels.watch(v(0, 0, 0), 1, 0, roads, roofed, 1)[1].id, "9")
 end)
 
+test("a single closest node lets the walk reach both mouths without duplicating them", function()
+  local nodes, links = line(3, 100)
+  local roofed = roofedRange(nodes, 2, 2)
+  local function check(second)
+    local list = tunnels.watch(nodes[2].pos, 1, 0, roadsOf(nodes, links, 2, second, 0), roofed)
+    assertIds(list, { 3, 1 })
+    for _, exit in ipairs(list) do
+      near(exit.length, 100)
+      assertEq(exit.behind, nil)
+    end
+  end
+  check(2)
+  check(nil)
+end)
+
+test("on a road node the exit ahead is measured from the car and the other mouth stays behind", function()
+  local nodes, links = line(4, 100)
+  local list = tunnels.watch(nodes[3].pos, -1, 0, roadsOf(nodes, links, 2, 3, 0), roofedRange(nodes, 2, 3))
+  assertIds(list, { 1, 4 })
+  near(list[1].length, 200)
+  near(list[2].length, 100)
+  assertEq(list[1].behind, nil)
+  assertEq(list[2].behind, true)
+end)
+
+test("a roofed node with no links yields an empty watch", function()
+  local nodes, links = line(1, 100)
+  local roads = roadsOf(nodes, links, 1, nil, 0)
+  local roofed = roofedRange(nodes, 1, 1)
+  assertIds(tunnels.watch(nodes[1].pos, 1, 0, roads, roofed), {})
+  links[1] = nil
+  assertIds(tunnels.watch(nodes[1].pos, 1, 0, roads, roofed), {})
+end)
+
+test("a helicopter follows a listed tunnel link even against one-way traffic", function()
+  local nodes, links = line(4, 100)
+  local link = { inNode = 4, outNode = 3, oneWay = true }
+  links[3][4], links[4][3] = link, link
+  local roads, roofed = roadsOf(nodes, links, 2, 3, 0), roofedRange(nodes, 2, 3)
+  local list = tunnels.watch(CAR, 1, 0, roads, roofed)
+  assertIds(list, { 4, 1 })
+  assertEq(list[1].from, 3)
+  links[3][4] = nil
+  assertIds(tunnels.watch(CAR, 1, 0, roads, roofed), { 1 })
+end)
+
+test("stacked road nodes can have a roof over the lower deck and open sky above", function()
+  local nodes, links = line(4, 100)
+  nodes[4].pos = v(200, 0, 12)
+  local list = tunnels.watch(CAR, 1, 0, roadsOf(nodes, links, 2, 3, 0), roofedRange(nodes, 2, 3))
+  assertIds(list, { 4, 1 })
+  near(list[1].length, 62)
+  assertEq(list[1].pos.z, 12)
+end)
+
+test("the 3 km walk budget is shared by branches on the same side of the car", function()
+  local nodes, links = fork()
+  nodes[3].pos, nodes[4].pos = v(100, 1100, 0), v(100, -1100, 0)
+  nodes[5], nodes[6] = { pos = v(1100, 1100, 0) }, { pos = v(1100, -1100, 0) }
+  links[3][5], links[4][6] = {}, {}
+  local roads = roadsOf(nodes, links, 1, 2, 0)
+  local function exits()
+    return tunnels.watch(nodes[1].pos, 1, 0, roads, roofedRange(nodes, 1, 4))
+  end
+  assertIds(exits(), {})
+  links[2][4] = nil
+  assertIds(exits(), { 5 })
+  links[2][3], links[2][4] = nil, {}
+  assertIds(exits(), { 6 })
+end)
+
 test("a tunnel over 3 km gives an empty list", function()
   local nodes, links = line(43, 100)
   local roads = roadsOf(nodes, links, 1, 2, 2)
@@ -171,11 +244,11 @@ test("lengths come from node positions, not link len", function()
   near(list[1].length, 250)
 end)
 
-test("a road too far gives nil", function()
+test("the nearest road must be within 15 m, including exactly 15 m", function()
   local nodes, links = line(5, 100)
   local roofed = roofedRange(nodes, 2, 4)
   assertEq(tunnels.watch(CAR, 1, 0, roadsOf(nodes, links, 2, 3, 16), roofed), nil)
-  assertEq(tunnels.watch(CAR, 1, 0, roadsOf(nodes, links, 2, 3, 14), roofed)[1].pos.x, 400)
+  assertIds(tunnels.watch(CAR, 1, 0, roadsOf(nodes, links, 2, 3, 15), roofed), { 5, 1 })
   assertEq(tunnels.watch(CAR, 1, 0, roadsOf(nodes, links, 2, 3, nil), roofed), nil)
   assertEq(tunnels.watch(CAR, 1, 0, roadsOf(nodes, links, 2, 3, "2"), roofed), nil)
 end)

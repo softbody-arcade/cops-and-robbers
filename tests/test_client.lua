@@ -2994,10 +2994,10 @@ test("turning the beam off stops the quads while the light and its glare stay", 
     quads = quads + 0.5
   end }
   _G.color = function(r, g, b, a) return r * 16777216 + g * 65536 + b * 256 + (a or 255) end
-  _G.core_camera = { getPosition = function() return vec3(1100, 1100, 10) end }
   _G.castRayStatic = nil
   local ok, err = pcall(function()
     local env = nightTracking("cop")
+    env.cameraPos = vec3(1100, 1100, 10)
     env.tick(0.5)
     assertEq(quads > 0, true, tostring(quads))
     local light = env.sky.objects[HELI_LIGHT]
@@ -3158,6 +3158,20 @@ test("the sound plays at the helicopter and is gone after the round", function()
       end
     end
   end
+end)
+
+test("a wall between the camera and helicopter halves rotor volume until the camera moves clear", function()
+  local env = nightTracking("cop")
+  local sound = env.sky.objects[HELI_SOUND]
+  env.tick(1)
+  assertNear(sound.volume, 1, 1e-9)
+  env.blockFrom = vec3(65, 25, 10)
+  env.cameraPos = env.blockFrom
+  env.tick(1)
+  assertNear(sound.volume, 0.5, 1e-9)
+  env.cameraPos = vec3(85, 25, 10)
+  env.tick(1)
+  assertNear(sound.volume, 1, 1e-9)
 end)
 
 test("turning the sound off fades it out within about 1 s, and on fades it in", function()
@@ -4750,19 +4764,14 @@ end)
 
 test("without a car of your own the AI practice starts where the camera is", function()
   withCamera(function()
-    local saved = _G.core_camera
-    _G.core_camera = { getPosition = function() return vec3(5, 30, 40) end, getForward = function() return vec3(-1, 0, -0.5) end }
-    local ok, err = pcall(function()
-      local env = bootClient()
-      env.objects[100] = nil
-      local calls = spyRoads()
-      watchPractice(env)
-      assertEq(calls.road[1].pos.y, 30); assertEq(calls.road[1].heading.x, -1)
-      assertEq(#env.spawned, 3)
-      assertEq(calls.cop[1].center.y, 60)
-    end)
-    _G.core_camera = saved
-    if not ok then error(err, 0) end
+    local camera = { getPosition = function() return vec3(5, 30, 40) end, getForward = function() return vec3(-1, 0, -0.5) end }
+    local env = bootClient({ camera = camera })
+    env.objects[100] = nil
+    local calls = spyRoads()
+    watchPractice(env)
+    assertEq(calls.road[1].pos.y, 30); assertEq(calls.road[1].heading.x, -1)
+    assertEq(#env.spawned, 3)
+    assertEq(calls.cop[1].center.y, 60)
   end)
 end)
 
