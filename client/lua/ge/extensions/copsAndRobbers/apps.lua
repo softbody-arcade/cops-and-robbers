@@ -21,6 +21,8 @@ local PLACED_INTERVAL = 10
 local LAYOUT_SETTLE_SECONDS = 0.5
 local USER_LAYOUTS, ORIGINAL_LAYOUTS = "/settings/ui_apps/layouts/", "/settings/ui_apps/originalLayouts/"
 local PLACEMENT_DELAY = 3
+local PLACEMENTS_FILE = "settings/cnr_app_placements.json"
+local savedPlacements
 
 local group = placement.group()
 local states = {}
@@ -44,6 +46,10 @@ local function readJson(filename)
   return ok and type(data) == "table" and data or nil
 end
 
+local function savePlacements()
+  pcall(jsonWriteFile, PLACEMENTS_FILE, savedPlacements, true)
+end
+
 local function placementEnv(name)
   local api = layoutsApi()
   if not api or not api.getCurrentLayout or not api.saveLayout
@@ -52,6 +58,8 @@ local function placementEnv(name)
   end
   return {
     api = api,
+    savedPlacements = savedPlacements and not M.APPS[name].sticky and savedPlacements[name],
+    savePlacements = savePlacements,
     appExists = FS:fileExists(M.APPS[name].files[1]),
     readLayout = function(filename)
       local data = readJson(filename)
@@ -140,8 +148,13 @@ end
 
 function M.start(clock)
   loadedAt = clock
+  savedPlacements = savedPlacements or readJson(PLACEMENTS_FILE) or {}
   for _, name in ipairs(ORDER) do
-    if states[name].sticky then placement.activate(states[name]) end
+    if states[name].sticky then
+      placement.activate(states[name])
+    elseif type(savedPlacements[name]) ~= "table" then
+      savedPlacements[name] = {}
+    end
   end
 end
 
