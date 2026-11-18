@@ -113,6 +113,23 @@ const root = node("root")
 const app = renderer.createApp(panel.namespace.default, { state: state.value, store })
 app.mount(root)
 
+const limitKey = "roundTimeLimitSeconds"
+const limitRow = descendants(root).find(el => el.text === "Time limit").parent
+for (const [seconds, label, direction, expected] of [
+  [1800, "30 min", 1, 2100], [1800, "30 min", -1, 1500],
+  [300, "5 min", -1, 0], [0, "off", -1, 0], [0, "off", 1, 300],
+  [765, "12:45", 1, 900], [765, "12:45", -1, 600],
+]) {
+  store.clear()
+  state.value.settings[limitKey] = seconds
+  await Vue.nextTick()
+  assert.ok(descendants(limitRow).some(el => el.text === label), label)
+  const buttons = descendants(limitRow).filter(el => el.type === "button")
+  buttons[direction > 0 ? 1 : 0].props.onClick()
+  assert.equal(store.valueOf(limitKey), expected)
+}
+store.clear()
+
 function strikeRows(visible) {
   const nodes = descendants(root)
   for (const label of ["Minimum strike interval", "Maximum strike interval"]) {

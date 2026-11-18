@@ -113,8 +113,8 @@ For a five-second lightning test, choose **Night** and **Thunderstorm** in the S
 | `carMode` | random | `random` (a random car each round) or `evolving` (the shared build) |
 | `sightGraceSeconds` | 1.5 | Sight still counts this long after a cop loses it |
 | `assistMinSightPercent` | 20 | Share of the chase a cop needs sight of the runner for an assist |
-| `roundTimeLimitSeconds` | 0 | Runner escapes after this long (0 = no limit) |
-| `excludedModels` | citybus, us_semi, md_series, percheron, rockbouncer | Never picked |
+| `roundTimeLimitSeconds` | 1800 | Runner escapes after 30 minutes by default. The host panel adjusts the limit in 5-minute steps (0 = no limit) |
+| `excludedModels` | `[]` | Never picked |
 | `explodeOnCatch` | false | Runner's car explodes when caught, for every player in the round (the AI runner in practice as a cop is deleted at once) |
 | `sirensAllowed` | true | Cops may use a siren (each cop turns it on in their settings) |
 | `includeModVehicles` | false | Also pick mod vehicles |
@@ -125,20 +125,20 @@ For a five-second lightning test, choose **Night** and **Thunderstorm** in the S
 | `dayLength` | moderate | How long a full day lasts during the chase: `off` (stopped), `fast` (15 min), `moderate` (30 min), `slow` (2 h) or `realtime` (24 h) |
 | `weather` | random | `clear`, `cloudy`, `rain`, `storm`, `thunderstorm`, `fog`, `snow` or `random` |
 | `badWeatherChancePercent` | 25 | Chance of picking the bad-weather group (rain, storm, thunderstorm, fog or snow) for a random start or at a planned slot with both calm and bad options |
-| `lightningMinSeconds` | 10 | Shortest wait between strikes in a full thunderstorm, in whole seconds (at least 1) |
-| `lightningMaxSeconds` | 40 | Longest wait between strikes. Set both intervals to the same value for a fixed cadence |
+| `lightningMinSeconds` | 5 | Shortest wait between strikes in a full thunderstorm, in whole seconds (at least 1) |
+| `lightningMaxSeconds` | 20 | Longest wait between strikes. Set both intervals to the same value for a fixed cadence |
 | `weatherDriving` | true | Weather changes grip and adds wind |
 | `weatherChanges` | true | Planned slots during the chase can keep the current weather or pick an eligible change based on the current weather, temperature and time of day |
 | `weatherChangeMinMinutes` | 3 | Shortest wait before the next planned slot, in whole minutes (at least 1). The wait starts at cop release, the previous slot or a forced change |
 | `weatherChangeMaxMinutes` | 8 | Longest wait drawn from the same starting point (at least the minimum). A forced change restarts the wait, and stays can extend the time between actual changes |
-| `trafficPerPlayer` | 5 | AI traffic cars around each player during a round (0 = off, at most 20) |
+| `trafficPerPlayer` | 0 | AI traffic cars around each player during a round (0 = off, at most 20) |
 | `trafficRunnerOnly` | false | Only the runner's game spawns traffic (the same `trafficPerPlayer` count); cops spawn none. Fewer AI cars for better performance |
 
 ## Traffic
 
-During a round every player's game runs a few AI traffic cars around itself (`trafficPerPlayer`, 5 by default, 0 turns it
-off). With `trafficRunnerOnly` (panel: Traffic for the runner only) only the runner's game does, with the same count, for
-better performance; practice rounds keep their traffic either way, except a practice you only watch (Sit out on), which has none. They spawn in prep, stand still until GO, and are removed when the round ends. There are no police or emergency
+Traffic is off by default. Set `trafficPerPlayer` above zero to spawn that many AI cars around each player during a round.
+With **Traffic for the runner only** (`trafficRunnerOnly`), the runner's game spawns the traffic for better performance.
+Practice rounds keep their traffic either way, except a practice you only watch (Sit out on), which has none. They spawn in prep, stand still until GO, and are removed when the round ends. There are no police or emergency
 vehicles among them, and they have no name tags, so every car with lights is a cop and every name tag is a player. A
 cop who drives into a traffic car gets the crash penalty ("crash penalty 10s (traffic)"), as with any crash only within
 `copResetMinDistanceMeters` of the runner; one who gets hit by traffic doesn't. Traffic headlights follow the weather and switch on in rain, storms, thunderstorms, fog and snow. At night they follow the game's own lights.

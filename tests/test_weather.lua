@@ -37,7 +37,8 @@ test("a time limit beyond the horizon schedules no further than no limit", funct
 end)
 
 test("turning points fall at 06:00 and 14:00 from the start on", function()
-  local c = weather.climate({ time = "sunrise", weather = "clear", month = 1 }, cfg({ dayLength = "moderate" }), script({}, 0.5))
+  local multiDay = cfg({ dayLength = "moderate", roundTimeLimitSeconds = 0 })
+  local c = weather.climate({ time = "sunrise", weather = "clear", month = 1 }, multiDay, script({}, 0.5))
   local p = c.points
   assertEq(p[1].hour, 14); assertNear(p[1].t, -0.65, 1e-9)
   assertEq(p[2].hour, 6); assertNear(p[2].t, 1 / 60, 1e-9)
@@ -45,9 +46,9 @@ test("turning points fall at 06:00 and 14:00 from the start on", function()
   assertNear(p[4].t - p[3].t, 2 / 3, 1e-9)
   local days = { 0, 0, 0, 1, 1, 2 }
   for i, d in ipairs(days) do assertEq(p[i].day, d, "day " .. i) end
-  assertEq(p[#p].t >= weather.endAt(cfg({ dayLength = "moderate" })) / 1800 + 0.25, true)
-  assertEq(p[#p - 1].t < weather.endAt(cfg({ dayLength = "moderate" })) / 1800 + 0.25, true)
-  c = weather.climate({ time = "noon", weather = "clear", month = 1 }, cfg({ dayLength = "moderate" }), script({}, 0.5))
+  assertEq(p[#p].t >= weather.endAt(multiDay) / 1800 + 0.25, true)
+  assertEq(p[#p - 1].t < weather.endAt(multiDay) / 1800 + 0.25, true)
+  c = weather.climate({ time = "noon", weather = "clear", month = 1 }, multiDay, script({}, 0.5))
   assertEq(c.points[1].hour, 6)
   assertEq(c.points[1].day, 0); assertEq(c.points[2].day, 0); assertEq(c.points[3].day, 1)
   c = weather.climate({ time = "noon", weather = "clear", month = 1 }, cfg({ dayLength = "off" }), script({}, 0.5))
@@ -249,7 +250,7 @@ end)
 
 test("one-minute slots without a stay reach slot 179 before the horizon", function()
   local s = { time = "noon", weather = "clear", month = 7 }
-  local r = weather.build(s, cfg({ dayLength = "off", weatherChangeMinMinutes = 1, weatherChangeMaxMinutes = 1 }), script({}, 0.75))
+  local r = weather.build(s, cfg({ roundTimeLimitSeconds = 0, dayLength = "off", weatherChangeMinMinutes = 1, weatherChangeMaxMinutes = 1 }), script({}, 0.75))
   for i, ch in ipairs(r.changes) do
     assertEq(ch.at, r.releaseAt + 60 * i)
     assertEq(ch.at < r.releaseAt + 10800, true)
@@ -265,7 +266,7 @@ test("Day length Off: slots still come, crossings never", function()
   for seed = 1, 30 do
     local w = WEATHERS[seed % #WEATHERS + 1]
     local s = { time = TIMES[math.floor(seed / #WEATHERS) % #TIMES + 1], weather = w, month = months[w] }
-    local r = weather.build(s, cfg({ dayLength = "off", weatherChangeMinMinutes = 1, weatherChangeMaxMinutes = 2 }), weather.seeded(seed))
+    local r = weather.build(s, cfg({ roundTimeLimitSeconds = 0, dayLength = "off", weatherChangeMinMinutes = 1, weatherChangeMaxMinutes = 2 }), weather.seeded(seed))
     assertEq(#r.temps, 2)
     for _, ch in ipairs(r.changes) do
       assertEq(ch.cross, nil)
@@ -486,7 +487,7 @@ test("a crossing during a change waits for its end", function()
   local crossings, waited = 0, 0
   for seed = 1, 50 do
     local s = { time = TIMES[seed % #TIMES + 1], weather = kinds[seed % #kinds + 1], month = months[seed % #months + 1] }
-    local r = weather.build(s, cfg({ dayLength = "fast", weatherChangeMinMinutes = 1, weatherChangeMaxMinutes = 2 }), weather.seeded(seed))
+    local r = weather.build(s, cfg({ roundTimeLimitSeconds = 0, dayLength = "fast", weatherChangeMinMinutes = 1, weatherChangeMaxMinutes = 2 }), weather.seeded(seed))
     for i, ch in ipairs(r.changes) do
       if ch.cross then
         crossings = crossings + 1

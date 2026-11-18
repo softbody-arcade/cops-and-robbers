@@ -110,7 +110,7 @@ function M.between(cursor, p, lo, hi)
   if not cursor.minimum then
     local minimum, maximum = p.lightningMinSeconds, p.lightningMaxSeconds
     if not validInterval(minimum) or not validInterval(maximum) or maximum < minimum then
-      minimum, maximum = 10, 40
+      minimum, maximum = 5, 20
     end
     cursor.minimum, cursor.span = minimum, maximum - minimum
   end

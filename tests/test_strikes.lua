@@ -92,7 +92,7 @@ end)
 test("thinning at each candidate time retains its original details", function()
   for _, row in ipairs({{1, {5, 6}}, {42, {6, 7}}, {4242, {5}}, {5333, {4, 5}}}) do
     local seed = row[1]
-    local p = storm(seed)
+    local p = storm(seed, 10, 40)
     local full = strikes.between(strikes.new(seed), p, 0, 160)
     p.weather, p.changes = "rain", {{at = 100, to = "thunderstorm"}}
     local partial = strikes.between(strikes.new(seed), p, 0, 160)
@@ -117,9 +117,9 @@ test("fixed waits deliver a strike once at each frame and window boundary", func
   assertEq(late[1].at, 65)
 end)
 
-test("old and malformed sky intervals use the default 10 to 40 seconds", function()
-  local expected = strikes.between(strikes.new(4242), storm(4242, 10, 40), 0, 150)
-  assertNear(expected[1].at, 10 + 30 * (4242 * 16807 / 2147483647), 1e-10)
+test("old and malformed sky intervals use the default 5 to 20 seconds", function()
+  local expected = strikes.between(strikes.new(4242), storm(4242, 5, 20), 0, 150)
+  assertNear(expected[1].at, 5 + 15 * (4242 * 16807 / 2147483647), 1e-10)
   for _, bounds in ipairs({{}, {5}, {nil, 5}, {0, 0}, {-1, 5}, {1.5, 9}, {1, 2.5},
                            {3, 2}, {"5", 10}, {1, true}, {0/0, 9}, {1, math.huge}}) do
     local p = storm(4242, bounds[1], bounds[2])
@@ -150,9 +150,10 @@ test("full storms draw uniformly within configured waits and retain the distance
 end)
 
 test("a strike's distance leaves the next wait and keep roll independent", function()
-  local p = storm(4242)
+  local p = storm(4242, 10, 40)
   local all = strikes.between(strikes.new(4242), p, 0, 125000)
-  local blend = {weather = "rain", lightningSeed = 4242, changes = {{to = "thunderstorm"}}}
+  local blend = storm(4242, 10, 40)
+  blend.weather, blend.changes = "rain", {{to = "thunderstorm"}}
   local cursor = strikes.new(4242)
   local waits = {{n = 0, long = 0}, {n = 0, long = 0}, {n = 0, long = 0}}
   local kept = {{n = 0, yes = 0}, {n = 0, yes = 0}}

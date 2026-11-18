@@ -85,7 +85,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 ### Vehicle rules
 - Only the round car is allowed: other models or configs are refused, and extra parked cars are removed.
 - **Traffic cars** are the exception: once the server has told a player's game to spawn its traffic, that player may have up to that many extra cars of any model. They never count as the player's car for catching, resets, teleports, sight or the parts check, and the server never removes them mid-round. Players still can't switch the game's traffic on themselves during a round.
-- **Pool:** official Car and Truck types. City bus, semi, medium-duty truck, tractor and crawler are excluded by default (`excludedModels`).
+- **Pool:** official Car and Truck types. The host can exclude individual models with `excludedModels`. The list starts empty.
 
 ## Cops
 
@@ -179,7 +179,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 
 ## Traffic
 
-- **Around every player:** during a round each player's game runs `trafficPerPlayer` AI traffic cars (5 by default, 0 = off) around itself with the game's own traffic system, so there is traffic wherever anyone drives. With Traffic for the runner only (`trafficRunnerOnly`), only the runner's game spawns it, with the same count, and cops spawn none, for better performance; practice rounds keep their traffic, except a practice you watch while sitting out, which has none.
+- **Around every player:** traffic is off by default. Set `trafficPerPlayer` above zero to spawn that many AI cars around each player during a round. With Traffic for the runner only (`trafficRunnerOnly`), only the runner's game spawns it, with the same count, and cops spawn none, for better performance; practice rounds keep their traffic, except a practice you watch while sitting out, which has none.
 - **Capped by `MaxCars`:** the server leaves room for the round car (and the two AI cars in practice), so with `MaxCars` 4 a player gets 3 traffic cars. The panel says when the cap applies.
 - **In the round:** traffic spawns once a player's car is placed in prep and stands still until the runner's GO, so it can't drive into the frozen cars. Spectators receive no traffic. Everyone's traffic is removed at the end of the round, on Cancel and on leaving. If a game can't spawn its traffic, that player gets one notice ("Traffic could not spawn") and the round goes on.
 - **Which cars:** official vehicles only, never police, emergency vehicles, taxis or other service vehicles (security cars, prison buses, tow trucks), and no random traffic events. Traffic cars have no name tags, so every car with lights is a cop and every name tag is a player, also for players in the lobby watching someone's practice round.
@@ -214,7 +214,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
   - **Forecast.** Players and spectators see the next actual change below the round clock, for example "Forecast: a thunderstorm in 3-5 min" or "Forecast: a thunderstorm within 3 min". Once the window opens, up to two minutes before the change, it reads "Forecast: a thunderstorm any minute". If one or more stays come first, the line stays blank until that window opens. While a change runs, the line looks ahead to the next change. It reads "clearing up" for a change from thunderstorm to cloudy. With the helicopter on, the forecast adds "(helicopter grounded)" for a change to storm, thunderstorm, fog or snow, or "(helicopter returns)" for a change from any of those to rain, cloudy or clear. Prep shows the first change after the sky, for example "Forecast: a thunderstorm 5-7 min after release", unless a stay comes first. New sky draws a new schedule and forecast. Practice shows the forecast too.
   - **Lights.** Traffic and practice AI headlights follow the current weather, switching on in rain, storms, thunderstorms, fog and snow and off again when it clears in daylight. Your own auto headlights follow the same weather.
   - **Records** keep the worst weather of the round as `weather` and the starting weather as `weatherStart`. From lowest to highest the ranks are clear, cloudy, rain, fog and snow (tied), then storm and thunderstorm (tied). The label and filters use `weather`.
-- **Lightning and thunder.** After the host presses GO, the server chooses each strike's position around the moving runner and sends it ahead of time. Players and spectators follow the server's round clock and see the same bolt at the same landmark, including when they join mid-round. In a full thunderstorm, each wait is drawn uniformly between the host's minimum and maximum strike intervals (10–40 seconds by default). Equal intervals give a fixed cadence from the start of the runner countdown. Strikes thin out as a thunderstorm moves in or clears. Each new sky captures both intervals so players joining later see the same strikes. The controls are under **Host panel → Settings → More settings → Sky** when Weather is Thunderstorm or Random, or Weather changes is on. Within 4 km, the bolt flashes in pulses, casts shadows away from its channel and casts a soft glow near the top. The upper channel fades into dense overcast. Farther strikes light the scene from overhead. Thunder follows after the distance from the listener's camera to the strike divided by 343 m/s, with quieter, more distant recordings for farther strikes. Under cover or with **Lightning flashes** off, the flash and bolt are hidden and thunder still plays. Strikes are purely atmospheric and occur with Weather affects driving on or off.
+- **Lightning and thunder.** After the host presses GO, the server chooses each strike's position around the moving runner and sends it ahead of time. Players and spectators follow the server's round clock and see the same bolt at the same landmark, including when they join mid-round. In a full thunderstorm, each wait is drawn uniformly between the host's minimum and maximum strike intervals (5–20 seconds by default). Equal intervals give a fixed cadence from the start of the runner countdown. Strikes thin out as a thunderstorm moves in or clears. Each new sky captures both intervals so players joining later see the same strikes. The controls are under **Host panel → Settings → More settings → Sky** when Weather is Thunderstorm or Random, or Weather changes is on. Within 4 km, the bolt flashes in pulses, casts shadows away from its channel and casts a soft glow near the top. The upper channel fades into dense overcast. Farther strikes light the scene from overhead. Thunder follows after the distance from the listener's camera to the strike divided by 343 m/s, with quieter, more distant recordings for farther strikes. Under cover or with **Lightning flashes** off, the flash and bolt are hidden and thunder still plays. Strikes are purely atmospheric and occur with Weather affects driving on or off.
 
 ## Test rounds against AI (only you see them)
 
@@ -303,10 +303,10 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | `carMode` | random | `random` (a random car each round) or `evolving` (the shared build) |
 | `sightGraceSeconds` | 1.5 | Sight still counts this long after a cop loses it |
 | `assistMinSightPercent` | 20 | Share of the chase a cop needs sight of the runner for an assist |
-| `roundTimeLimitSeconds` | 0 | Runner escapes after this long (0 = no limit) |
+| `roundTimeLimitSeconds` | 1800 | Runner escapes after 30 minutes by default. The host panel adjusts the limit in 5-minute steps (0 = no limit) |
 | `autoNextRound` | false | Prepare the next round automatically |
 | `autoNextDelaySeconds` | 15 | Delay before the next round is prepared |
-| `excludedModels` | citybus, us_semi, md_series, percheron, rockbouncer | Models that are never picked |
+| `excludedModels` | `[]` | Models that are never picked |
 | `explodeOnCatch` | false | The runner's car explodes when caught, and every player in the round sees it explode (not the AI runner in practice, which is removed at once) |
 | `includeModVehicles` | false | Also pick mod vehicles |
 | `timeOfDay` | random | `sunrise`, `morning`, `noon`, `afternoon`, `sunset`, `night` or `random` |
@@ -314,14 +314,14 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | `dayLength` | moderate | How long a full day lasts during the chase: `off` (stopped), `fast` (15 min), `moderate` (30 min), `slow` (2 h) or `realtime` (24 h) |
 | `weather` | random | `clear`, `cloudy`, `rain`, `storm`, `thunderstorm`, `fog`, `snow` or `random` |
 | `badWeatherChancePercent` | 25 | Chance of picking the bad-weather group (rain, storm, thunderstorm, fog or snow) for a random start or at a planned slot with both calm and bad options |
-| `lightningMinSeconds` | 10 | Shortest wait between strikes in a full thunderstorm, in whole seconds (at least 1) |
-| `lightningMaxSeconds` | 40 | Longest wait between strikes. Set both intervals to the same value for a fixed cadence |
+| `lightningMinSeconds` | 5 | Shortest wait between strikes in a full thunderstorm, in whole seconds (at least 1) |
+| `lightningMaxSeconds` | 20 | Longest wait between strikes. Set both intervals to the same value for a fixed cadence |
 | `weatherDriving` | true | Weather changes grip and adds wind |
 | `weatherChanges` | true | Planned slots during the chase can keep the current weather or pick an eligible change based on the current weather, temperature and time of day |
 | `weatherChangeMinMinutes` | 3 | Shortest wait before the next planned slot, in whole minutes (at least 1). The wait starts at cop release, the previous slot or a forced change |
 | `weatherChangeMaxMinutes` | 8 | Longest wait drawn from the same starting point (at least the minimum). A forced change restarts the wait, and stays can extend the time between actual changes |
 | `sirensAllowed` | true | Cops may use a siren (each cop turns it on in their settings) |
-| `trafficPerPlayer` | 5 | AI traffic cars around each player during a round (0 = off, at most 20) |
+| `trafficPerPlayer` | 0 | AI traffic cars around each player during a round (0 = off, at most 20) |
 | `trafficRunnerOnly` | false | Only the runner's game spawns traffic, with the same count |
 
 ## Host and robustness

@@ -7,6 +7,7 @@ Priorities run from `!!!!` (highest) through `!!!` (high), `!!` (normal), and `!
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
+- [ ] !!! Rejoin as a spectator (`fix/rejoin-as-spectator`). Players confirmed that restoring the round car forces others to queue it. After the initial car pick, reconnecting should enter the same spectator flow as a first-time mid-round join, including during prep rerolls.
 - [ ] !!! Multiplayer lightning sync (`fix/multiplayer-lightning-sync`). On 2.14.3, a late spectator saw a large mismatch. Players who started together also reported that some bolts appeared to hit different spots. Check world placement and flash timing separately.
 - [ ] !!! Trailer hitch restoration. The restored hitch held on `7ff57c8` and shipped in 2.14.3. Both follow-ups are deferred to a later release.
   - `fix/restore-trailer-hitch`: restoring a turned truck and trailer straightens the trailer, which can move it into a building. Preserve their parked angle and footprint.
@@ -15,7 +16,6 @@ One entry per piece of work that has started: what it is, its branch (or "design
 ## In-game checks
 Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to decide what needs a player. Record deferred checks here with the action, expected observation and open question. Remove a check once verified and record failures under Issues.
 
-- [ ] !!! 6. Rejoin placement (deployed 2026-11-17 as 2.10.0): a player who rejoins mid-round is put back without "teleported", "reset illegally" or a crash penalty; the server log shows `setup sent`, `placed the round car` and no refusals for them. Others may only see their car once they slow down (BeamMP's spawn queue)
 - [ ] !! Deferred solo check for 2.14.3. In Practice as cop, hold the throttle during prep and the runner’s head start. The car should stay in its slot until release, then drive away without a second teleport. This checks the in-game freeze and release.
 
 
@@ -33,7 +33,6 @@ Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to 
 - [ ] ! Cop sight that follows visibility: the sight range is worked out from what the game knows (fog thickness, how dark it is, street lights near the runner, whether the runner's lights are on, rain). Comes after night and weather rounds
 
 ## Issues
-- [ ] ! BeamMP's client spawn queue holds back a rejoining player's car on every other game until that player's own car is under 2 m/s for 3 s, so during a chase a rejoining cop or runner stays invisible to the others (BeamMP client 4.23.1 `MPVehicleGE.lua`). The user chose not to force-load it (2026-11-17, spectators instead for new joiners); a rejoining runner is the case that hurts
 - [ ] ! The game's Vehicle Radar app shows hidden cars nearby (about 30 m, up to about 54 m ahead with its offset slider): it walks `be:getObject(i)` directly (`vehicleRadarApp.lua:187`), so the hiding can't filter it. The user accepted this (2026-11-17); fix only if an easy way turns up
 - [ ] ! Trees sometimes hide the runner from the helicopter's line of sight; the user thinks that's fair with thermals for now (2026-11-17). Revisit if it feels unfair
 - [ ] ! The helicopter's position ignores terrain and buildings (100 m up and 60 m to the side since 2.10.0): if the light or its line of sight is blocked too often downtown or in mountains, fly higher (80-100 m) or keep a floor above the ground under the target point (2.9.1 final review)
