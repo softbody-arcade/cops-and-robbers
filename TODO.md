@@ -7,8 +7,6 @@ Priorities run from `!!!!` (highest) through `!!!` (high), `!!` (normal), and `!
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
-- [ ] !!! Rejoin as a spectator (`fix/rejoin-as-spectator`, reviewed at `7677474`). After the initial car pick, returning players spectate through the rest of the round, including prep rerolls. Staged with lightning in local build `6f60d7f` for the multiplayer retest below.
-- [ ] !!! Multiplayer lightning sync (`fix/multiplayer-lightning-sync`, reviewed at `f151387`). Players and late spectators now use the server’s strike position and clock. The combined local build `6f60d7f` passed review and 1,610 Lua tests. The local server is stopped pending the multiplayer retest.
 - [ ] !!! Trailer hitch restoration. The restored hitch held on `7ff57c8` and shipped in 2.14.3. Both follow-ups are deferred to a later release.
   - `fix/restore-trailer-hitch`: restoring a turned truck and trailer straightens the trailer, which can move it into a building. Preserve their parked angle and footprint.
   - `fix/active-round-trailer`: normal and practice rounds should contain only the round vehicles and traffic. Remove active players’ spare cars and trailers after successful placement, keep their round cars at the end, and preserve Sit out restoration.
@@ -16,7 +14,7 @@ One entry per piece of work that has started: what it is, its branch (or "design
 ## In-game checks
 Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to decide what needs a player. Record deferred checks here with the action, expected observation and open question. Remove a check once verified and record failures under Issues.
 
-- [ ] !!! Multiplayer retest on `6f60d7f`. Start a night thunderstorm with a runner and a cop. From nearby viewpoints, compare a bolt against the same landmark and check that both screens flash together. Have the cop disconnect and rejoin during the chase. They should see SPECTATING, and the runner should see no new car queued for them. Compare another bolt’s landmark and timing.
+- [ ] !!! Multiplayer retest on live 2.14.5 (`82ae368`). Start a night thunderstorm with a runner and a cop. From nearby viewpoints, compare a bolt against the same landmark and check that both screens flash together. Have the cop disconnect and rejoin during the chase. They should see SPECTATING, and the runner should see no new car queued for them. Compare another bolt’s landmark and timing.
 - [ ] !! Deferred solo check for 2.14.3. In Practice as cop, hold the throttle during prep and the runner’s head start. The car should stay in its slot until release, then drive away without a second teleport. This checks the in-game freeze and release.
 
 
