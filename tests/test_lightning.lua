@@ -106,6 +106,66 @@ test("landing and sound use the runner and strike-time 3D camera distance throug
   end)
 end)
 
+local function assertLightPosition(light, x, y, z)
+  assertNear(light.pos.x, x, 1e-6)
+  assertNear(light.pos.y, y, 1e-6)
+  assertNear(light.pos.z, z, 1e-6)
+end
+
+test("a close strike keeps its side light fixed while the camera moves between pulses", function()
+  scene(function(e)
+    e.events = {strike(1, 600)}
+    e.tick(1)
+    local light = assert(e.objects[LIGHT])
+    assertEq(light.fields.castShadows, "1")
+    assertEq(tonumber(light.fields.radius), 1500)
+    assertLightPosition(light, 0, 240, 180)
+    assertNear(tonumber(light.fields.intensity), 2.5e9, 0.001)
+    local foot = e.lines[64]
+    assertEq(foot[4], 0); assertEq(foot[5], 600); assertEq(foot[6], 0)
+    e.camera = vec3(2000, -900, 75)
+    e.tick(1.2)
+    assertEq(light.fields.isEnabled, "0")
+    e.tick(1.3)
+    assertEq(e.objects[LIGHT], light); assertEq(light.fields.castShadows, "1")
+    assertLightPosition(light, 0, 240, 180)
+    assertNear(tonumber(light.fields.intensity), 1.25e9, 0.001)
+    local due = 1 + 600 / 343
+    e.tick(due - 0.001)
+    assertEq(#e.played, 0)
+    e.tick(due + 0.001)
+    assertEq(#e.played, 1); assertEq(e.played[1].fields.fileName, "/art/sound/cnr/thunder_close_1.ogg")
+  end)
+end)
+
+test("the shadow cutoff uses the 3D landing distance and excludes exactly 1 km", function()
+  for _, case in ipairs({{1000, 0, "0"}, {800, 601, "0"}, {800, 599, "1"}}) do
+    scene(function(e)
+      local range, height, shadows = case[1], case[2], case[3]
+      e.camera, e.hit, e.events = vec3(0, 0, height), 2500, {strike(1, range)}
+      e.tick(1)
+      local light = assert(e.objects[LIGHT])
+      assertEq(light.fields.castShadows, shadows)
+      if shadows == "0" then
+        assertLightPosition(light, 0, 0, height + 300)
+      else
+        assertEq(light.pos.y > 0 and light.pos.z < height, true)
+      end
+    end)
+  end
+end)
+
+test("a close strike whose channel midpoint coincides with the camera lights from overhead", function()
+  scene(function(e)
+    e.runner = {getPosition = function() return vec3(10, -600, 0) end}
+    e.camera, e.events = vec3(10, 0, 450), {strike(1, 600)}
+    e.tick(1)
+    local light = assert(e.objects[LIGHT])
+    assertEq(light.fields.castShadows, "1")
+    assertEq(light.pos.x, 10); assertEq(light.pos.y, 0); assertEq(light.pos.z, 750)
+  end)
+end)
+
 test("nil and full-length ground misses use reference height, with the bolt cutoff inclusive", function()
   for i, range in ipairs({4000, 4000.01}) do
     scene(function(e)
@@ -142,14 +202,34 @@ test("cover, the preference and hide cancel the remaining flash and keep thunder
   end
 end)
 
-test("overlapping visible strikes share the strongest light and draw separate bolts", function()
+test("overlapping close and distant bolts share one light as their pulse strengths change", function()
   scene(function(e)
-    e.events = {strike(1, 800), strike(1.05, 2300)}
-    e.tick(1.1)
-    assertNear(tonumber(e.objects[LIGHT].fields.intensity), 1e10 * (300/800)^2, 0.001)
+    e.events = {strike(1, 900), strike(1.12, 1050)}
+    e.tick(1.15)
+    local light = assert(e.objects[LIGHT])
+    assertEq(light.fields.castShadows, "1")
+    assertLightPosition(light, 0, 268.328157, 134.164079)
+    assertNear(tonumber(light.fields.intensity), 1e10 * (300 / 900)^2, 0.001)
     assertEq(e.shapes, 2)
+    e.camera = vec3(-30, 80, 10)
+    e.tick(1.26)
+    assertEq(e.objects[LIGHT], light); assertEq(light.fields.castShadows, "0")
+    assertLightPosition(light, -30, 80, 310)
+    assertNear(tonumber(light.fields.intensity), 1e10 * (300 / 1050)^2, 0.001)
     e.tick(9)
     assertEq(#e.played, 2)
+  end)
+end)
+
+test("the newer of two equally bright close bolts controls the light direction", function()
+  scene(function(e)
+    local older, newer = strike(1, 600), strike(1.05, 600)
+    newer.bearing = 180
+    e.events = {older, newer}
+    e.tick(1.1)
+    local light = assert(e.objects[LIGHT])
+    assertLightPosition(light, 0, -240, 180)
+    assertEq(light.fields.castShadows, "1"); assertEq(e.shapes, 2)
   end)
 end)
 
