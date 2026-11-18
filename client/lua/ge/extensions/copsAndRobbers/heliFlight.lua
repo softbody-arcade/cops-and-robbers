@@ -24,6 +24,14 @@ M.MAX_STEP = 0.1
 M.SEARCH_RADIUS = 120
 M.SEARCH_PERIOD = 40
 
+local SCAN_INTERVAL = 0.2
+local CLEARANCE = 20
+local NOSE_MARGIN = 5
+local LOOK_AHEAD = 1.5
+local CLIMB_RATE = 40
+local DESCENT_RATE = 20
+local PROBE_HEIGHT = 2500
+
 local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
 
 local function horizontalSpeed(v)
@@ -185,12 +193,82 @@ function M.jumpOf(last, pos)
   return nil
 end
 
+local function floorAt(x, y, z)
+  local top = z + PROBE_HEIGHT
+  local length = PROBE_HEIGHT + CLEARANCE
+  local d = castRayStatic(vec3(x, y, top), vec3(0, 0, -1), length)
+  if type(d) == "number" and d >= 0 and d < length then return top - d + CLEARANCE end
+  return -math.huge
+end
+
+local function scanClearance(f, z)
+  local p = f.pos
+  local floor = floorAt(p.x, p.y, z)
+  local speed = horizontalSpeed(f.vel)
+  if speed < 0.1 then return floor, floor, CLIMB_RATE end
+  local dx, dy = f.vel.x / speed, f.vel.y / speed
+  local near = NOSE_MARGIN + speed * (SCAN_INTERVAL + M.MAX_STEP)
+  local flightZ = math.max(z + (f.lift or 0), floor)
+  floor = math.max(floor, floorAt(p.x + dx * near, p.y + dy * near, z))
+  local reach = near + speed * LOOK_AHEAD
+  local distance = reach
+  local ahead = floorAt(p.x + dx * reach, p.y + dy * reach, z)
+  local hit = castRayStatic(vec3(p.x, p.y, flightZ), vec3(dx, dy, 0), reach)
+  if type(hit) == "number" and hit >= 0 and hit < reach then
+    local top = floorAt(p.x + dx * (hit + 0.25), p.y + dy * (hit + 0.25), z)
+    if hit <= near then floor = math.max(floor, top) end
+    if top >= ahead then ahead, distance = top, hit + 0.25 end
+  end
+  if f.obstacleZ then
+    local x, y = f.obstacleX - p.x, f.obstacleY - p.y
+    local along, across = x * dx + y * dy, x * dy - y * dx
+    local higher = f.obstacleZ > ahead or (f.obstacleZ == ahead and along <= distance)
+    if higher and along >= 0 and along <= reach and math.abs(across) <= NOSE_MARGIN then
+      ahead, distance = f.obstacleZ, along
+    else
+      f.obstacleZ = nil
+    end
+  end
+  if not f.obstacleZ and ahead > z then
+    f.obstacleX, f.obstacleY, f.obstacleZ = p.x + dx * distance, p.y + dy * distance, ahead
+  end
+  local seconds = math.max(SCAN_INTERVAL, (distance - near) / speed - SCAN_INTERVAL)
+  local climbRate = math.max(CLIMB_RATE, (ahead - flightZ) / seconds)
+  return floor, math.max(floor, ahead), climbRate
+end
+
+function M.clearance(f, clock, dt)
+  local z = f.nominalZ or f.pos.z
+  if castRayStatic and (not f.scanAt or clock < f.scanAt or clock - f.scanAt >= SCAN_INTERVAL) then
+    f.scanAt = clock
+    local ok, floor, ahead, climbRate = pcall(scanClearance, f, z)
+    if ok then
+      f.floor, f.ahead, f.climbRate = floor, ahead, climbRate
+    elseif not f.scanLogged then
+      f.scanLogged = true
+      log("E", "cnr_heli", "helicopter clearance scan failed: " .. tostring(floor))
+    end
+  end
+  if not f.floor then return end
+  local lift = f.lift or 0
+  local step = math.max(0, math.min(dt, M.MAX_STEP))
+  local desired = math.max(0, f.ahead - z)
+  local climb = math.min(desired, lift + step * f.climbRate)
+  lift = math.max(f.floor - z, lift - step * DESCENT_RATE, climb)
+  f.lift = lift
+  f.nominalZ = lift > 0 and z or nil
+  f.pos.z = z + lift
+end
+
 function M.step(f, carPos, carVel, dt)
   if not dt or not (dt > 0) then return end
   if dt > M.MAX_STEP then dt = M.MAX_STEP end
 
+  local z = f.nominalZ or f.pos.z
   local jx, jy, jz = M.jumpOf(f.lastCar, carPos)
   if jx then
+    f.scanAt, f.floor, f.ahead, f.lift, f.obstacleZ = nil, nil, nil, nil, nil
+    z = z + jz
     f.pos = vec3(f.pos.x + jx, f.pos.y + jy, f.pos.z + jz)
     if f.leaving then
       f.leaving = vec3(f.leaving.x + jx, f.leaving.y + jy, f.leaving.z + jz)
@@ -228,7 +306,7 @@ function M.step(f, carPos, carVel, dt)
   local t = M.target(f, carPos, carVel)
   local wx = M.FOLLOW_GAIN * (t.x - f.pos.x)
   local wy = M.FOLLOW_GAIN * (t.y - f.pos.y)
-  local wz = M.FOLLOW_GAIN * (t.z - f.pos.z)
+  local wz = M.FOLLOW_GAIN * (t.z - z)
   if leading then
     wx, wy, wz = wx + f.leadVel.x, wy + f.leadVel.y, wz + f.leadVel.z
   elseif not f.leaving and searching then
@@ -257,7 +335,8 @@ function M.step(f, carPos, carVel, dt)
     dx, dy, dz = dx * k, dy * k, dz * k
   end
   f.vel = vec3(f.vel.x + dx, f.vel.y + dy, f.vel.z + dz)
-  f.pos = vec3(f.pos.x + f.vel.x * dt, f.pos.y + f.vel.y * dt, f.pos.z + f.vel.z * dt)
+  f.pos = vec3(f.pos.x + f.vel.x * dt, f.pos.y + f.vel.y * dt, z + f.vel.z * dt)
+  f.nominalZ = nil
 end
 
 return M

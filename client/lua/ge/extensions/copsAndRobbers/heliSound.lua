@@ -77,7 +77,7 @@ local function create(p)
     error("rotor sound did not register", 0)
   end
   scenetree.MissionGroup:addObject(obj)
-  obj:setPosition(vec3(p.x, p.y, p.z))
+  obj:setPosition(p)
   obj:play()
   return obj
 end
@@ -95,7 +95,8 @@ local function muffleStep(s, p, clock, dt, camPos, castRay)
     local at = s.rayAt
     if not at or clock < at or clock - at >= M.RAY_INTERVAL then
       s.rayAt = clock
-      s.blocked = blockedFrom(camPos, p, castRay)
+      if type(camPos) == "function" then camPos = camPos() end
+      s.blocked = camPos ~= nil and blockedFrom(camPos, p, castRay)
     end
   else
     s.rayAt, s.blocked = nil, false
@@ -130,7 +131,11 @@ end
 local function step(s, pos, level, clock, dt, camPos, castRay)
   local here = usable(pos)
   local wanted = here and type(level) == "number" and level > 0
-  if here then s.lastPos = vec3(pos.x, pos.y, pos.z) end
+  if here then
+    local p = s.lastPos or vec3(0, 0, 0)
+    p.x, p.y, p.z = pos.x, pos.y, pos.z
+    s.lastPos = p
+  end
   if not wanted and s.written == nil then
     leftover(s, clock)
     return
@@ -138,7 +143,7 @@ local function step(s, pos, level, clock, dt, camPos, castRay)
   local p = s.lastPos
   local obj = scenetree.findObject(M.NAME)
   if obj then
-    obj:setPosition(vec3(p.x, p.y, p.z))
+    obj:setPosition(p)
   elseif wanted then
     s.vol, s.written = 0, 0
     obj = create(p)

@@ -952,6 +952,15 @@ local function roadData()
   return { closest = closestRoad, links = graph, nodes = nodes }
 end
 
+local heliOptions = { roads = roadData }
+
+function heliOptions.getCameraPosition()
+  if heliOptions.camera == nil then
+    heliOptions.camera = core_camera and core_camera.getPosition and core_camera.getPosition() or false
+  end
+  return heliOptions.camera or nil
+end
+
 local coverFailed = false
 
 local function updateHeli(target)
@@ -970,16 +979,16 @@ local function updateHeli(target)
     end
   end
   if active or spectating then
-    local from, to, progress = sky.weatherBlend()
-    local opts = { weather = to, weatherFrom = from, weatherProgress = progress, beam = prefs.beam ~= false, roads = roadData }
-    if castRayStatic then opts.roofedAt = roofedAt end
+    local opts = heliOptions
+    opts.weatherFrom, opts.weather, opts.weatherProgress = sky.weatherBlend()
+    opts.beam, opts.roofedAt = prefs.beam ~= false, castRayStatic and roofedAt
+    opts.camera = nil
     local wantsNight = heli.wantsNight(heliState)
     local night = (wantsNight or heliState.flight ~= nil) and sky.isNight()
     heli.lightTick(heliState, target, wantsNight and night, clock, opts)
-    local camPos = core_camera and core_camera.getPosition and core_camera.getPosition() or nil
     local level = prefs.sound ~= false and heli.soundLevel(heliState, clock) or 0
-    heliSound.tick(soundState, heliState.flight and heliState.flight.pos, level, clock, camPos, castRayStatic)
-    heliVan.tick(vanState, prefs.model ~= false and heli.flying(heliState, clock) or nil, clock, night, camPos)
+    heliSound.tick(soundState, heliState.flight and heliState.flight.pos, level, clock, opts.getCameraPosition, castRayStatic)
+    heliVan.tick(vanState, prefs.model ~= false and heli.flying(heliState, clock) or nil, clock, night, opts.getCameraPosition)
   else
     heli.lightTick(heliState, nil, false, clock)
     heliSound.tick(soundState, nil, 0, clock)
