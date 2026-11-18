@@ -116,6 +116,8 @@ local function placeVehicle(model, config, pos, rot, color, initialGrid, persona
   local veh
   if not initialGrid then personal = ownVehicle() end
   if personal then
+    rot = rot or game.uprightRotation(personal)
+    opt.rot = rot
     veh = core_vehicles.replaceVehicle(model, opt)
     if initialGrid and veh and pos then teleport(veh, pos, rot) end
   else

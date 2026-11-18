@@ -4775,6 +4775,26 @@ test("the starting anchor uses your parked car when watching a remote car", func
   assertEq(p.pos.y, 60)
 end)
 
+test("replacing an overturned personal car starts it upright with the assigned or in-place heading", function()
+  local slot = { pos = { x = 18, y = 40, z = 2 }, dir = { x = 0, y = -1, z = 0 } }
+  for _, case in ipairs({
+    { startPose = slot, x = 0, y = -1 },
+    { startPose = false, x = 1, y = 0 },
+    { practice = true, inPlace = true, x = 1, y = 0 },
+  }) do
+    local env = bootClient()
+    env.veh.getDirectionVector = function() return vec3(1, 0, 0) end
+    env.veh.getDirectionVectorUp = function() return vec3(0, 0, -1) end
+    local d = copy(SETUP)
+    d.startPose, d.practice, d.inPlace = case.startPose, case.practice, case.inPlace
+    env.fire("cnr_roundSetup", d)
+    local rot = env.replaced[1].opt.rot or quatFromDir(env.veh:getDirectionVector(), env.veh:getDirectionVectorUp())
+    assertEq(rot.up.z, 1)
+    assertEq(rot.dir.x, case.x)
+    assertEq(rot.dir.y, case.y)
+  end
+end)
+
 test("a fresh personal spawn keeps its own vehicle ID when focus moves to a practice AI before the acknowledgement", function()
   local env = bootClient()
   env.objects[100] = nil
