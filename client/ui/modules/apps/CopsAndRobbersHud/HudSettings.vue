@@ -48,6 +48,13 @@
       </div>
       <BngSwitch :model-value="settings.model !== false" @update:modelValue="v => emit('setting', 'model', v)" />
     </div>
+    <div class="row">
+      <div class="label">
+        <div class="name">Lightning flashes</div>
+        <div class="desc">Show flashes and bolts during thunderstorms. Thunder still plays.</div>
+      </div>
+      <BngSwitch :model-value="settings.lightning !== false" @update:modelValue="v => emit('setting', 'lightning', v)" />
+    </div>
     <div class="row" :class="{ off: !settings.sirensAllowed }">
       <div class="label">
         <div class="name">Siren</div>

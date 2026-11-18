@@ -467,3 +467,10 @@ test("the lobby carries Sit out and says so", function()
   assertEq(hud.payload(hud.new(), 0, { active = false, sitOut = true, lobby = { online = 3, active = true } }).lobby.status, "A round is running")
   assertEq(hud.payload(hud.new(), 0, { active = false, sitOut = true, lobby = { practice = "Bob" } }).lobby.status, "Practice round: Bob")
 end)
+
+test("lobby and round settings expose the lightning preference", function()
+  for _, active in ipairs({false, true}) do
+    assertEq(hud.payload(hud.new(), 0, {active = active}).settings.lightning, true)
+    assertEq(hud.payload(hud.new(), 0, {active = active, settings = {lightning = false}}).settings.lightning, false)
+  end
+end)

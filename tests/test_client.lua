@@ -4689,3 +4689,174 @@ test("round result, leave, mission end and unload release the lightning scene", 
     assertEq(calls, 1)
   end
 end)
+
+local function thunderSky(clock)
+  return {weather = "thunderstorm", lightningSeed = 55, clockSeconds = clock, driving = false}
+end
+
+local function withThunder(fn)
+  local previousScene = package.loaded["copsAndRobbers/lightning"]
+  local previousStrikes = package.loaded["copsAndRobbers/strikes"]
+  local env = bootClient({files = {["settings/cnr_settings.json"] = {sound = false}}})
+  local oldCamera, oldColor, oldDraw = core_camera, color, package.loaded["utils/debugDraw"]
+  local lines = 0
+  _G.core_camera = {getPosition = function() return vec3(0, 0, 0) end}
+  _G.color = function() return 0 end
+  package.loaded["utils/debugDraw"] = {LineInstance_MinArg = function() lines = lines + 1 end}
+  local strikes = require("copsAndRobbers/strikes")
+  local events = strikes.between(strikes.new(55), thunderSky(), 0, 100)
+  local ok, err = pcall(fn, env, events, function() return lines end)
+  _G.core_camera, _G.color, package.loaded["utils/debugDraw"] = oldCamera, oldColor, oldDraw
+  package.loaded["copsAndRobbers/lightning"] = previousScene
+  package.loaded["copsAndRobbers/strikes"] = previousStrikes
+  assert(ok, err)
+end
+
+local function thunderPlays(env)
+  local count = 0
+  for _, obj in ipairs(env.sky.played) do
+    if obj.name:match("^cnr_thunder_") then count = count + 1 end
+  end
+  return count
+end
+
+test("GO and joined lightning frames use the runner for each role", function()
+  for _, role in ipairs({"runner", "cop", "spectator", "AI spectator", "missing runner"}) do
+    withThunder(function(env)
+      local sky = thunderSky(613.4)
+      local lightning = require("copsAndRobbers/lightning")
+      local frame
+      lightning.tick = function(_, p, lo, hi, target, flashes, covered, intersects)
+        frame = {p = p, lo = lo, hi = hi, target = target, flashes = flashes, covered = covered, intersects = intersects}
+      end
+      local target
+      if role == "runner" then
+        local d = copy(SETUP)
+        d.role, d.runnerId, d.sky = "runner", 1, sky
+        env.fire("cnr_roundSetup", d)
+        env.M.onUpdate(0.1)
+        assertEq(frame and frame.p, nil)
+        env.fire("cnr_countdown", {seconds = 3})
+        target = env.veh
+      elseif role == "AI spectator" then
+        watchPractice(env, {phase = "running", sky = sky})
+      elseif role == "spectator" then
+        spectate(env, {phase = "running", sky = sky})
+        roundCars(env)
+        target = env.objects[201]
+      else
+        chaseWith(env, sky)
+        if role == "cop" then
+          roundCars(env)
+          target = env.objects[201]
+        end
+      end
+      env.M.onUpdate(0.1)
+      if role == "AI spectator" then target = assert(env.spawned[1]).veh end
+      assertEq(frame and frame.p, sky, role)
+      assertNear(frame.lo, role == "runner" and 0 or 613.4, 1e-8, role)
+      assertNear(frame.hi, role == "runner" and 0.1 or 613.5, 1e-8, role)
+      assertEq(frame.target, target, role)
+      assertEq(frame.flashes, true, role)
+      assertEq(frame.covered, false, role)
+      assertEq(frame.intersects, true, role)
+    end)
+  end
+end)
+
+test("turning lightning off cancels the current flash and preserves its thunder", function()
+  withThunder(function(env, events, lines)
+    chaseWith(env, thunderSky(0))
+    env.M.onUpdate(events[1].at)
+    assertEq(env.sky.objects.cnr_lightning_flash ~= nil, true)
+    local drawn = lines()
+    assertEq(drawn > 0, true)
+    env.M.ui({action = "setting", key = "lightning", value = false})
+    assertEq(env.sky.objects.cnr_lightning_flash, nil)
+    assertEq(env.written["settings/cnr_settings.json"].lightning, false)
+    assertEq(env.hud().settings.lightning, false)
+    assertEq(env.hud().settings.sound, false)
+    env.M.ui({action = "setting", key = "lightning", value = true})
+    local nextPulse = events[1].pulses[2].start + 0.01
+    env.M.onUpdate(nextPulse)
+    assertEq(env.sky.objects.cnr_lightning_flash, nil)
+    assertEq(lines(), drawn)
+    env.M.ui({action = "setting", key = "lightning", value = false})
+    env.M.onUpdate(events[1].range / 343 + 0.01 - nextPulse)
+    assertEq(thunderPlays(env), 1)
+    assertEq(env.sky.objects.cnr_thunder_1.playing, true)
+    local now = events[1].at + events[1].range / 343 + 0.01
+    env.M.onUpdate(events[2].at - now)
+    assertEq(env.sky.objects.cnr_lightning_flash, nil)
+    env.M.ui({action = "setting", key = "lightning", value = true})
+    local pulse = events[2].pulses[2].start + 0.01
+    env.M.onUpdate(pulse)
+    assertEq(env.sky.objects.cnr_lightning_flash, nil)
+    assertEq(lines(), drawn)
+    env.M.onUpdate(events[3].at - events[2].at - pulse + 0.001)
+    assertEq(env.sky.objects.cnr_lightning_flash ~= nil, true)
+    assertEq(lines() > drawn, true)
+  end)
+end)
+
+test("same-seed sky and repeated setup keep the schedule and pending thunder", function()
+  withThunder(function(env, expected)
+    local strikes = require("copsAndRobbers/strikes")
+    local between, observed = strikes.between, {}
+    strikes.between = function(...)
+      local events = between(...)
+      for _, event in ipairs(events) do observed[#observed + 1] = event end
+      return events
+    end
+    chaseWith(env, thunderSky(0))
+    env.M.onUpdate(expected[1].at + 0.001)
+    env.fire("cnr_sky", thunderSky(0))
+    chaseWith(env, thunderSky(0))
+    local delay = expected[1].range / 343 + 0.01
+    env.M.onUpdate(delay)
+    assertEq(thunderPlays(env), 1)
+    env.M.onUpdate(100 - expected[1].at - 0.001 - delay)
+    assertEq(#observed, #expected)
+    for i, e in ipairs(expected) do
+      assertEq(observed[i].at, e.at)
+      assertEq(observed[i].shapeSeed, e.shapeSeed)
+    end
+  end)
+end)
+
+test("light, emitter and pending thunder are discarded when their round or seed ends", function()
+  local exits = {
+    result = function(env) env.fire("cnr_roundEnd", {reason = "called", runnerId = 2}) end,
+    leave = function(env) env.M.onBeamMPServerLeave() end,
+    mission = function(env) env.M.onClientEndMission() end,
+    unload = function(env) env.M.onExtensionUnloaded() end,
+    unseeded = function(env) env.fire("cnr_sky", {weather = "thunderstorm"}) end,
+    replacement = function(env) env.fire("cnr_sky", {weather = "clear", lightningSeed = 12}) end,
+    prep = function(env)
+      local d = copy(SETUP)
+      d.sky = thunderSky()
+      env.fire("cnr_roundSetup", d)
+    end,
+    earth = function(env)
+      env.fire("cnr_mode", {geo = true})
+      chaseWith(env, nil)
+    end,
+  }
+  for name, exit in pairs(exits) do
+    withThunder(function(env, events, lines)
+      chaseWith(env, thunderSky(0))
+      env.M.onUpdate(events[1].at)
+      env.M.onUpdate(events[2].at - events[1].at + 0.001)
+      assertEq(env.sky.objects.cnr_lightning_flash ~= nil, true, name)
+      assertEq(env.sky.objects.cnr_thunder_1 ~= nil, true, name)
+      local drawn = lines()
+      exit(env)
+      env.M.onUpdate(0.01)
+      assertEq(env.sky.objects.cnr_lightning_flash, nil, name)
+      assertEq(env.sky.objects.cnr_thunder_1, nil, name)
+      env.M.onUpdate(30)
+      assertEq(thunderPlays(env), 1, name)
+      assertEq(lines(), drawn, name)
+    end)
+  end
+end)

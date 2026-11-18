@@ -204,9 +204,23 @@ local function intersectsStorm(lo, hi)
   return false
 end
 
-function M.apply(p)
+local function runningDay(state, start, daySeconds, at)
+  if start and daySeconds and daySeconds > 0 then
+    state.time = (start + at / daySeconds) % 1
+    state.play, state.dayLength = true, daySeconds
+    return state
+  end
+end
+
+function M.apply(p, prep)
+  frameLo = nil
+  if prep then started = false end
+  if not setsSomething(p) then
+    if round then M.restore(true) end
+    return
+  end
   local env = core_environment
-  if not env or not setsSomething(p) then return end
+  if not env then return end
   if not saved then
     if restoring then
       saved, wasLocked = restoring.state, restoring.wasLocked
@@ -218,12 +232,12 @@ function M.apply(p)
     end
   end
   local newRound = round == nil
-  local at = tonumber(p.clockSeconds) or 0
+  local at = started and roundTime or tonumber(p.clockSeconds) or 0
   local state, curveNow = roundState(env, p, at)
   local from, to, progress, index = skyChanges.at(p, at)
   round, clockStart, target = p, state.time, state
-  stormSpans, frameLo = thunderstormSpans(p), nil
-  if not started then roundTime = at end
+  stormSpans, roundTime = thunderstormSpans(p), at
+  if started then runningDay(state, clockStart, p.daySeconds, at) end
   wrote, curveIndex = { state.cloudCover, state.fogDensity, state.windSpeed }, curveNow
   rainIndex, seenIndex, sinceStep = index, index, 0
   env.enableChanges(true)
@@ -259,20 +273,17 @@ end
 function M.startClock(clockSeconds)
   local env = core_environment
   if not env or not round then return end
-  roundTime, started = clockSeconds or 0, true
-  local daySeconds = round.daySeconds or 0
+  if not started then roundTime = clockSeconds or 0 end
+  started = true
   local landing = lockTimer ~= nil
   if landing then
     env.enableChanges(true)
     env.setState(target)
   end
-  if daySeconds > 0 and clockStart then
+  local day = runningDay({}, clockStart, round.daySeconds, roundTime)
+  if day then
     env.enableChanges(true)
-    env.setState({
-      time = (clockStart + roundTime / daySeconds) % 1,
-      play = true,
-      dayLength = daySeconds,
-    })
+    env.setState(day)
     env.enableChanges(false)
   elseif landing then
     env.enableChanges(false)
@@ -406,6 +417,7 @@ function M.forecast(heliOn)
 end
 
 function M.restore(immediate)
+  started, frameLo = false, nil
   local env = core_environment
   if immediate then rain.clear() end
   if env and immediate and not saved and restoring then
