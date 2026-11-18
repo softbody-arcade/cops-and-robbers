@@ -15,7 +15,7 @@ local sky = require("cnr.sky")
 local strikeSchedule = require("cnr.strikeSchedule")
 local traffic = require("cnr.traffic")
 
-local VERSION = "2.14.7"
+local VERSION = "2.14.8"
 local PREFIX = "[CnR] "
 local dataDir = pluginDir .. "data/"
 local stationsDir = dataDir .. "stations/"
