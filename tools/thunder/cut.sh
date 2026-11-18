@@ -13,8 +13,8 @@ normalize() {
   local peak gain
   peak=$(ffmpeg -hide_banner -nostats -i "$pcm" -af volumedetect -f null - 2>&1 |
     sed -n 's/.*max_volume: \(-*[0-9.]*\) dB/\1/p')
-  gain=$(python3 -I -c 'import sys; print(round(-1.0 - float(sys.argv[1]), 2))' "$peak")
-  ffmpeg -nostats -loglevel error -y -i "$pcm" -af "volume=${gain}dB" \
+  gain=$(python3 -I -c 'import sys; print(round(1.8 - float(sys.argv[1]), 2))' "$peak")
+  ffmpeg -nostats -loglevel error -y -i "$pcm" -af "volume=${gain}dB,alimiter=limit=0.84:attack=2:release=50:level=0:latency=1" \
     -c:a libvorbis -q:a 5 "$scratch_dir/$name.ogg"
   printf '%s: peak %s dBFS, gain %s dB\n' "$name" "$peak" "$gain"
 }
