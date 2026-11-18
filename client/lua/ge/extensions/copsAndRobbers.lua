@@ -272,10 +272,8 @@ end
 
 local function onRoundSetup(data)
   local d = jsonDecode(data) or {}
-  if spectating then
-    spectating = false
-    spectator.drop()
-  end
+  spectating = false
+  spectator.drop()
   hudfeed.clearRound()
   hudfeed.clearResult()
   setHeli(d.heli)
@@ -995,7 +993,8 @@ local function updateHeli(target)
   end
 end
 
-local function onUpdate(dtReal)
+local function onUpdate(dtReal, dtSim)
+  spectator.updateHitches(dtSim or dtReal or 0)
   clock = clock + (dtReal or 0)
   local change = sky.update(dtReal or 0, lightning.hasVisualTail(lightningState))
   if active or spectating then traffic.setWeather(sky.weather()) end
@@ -1279,6 +1278,9 @@ M.onWorldReadyState = function(st)
   if st == 2 then apps.start(clock) end
 end
 M.onUpdate = onUpdate
+M.onVehicleSpawned = spectator.vehicleSpawned
+M.onBeforeVehicleReplaced = spectator.forgetVehicle
+M.onVehicleDestroyed = spectator.forgetVehicle
 M.onVehicleResetted = onVehicleResetted
 M.onVehicleCycleSwitchPerformedByUser = onVehicleCycleSwitchPerformedByUser
 

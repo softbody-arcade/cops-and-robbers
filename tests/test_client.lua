@@ -4071,6 +4071,249 @@ test("a sitting-out player's car is parked on spectate and comes back where it s
   end)
 end)
 
+local function parkedTrailer(delayedSpawn)
+  local env = bootClient()
+  env.addObject(90, vec3(0, -4, 0)).model = "cargotrailer"
+  env.addObject(150, vec3(8, -4, 0)).model = "cargotrailer"
+  env.addObject(180, vec3(0, 4, 0))
+  env.ownCars = { [90] = true, [150] = true }
+  core_vehicles.attachedCouplers = { {90, 100, 11, 22}, {100, 180, 22, 11}, {100, 100, 22, 30} }
+  core_vehicles.vehsCouplerTags = { [100] = { [22] = "tow_hitch" } }
+  local ball, socket = vec3(0, 2, 0), vec3(0, -3, 0)
+  core_vehicles.vehsCouplerOffset = { [90] = { [11] = socket }, [100] = { [22] = ball } }
+  core_vehicles.couplerTagsOptions = { tow_hitch = "autoCouple" }
+  local remove = env.veh.delete
+  function env.veh:delete()
+    core_vehicles.attachedCouplers, core_vehicles.vehsCouplerOffset = {}, {}
+    remove(self)
+  end
+  core_vehicles.vehsCouplerCache = {}
+  local spawnCar = core_vehicles.spawnNewVehicle
+  core_vehicles.spawnNewVehicle = function(model, options)
+    local car = spawnCar(model, options)
+    if not delayedSpawn then core_vehicles.vehsCouplerCache[car.id] = {} end
+    return car
+  end
+  local placements = {}
+  spawn.placeTrailer = function(tow, towOffset, trailer, trailerOffset, tag)
+    assertEq(towOffset, ball); assertEq(trailerOffset, socket)
+    placements[#placements + 1] = {tow, trailer, tag}
+  end
+  spectate(env)
+  env.fire("cnr_roundEnd", { reason = "cancelled" })
+  local warnings = {}
+  _G.log = function(level, tag, message)
+    if level == "W" and tag == "cnr_spectate" then warnings[#warnings + 1] = message end
+  end
+  return env, placements, warnings
+end
+
+test("sitting out restores the saved hitch once both new vehicles are owned", function()
+  local env, placements = parkedTrailer()
+  assertEq(#env.spawned, 3)
+  local tow, trailer = env.spawned[1].veh.id, env.spawned[2].veh.id
+  MPVehicleGE.isOwn = function(id) return id == tow end
+  env.tick(1)
+  assertEq(#placements, 0)
+  MPVehicleGE.isOwn = function() return true end
+  env.tick(1)
+  assertEq(#placements, 1); assertEq(placements[1][1], tow); assertEq(placements[1][2], trailer)
+  assertEq(env.objects[180] ~= nil, true)
+end)
+
+test("a trailer which latched during spawn is left in place", function()
+  local env, placements = parkedTrailer()
+  local tow, trailer = env.spawned[1].veh.id, env.spawned[2].veh.id
+  core_vehicles.attachedCouplers = { {tow, trailer, 22, 11} }
+  MPVehicleGE.isOwn = function() return true end
+  env.tick(1)
+  assertEq(#placements, 0)
+end)
+
+test("a delayed latch confirms the exact saved nodes without moving the trailer again", function()
+  local env, placements, warnings = parkedTrailer()
+  local tow, trailer = env.spawned[1].veh.id, env.spawned[2].veh.id
+  MPVehicleGE.isOwn = function() return true end
+  env.tick(2)
+  assertEq(#placements, 1)
+  core_vehicles.attachedCouplers = { {trailer, tow, 11, 22} }
+  env.tick(11)
+  assertEq(#placements, 1); assertEq(#warnings, 0)
+end)
+
+test("a missing latch or one on different nodes times out once", function()
+  for _, wrongNodes in ipairs({false, true}) do
+    local env, placements, warnings = parkedTrailer()
+    local tow, trailer = env.spawned[1].veh.id, env.spawned[2].veh.id
+    MPVehicleGE.isOwn = function() return true end
+    env.tick(1)
+    if wrongNodes then core_vehicles.attachedCouplers = { {tow, trailer, 22, 33} } end
+    env.tick(20, 1)
+    assertEq(#placements, 1); assertEq(#warnings, 1)
+    assert(warnings[1]:find("timed out", 1, true))
+  end
+end)
+
+test("restoring leaves an occupied hitch where it is", function()
+  local env, placements, warnings = parkedTrailer()
+  local tow, trailer = env.spawned[1].veh.id, env.spawned[2].veh.id
+  MPVehicleGE.isOwn = function() return true end
+  core_vehicles.attachedCouplers = { {trailer, tow, 33, 22} }
+  env.tick(12, 1)
+  assertEq(#placements, 0); assertEq(#warnings, 1)
+end)
+
+test("an expired hitch request never moves the trailer", function()
+  local env, placements, warnings = parkedTrailer()
+  env.tick(2)
+  MPVehicleGE.isOwn = function() return true end
+  env.M.onUpdate(12, 12)
+  env.tick(1)
+  assertEq(#placements, 0); assertEq(#warnings, 1)
+end)
+
+test("a trailer placement error ends the request without interrupting the update", function()
+  local env, _, warnings = parkedTrailer()
+  MPVehicleGE.isOwn = function() return true end
+  local calls = 0
+  spawn.placeTrailer = function() calls = calls + 1; error("placement failed") end
+  env.tick(12, 1)
+  assertEq(calls, 1); assertEq(#warnings, 1)
+  assert(warnings[1]:find("placement failed", 1, true))
+end)
+
+test("a pending hitch is forgotten on leave or when a restored vehicle disappears", function()
+  for _, leave in ipairs({true, false}) do
+    local env, placements = parkedTrailer()
+    if leave then env.M.onBeamMPServerLeave() else env.spawned[2].veh:delete() end
+    MPVehicleGE.isOwn = function() return true end
+    env.tick(1)
+    assertEq(#placements, 0)
+  end
+end)
+
+test("replacing either end in place cancels the pending hitch before the reused ID can be used", function()
+  for _, index in ipairs({1, 2}) do
+    for _, placed in ipairs({false, true}) do
+      local env, placements, warnings = parkedTrailer()
+      MPVehicleGE.isOwn = function() return true end
+      if placed then env.tick(0.3) end
+      local id = env.spawned[index].veh.id
+      env.M.onBeforeVehicleReplaced(id)
+      env.addObject(id, vec3(10, 20, 0)).model = "etk800"
+      env.tick(12, 1)
+      assertEq(#placements, placed and 1 or 0)
+      local tow = env.objects[env.spawned[1].veh.id]
+      for _, cmd in ipairs(tow.commands) do assert(not cmd:find("attachExternalCoupler", 1, true)) end
+      assertEq(#warnings, 0)
+    end
+  end
+end)
+
+test("destroying a trailer cancels retries even if its ID returns before the next update", function()
+  local env, placements, warnings = parkedTrailer()
+  MPVehicleGE.isOwn = function() return true end
+  local tow, trailer = env.spawned[1].veh, env.spawned[2].veh
+  local attempts = 0
+  function tow:queueLuaCommand(cmd)
+    if cmd:find("attachExternalCoupler", 1, true) then attempts = attempts + 1 end
+  end
+  env.tick(1)
+  assertEq(attempts, 1)
+  env.M.onVehicleDestroyed(trailer.id)
+  trailer:delete()
+  env.addObject(trailer.id, vec3(10, 20, 0))
+  env.tick(12, 1)
+  assertEq(#placements, 1); assertEq(attempts, 1); assertEq(#warnings, 0)
+end)
+
+test("a parts edit on either restored vehicle cancels the saved hitch", function()
+  for _, index in ipairs({1, 2}) do
+    for _, placed in ipairs({false, true}) do
+      local env, placements, warnings = parkedTrailer()
+      MPVehicleGE.isOwn = function() return true end
+      if placed then env.tick(0.3) end
+      local id = env.spawned[index].veh.id
+      core_vehicles.vehsCouplerCache[id] = {}
+      env.M.onVehicleSpawned(id)
+      env.tick(12, 1)
+      assertEq(#placements, placed and 1 or 0)
+      for _, cmd in ipairs(env.spawned[1].veh.commands) do assert(not cmd:find("attachExternalCoupler", 1, true)) end
+      assertEq(#warnings, 0)
+    end
+  end
+end)
+
+test("deferred initial spawn callbacks still allow the saved hitch", function()
+  local env, placements = parkedTrailer(true)
+  MPVehicleGE.isOwn = function() return true end
+  env.tick(1)
+  assertEq(#placements, 0)
+  for _, spawnResult in ipairs(env.spawned) do
+    local id = spawnResult.veh.id
+    core_vehicles.vehsCouplerCache[id] = {}
+    env.M.onVehicleSpawned(id)
+  end
+  env.tick(1)
+  assertEq(#placements, 1)
+end)
+
+test("replacing an unrelated vehicle keeps the pending hitch", function()
+  local env, placements = parkedTrailer()
+  MPVehicleGE.isOwn = function() return true end
+  env.M.onBeforeVehicleReplaced(env.spawned[3].veh.id)
+  env.tick(1)
+  assertEq(#placements, 1)
+end)
+
+test("an unavailable vehicle command queue ends the hitch request once", function()
+  local env, _, warnings = parkedTrailer()
+  MPVehicleGE.isOwn = function() return true end
+  local calls = 0
+  env.spawned[1].veh.queueLuaCommand = function(_, command)
+    if command:find("attachExternalCoupler", 1, true) then calls = calls + 1; error("queue failed") end
+  end
+  env.tick(12, 1)
+  assertEq(calls, 1); assertEq(#warnings, 1)
+  assert(warnings[1]:find("queue failed", 1, true))
+end)
+
+test("trailer restoration targets only its saved partner and stops on timeout, removal or leave", function()
+  for _, stop in ipairs({"timeout", "remove", "leave"}) do
+    local env, placements, warnings = parkedTrailer()
+    local tow, trailer = env.spawned[1].veh, env.spawned[2].veh
+    local attempts, latching = 0, false
+    local vm = {
+      beamstate = { couplerCache = { [22] = { cid = 22, couplerTag = "tow_hitch", couplerStrength = 801000 } } },
+      obj = {
+        getNodeLatch = function() return latching and 1 or 0 end,
+        getNodeCoupler = function() return 0 end,
+        attachExternalCoupler = function(_, node, target, targetNode, strength, radius, lockRadius, speed, targets)
+          assertEq(node, 22); assertEq(target, trailer.id); assertEq(targetNode, 11); assertEq(strength, 801000)
+          assertEq(radius, 0.2); assertEq(lockRadius, 0.025); assertEq(speed, 0.3); assertEq(targets, 0)
+          assertEq(latching, false); attempts = attempts + 1; latching = true
+        end,
+      },
+    }
+    function tow:queueLuaCommand(command)
+      if command:find("attachExternalCoupler", 1, true) then assert(load(command, nil, "t", vm))() end
+    end
+    MPVehicleGE.isOwn = function() return true end
+    env.tick(1.5)
+    assertEq(#placements, 1); assertEq(placements[1][3], nil)
+    assert(attempts > 0)
+    if stop == "timeout" then env.tick(10, 1)
+    elseif stop == "remove" then trailer:delete()
+    else env.M.onBeamMPServerLeave() end
+    local finished = attempts
+    latching = false
+    env.tick(55, 1)
+    assertEq(attempts, finished); assertEq(#placements, 1)
+    assertEq(#warnings, stop == "timeout" and 1 or 0)
+    if stop == "timeout" then assert(warnings[1]:find("timed out", 1, true)) end
+  end
+end)
+
 test("a cancelled round puts the parked car back too", function()
   withCamera(function()
     local env = bootClient()
