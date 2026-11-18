@@ -4,10 +4,56 @@ A cop driving through an intersection can look down a side street and spot a run
 
 ![A cop looking ahead, then looking into the same side street. The runner is only within range in the second view.](cop-visibility.svg)
 
-## Decisions and tuning
+## Why
 
-- **Agreed for the first build.** Human cops spot furthest where they look with an attached driving camera. Practice AI uses its car heading. Both check sight from their own car. Keep the host default at 400 m, with 200 m to the side and 100 m behind in clear daylight. Practice AI keeps chasing while the runner is HIDDEN.
-- **Proposed for the first playtest.** The curve between those three distances, the night and weather multipliers, and the range gained from lights are tuning choices. Start with the table below. Use the side-street and night-road checks in the [implementation plan](../plans/2026-11-18-cop-visibility.md) to judge whether a sighting feels fair.
+Today a human cop with an unobstructed line to the runner reports the same sighting at 290 m whether looking ahead, across an intersection or behind the car. Darkness and fog can make the runner hard for the player to pick out while the game still broadcasts their position. That costs both sides a decision. A cop gains little by checking the side street, and a runner gains little by leaving the lit main road.
+
+Practice has a separate gap. Its AI cops can drive after the runner, but the current sight-report path accepts human cops. A player practicing as the runner should be able to try hiding in an alley and see whether each pursuing car could still spot them.
+
+## Goals
+
+- Give a human cop a reason to look into a turn and a runner a reason to choose where to break sight. The same two parked cars can gain or lose a sighting when the cop changes where they look or the runner switches on their lights.
+- Let conditions on the runner's stretch of road matter. At midnight a runner under a working streetlight should be easier to spot than the same runner outside the light. During changing weather, the distance should follow the blend.
+- Give each Practice cop its own view and keep the chase running through a loss. A player should be able to compare the result in Practice with what happens against a human cop.
+- Keep the host's one **Sight range** control meaningful. It sets the forward clear-day distance and scales the rest. Explain this and the effect of turning the view in the existing player instructions.
+
+## Non-goals
+
+- New host controls, player preferences, HUD indicators, weather types or leaderboard categories.
+- Simulating eye movement, mirror images, individual damaged bulbs, brake lamps or a camera's rendered exposure.
+- Changing how a Practice cop searches or steers, how the helicopter sees, when a catch completes or how a player chooses a route. The change supplies ground observations to the existing rules.
+
+## Anti-goals
+
+- The runner gets **SPOTTED** because a cop zoomed over a building or switched to a nearby vehicle while their assigned car was still behind cover.
+- Two Practice cops facing opposite ways always report the same sight, or a replaced AI cop earns sight time from the previous car's delayed report.
+- A dark tunnel receives a bonus from a lamp on the bridge above it, a helicopter searchlight or a glowing mesh without an emitter. The runner should be in light that can reach their car.
+- A large city causes a hitch every time a cop checks sight, or an unavailable engine reading silently grants full clear-day range.
+
+## User decisions
+
+- Human cops spot furthest where they look with an attached driving camera. Practice AI uses its car heading. Both check sight from their own car.
+- Keep the default at 400 m ahead, 200 m to the side and 100 m behind in clear daylight. The host can scale the range or turn ground sight off.
+- Practice AI keeps chasing the assigned runner while the runner is **HIDDEN**.
+
+The curve between those three distances, night and weather multipliers and range gained from lights are starting values for the first playtest. The examples below use those values.
+
+## What happens in a chase
+
+Consider two human cops, Mara and Jules, on a clear day with the default settings. The helicopter is off. Mara is at the intersection in the diagram, the runner is 290 m down the side street, and Jules has yet to round the corner. Times below are seconds on the server after the cops are released. The example uses ticks on the indicated boundaries.
+
+| Time | What the cops do | What the players get |
+|---|---|---|
+| 0 s | Mara looks down the street. The runner is within her 400 m forward range and the street is clear. | The runner sees **SPOTTED**. Both cops receive the live runner position. Mara starts earning sight time. |
+| 2 s | Mara looks back to the main road. The runner is now outside her 200 m side range and she reports loss. | Mara's 1.5 s grace starts. The team keeps the live position. |
+| 3 s | Jules rounds the corner and sees the runner directly. | Both cops now count, Mara through grace and Jules through his own sighting. The runner sees no change. |
+| 3.5 s | Mara's grace expires. | Only Jules earns sight time. Mara still receives the team's live position. |
+| 5 s | The runner turns behind a building. Jules reports loss and his own grace starts. | The runner stays **SPOTTED** during this final grace period. |
+| 6.5 s | Neither cop has reacquired the runner. | The runner sees **HIDDEN**. The cops receive a last-seen position. It stays there as the runner drives on. |
+
+The runner's indicator answers “Does any ground cop have sight?” Each eligible cop accrues sight time separately, including their own grace. Live positions go to participating human cops at the existing interval (default 1 s). On each live update, the server checks a separate route threshold for cops who already count as seeing the runner. A cop within that speed-dependent distance gets **IN SIGHT** and their route preference decides whether the route stays drawn. A cop farther away can earn sight time while their HUD reads **LIVE**. A partner with no personal sight also gets **LIVE**.
+
+If the helicopter were tracking at 6.5 s, the runner would still see **HIDDEN** and both cops would continue receiving live positions. The helicopter supplies its own track and gives neither cop individual ground sight. Once both ground and air tracking are lost, the server sends the last-seen position once. Catch conditions continue to use their existing distance, speed and timing rules.
 
 ## Direction and distance
 
@@ -17,9 +63,31 @@ There is a reason to reward looking. While viewing pursuit footage, drivers narr
 
 Use the horizontal angle θ from the cop’s look direction to the runner. Given the normalized XY dot product c = cos θ, the clear-day range is **R × 2^(c − 1)**. This rounds off the boundary between front, side and rear. At 45° the default gives about 327 m. The range check uses the existing 3D eye-to-target-centre distance (inclusive). An overpass still adds vertical separation. A zero horizontal separation or unusable heading gives the shortest angular range. Treat invalid positions as a missed observation.
 
-- For a human cop, use the forward vector of their attached driving camera. Support orbit, chase, driver/occupant and JBeam onboard views. Verify that player 0 is viewing their assigned round car and free camera is off. Free, map, path, cinematic, relative free-moving, unknown modes and near-vertical views fall back to the assigned cop car’s forward vector. A missing car yields no sight. Spectating another vehicle never transfers that vehicle’s eyes to a human cop.
-- For each Practice AI cop, use that AI car’s forward vector. The same range, lighting, weather, occlusion and grace apply whether the issuer drives the runner, drives a cop, or watches an AI-only round. A Practice cop keeps driving after the runner when sight is lost. BeamNG’s chase AI retains the assigned runner as its target, including when the player changes seats. HIDDEN means that ground cops have lost the sight report used for the shared HUD and position updates.
-- Keep the existing three targets (runner centre, 2 m forward and aft at 1 m height). Cast from 1.2 m above the cop car, irrespective of zoom or camera position. At least one target must clear its static ray in both directions within the existing 0.5 m tolerance. Perform the range check first. Use only the assigned runner car. A remote human runner must resolve through their current server-announced round-car key. Before registration, after removal or while the registered car is unspawned, report out of sight and skip rays, even if the runner owns a nearby spare car or trailer.
+### Whose eyes count
+
+| Observer or camera state | Direction for this sample | Reason |
+|---|---|---|
+| Human cop, player 0 viewing their assigned round car, free camera off, attached driving view | Camera forward for orbit, chase, driver/occupant and JBeam onboard views | A glance down the street can acquire the runner before the car turns. |
+| Human cop using free, map, path, cinematic, relative free-moving or unknown camera, or viewing another car | Assigned cop car forward | The cop can change seats or inspect the map without borrowing the other viewpoint. |
+| Missing/failed camera read or near-vertical camera direction | Assigned cop car forward | Looking straight up has no usable horizontal bearing. If the car heading is unusable too, give the shortest angular range. |
+| Practice AI cop | That AI car's forward vector | Two AI cops facing opposite ways make independent observations, whichever seat the issuer occupies. |
+| Assigned cop car missing, or runner car unavailable | Miss this observation | A spare car and an unspawned car cannot stand in for a participant. |
+
+Practice uses the same range, lighting, weather, cover and grace when the issuer drives the runner, drives a cop or watches an AI-only round. A Practice cop keeps driving after the assigned runner when sight is lost. BeamNG's chase target survives a change of seat. Turning the issuer's camera affects only the sight of a human cop driving their assigned car.
+
+### Where the sight ray starts and ends
+
+First resolve both assigned cars. For a remote human runner use the current server-announced round-car key. Before registration, after removal or while that car is unspawned, report out of sight and skip the rays. A nearby spare car or trailer owned by the same player can otherwise produce a convincing but false sighting.
+
+Check the effective range to the runner's centre before testing cover. The eye is 1.2 m above the cop car. Test three points 1 m above the runner car, one at its centre and two displaced 2 m fore and aft along its horizontal heading. At least one point must clear a static ray in both directions within the existing 0.5 m tolerance. A partly exposed car can therefore be spotted around a corner. Zooming the orbit camera over a wall leaves the eye on the same side of the wall as the cop.
+
+## Approaches
+
+1. **Car heading for every cop.** One direction source works for human and AI cars and follows a car through a turn. Mara's deliberate glance in the example could never acquire the runner until she steered.
+2. **Attached camera direction, rays from the car (chosen).** Captures the glance while the car fixes the physical viewpoint. Car heading is already meaningful for an AI cop and is available to a human cop when a camera cannot be classified.
+3. **Camera direction and camera origin.** This would best match what appears on screen, including a view around an obstruction. It would also let a player park behind cover and move the orbit camera past it to share the runner's live location.
+
+Use a smooth angular curve with the chosen approach. A gradual camera turn then brings successively more of the side street into range without a jump at a cone boundary.
 
 ## Darkness, lights and weather
 
@@ -46,24 +114,105 @@ effective range    = directional range × lighting factor × fog factor × preci
 | Clear night, full streetlight, lamps off | 200 m | 100 m | 50 m |
 | Clear night, full streetlight, lamps on | 300 m | 150 m | 75 m |
 
-**Daylight.** Read the map’s clock from `core_environment.getTimeOfDay()` and sunrise and sunset from `core_solarTimeOfDay.getSolarTimeOfDayValues(tod)`. These share BeamNG’s wrapped 0–1 clock. Derive a signed distance in days to the nearer solar boundary, positive inside the sunrise-to-sunset interval. Smoothstep from D=0 at 30 in-game minutes before sunrise to D=1 at 30 minutes after, reversing at sunset. Work across the clock wrap and cache solar anchors by map/location/date/UTC offset/DST. For polar day or night use the `polar` field of `getSolarTimeOfDayEvents(tod)`. Where anchors are unavailable use a definite boolean from `core_environment.getLightState().isNight`; with neither signal use D=0. Graphics settings and the rendered exposure do not enter this calculation.
+### A night drive as rain starts
 
-**Weather.** Read the actual raw density and LevelInfo object from `core_environment.getFogDensity()`. Its first return uses density units. The environment state and CnR preset use density ×1000. If LevelInfo or the raw value is unavailable, blend the preset densities from `sky.WEATHER` and divide by 1000 once. For precipitation use 1.00 for clear/cloudy/fog, 0.85 for rain, 0.75 for snow, 0.70 for storm/thunderstorm. Interpolate both fallback fog and precipitation using `sky.weatherBlend()`’s already-smoothed progress. An unknown endpoint contributes dense fog and 0.70 precipitation where its input is needed. Missing progress between different endpoints uses the more restrictive value. Valid raw fog wins even when the preset differs. Accept only finite measurements, clamp valid extremes and bound every multiplier. Dense fog and snow still shorten sight under a light.
+Suppose Mara is looking directly at a runner 170 m ahead on a flat, unobstructed street after dark. The weather is halfway from cloudy to rain. At the sampled spot a streetlight gives half strength. Suppose the fog getter reads 0.0015, the midpoint of those two presets. The fog factor is about 0.955 and the precipitation factor is halfway from 1.00 to 0.85, or 0.925.
 
-**Runner lamps.** Observe the assigned runner’s actual electrical switch state, including manual overrides. GE’s `core_vehicleBridge.registerValueChangeNotification(runner, "lights_state")` registers one key on that vehicle. Read `getCachedVehicleData(runner:getID(), "lights_state")` at sight cadence. Values 1 and 2 mean on. A zero or unavailable/unrecognized value gives L=0. BeamMP’s installed `MPElectricsVE` applies received `lights_state` to a spawned remote vehicle. CnR already periodically resends it via `ownLights.syncCommand`. A receiver may initially know only the spawned car’s default, then update when electrics arrive. This models low/high-beam selection, including the associated tail lamps. Per-bulb damage, brake lights and the cop’s graphics settings are outside this model. Respect the bridge’s shared, deduplicated registration. Drop local references on replacement, destruction and teardown. Let the bridge own its shared callbacks and use its replacement/destruction invalidation. Refresh the registration for a new vehicle lifetime, including reused game IDs.
+| Runner's action | Lighting factor at night | Forward range with this weather | Mara's observation |
+|---|---:|---:|---|
+| Lamps off in the half-strength pool | 0.30 + 0.20 × 0.5 = 0.40 | 141 m | Miss |
+| Switch on low beam in the same spot | 0.30 + 0.25 + 0.20 × 0.5 = 0.65 | 230 m | Seen |
+| Drive onto an unlit stretch with lamps on | 0.30 + 0.25 = 0.55 | 194 m | Still seen at 170 m |
+| Switch lamps off there | 0.30 | 106 m | Loss, followed by the usual grace |
 
-**Streetlighting.** Look near the runner’s centre for authored map PointLight and SpotLight emitters. The installed `core/environment.lua` uses dynamic `nightLight`, day/night intensity fields, and TSStatic `child` links to actual LightBase objects. The static’s `nightEmissive` alone is insufficient. Include map emitters with a true `nightLight`, positive `nightIntensity` or an authored TSStatic child link registered by that mechanism. Exclude spawned vehicle/camera/search lights, decorations without an emitter and road classifications. Emitter support on a custom map depends on its authored fields. West Coast USA’s `bridge_lightpole_light1111111` is a SpotLight with `nightLight="1"`, `range=22`, `outerAngle=160`. Italy’s `areaLight_cityWallLights_0360631` is a PointLight with `nightLight="1"` and `radius=10`. Both serialize `isEnabled=false`; read the *live* enabled state and intensity when querying.
+Each row holds distance, bearing and weather constant to show the effect of the runner's choice. For the second row, 400 × 0.65 × 0.955 × 0.925 gives about 230 m. In full daylight with the same rain and fog blend, the lighting factor rises to 1 and the forward range is about 353 m on either stretch. Clear daylight gives the full 400 m.
 
-Build a mission-scoped index at first eligible round setup, outside the sight loop. Enumerate scene class names once and process up to 128 names per frame, including linked fixtures. Use 32 m XY cells and cap effective point radius/spot range at 32 m. At query time inspect the runner’s cell and eight neighbours, up to 16 indexed emitters per cell (retain the lowest scene IDs for repeatability). Resolve the nearest eight by 3D distance, breaking ties by ID. For an enabled, positive-intensity emitter, strength is 1 within half its effective radius and tapers linearly to 0 at its edge. For a spotlight also require the runner inside its outer half-angle using its world-space forward axis. Verify static clearance from emitter to target so a wall or bridge deck can cut off a lamp. Use the largest single strength. Missing/stale object, unusable field, unavailable ray or unindexed area gives no bonus. Share this lookup across cops for one target per 0.25 s sample, skip it in full daylight and avoid any discovery while sight is Off. Keep the index across rounds on the same map, pausing discovery while ineligible. Invalidate it on mission end, disconnect or extension unload. These limits deliberately undercount very dense or partly indexed scenes.
+### Daylight and twilight
 
-## Reports and player feedback
+Read the map’s clock from `core_environment.getTimeOfDay()` and sunrise and sunset from `core_solarTimeOfDay.getSolarTimeOfDayValues(tod)`. These share BeamNG’s wrapped 0–1 clock. Derive a signed distance in days to the nearer solar boundary, positive inside the sunrise-to-sunset interval. Smoothstep from D=0 at 30 in-game minutes before sunrise to D=1 at 30 minutes after, reversing at sunset. This gives D=0.5 at ordinary sunrise or sunset. Work across the clock wrap and cache solar anchors by map/location/date/UTC offset/DST.
 
-Human reports continue to carry `{seen=true|false}` on `cnr_sight`. The server derives the human cop from the event sender. Only the Practice issuer who received `cnr_setupAI` may additionally report `{aiId=<slot>,instance=<spawn serial>,seen=true|false}` for each of their spawned AI cops. Include the sight maximum in that targeted setup so an AI-only issuer who received `cnr_spectate` can sample. A regular spectator receives no such authority. The human and each AI slot keep independent change/5 s keepalive state. Send false on losing a previously reporting car or target. Assign each locally spawned AI vehicle a new monotonically increasing instance number within the connection. Include it in the existing issuer-only AI vehicle registration and in that slot’s sight report. Reset report state per round and on replacement. Never send environment readings, positions or camera angles as trusted server facts.
+For polar day or night use the `polar` field of `getSolarTimeOfDayEvents(tod)`. Where anchors are unavailable use a definite boolean from `core_environment.getLightState().isNight`. With neither signal use D=0. Players' graphics settings and rendered exposure have no part in this calculation.
 
-Validate a boolean and, when present, a numeric integer rostered AI cop ID (−10 or lower under the existing slot scheme), running Practice, exact issuer, positive sight setting, and a live registered AI vehicle with that same instance number. Reject malformed optional IDs outright. A human runner or AI-only watching issuer may report their own AI cops through that path. Ordinary `Round:sightReport` stays restricted to rostered human cops. The server applies the same 3D bound of host maximum + 50 m, grace (default 1.5 s), 11 s stale timeout and existing aggregate tracking to all observers. This server check limits implausible reports. The client observes angle, weather and occlusion. Use the existing `carFor(slot)` mapping through the issuer’s server vehicle ID. Invalidate the affected slot’s seen, lost-at and freshness entries on deletion by its owner, reassignment of that vehicle ID, slot remap or round teardown. Repeated registration of the same live instance is idempotent. After a vehicle ID is reused, require a report for the new instance. A delayed true report from the old instance cannot restore sight or grace. When the Practice AI runner is replaced, forget observers’ sight of the previous target. AI state is always credited to its own slot. The existing Practice record exclusion continues to keep AI observations out of the production leaderboard.
+### Fog and precipitation
 
-Retain catch, helicopter tracking, route choice and last-seen semantics. A helicopter can still supply live tracking while ground cops lose sight. Keep the current panels and settings. Explain the meaning of Sight range and turning the view in the existing player instructions.
+1. Read the raw density and LevelInfo object from `core_environment.getFogDensity()`. The first return is in density units. When the object and measurement are valid, that density wins even if it differs from the preset.
+2. When LevelInfo or its raw measurement is unavailable, take the endpoint densities from `sky.WEATHER`, interpolate them and divide by 1000 once. The environment state and CnR presets store density ×1000. Cloudy's 1 and rain's 2 in the example give raw 0.0015 halfway through.
+3. Interpolate the precipitation factor between 1.00 for clear/cloudy/fog, 0.85 for rain, 0.75 for snow and 0.70 for storm/thunderstorm. Use `sky.weatherBlend()`'s already-smoothed progress for both precipitation and fallback fog. Dense fog and snow still shorten sight under a light.
+4. An unknown endpoint contributes dense fog and 0.70 precipitation wherever its input is needed. Missing progress between different endpoints uses the more restrictive value for each input. Accept only finite measurements, clamp valid extremes and bound every multiplier.
 
-## Acceptance
+### Runner lamps
 
-Automate directional boundaries, environmental examples and monotonicity, obstructed rays, camera attachment, lamp transitions, bounded scene work, report attribution, grace, expiry and Off. Run the complete Lua suite and the existing leaderboard fixtures. In the installed game, check the confidence of camera classification, whether a live streetlight illuminates the sampled spot and the feel of gaining or losing sight. Confirm remote manual lamp changes appear on the cop’s GE bridge. The implementation plan gives short checks for those engine-dependent questions.
+Read the assigned runner's actual electrical switch state. A manual override of automatic headlights counts. Register the single `lights_state` key on that vehicle with GE’s `core_vehicleBridge.registerValueChangeNotification(runner, "lights_state")` and read `getCachedVehicleData(runner:getID(), "lights_state")` at sight cadence. Values 1 and 2 give L=1. Zero, unavailable or unrecognized gives L=0. Low and high beam both include the associated tail lamps.
+
+BeamMP’s installed `MPElectricsVE` applies received `lights_state` to a spawned remote car. CnR already periodically resends it via `ownLights.syncCommand`. The observer may read the spawn default until electrics arrive. Drop local references on replacement, destruction and teardown. Refresh the registration for each vehicle lifetime, including a reused game ID. The bridge owns its shared, deduplicated registrations and callbacks and handles replacement/destruction invalidation.
+
+### Which streetlights count
+
+Look near the runner's centre for authored map PointLight and SpotLight emitters. The installed `core/environment.lua` uses dynamic `nightLight`, day/night intensity fields and TSStatic `child` links to actual LightBase objects. Include a map emitter with a true `nightLight`, positive `nightIntensity` or an authored TSStatic child link registered by that mechanism. A static mesh's `nightEmissive` alone, road classification, decorations without an emitter and spawned vehicle/camera/search lights do not qualify. Custom maps depend on which fields their author supplied.
+
+| Known authored fixture | Geometry stored by the map |
+|---|---|
+| West Coast USA · `bridge_lightpole_light1111111` | SpotLight, `nightLight="1"`, `range=22`, `outerAngle=160` |
+| Italy · `areaLight_cityWallLights_0360631` | PointLight, `nightLight="1"`, `radius=10` |
+
+Both fixtures serialize `isEnabled=false`. Read the live object's enabled state and intensity when the runner passes it. Its saved state cannot tell whether that patch of road is lit tonight.
+
+### How much light reaches the runner
+
+- **Index once per mission.** Start at first eligible round setup. Enumerate scene class names once and process up to 128 names per frame, including linked fixtures. Use 32 m XY cells and cap point radius and spot range at 32 m. Keep up to 16 emitters per cell, retaining the lowest scene IDs. Keep the index across rounds on the same map, pause discovery when ineligible and perform no discovery while sight is Off. Invalidate it on mission end, disconnect or extension unload.
+- **Select candidates at sight cadence.** Inspect the runner's cell and eight neighbours. Resolve the nearest eight candidates by 3D distance, breaking ties by ID. Share one target lookup across all cops per 0.25 s sample and skip it in full daylight. These limits deliberately undercount very dense or partly indexed scenes.
+- **Test illumination.** Require an enabled emitter with positive intensity. Strength is 1 within half its effective radius, tapering linearly to 0 at its edge. For a spot, also require the runner inside the outer half-angle of the world-space forward axis. A static ray from emitter to target must be clear, so the bridge light cannot illuminate a runner under the deck. Take the largest single strength. A missing or stale object, unusable field, unavailable ray or unindexed area gives no bonus.
+
+## Reporting to the server
+
+### Who may report
+
+| Sender on `cnr_sight` | Payload | Server checks |
+|---|---|---|
+| Participating human cop | `{seen=true\|false}` | Derive the cop from the event sender. Ordinary `Round:sightReport` accepts rostered human cops during the chase. |
+| Practice issuer on behalf of one spawned AI cop | `{aiId=<slot>,instance=<spawn serial>,seen=true\|false}` | Running Practice, exact issuer, positive sight setting, integer rostered AI cop ID (−10 or lower) and live registered vehicle with the same instance serial. Resolve the cop through `carFor(slot)` and its issuer-owned server vehicle ID. |
+
+Require an actual boolean in both forms. Reject a malformed optional AI ID outright. A Practice issuer who drives the runner or receives `cnr_spectate` to watch an AI-only round gets the maximum in their targeted `cnr_setupAI`. This lets that client sample its AI cops. A regular spectator or bystander receives no such authority.
+
+### Change reports, grace and stale reports
+
+Each observer samples at 4 Hz, sends on a change and sends a keepalive every 5 s. A missing previously reporting car or target produces a false observation. Each human and AI slot keeps its own last report and send time. The client observes camera angle, weather and cover locally. Only the sight result and, for AI, the slot and instance go into the report.
+
+The server applies the existing 3D distance bound of host maximum + 50 m to each observer, including one in grace. At the default maximum, an observer at 451 m cannot contribute. A false report after true starts that observer's configured grace (default 1.5 s). Reacquisition clears the pending loss. If true reports simply stop arriving, the last true goes stale after 11 s. Using the same checks for AI and human cops preserves the team and individual accounting in the chase example.
+
+### Replacing a Practice vehicle
+
+Assign each locally spawned AI vehicle a new, monotonically increasing instance number within the connection. Include it in the existing issuer-only vehicle registration and in every sight report for that cop. Reset report state at round boundaries and on replacement.
+
+A repeated registration of the same live instance preserves its sight. Deletion by its owner, reassignment of the vehicle ID, slot remap and round teardown clear the affected slot's seen, lost-at and freshness entries. If a new car reuses the same vehicle ID a moment later, require a fresh report from the new instance. A delayed true report for the old instance cannot restore its sight or grace. Replacing the Practice AI **runner** invalidates all observers' sight of the old target. The server credits AI observations to the individual slot and the existing Practice exclusion keeps those rounds out of the production leaderboard.
+
+## What the current code establishes
+
+- The client already tests the centre and two ends of the car with two-way static rays and sends changes and keepalives. The new inputs determine the range passed into that existing cover check. [Client sight](../../../client/lua/ge/extensions/copsAndRobbers/sight.lua)
+- The server already decides which cops individually count, updates ground sight for the runner and decides whether ground or helicopter tracking can supply a live position. One player's observation can therefore guide a second cop without giving that second cop sight credit. [Round tracking](../../../server/CopsAndRobbers/cnr/round.lua) · [Grace and expiry](../../../server/CopsAndRobbers/cnr/sight.lua)
+- The weather table stores slider densities, shares the storm preset with thunderstorm and already supplies smoothed progress for a transition. This lets solid rain and a change into rain use one calculation. [Client sky](../../../client/lua/ge/extensions/copsAndRobbers/sky.lua)
+
+## First-playtest calls
+
+Start with the continuous directional curve, the 60-minute twilight transition and the multipliers in the weather and lighting table. The driving studies inform the choice to reward looking. The exact acquisition distances are gameplay tuning. Judge the curve with the 290 m side street and judge lamp strength on the transition from a lit patch to a dark road. The defaults give the builder fixed values to test and the player a concrete baseline to judge.
+
+## Automated acceptance
+
+- Use fixed positions for a runner just inside, on and beyond the directional boundary. Cover left/right symmetry, looking backwards, an overpass, lost camera heading and Off. Capture the car-to-car rays while moving the camera beyond a wall. A missing registered runner, even with a visible spare, must give a missed observation.
+- Reproduce the environmental table and the changing-weather example from known inputs. Test dawn and dusk across the clock wrap, conservative fallbacks on missing signals, a manual lamp change and a replacement runner reusing a game ID. Check that worsening weather shortens or preserves the range, including at night.
+- Build scene fixtures for the two authored lamps. Check spot direction, extent, disabled or zero-intensity fixtures, a blocked ray, overlapping lights, work per frame and maximum candidates per sample.
+- Replay the two-cop timeline and a missing keepalive. Cover human reports, two independent Practice slots, wrong issuer, duplicate registration, delayed old-instance reports, AI-only observation and Practice with sight Off. Check a cop still chases the assigned runner through loss, reacquisition and a seat change. Run the complete Lua suite and existing leaderboard fixtures.
+
+## Engine questions and in-game checks
+
+The code and authored map fields identify what to read. The following observations still need the installed game. Use a temporary GE probe in freeroam first for camera names and forward vectors, solar anchors, live fog units and the two fixtures' live transforms, intensity and enabled state.
+
+| Setup and action | Observable pass condition | What the game check settles |
+|---|---|---|
+| One player, clear-day Practice as cop. Hold the car heading with the AI runner 200–400 m down an open side street and rotate the attached view. Then leave the car behind a wall and look over it. | The individual cop acquires looking into the street, loses on looking away and cannot acquire over the wall. Read the tagged sample if another cop holds team sight. | Which installed camera modes supply the intended bearing and how the boundary feels to the player. |
+| One player, night Practice as runner. Cross a working lamp's pool onto a dark stretch and toggle low beam. Compare per-cop distance, bearing and range in the tagged samples. | At comparable bearing, range drops outside the visible pool and increases with lamps on. | Whether the map emitter's live geometry matches the patch of road the player sees. |
+| Two clients, clear night on an unlit straight. Park the runner about 170 m ahead of a cop looking at them. Disable automatic headlights and toggle the runner's lamps. | After electrical replication the cop reads each switch change. The runner becomes SPOTTED with lamps on and HIDDEN after loss and grace with lamps off, when no other cop has sight. | Delivery of a remote manual change to the observing cop's GE bridge. |
+
+## Left to the builder
+
+Use the current branch's bound round-car identity and vehicle lifetime hooks for its human and Practice paths. Choose the exact wording in the existing player instructions while preserving the player's displayed units. The implementation plan gives the module boundaries, fixtures and procedure for recording engine evidence. The playtest is where to settle how the starting distances feel. [Implementation plan](../plans/2026-11-18-cop-visibility.md)

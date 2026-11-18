@@ -27,81 +27,293 @@
 | Two Practice cops overwrite one another, or somebody else reports for them | Tasks 4 and 5 exercise independent client keepalives, roster validation and all three Practice roles. |
 | A missing weather input or unusual map date jumps to clear-day range | Tasks 1 and 2 sample wraparound, polar, non-finite and absent values. |
 
-## Task 1 · Range calculation
+## Task 1 · Calculate the effective range
 
-**Files:** Create `client/lua/ge/extensions/copsAndRobbers/visibility.lua` and `tests/test_visibility.lua`. The GE-facing modules follow in later tasks.
+**Files**
 
-**Interfaces:** `visibility.range(maxMeters, cosAngle, daylight, lampsOn, streetStrength, rawFog, precipitationFactor) -> metres` consumes finite numbers plus a boolean lamp state. `visibility.bearing(look, delta) -> cosAngle` accepts vectors with x/y. `visibility.daylight(time, sunrise, sunset) -> 0..1 or nil` uses normalized clock values.
+- Create `client/lua/ge/extensions/copsAndRobbers/visibility.lua` for the pure calculation.
+- Create `tests/test_visibility.lua`. Use `test`, `assertEq` and `assertNear` supplied by `tests/run.lua`.
 
-- [ ] Add failing range and bearing tests using the spec’s examples. Include left/right symmetry, looking backwards, gradients between anchors, scaling, 0 and unusable XY vectors. Include the whole weather/light table, fog clamping and NaN/infinity inputs in each numeric position. Assert the output is finite explicitly (`v == v and math.abs(v) < math.huge`) before comparing its value. The repository’s `assertNear` alone can accept NaN. Example assertions:
+**Interfaces**
+
+- `visibility.bearing(look, delta) -> cosine` takes two vectors with X and Y components.
+- `visibility.daylight(time, sunrise, sunset) -> factor or nil` takes normalized BeamNG times.
+- `visibility.range(maxMeters, cosAngle, daylight, lampsOn, streetStrength, rawFog, precipitationFactor) -> metres` returns a finite value between zero and the configured maximum.
+
+- [ ] **1. Write the compass tests.** Face +Y and put the runner north, east, west and south. Expect cosines 1, 0, 0 and −1. Scale both vectors and change their Z values. Expect identical results. For zero separation, a missing heading or XY length ≤0.001, expect −1. At 45° expect `400 * 2 ^ (math.sqrt(0.5) - 1)` metres. Sweep angles from 0° to 180° and assert the ranges decrease.
+- [ ] **2. Write the environmental table test.** Each row below gives D, lamps, streetlight, raw fog, precipitation and the **rounded** front/side/rear results. Assert the unrounded outputs are finite before rounding. Also test a 200 m clear-day setting (200/100/50) and Off (0 at every bearing).
 
   ```lua
-  assertNear(visibility.range(400, 0, 1, false, 0, 0.0004, 1), 200, 1e-9)
-  assertNear(visibility.range(400, -1, 0, true, 1, 0.0004, 1), 75, 1e-9)
-  assertNear(visibility.range(400, 1, 1, false, 0, 0.015, 1), 160, 1e-9)
-  assertEq(visibility.range(0, 1, 1, true, 1, 0, 1), 0)
-  assertEq(visibility.bearing({x=0, y=0}, {x=0, y=1}), -1)
+  local cases = {
+    {1, false, 0, 0.0004, 1.00, 400, 200, 100},
+    {1, false, 0, 0.0010, 1.00, 390, 195,  98},
+    {1, false, 0, 0.0020, 0.85, 318, 159,  79},
+    {1, false, 0, 0.0040, 0.70, 239, 119,  60},
+    {1, false, 0, 0.0050, 0.75, 243, 122,  61},
+    {1, false, 0, 0.0150, 1.00, 160,  80,  40},
+    {0, false, 0, 0.0004, 1.00, 120,  60,  30},
+    {0, true,  0, 0.0004, 1.00, 220, 110,  55},
+    {0, false, 1, 0.0004, 1.00, 200, 100,  50},
+    {0, true,  1, 0.0004, 1.00, 300, 150,  75},
+  }
+  for _, row in ipairs(cases) do
+    for i, cosine in ipairs({1, 0, -1}) do
+      local m = visibility.range(400, cosine, row[1], row[2], row[3], row[4], row[5])
+      assert(m == m and math.abs(m) < math.huge)
+      assertEq(math.floor(m + 0.5), row[5 + i])
+    end
+  end
   ```
 
-- [ ] Add a wrapped day (sunrise 0.75, sunset 0.25), asserting D=1 at time 0, 0 at 0.5 and 0.5 at both crossings. Check ±30 minutes around each crossing, identical anchors and missing inputs. Run `lua tests/run.lua tests/test_visibility.lua` and see the new tests fail for the absent module.
-- [ ] Implement the three pure functions. Clamp the normalized XY dot, treat lengths ≤0.001 as unusable, and use finite individual defaults (Off for an invalid maximum, shortest angle, dark, unlit, dense fog and 0.70 for invalid inputs). Unit-clamp D and S and bound the precipitation multiplier to [0.70,1]. Implement the spec’s smoothstep around the nearest circular sunrise/sunset boundary.
-- [ ] Run the focused test again (0 failed) and compile the new game-side file with `luajit -bl client/lua/ge/extensions/copsAndRobbers/visibility.lua >/dev/null`. Commit as `feat: calculate directional visibility range`.
+  Replay the spec's 170 m night drive with raw fog 0.0015 and precipitation 0.925. At D=0, check the rounded forward ranges for (lamps, S) = (off, 0.5), (on, 0.5), (on, 0), (off, 0): 141, 230, 194 and 106 m. The corresponding range decisions are false, true, true and false. At D=1 all four give about 353 m. Sweep increasing raw fog and decreasing precipitation separately at night and by day, checking each range is no larger than the previous one.
+
+- [ ] **3. Pin invalid measurements.** Replace each numeric input separately with nil, NaN and ±infinity. Assert finite results using the fallback for that input (maximum 0, cosine −1, D/S 0, fog 0.015, precipitation 0.70). Only boolean true turns lamps on. Pin clamping separately with valid out-of-domain values, including raw fog under 0.0004 and above 0.015. Dense fog on a fully streetlit night with lamps on gives 120 m forward.
+- [ ] **4. Write the twilight test.** Use sunrise 0.75, sunset 0.25 and `w = 30 / 1440`. Check D=1 at 0 and D=0 at 0.5. For offsets `{-w, -w/2, 0, w/2, w}` from sunrise expect `{0, 0.15625, 0.5, 0.84375, 1}`. Reverse the sequence at sunset. Repeat a crossing adjacent to clock wrap, use `assertNear` with 1e−9, and expect nil for non-finite, missing or coincident anchors.
+- [ ] **5. Run red.** Run `lua tests/run.lua tests/test_visibility.lua`. The new test file should fail because `copsAndRobbers/visibility` does not exist.
+- [ ] **6. Implement the three functions.** Normalize X/Y before taking and clamping the dot product. For daylight find the nearer boundary on the circular clock, give the distance its sign from sunrise-to-sunset membership, then smoothstep across ±30 minutes. For range apply `R * 2^(c - 1)`, then the lighting, fog and precipitation factors from the spec. Do not round in production.
+- [ ] **7. Run green.** Run the focused command from step 5 (0 failed) and `luajit -bl client/lua/ge/extensions/copsAndRobbers/visibility.lua >/dev/null` (exit 0).
+- [ ] **8. Commit the module and tests** as `feat: calculate directional visibility range`.
 
 ## Task 2 · Read daylight, weather and runner lamps
 
-**Files:** Create `client/lua/ge/extensions/copsAndRobbers/sightConditions.lua` and `tests/test_sight_conditions.lua`. Reuse the sky module’s `WEATHER` and `weatherBlend()`, and Task 1’s daylight helper.
+**Files**
 
-**Interfaces:** `sightConditions.sample(runner) -> daylight, lampsOn, rawFog, precipitationFactor`; `sightConditions.reset()` drops cached mission/target state. Reads from GE environment, solar and vehicle bridge adapters through the existing game globals. The runner argument is a vehicle object or nil.
+- Create `client/lua/ge/extensions/copsAndRobbers/sightConditions.lua` for the GE adapters and solar cache.
+- Create `tests/test_sight_conditions.lua`. Reuse the real `copsAndRobbers/sky` preset table. Stub its `weatherBlend()` return tuple and restore it and the GE globals between fixtures.
 
-- [ ] Pin solar fallback precedence, polar day/night, date/location/timezone change, wrapped twilight, direct raw density (including 0 with LevelInfo present), and absent LevelInfo (engine can return 0,nil). Assert that a midpoint between clear and rain gives fallback raw fog 0.0012 and precipitation 0.925. With valid raw 0.0035, retain that exact density. Test nil/unknown endpoints, invalid progress and stable equal endpoints.
-- [ ] Stub the real bridge signatures. With runner A reporting 2 and B initially nil, expect true then false, then true when B’s cache reaches 1, false when it reaches 0. Reuse B’s ID after a bridge destruction or replacement and ensure the current vehicle gets a new registration and the missing value gives false. Count registrations/queued notifications, include an existing third-party subscription and prove reset cannot disable it.
-- [ ] Run `lua tests/run.lua tests/test_sight_conditions.lua` and see the missing adapter fail. Implement the interface, including the spec’s clock cache key, finite checks and fallback precedence. `registerValueChangeNotification` is idempotent in the shared cache. Calling it for the current runner before reading on each 4 Hz sample handles same-ID replacements while the bridge suppresses duplicate vehicle commands. Do not unregister shared listeners. Use the raw fog getter’s second return to distinguish an absent LevelInfo; if a fallback preset is needed, convert its density from slider units once.
-- [ ] Run the focused suite (0 failed) and compile the new file with `luajit -bl client/lua/ge/extensions/copsAndRobbers/sightConditions.lua >/dev/null`. Commit as `feat: sample visibility conditions from the game`.
+**Interfaces**
 
-## Task 3 · Locate streetlight illumination
+- `sightConditions.sample(runner) -> daylight, lampsOn, rawFog, precipitationFactor`. The argument is the assigned vehicle object or nil.
+- `sightConditions.reset()` discards local target and solar cache state. Task 4 owns its lifecycle calls.
 
-**Files:** Create `client/lua/ge/extensions/copsAndRobbers/streetLights.lua` and `tests/test_street_lights.lua`.
+- [ ] **1. Write the solar precedence test.** Supply `core_environment.getTimeOfDay()` with time 0, latitude, longitude, year, month, day, utcOffset and dstRule. Have `core_solarTimeOfDay.getSolarTimeOfDayValues(tod)` return `{sunrise=0.75, sunset=0.25}`. Set `getLightState().isNight=true` and expect D=1. Move just the clock to 0.75 and expect 0.5 with the same anchor lookup count. Change each cache key in turn, including map identifier, and expect one new lookup per change. Expect the first sample after reset to fetch anchors anew.
+- [ ] **2. Write the solar fallback test.** Remove anchors and have `getSolarTimeOfDayEvents(tod)` return `{polar="day"}` or `{polar="night"}`. Expect D=1 or 0 even with the opposing `isNight`. Without either solar signal, `isNight=false` gives 1, true gives 0, and nil or a non-boolean gives 0. Include a failed getter and a non-finite clock sample.
+- [ ] **3. Write the weather precedence test.** Use clear→rain, progress 0.5. For `getFogDensity() -> 0, nil` expect raw fog 0.0012 and precipitation 0.925. For `0, levelInfo` expect 0 and 0.925. For `0.0035, levelInfo` expect 0.0035 and 0.925. NaN with LevelInfo uses the preset blend. Repeat with stable clear/cloudy/fog, rain, snow, storm and thunderstorm and check each precipitation factor. Missing progress for different endpoints uses the denser fog and lower precipitation. Unknown endpoints contribute 0.015 and 0.70. Clamp finite progress to [0,1].
+- [ ] **4. Write the lamp lifetime test.** Stub the actual calls `registerValueChangeNotification(vehicle, "lights_state")` and `getCachedVehicleData(gameId, "lights_state")`. Maintain a stub cache keyed by ID with separate value and registered-key tables. Count calls separately from newly queued vehicle notifications. Run this sequence:
 
-**Interfaces:** `streetLights.beginMissionIndex()` captures map light/fixture lists once, `streetLights.advance()` processes up to 128 queued names per frame, `streetLights.strength(targetCenter, cast) -> 0..1` queries the built cells, and `streetLights.clear()` releases mission data. These functions read the scene tree and never create or mutate light objects.
+  | Sample | Bridge state | Expected lamps |
+  |---|---|---|
+  | A, ID 41 | Value 2, another caller already registered the key | On, zero additional vehicle notifications |
+  | B, ID 42 | No registered key or cached value | Off, one new notification |
+  | B again | Values 1, then 0, then an unrecognized value | On, off, off, no duplicate notification |
+  | Replacement B, also ID 42 | Bridge destruction/replacement cleared entry 42 | Off, one new notification, then on once 2 arrives |
+  | No runner, then reset | A’s unrelated subscription survives | Off, zero unregister calls |
 
-- [ ] Add scene fixtures shaped like the West Coast bridge spot and Italy point light named in the spec. Include an enabled linked child, intensity-managed fixture, unlit emissive mesh, unmarked searchlight, disabled lamp, enabled zero-intensity lamp, wrong facing spot, point directly above, out-of-range runner, and a wall between fixture and runner. Assert full strength at 0.5 radius, 0.5 at 0.75 radius and 0 at the boundary, using 3D distance. Assert the maximum when two lamps overlap.
-- [ ] Pin work limits across frames and queries. Cover negative cell coordinates, 32 m cap, shared cell overflow, duplicates via child and tag, missing/reused/deleted IDs, and a change of mission. End and restart an eligible round on the same map and assert the class discovery counter is still one. An ineligible interval pauses work. Mission end, disconnect or extension unload clears the index and the next mission discovers afresh. Use counters to assert one discovery per mission, ≤128 names processed per frame, ≤144 stored entries examined per query and ≤8 single obstruction rays. A partial index returns only established positive matches.
-- [ ] Run `lua tests/run.lua tests/test_street_lights.lua` to see the missing module fail. Index scene names via `scenetree.findClassObjects`, `findObject`, and TSStatic indexed `child` fields following `core/environment.lua`’s `refreshnightLightsObjects`. Read direct, dynamic and ordinary fields with proper string-bool parsing. Resolve stable IDs back to expected emitters at query time and recheck live `isEnabled` and intensity. Require valid positive point `radius` or spot `range`. Use the spot transform’s local +Y axis (column 1), half of `outerAngle` in degrees, and a clear segment to the runner’s centre (0.5 m tolerance). Reject unknowns. Ignore duplicate IDs and retain the lowest 16 per cell.
-- [ ] Run the focused suite (0 failed) and compile the new game-side file. Commit as `feat: sample authored streetlights near the runner`.
+- [ ] **5. Run red.** Run `lua tests/run.lua tests/test_sight_conditions.lua`. Expect the missing `copsAndRobbers/sightConditions` module.
+- [ ] **6. Implement the solar read.** Use the wrapped time and normalized anchors with Task 1’s `daylight`. Cache the anchors or polar result by the keys in step 1. Read the current time each sample. Use the fallback order tested in step 2.
+- [ ] **7. Implement fog and precipitation.** Distinguish both returns of the actual raw getter. Blend `sky.WEATHER` fogDensity values in slider units and divide by 1000 once when fallback is needed. Use `sky.weatherBlend()`'s already-smoothed progress for both interpolations.
+- [ ] **8. Implement the bridge read.** Register the current runner’s key before each cache read. The bridge deduplicates this operation for the lifetime of the vehicle and clears its own state on destruction/replacement. Treat only electrical values 1 and 2 as on. Release local references on reset.
+- [ ] **9. Run green.** Repeat the command in step 5 and compile the adapter with `luajit -bl client/lua/ge/extensions/copsAndRobbers/sightConditions.lua >/dev/null`. Expect 0 failed and exit 0.
+- [ ] **10. Commit the adapter and tests** as `feat: sample visibility conditions from the game`.
 
-## Task 4 · Evaluate human and Practice cop sight on the client
+## Task 3 · Locate authored streetlights near the runner
 
-**Files:** Modify `client/lua/ge/extensions/copsAndRobbers.lua`, `client/lua/ge/extensions/copsAndRobbers/sight.lua`, `client/lua/ge/extensions/copsAndRobbers/ai.lua`, `tests/client_stubs.lua` and `tests/test_client.lua`.
+**Files**
 
-**Interfaces:** Extend `ai.objects()` items with `role`, retaining `id` and `obj`, and expose the current `instance` (positive integer spawn serial). Continue using `sight.visible(eyePos, runnerPos, runnerDir, maxMeters, cast)`, now with the computed range. Add `sight.lookDirection(cop, useAttachedCamera) -> vec3 or nil` with Task 1’s bearing fallback. Keep `sight.new()/step()` per human or AI observer. AI reports add numeric `aiId` and `instance` together.
+- Create `client/lua/ge/extensions/copsAndRobbers/streetLights.lua` for map discovery and sampling.
+- Create `tests/test_street_lights.lua` for a fake scene with class lists, indexed TSStatic fields, ID/name lookups, transforms and a counted ray function.
 
-- [ ] Add client tests with separated car, camera, traffic and runner objects. With a runner 290 m to the side in clear daylight expect false, then true after rotating the attached camera. Place a wall between the cars and move the camera beyond it. Expect false and capture ray origins at the cop car. Free, path, map, unknown, vertical and failed camera reads use the bound car’s heading. A detached camera pointing at the target must never increase the range. Test newly spawned and rebuilt round cars, a missing car and a switched seat. With the remote runner’s active vehicle set to a visible spare/trailer, omit the round-car registration, then register the correct object, then remove the registration or object. Expect false/true/false and zero sight rays for both missing-target samples.
-- [ ] Exercise Practice as runner, cop and AI-only watcher. Two AI cops facing opposite ways must send independent `seen` values, transitions and 5 s keepalives. Removing one previously visible car gives that slot a false update. After GO, capture the AI cop’s queued driving commands. Exercise acquisition, loss behind cover, reacquisition and a separate Off round. Verify expected sight events, the original `ai.setTargetObjectID` naming the assigned runner and chase mode, and zero target-clear, mode-change or retarget commands caused by spotting. Switch the issuer to another seat before GO and before penalty release. Both AI starts must target the actual round runner. Changing the issuer camera should affect only the driving human cop. Confirm no events before GO, as a regular spectator/bystander, or while Off, and no stale AI state after round-end, reconnect, setup/rebuild or role change. Count 1 weather/runner-lamp sample and at most 1 streetlight query per sight tick across all observers, zero ineligible work when Off.
-- [ ] Run `lua tests/run.lua tests/test_client.lua`, observe failures for side acquisition and AI events. Update existing sight test fixtures to explicitly represent a clear day, dry weather and an attached forward-looking camera where those facts determine the assertion.
-- [ ] Use the execution branch’s existing `roundVehicle()` and its bound local round-car ID where available. On this design base the helper falls back to the occupied vehicle after placement: for sight, persist the actual `placeVehicle` result at every successful placement and clear it on failure, destruction and end. For an in-place setup verify the same local round-car identity. Resolve a Practice human runner from this bound car and a Practice AI runner from `ai.runnerObject()`. For remote human sight, resolve only `traffic.roundCar(runnerId)` from `cnr_roundCars` through the matching spawned BeamMP entry and live GE object. Reuse the existing entry lookup. Skip `runnerObject()`’s `activeVehicleID` fallback for sight and preserve its other callers. Use the captured car as the origin even after a seat change. In Practice, supply the bound human runner ID to the existing AI chase target resolver at release and penalty recovery if the fallback would otherwise use the currently occupied vehicle. Keep the existing AI runner, flee behavior and other driving commands. Use `commands.isFreeCamera()`, `core_camera.getActiveCamName(0)`, matching seat ID and `core_camera.getForward()` only for positively identified driving modes (`orbit`, `chase`, `driver`, `occupant.*`, `onboard.*`). Missing API, exception or near-vertical XY length ≤0.001 falls back to car forward.
-- [ ] Wire Tasks 1–3 into the existing 0.25 s cadence. Order the work by active phase and observer authority, actual target and coarse max range, shared conditions, effective per-observer range, then two-way sight rays. Handle missing or failing ray results as blocked and retain the existing point heights/spread/tolerance. Assign a new session-monotonic serial on every successful AI spawn or rebuild. Include it in `ai.tick`’s existing {id,vid} registration and AI sight reports. Keep per-slot change/keepalive state, iterate prior slots to flush a disappeared observer, and reset state when round setup or identities change. Initialize and advance the index outside sight sampling only in eligible non-Off rounds. Reset observer and target state at round teardown. Retain the streetlight index between rounds on the same map, pause advances when ineligible and clear it at mission end, disconnect or unload. Read `sightMaxMeters` for the Practice issuer from its targeted `cnr_setupAI` too, independent of human role or spectator status.
-- [ ] Rerun client and new focused suites (0 failed), compile the changed client Lua files, then commit as `feat: evaluate sight from each assigned cop car`.
+**Interfaces**
 
-## Task 5 · Accept authorized Practice AI reports
+- `streetLights.beginMissionIndex()` queues map scene names once. `advance()` processes at most 128 queued names per frame.
+- `streetLights.strength(targetCenter, cast) -> 0..1` reads the built cells. `clear()` discards all mission state.
 
-**Files:** Modify `server/CopsAndRobbers/main.lua`, `server/CopsAndRobbers/cnr/round.lua`, `tests/test_main.lua` and `tests/test_round.lua`. Existing `cnr/sight.lua` supplies grace and expiry.
+- [ ] **1. Test emitter discovery.** Model West Coast’s `bridge_lightpole_light1111111` as a SpotLight with `nightLight="1"`, range 22 and outerAngle 160. Model Italy’s `areaLight_cityWallLights_0360631` as a PointLight with radius 10. Exercise direct and dynamic fields, including `"0"`. Add an untagged light named by an indexed TSStatic `child`, another with positive `nightIntensity`, a `nightEmissive` mesh with no emitter and an unmarked vehicle/camera searchlight. Only the two map emitters, child and intensity-managed light can yield positive samples.
+- [ ] **2. Test live strength.** Place the radius-10 point overhead. Target distances 5, 7.5 and 10 m give 1, 0.5 and 0. Toggle the same object’s live `isEnabled` and intensity after indexing and expect 0 when disabled or at zero intensity. Give two overlapping lamps strengths 0.5 and 0.8 and expect 0.8. Check missing/non-finite position, intensity, radius or spot direction and expect no light from that emitter.
+- [ ] **3. Test spotlight geometry and occlusion.** Set transform column 1 to (0,0,−1), target directly below within 11 m, clear ray returning cast length. Expect 1. Aim the spot up and expect 0. Put a target 79° then 81° off its axis, both inside range. Expect a positive result then 0. For the downward spot, have the ray return length −0.51 and then length −0.49. Expect 0 then 1. A nil, failing or non-finite ray gives 0.
+- [ ] **4. Test indexing budgets.** Queue 300 names, including a fixture with multiple indexed/comma-separated children. Count names resolved on each advance, including work deferred from fixtures. Expect ≤128. Place the only eligible light last in the enumeration and expect strength 0 before it is processed. Call begin twice without clearing and assert each class list was fetched once. Clear and begin again and assert it was fetched twice.
+- [ ] **5. Test query budgets and identity.** Cross x=0 with target and source on opposite sides. Use radius 80 and target distances 16, 24 and 32 m to assert the 32 m cap. Fill all nine cells with 17 emitters each, discovered in descending ID order, including a duplicate via a child. Assert the lowest 16 distinct IDs survive each cell, ≤144 indexed entries are considered and at most eight clearance rays run. With nine equally near eligible emitters make only the highest ID unobstructed. Expect 0. Remove a retained ID or resolve it to a different named emitter. Expect no bonus from the stale entry. Use counted lookup/cast stubs and fixture outcomes without shipping counters.
+- [ ] **6. Run red.** Run `lua tests/run.lua tests/test_street_lights.lua`. Expect the new streetlight module to be missing.
+- [ ] **7. Implement discovery and incremental indexing.** Enumerate PointLight, SpotLight and TSStatic names once per mission via the scene tree. In `advance()`, handle indexed `child` names using the installed `core/environment.lua`’s `refreshnightLightsObjects` / `addLinkedNightLights` conventions. Budget queued child lookups like top-level names. Validate class and authoring evidence, deduplicate and insert by stable scene ID into 32 m XY cells. Keep the lowest 16 entries per cell.
+- [ ] **8. Implement the query.** Inspect the target cell and eight neighbours. Resolve and validate the stored emitters, order by 3D distance then ID, and apply the eight-candidate limit. Check live enabled state, positive intensity and capped radius/range. Gate spots by outer half-angle. Cast once per contributing candidate from emitter to runner centre with 0.5 m tolerance. Return the strongest clear contribution, or 0.
+- [ ] **9. Run green.** Repeat step 6 (0 failed) and run `luajit -bl client/lua/ge/extensions/copsAndRobbers/streetLights.lua >/dev/null` (exit 0).
+- [ ] **10. Commit the index and fixtures** as `feat: sample authored streetlights near the runner`.
 
-**Interfaces:** Keep `Round:sightReport(now, pid, seen)` for human cops. Add `Round:aiSightReport(now, issuerPid, aiId, seen)`. The server handler checks a registered `aiVid[aiId]` and matching positive-integer instance serial for the current Practice before dispatch. Keep server-side `carFor(aiId)` for observed distance.
+## Task 4 · Sample from the assigned cars on the client
 
-- [ ] Drive the registered event in tests with two AI cops and an issuer driving as runner, cop and watching. Only the issuer’s valid report for a mapped, rostered AI cop in running Practice can update that slot. Exercise foreign issuers, bystanders, public rounds, head start, Off, absent vehicle mapping, the runner’s negative slot, positive ids, numeric strings, fractional/unknown IDs, invalid JSON stale or missing instance serials and nonboolean `seen`. A malformed AI report must never fall through as a human report. Assert only targeted AI setup carries the needed max to the watching issuer.
-- [ ] Place the two cops at different sampled positions. Assert only a positive in-range observer counts, a cop at 451 m with host max 400 cannot spot, false transitions respect 1.5 s grace, staleness expires after 11 s, and losing one cop preserves aggregate sight while the other still sees. Delete a registered vehicle, remap a slot, reassign its former VID to another slot, and reuse a VID for a new instance in the grace window. Assert both old true and lost-at state disappear immediately. A delayed old-instance report cannot revive sight. Verify the existing leaderboard persistence path receives no practice record, and a normal human-only round retains sight/hidden time and assist credit with the same recorded samples.
-- [ ] Run `lua tests/run.lua tests/test_main.lua tests/test_round.lua tests/test_leaderboard.lua` and see the new valid AI report and setup tests fail. Dispatch the two payload forms only on strict type/range/issuer/role/phase checks and use the slot in `sight.report`. Include the existing config’s maximum in targeted `cnr_setupAI`. Reuse existing server roster, vehicle-registration and Practice exclusion rules; check registration belongs to the issuer and refers to a live owned VID. Track the current instance alongside the existing slot–VID mapping. On `cnrOnVehicleDeleted`, remap, VID reassignment and teardown, clear mapping and use `sight.forget` for each affected cop (all observers if the AI runner changed). An identical repeat registration preserves state. Require a fresh matching report for the new registration.
-- [ ] Rerun these suites (0 failed) and `make test`. Commit as `feat: validate sight reports for practice AI cops`.
+**Files**
 
-## Task 6 · Explain, verify and stage
+- Modify `client/lua/ge/extensions/copsAndRobbers.lua` for round identities, targeted Practice setup, cadence, mission lifecycle and reports.
+- Modify `client/lua/ge/extensions/copsAndRobbers/sight.lua` for attached-camera selection and guarded two-way rays.
+- Modify `client/lua/ge/extensions/copsAndRobbers/ai.lua` for spawn serials, observer enumeration and the assigned human runner chase target.
+- Modify `tests/client_stubs.lua` and `tests/test_client.lua`. Keep test spies on the new sight adapters local to the relevant tests.
 
-**Files:** Update the existing sight entries in `README.md`, `docs/DEPENDENCIES.md`, `client/ui/modules/apps/CopsAndRobbersHowToPlay/HowToPlay.vue` and `client/ui/modules/apps/CopsAndRobbersPanel/settings.js`.
+**Interfaces**
 
-- [ ] Describe the setting as clear-day range in the look direction. Keep translated distance formatting, Off help and existing HUD labels. Explain how turning the view, poor weather and runner lighting affect spotting. Add the checked camera, solar, fog, light bridge and map object interfaces to the compatibility guide with the two named map fixtures.
-- [ ] Run `make test`, `make vuecheck`, `make package` and `luajit -bl path/to/file.lua >/dev/null` for each changed game-side Lua file. Expect zero failed tests, successful compilation and both packaged payloads. Commit as `docs: explain sight direction and visibility conditions`. Pass the full diff to a fresh reviewer. Resolve findings and rerun the affected checks.
-- [ ] Stage the reviewed SHA from a disposable `git archive` snapshot with the installed local config copied into the snapshot before `make install-local`. Follow main’s AGENTS.md for the absolute test-server path and restart. Report the SHA and check the server log. Leave the game/launcher restart to the user.
-- [ ] First probe the engine in freeroam. Use a temporary tagged GE extension to sample camera mode/forward, solar anchors, raw fog with LevelInfo, runner bridge transitions and the live bridge spot/Italy point’s actual transform, enabled state, intensity and reach. Read its output in `beamng.log`. Verify that the West Coast spot points toward the road and grants strength under it, then zero outside it. For the two Practice checks below, let the temporary probe wrap the shared module’s `sight.visible`, call the original exactly once, preserve all return values, and log the cop position, runner position, computed max argument, actual distance and boolean result. Identify each slot by matching the observed cop position to `ai.objects()` and the bound local car. Restore the function on probe unload. These fields come from the production sight call and require no permanent per-frame game log. Issue one comment-free GE console line per experiment. Ask before deleting the probe.
-- [ ] **Single player, feel of looking.** In clear-day Practice as cop, use an open side street with the AI runner 200–400 m away. Hold the car heading, rotate the attached view toward and away from the runner. Expect acquisition facing them and loss after grace facing away when no other cop sees them. Check individual sight in the tagged log if the AI partner maintains aggregate sight. For a wall, look over it with orbit camera while the car stays behind it. Expect the car’s sight to remain blocked.
-- [ ] **Single player, night lighting.** In night Practice as runner, drive from a lit patch onto a dark stretch and toggle low beam. Use the tagged per-cop distance and range with a consistent bearing to distinguish actual changes from the AI moving. The readable range should decrease outside the lit patch and increase when lamps come on. Compare the sampled values with the pool of light the player sees.
-- [ ] **Two clients, remote lamps only.** In a night round on an unlit straight, park the runner about 170 m ahead of a cop looking at them. Disable automatic headlights, toggle runner lamps on/off, wait for replication and grace. The cop’s bridge state and sight should follow and the runner’s HUD should report the transition. This resolves remote electrics delivery across independently running clients.
-- [ ] Wait for the local result or explicit deferral of any outstanding game checks, recording deferred steps in main’s ledger. Merge only after authorization requirements are met. Follow main’s separate post-merge version bump and verification before clearing the ledger. Live deployment needs its own user request.
+- `sight.lookDirection(cop, useAttachedCamera) -> vec3 or nil`. Pass its result to Task 1’s bearing calculation. Use `sight.visible(eyePos, runnerPos, runnerDir, effectiveMeters, cast)` for final 3D distance and clearance.
+- `ai.objects()` items gain `role`, `instance` and `reported`, retaining `id` and `obj`. The existing per-car `reported` flag identifies lifetimes included in the registration batch by `ai.tick(clock)`. The frame sends that batch before sight. `ai.tick(clock)` registrations become `{id, vid, instance}`. Each successful AI spawn gets a positive serial greater than any this connection has already issued.
+- `cnr_sight` carries `{seen=boolean}` for the human or `{aiId=slot, instance=serial, seen=boolean}` for one AI cop. Task 5 consumes these fields.
+
+- [ ] **1. Set up the client harness.** Extend the fake vehicle’s `getDirectionVector()` with a per-object override and its existing +Y default. In the sight fixtures explicitly set clear/dry noon, valid raw fog, a positive attached camera mode and free camera off. Use `env.tick(0.25, 0.25)` for exactly one sample. Keep unrelated helicopter and streetlight calls out of sight-ray counts by spying on the cast passed to `sight.visible`. Count calls to the conditions and streetlight adapters separately.
+- [ ] **2. Write the side-street test.** Call `copInChase(env)`, put the round cop at (0,0,0) and `env.objects[300]` at (290,0,0). Its registered key is already `2-0`. Keep the cop’s heading +Y. Change only the camera for successive samples:
+
+  | Camera / seat | Expected result for this human cop |
+  |---|---|
+  | Orbit, seat is cop, look +Y | false, no sight ray |
+  | Orbit, seat is cop, look +X | true, first outgoing origin (0,0,1.2) |
+  | Driver, chase, occupant or onboard driving view, +X | true |
+  | Free camera, path, map, cinematic, relative or unknown mode looking +X | false using cop heading |
+  | Another vehicle occupied, camera looks +X | false using original cop heading |
+  | Re-enter cop, camera lookup throws or forward vector is near vertical | false using cop heading |
+
+  Isolate rows or assert both the previous state and the change count with `countSentEv`: an unchanged value within five seconds sends no packet. While orbit looks +X, move the camera beyond a wall at x=5 and block all three outgoing car rays. Expect false.
+
+- [ ] **3. Pin the sight geometry.** In a direct `sight.visible` test place the cop origin at z=0 and runner origin at z=0.2 so the offset eyes are level. At exactly the effective range acquire. Move just outside it and expect false and zero casts. For a runner facing +Y block centre and front, clear the aft point in both directions and expect true. Block only the return from aft and expect false. Check the two-metre offsets, 0.5 m tolerance, invalid positions and nil/failed/non-finite cast results. Increase vertical separation enough to exceed the range while XY still fits and expect zero casts.
+- [ ] **4. Pin remote target identity.** Use `env.addObject(301, vec3(0,50,0))` as a visible spare and `env.mpPlayers[2] = {activeVehicleID="2-1"}`. Add its `env.mpVehicles["2-1"]` entry. For the four steps below use `env.fire("cnr_roundCars", {keys=...})` and keep the spare visible throughout.
+
+  | Round-car registration | Matching object | Sight / clearance work |
+  |---|---|---|
+  | Empty | Spare only | false, zero casts |
+  | `{"2-0"}` | Spawned 300 at (0,100,0) | true, two clear casts |
+  | Same | Entry marked unspawned/deleted, or GE object gone | false, zero casts |
+  | Removed | Spare is still active | false, zero casts |
+
+- [ ] **5. Test local placement lifetime.** Exercise initial replacement, a fresh personal spawn, repaint/rebuild and failed replacement. For each successful placement move focus to a different car before the next sight sample. Assert the new assigned ID still supplies the cop origin (or supplies the runner target in Practice). Destroy the assigned car, including while its acknowledgement is pending. Expect no acquisition from a spare or a reused stale identity. Follow the existing placement/cleanup tests when simulating the server-announced replacement.
+- [ ] **6. Write the independent Practice reports test.** From `watchPractice` / `aiOnlySetup` use AI runner −10 and cops −11 and −12. Put the runner 290 m ahead of the first cop and behind the second in open daylight. Set the host maximum on the targeted setup to 400. Collect `env.sent` entries by `data.aiId`; AI iteration order is unspecified. Use the serials emitted by `cnr_aiVehicles`. With time relative to the first running sample, expect:
+
+  | Time | Change | `cnr_sight` emitted |
+  |---|---|---|
+  | Prep and head start | Tick with all cars placed | None |
+  | 0 | Release, first running sample | −11 true, −12 false |
+  | +0.25 s | Flip −12 to face runner | −12 true only |
+  | +4.75 s | No change | None since +0.25 |
+  | +5.00 s | No change | −11 true only |
+  | +5.25 s | No change | −12 true only |
+  | +5.50 s | Remove visible −11 | −11 false using its previous serial |
+
+  Repeat the attribution check for Practice as runner (two AI cop IDs and no human report) and as cop (human plus AI partner). An issuer changing camera direction affects only their attached human cop. Rebuild and assert the new registrations have strictly newer serials and fresh first observations. End and rejoin as an ordinary spectator or bystander. Expect no reports.
+
+  **Late BeamMP vehicle IDs.** In an AI-only round hold back `MPVehicleGE.getVehicleByGameID(gameId)` for just one fake car, using the late-ID stub in the existing local placement test. Keep the AI cop looking straight at the AI runner at 290 m in daylight. Filter `env.sent` to that observer’s sight and both the observer and target registrations, retaining event order. Run each row from a fresh fixture and advance in 0.25 s frames:
+
+  | At GO and +0.25 s | At +0.50 s | Expected order and timing |
+  |---|---|---|
+  | Runner registered. Cop’s GE object exists, but its VID is unavailable | Make the cop VID available | No sight report for this cop before registration. Emit its `cnr_aiVehicles` first, then its initial true at the first eligible sight tick, within 0.25 s of registration |
+  | Cop registered. New AI runner’s GE object exists, but its VID is unavailable | Make the runner VID available | No true for the new target before its registration. Emit the runner registration first, then a fresh true at the first eligible sight tick |
+
+  For the second order also rebuild a previously visible AI runner, leave its replacement VID unavailable for two ticks and allow the prior sight loss. The first true for the newly registered runner must arrive within one sight interval even if the cop’s previous true was less than five seconds ago. Compare the registration and sight indices in `env.sent` when both fire on one frame.
+
+- [ ] **7. Test that HIDDEN leaves the AI pursuit running.** In Practice as a human runner, save the assigned runner object and change the occupied seat before `cnr_release`. Assert each cop’s `targetsOf(veh)` ends at that saved ID and its commands include `ai.setMode("chase")`. Save a command cursor. Expose the runner, block it with a wall, then clear it. Expect true/false/true and zero further `ai.setMode` or `ai.setTargetObjectID` commands from those three outcomes. Fire `cnr_penalty` / `cnr_penaltyEnd` with the cop slot while still in the other seat and assert the resumed target again. Repeat the release check with maximum 0: chase starts and no sight packet is sent. Exercise the existing late-`cnr_setupAI` after GO fixture for this target too.
+- [ ] **8. Test bounded shared work.** For in-range humans and AI on the same tick expect one conditions sample. Expect one streetlight query at night and zero in full daylight. If all observers are beyond the host maximum or the target is missing expect zero such samples or rays and the necessary false report. An Off round, ordinary spectator and parked bystander generate no discovery or sight work. Start an eligible round, end it, spend a frame idle and start another on the same map: assert indexing pauses and resumes without another class scan. Exercise mission end, leave and extension unload separately. The next mission starts with an empty index.
+- [ ] **9. Run red.** Run `lua tests/run.lua tests/test_client.lua` and inspect the failures. Existing radial sight can acquire the 290 m side target, the old remote lookup can select the active spare and Practice emits no per-AI observations.
+- [ ] **10. Resolve the human cop and runner identities.** In `copsAndRobbers.lua`, use the existing `roundVehicle()` for the local round car. Main already uses `pendingPlacement.gameId` during placement and `personalCarId` afterwards. `placeVehicle` records the successful ID, `onVehicleDestroyed` and `endRound` clear it, and `updateCarCleanup` can recover a registered replacement for a public round. Ensure a failed placement/destruction cannot let sight reuse the prior assignment or a stale pending ID. For an AI runner use `ai.runnerObject()`. For a remote human runner extract the existing owner-prefix, spawned/deleted and GE-object checks inside `runnerObject()` and apply them only to `traffic.roundCar(runnerId)` for sight. Keep the active-vehicle fallback for existing non-sight callers.
+- [ ] **11. Implement the camera and casts in `sight.lua`.** Use `commands.isFreeCamera()`, `core_camera.getActiveCamName(0)`, a matching assigned car in seat 0 and `core_camera.getForward()`. Accept `orbit`, `chase`, legacy `driver` and the `occupant.` and `onboard.` driving name prefixes (for example `onboard.hood`). On missing or failed API, detached mode, wrong seat or unusable horizontal forward, use the assigned cop car’s heading. Feed the car’s world position to the existing 1.2 m eye calculation and fail a sample safely when its inputs or either required ray are unusable.
+- [ ] **12. Bind AI driving and registration to the assigned cars.** In `ai.lua`, generate the next serial on every successful setup or rebuild spawn. Expose it through `objects()` and `tick()`. Pass the current bound human runner’s game ID into the chase resolver from `onRelease`, the late-release path in `onSetupAI` and `onPenaltyEnd`. Prefer the AI runner when one is assigned. Remove the occupied-seat fallback in that resolver. Keep flee targeting and existing driving commands in their release/penalty paths.
+- [ ] **13. Connect the sampling loop.** Accept the maximum and AI authority from targeted `cnr_setupAI`, including when setup waited for local placement. Use the existing frame order that sends `ai.tick(clock)` registrations before sight. Expose the locally emitted registration state for each AI instance (including an AI runner). Wait to cache or send an AI cop’s first observation until its registration has been emitted. A new AI target becomes eligible for acquisition after its own registration is emitted. Reset the affected observer send state at each newly eligible lifetime so that the first observation goes out on the next sight tick even when its boolean matches a previous lifetime. Begin/advance the mission index during eligible setup/frames. At the 0.25 s sight gate, require running status, positive maximum and an authorized observer. Resolve the one runner, reject invalid or distant observer/target pairs, sample shared conditions once, and compute range separately using each observer’s bearing. Query streetlighting once when D<1 and at least one observer can be in range. Reuse `sight.new()/step()` per observer. Retain enough state to send false on disappearance. Reset the relevant state at setup/replacement, teardown or role change and clear mission data on leave/end/unload. Keep helicopter, hiding and sight-independent driving on their existing paths.
+- [ ] **14. Run green.** Run `lua tests/run.lua tests/test_visibility.lua tests/test_sight_conditions.lua tests/test_street_lights.lua tests/test_client.lua`. Expect 0 failed. Compile each changed game-side file:
+
+  ```bash
+  for file in client/lua/ge/extensions/copsAndRobbers.lua client/lua/ge/extensions/copsAndRobbers/{ai,sight}.lua; do
+    luajit -bl "$file" >/dev/null || exit 1
+  done
+  ```
+
+- [ ] **15. Commit the client integration and fixtures** as `feat: evaluate sight from each assigned cop car`.
+
+## Task 5 · Validate and attribute Practice AI reports on the server
+
+**Files**
+
+- Modify `server/CopsAndRobbers/main.lua` for targeted setup, `cnrOnAiVehicles`, `cnrOnSight`, deletion and registration lifetime.
+- Modify `server/CopsAndRobbers/cnr/round.lua` for Practice authorization and observer invalidation. Reuse the grace/stale functions in `cnr/sight.lua` and the 3D distance check in the round’s existing sight aggregation.
+- Modify `tests/test_round.lua` (observations, timing and records) and `tests/test_main.lua` (registered event handlers, vehicle ownership and payloads). Run the existing leaderboard suite as a regression check.
+
+**Interfaces**
+
+- `Round:sightReport(now, pid, seen)` accepts a human cop. `Round:aiSightReport(now, issuerPid, aiId, seen)` accepts an authorized Practice observation under the AI’s slot.
+- `cnrOnAiVehicles` receives `{ai={{id, vid, instance}, ...}}` from the issuer. `carFor(slot)` continues to sample that issuer’s mapped VID. `cnrOnSight` checks the current registration before passing an AI observation to the round.
+
+- [ ] **1. Write the round timing test.** Start a human-runner Practice using the setup from `test runner: AI cops can catch, nothing is recorded`, with helicopter off. Use `car(0)` for runner 1, `car(300)` for cop −10 and `car(450)` for cop −11. All are outside catch distance. Advance through countdown and head start to running before sending these reports. Check the effects returned by `r:tick(t, cars, {})` using `find`, with 0.25 s samples between transitions.
+
+  | Time | Input | Expected aggregate |
+  |---|---|---|
+  | 12 | −10 reports true | `spotted=true`, live runner position |
+  | 13 | −11 true, −10 false | Still spotted. The second cop is exactly within 400+50 |
+  | 15 | Move −11 to 451 m, past −10’s grace | `spotted=false`, last-seen at runner |
+  | 16 | −11 back at 300 m, fresh true | `spotted=true` |
+  | 17 | −11 false | Remains spotted through 18.25 |
+  | 18.5 | Exactly 1.5 s since loss | `spotted=false` |
+  | 19 | −10 true with no subsequent keepalive | Counts at 30, expires at 30.25 |
+
+  Check cop sight time goes to the slot that was in range. Use the previous tick’s total to detect a slot gaining sight time. In a separate test change the grace setting and verify loss at the configured boundary. End the Practice with `endCalled` and assert no `record` effect.
+
+- [ ] **2. Write the server event fixture.** Use `boot()`, `env.panel(1, "test runner")`, `env.call("cnr_vehiclePicked", 1, PICK)`, `cnr_myVehicle` acknowledgement for the driving issuer, and the existing `env.go()` / 0.25 s `cnr_tick` loop. For AI-only, start with `sitOut(env, 1, true)` and the existing watcher fixture. Assert `decodeJson(sentTo(env, "cnr_setupAI", 1)).sightMaxMeters == 400` and `sentTo(env, "cnr_setupAI", 2) == nil`. Populate `env.vehicles[1][vid]` **and** `env.vidPositions["1-" .. vid]` for each fake live car. The harness's spawn hook and position stub do not populate the owner’s vehicle table.
+
+  ```lua
+  env.call("cnr_aiVehicles", 1, encode({ai={
+    {id=-10, vid=2, instance=7},
+    {id=-11, vid=3, instance=8},
+  }}))
+  env.call("cnr_sight", 1, encode({aiId=-10, instance=7, seen=true}))
+  env.clock = env.clock + 0.25
+  env.call("cnr_tick")
+  assertEq(decodeJson(sentTo(env, "cnr_spotted", 1)).spotted, true)
+  ```
+
+  This event example is for the **human runner** fixture. In human-cop and AI-only fixtures, −10 is the AI runner and −11 is a cop. Check internal aggregate sight with round effects for all three roles. Check network deliveries against the existing audience for each role.
+
+- [ ] **3. Test authorization and malformed inputs.** Repeat with a bystander sender, ordinary spectator, public round, head start, Off, AI runner slot, unknown negative slot, positive ID, fractional ID or instance, numeric strings, missing mapping, non-owned VID, wrong or absent serial, instance-only payload, non-boolean `seen` and invalid JSON. Use a valid report before and after each case to distinguish a rejected false from a real loss. In particular send a malformed AI payload from a valid human cop while the runner is visible to them: assert it neither creates a human true report nor clears an existing human sighting. Keep a positive control with legacy human `{"seen":true}`.
+- [ ] **4. Test vehicle lifetime in the grace window.** With cop −10 seeing and cop −11 out of range, repeat its exact registration. Expect continued sight without another packet. Now report false to enter grace and replace the registration. For each row below, reset the fixture and inspect the next tick. Expect previous seen, lost-at and freshness to be invalidated immediately. A fresh matching report can reacquire.
+
+  | Change | Delayed report to reject |
+  |---|---|
+  | Owner deletes slot −10’s VID 2, then reuses VID 2 with serial 9 | −10 / 7 |
+  | Owner remaps −10 from VID 2 to VID 4 with serial 9 | −10 / 7 |
+  | VID 2 moves from −10 to −11 with serial 9 | −10 / 7 |
+  | Replace the AI runner while multiple cops have seen it | Existing reports clear immediately and fresh observations can reacquire |
+  | Another owner deletes its own VID 2 | −10 / 7 remains valid under its actual owner |
+
+  Exercise delayed superseded **registration** as well as a delayed sight message after same-VID reuse: the previous serial must not displace the new live instance. End and start a new Practice, reuse the same slot and VID, and repeat the stale-report assertion.
+
+- [ ] **5. Pin scoring and persistence.** Complete a Practice with a successful AI sighting and assert `io.open(env.dir .. "data/leaderboard.json") == nil` on a fresh fixture. Run the existing recorded human sight/hidden-time and catch/assist fixtures. Add a two-human-cop test using `chasing({helicopter=false})` and both cars at 290 m. Replay the spec's timeline relative to a running tick: report true for cop 2 at 0, false at 2, true for cop 3 at 3, then false at 5. Tick every 0.25 s. Expect one spotted-on at 0, overlapping sight at 3 through 3.25, only cop 3 accruing sight from 3.5, and spotted-off plus one last-seen at 6.5. Advance the runner position after 6.5 and verify the sent last-seen position stays at the loss location before the next scheduled ping. Check human record and assist fixtures against their existing samples.
+- [ ] **6. Run red.** Run `lua tests/run.lua tests/test_round.lua tests/test_main.lua tests/test_leaderboard.lua`. Expect failure for the missing round method, targeted maximum and accepted AI observation before implementation.
+- [ ] **7. Implement round attribution.** Keep ordinary human reports restricted to running, rostered human cops. In `aiSightReport` require a running Practice, its exact issuer, positive host maximum, a rostered integer AI cop and boolean sight. Record via `sight.report(self.sight, aiId, seen, now)`. Keep distance eligibility in the existing per-tick aggregation against `carFor(slot)`. Grace, stale timeout, helicopter tracking and Practice record exclusion already have owners.
+- [ ] **8. Implement registration lifetime.** In `cnrOnAiVehicles` validate the issuer, roster, integer fields and actual ownership/liveness of each supplied VID. Track serial ordering per affected slot/VID so registrations for independent vehicles can arrive in either order. Track each current instance alongside the slot–VID mapping. A newer spawn takes over its slot and invalidates any former user of its VID. Ignore duplicate live registrations and stale serials. Preserve the existing AI position, chase/catch and traffic registration consumers. If a legacy registration has no serial, it cannot authorize sight. Update their harness fixtures for the real owner vehicle list and new wire form where appropriate.
+- [ ] **9. Wire invalidation and event dispatch.** Use `sight.forget` for every affected observing slot, and clear all observers when the assigned AI runner is removed/replaced. Keep enough lifetime information to reject delayed old registrations after deletion. Clear mappings throughout existing round teardown/reset paths. In `cnrOnSight` enforce the boolean before dispatch. If either optional AI field is supplied validate both fields, current issuer, roster, live mapping and instance. Put the host maximum in the pending targeted AI setup payload so both immediate and delayed sends carry it.
+- [ ] **10. Run green.** Repeat step 6 and run `make test`. Expect 0 failed in both, including existing Practice movement, AI-only catching, human leaderboard and helicopter cases.
+- [ ] **11. Commit the round, handler and fixtures** as `feat: validate sight reports for practice AI cops`.
+
+## Task 6 · Explain, verify and stage the reviewed build
+
+**Files**
+
+- Modify `client/ui/modules/apps/CopsAndRobbersHowToPlay/HowToPlay.vue` (runner and cop instructions), `client/ui/modules/apps/CopsAndRobbersPanel/settings.js` (Sight range help) and `README.md` (chase/HUD explanation).
+- Modify `docs/DEPENDENCIES.md` with the camera, solar events/values, raw fog + LevelInfo, keyed vehicle bridge and map-light interfaces. Record each map fixture by name and what its live state establishes.
+
+- [ ] **1. Update player copy.** Describe Sight range as the clear-day distance in the direction the cop looks. Explain turning an attached view, darkness, weather and runner lights, and how ground sight affects the shared indicator. Keep the existing `dist("sightMaxMeters")` unit conversion, Off help, HUD labels and helicopter exception.
+- [ ] **2. Run repository checks.** Run `make test` (0 failed), `make vuecheck` (Vue, JS and UI tests exit 0), then `make package` (both `dist/Client/CopsAndRobbers.zip` and `dist/Server/CopsAndRobbers/main.lua` exist). Byte-compile every changed game-side Lua file:
+
+  ```bash
+  for file in client/lua/ge/extensions/copsAndRobbers.lua client/lua/ge/extensions/copsAndRobbers/{ai,sight,visibility,sightConditions,streetLights}.lua; do
+    luajit -bl "$file" >/dev/null || exit 1
+  done
+  ```
+
+- [ ] **3. Commit and review.** Commit the UI and docs as `docs: explain sight direction and visibility conditions`. Have a fresh reviewer inspect the full branch diff, particularly registration versus sight ordering and setup arriving after GO. Re-review fixes and rerun affected checks. Stage the resulting reviewed SHA.
+- [ ] **4. Install the reviewed snapshot locally.** From the reviewed feature worktree run the following with its reviewed HEAD. Then restart the local BeamMP server from the main checkout’s `.testserver` using its existing launch method. Check `.testserver/Server.log` for the expected loaded version and Lua errors. Report the recorded SHA to the player. The player handles game and launcher restarts.
+
+  ```bash
+  set -e -o pipefail
+  reviewed_sha=$(git rev-parse HEAD)
+  test_server=<repo>/.testserver
+  snapshot=$(mktemp -d)
+  git archive "$reviewed_sha" | tar -x -C "$snapshot"
+  (
+    set -e
+    cd "$snapshot"
+    if test -f "$test_server/Resources/Server/CopsAndRobbers/config.json"; then
+      cp "$test_server/Resources/Server/CopsAndRobbers/config.json" server/CopsAndRobbers/config.json
+    fi
+    make install-local TESTSERVER="$test_server"
+  )
+  ```
+
+- [ ] **5. Probe the engine APIs first.** Use a temporary GE extension in the game’s current `lua/ge/extensions/` directory. In freeroam, log tagged camera mode/forward readings while changing driving/free views, solar anchors and clock, LevelInfo and raw fog, and bridge values as the assigned vehicle’s lamps change. Sample the named West Coast spot under its light and outside it, and inspect Italy’s named point light at night. Check live enabled state, intensity, radius/range, transform column 1 for the spot, and whether the lit road returns positive strength. Read the probe tag in `~/.local/share/BeamNG/BeamNG.drive/current/beamng.log`.
+- [ ] **6. Capture each observer’s actual bearing and sight result.** In the temporary probe wrap the shared module functions used by the reviewed build. Call each original exactly once and preserve its return values.
+  - At each `sight.lookDirection(cop, useAttachedCamera)` call, discard any unfinished sample. Start a new one with the observer’s game ID, position and returned look vector. Match AI game IDs to `ai.objects()` for slot and serial. A human uses the assigned cop object passed to this call.
+  - Wrap `visibility.bearing(look, delta)`. For that observer, capture the actual returned cosine and XY delta when the look input matches. At `sight.visible(eyePos, runnerPos, runnerDir, effectiveMeters, cast)`, consume the sample only when the cop position and the horizontal cop-to-runner displacement match these inputs. Log game ID or AI slot/serial, both positions, bearing in degrees (`math.deg(math.acos(cosine))`), effective range and the original function’s returned distance and result.
+  - Clear pending data after each visible call, at the next observer’s look call, and each frame and round boundary. An observer rejected before direction or distance sampling contributes no completed row. Omit unmatched or incomplete rows. Check the log with two opposed AI headings, then remove one cop or move it beyond the host maximum. Only the remaining cop should produce paired readings on the next tick.
+  - Restore the wrapped functions on probe unload. Supply one comment-free GE console line per experiment and ask before deleting the probe from the player’s game folder.
+- [ ] **7. Single player, looking down a side street.** In clear-day Practice as cop, hold the car heading with the AI runner 200–400 m away in an open side street. Turn the attached view toward and away. Expect that cop’s acquisition when looking down the street and loss after grace when looking away. If the partner cop sees the runner, inspect individual probe readings. Orbit over a wall with the car behind it and expect that car’s sight to stay blocked. This checks camera classification, wall placement and how turning feels.
+- [ ] **8. Single player, night lighting.** In night Practice as runner, cross from a visibly lit patch into darkness and toggle low beam. Compare a cop’s logged ranges at similar bearing. Account for its movement using logged distance. Expect shorter range off the lit patch and longer range with lamps on. This checks whether the sampled light matches what the driver sees.
+- [ ] **9. Two clients, remote lamps.** On a clear night leave about 170 m on an unlit straight between a runner and the cop looking toward them. Turn off automatic headlights and toggle the runner’s lamps. Allow time for replication and grace. Expect on/off on the cop’s GE bridge, SPOTTED/HIDDEN on the runner and the corresponding sight transition on the cop. This check needs a second client to observe remote electrics.
+- [ ] **10. Close the local check.** Wait for results or explicit deferral. Record any deferred actions, expected results and uncertainty in main’s ledger under **In-game checks**. After authorized merge follow main’s separate version bump and verification before clearing the entry. Live deployment requires the user’s request for this release.
