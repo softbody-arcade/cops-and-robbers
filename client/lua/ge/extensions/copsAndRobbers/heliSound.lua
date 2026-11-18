@@ -22,6 +22,7 @@ local FIELDS = {
 
 local function reset(s)
   s.vol, s.written, s.muffle, s.blocked, s.rayAt = 0, nil, 1, false, nil
+  s.lastTarget, s.cleanupLogged, s.cleanupPending = nil, nil, false
   s.leftoverAt, s.lastPos, s.failed, s.logged, s.clock = nil, nil, nil, nil, nil
   return s
 end
@@ -43,11 +44,20 @@ local function remove()
   if obj then obj:delete() end
 end
 
+local function removeLeftover(s)
+  local ok, err = pcall(remove)
+  s.cleanupPending = not ok
+  if not ok and not s.failed and not s.cleanupLogged then
+    s.cleanupLogged = true
+    log("E", "cnr_heli", "helicopter sound cleanup failed: " .. tostring(err))
+  end
+end
+
 local function leftover(s, clock)
   local at = s.leftoverAt
   if at and clock >= at and clock - at < M.LEFTOVER_INTERVAL then return end
   s.leftoverAt = clock
-  remove()
+  removeLeftover(s)
 end
 
 local function create(p)
@@ -109,9 +119,10 @@ end
 
 local function writeVolume(s, obj, target)
   local w = s.written
+  local settled = target == s.lastTarget and s.vol == target
+  s.lastTarget = target
   if s.vol == w then return end
-  local edge = s.vol <= 0 or s.vol == target
-  if w and not edge and math.abs(s.vol - w) <= M.VOLUME_STEP then return end
+  if w and s.vol > 0 and not settled and math.abs(s.vol - w) <= M.VOLUME_STEP then return end
   obj:setVolumePitchCT(s.vol, 1, 0, 0)
   s.written = s.vol
 end
@@ -153,8 +164,8 @@ function M.tick(s, pos, level, clock, camPos, castRay)
   clock = clock or 0
   local dt = s.clock and math.min(M.MAX_STEP, math.max(0, clock - s.clock)) or 0
   s.clock = clock
-  if s.failed then
-    pcall(leftover, s, clock)
+  if s.failed or s.cleanupPending then
+    leftover(s, clock)
     return
   end
   local ok, err = pcall(step, s, pos, level, clock, dt, camPos, castRay)
@@ -168,8 +179,10 @@ function M.tick(s, pos, level, clock, camPos, castRay)
 end
 
 function M.clear(s)
-  pcall(remove)
+  local clock = s.clock
   reset(s)
+  removeLeftover(s)
+  if s.cleanupPending then s.leftoverAt = clock end
 end
 
 return M

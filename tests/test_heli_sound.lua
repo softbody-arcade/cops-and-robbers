@@ -328,6 +328,25 @@ test("the volume is only written on a change over 0.02, and when it reaches 0 or
   end
 end)
 
+test("a moving gain accumulates changes and writes the exact gain once it settles", function()
+  load()
+  local s = sound.new()
+  run(s, 0, 10, P, 0.25)
+  local obj = objects[NAME]
+  local writes = #obj.writes
+  local gain
+  for i = 1, 79 do
+    gain = 0.25 + i * 0.001
+    sound.tick(s, P, gain, 0.5 + i * 0.005)
+    assertNear(written(obj), gain, sound.VOLUME_STEP)
+  end
+  for i = writes + 1, #obj.writes do
+    assertEq(obj.writes[i].v - obj.writes[i - 1].v > sound.VOLUME_STEP, true)
+  end
+  for i = 80, 100 do sound.tick(s, P, gain, 0.5 + i * 0.005) end
+  assertEq(written(obj), gain)
+end)
+
 test("it is always found by name", function()
   load()
   local s = sound.new()
@@ -375,6 +394,67 @@ test("a leftover emitter is looked for about once a second and deleted while no 
   sound.tick(s2, P, 0, 0)
   assertEq(objects[NAME], nil)
   assertEq(leftover.deleted, true)
+end)
+
+test("a failing cleanup between rounds retries at the idle rate and the next rotor plays", function()
+  load()
+  local s = sound.new()
+  run(s, 0, 20, P, 1)
+  sound.clear(s)
+  local findObject = scenetree.findObject
+  local attempts = 0
+  scenetree.findObject = function()
+    attempts = attempts + 1
+    error("scene unavailable")
+  end
+  run(s, 21, 70, nil, 0)
+  scenetree.findObject = findObject
+  run(s, 71, 111, P, 1)
+  assertEq(#made, 2)
+  assertEq(objects[NAME], made[2])
+  assertEq(written(made[2]), 1)
+  assertEq(attempts, 3)
+  assertEq(#logs, 1)
+  made[2].setPosition = function() error("bad emitter") end
+  run(s, 112, 150, P, 1)
+  assertEq(#made, 2)
+  assertEq(objects[NAME], nil)
+  assertEq(#logs, 2)
+end)
+
+test("a stale emitter that resists deletion is cleaned up before next-round playback", function()
+  for _, failsAt in ipairs({ "round end", "idle tick" }) do
+    load()
+    local s = sound.new()
+    run(s, 0, 20, P, 1)
+    local stale = objects[NAME]
+    if failsAt == "idle tick" then
+      sound.clear(s)
+      stale = newEmitter("SFXEmitter")
+      stale:registerObject(NAME)
+    end
+    local remove = stale.delete
+    local attempts, occupied = 0, true
+    function stale:delete()
+      attempts = attempts + 1
+      if occupied then error("scene unloading") end
+      remove(self)
+    end
+    if failsAt == "round end" then sound.clear(s) else sound.tick(s, nil, 0, 1.05) end
+    run(s, 22, 65, P, 1)
+    assertEq(attempts, 3, failsAt)
+    assertEq(#made, 1, failsAt)
+    assertEq(#logs, 1, failsAt)
+    occupied = false
+    run(s, 66, 110, P, 1)
+    assertEq(stale.deleted, true, failsAt)
+    assertEq(#made, 2, failsAt)
+    assertEq(objects[NAME], made[2], failsAt)
+    assertEq(made[2].playing, true, failsAt)
+    assertEq(written(made[2]), 1, failsAt)
+    assertEq(attempts, 4, failsAt)
+    assertEq(#logs, 1, failsAt)
+  end
 end)
 
 test("an error deletes the emitter, stops the sound and logs once", function()
