@@ -22,7 +22,7 @@ local FIELDS = {
 
 local function reset(s)
   s.vol, s.written, s.muffle, s.blocked, s.rayAt = 0, nil, 1, false, nil
-  s.lastTarget, s.cleanupLogged = nil, nil
+  s.lastTarget, s.cleanupLogged, s.cleanupPending = nil, nil, false
   s.leftoverAt, s.lastPos, s.failed, s.logged, s.clock = nil, nil, nil, nil, nil
   return s
 end
@@ -44,15 +44,20 @@ local function remove()
   if obj then obj:delete() end
 end
 
-local function leftover(s, clock)
-  local at = s.leftoverAt
-  if at and clock >= at and clock - at < M.LEFTOVER_INTERVAL then return end
-  s.leftoverAt = clock
+local function removeLeftover(s)
   local ok, err = pcall(remove)
+  s.cleanupPending = not ok
   if not ok and not s.failed and not s.cleanupLogged then
     s.cleanupLogged = true
     log("E", "cnr_heli", "helicopter sound cleanup failed: " .. tostring(err))
   end
+end
+
+local function leftover(s, clock)
+  local at = s.leftoverAt
+  if at and clock >= at and clock - at < M.LEFTOVER_INTERVAL then return end
+  s.leftoverAt = clock
+  removeLeftover(s)
 end
 
 local function create(p)
@@ -159,7 +164,7 @@ function M.tick(s, pos, level, clock, camPos, castRay)
   clock = clock or 0
   local dt = s.clock and math.min(M.MAX_STEP, math.max(0, clock - s.clock)) or 0
   s.clock = clock
-  if s.failed then
+  if s.failed or s.cleanupPending then
     leftover(s, clock)
     return
   end
@@ -174,8 +179,10 @@ function M.tick(s, pos, level, clock, camPos, castRay)
 end
 
 function M.clear(s)
-  pcall(remove)
+  local clock = s.clock
   reset(s)
+  removeLeftover(s)
+  if s.cleanupPending then s.leftoverAt = clock end
 end
 
 return M
