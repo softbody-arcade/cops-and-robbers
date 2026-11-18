@@ -23,6 +23,10 @@ One entry per piece of work that has started: what it is, its branch (or "design
   - A random sky integration test sometimes generated a valid empty schedule and failed at `tests/test_main.lua:946`. Use repeatable setup and reroll inputs.
   - Weather polish left from the 2.11.0 reviews, all can-wait: `sky.forecast` allocates every frame; `stepCurve` builds 3 tables per step; `windAt` calls `wind.at` twice when the weather doesn't change; the 1 s scan grid is redundant once a weather fits; the round clock expression is repeated in `round.lua`
 
+- [ ] ! Directional cop sight and weather visibility (design). Spec and plan now, implementation deferred.
+  - Give cops a longer sight range in the direction they are looking, with a shorter range to the sides and rear. Decide whether to use the cop’s camera direction or the heading of their car.
+  - Cop sight that follows visibility: the sight range is worked out from what the game knows (fog thickness, how dark it is, street lights near the runner, whether the runner's lights are on, rain). Comes after night and weather rounds
+
 ## In-game checks
 Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to decide what needs a player. Record deferred checks here with the action, expected observation and open question. Remove a check once verified and record failures under Issues.
 
@@ -44,8 +48,6 @@ Run these together on 2.14.7 (`9f9c656`) or later. The two solo checks fit in th
 - [ ] ! Leaderboard filter by conditions (All / Normal / Night / Bad weather), next to the car-mode filter, so storm records don't compete with clear-day runs unless wanted. Runs already record their conditions (night and weather rounds)
 - [ ] ! Dry roads in tunnels: in rain, storm and snow rounds the road grip is the same inside a tunnel as outside, because the mod changes the map-wide surface types (`surfaces.lua`). The roof check that hides the rain (`shelter.lua`) could switch the surfaces back to dry while the player's own car is under a roof, with a short delay at tunnel mouths so grip doesn't flicker. Grip is simulated per player, so only your own car's grip changes noticeably; on your machine every road is briefly dry while you're under the roof
 - [ ] ! Let the runner get out of their car and flee on foot during a chase. Work out how cops spot and catch the runner once they leave the car.
-- [ ] ! Give cops a longer sight range in the direction they are looking, with a shorter range to the sides and rear. Decide whether to use the cop’s camera direction or the heading of their car.
-- [ ] ! Cop sight that follows visibility: the sight range is worked out from what the game knows (fog thickness, how dark it is, street lights near the runner, whether the runner's lights are on, rain). Comes after night and weather rounds
 
 - [ ] ! Workflow request. Make it easy to see which subagents are currently working when the session list also contains completed agents.
 
