@@ -2,8 +2,9 @@
 set -euo pipefail
 
 input_dir="$HOME/Downloads"
-output_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)/client/art/sound/cnr"
-scratch_dir=$(mktemp -d "$output_dir/.thunder-cut.XXXXXXXXXX")
+repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+output_dir="$repo_dir/client/art/sound/cnr"
+scratch_dir=$(mktemp -d "$repo_dir/.thunder-cut.XXXXXXXXXX")
 trap 'rm -rf -- "$scratch_dir"' EXIT
 
 normalize() {
