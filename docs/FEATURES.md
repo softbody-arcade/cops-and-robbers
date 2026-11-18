@@ -1,4 +1,4 @@
-# Cops and Robbers 2.12.0: features
+# Cops and Robbers 2.13.0: features
 
 A BeamMP server plugin with a client mod that BeamMP downloads automatically. The mod enforces the group's cops-and-robbers rules. It uses BeamMP vehicle positions in the level's 3D coordinates.
 
