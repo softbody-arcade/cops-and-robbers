@@ -2628,6 +2628,62 @@ test("How to play gets the effective traffic", function()
   env.cleanup()
 end)
 
+test("practice reserves AI slots until the server sees the owner's late spare removed", function()
+  for _, watch in ipairs({ false, true }) do
+    local env = trafficBoot({ maxCars = 4, vehicles = { [1] = { [0] = "car", [1] = "spare", [2] = "late spare" } } })
+    if watch then env.call("cnr_sitOut", 1, '{"on":true}') end
+    env.panel(1, "test runner")
+    env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+    assertEq(env.lastSent("cnr_setupAI"), nil)
+    if not watch then env.call("cnr_myVehicle", 1, '{"vid":0}') end
+    env.clock = 0.25
+    env.call("cnr_tick")
+    assertEq(env.lastSent("cnr_setupAI"), nil)
+    assertEq(env.lastSent("cnr_trafficStart"), nil)
+    env.vehicles[1][2] = nil
+    if watch then env.vehicles[1][0] = nil else env.vehicles[1][1] = nil end
+    env.clock = 0.5
+    env.call("cnr_tick")
+    assertEq(#decodeJson(env.lastSent("cnr_setupAI").data).ai, watch and 3 or 2)
+    if not watch then assertEq(env.lastSent("cnr_trafficStart").pid, 1) end
+    env.sent = {}
+    env.call("cnr_tick")
+    assertEq(env.lastSent("cnr_setupAI"), nil)
+    env.cleanup()
+  end
+end)
+
+test("a practice reroll supersedes pending AI and waits for the new human car even when space opens", function()
+  local env = trafficBoot({ maxCars = 3, vehicles = { [1] = { [0] = "car", [1] = "late spare" } } })
+  env.panel(1, "test runner")
+  env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  env.call("cnr_myVehicle", 1, '{"vid":0}')
+  env.panel(1, "reroll")
+  env.vehicles[1][1] = nil
+  env.call("cnr_tick")
+  assertEq(env.lastSent("cnr_setupAI"), nil)
+  env.call("cnr_vehiclePicked", 1, '{"model":"etk800","config":"vehicles/etk800/base.pc"}')
+  assertEq(env.lastSent("cnr_setupAI"), nil)
+  env.call("cnr_myVehicle", 1, '{"vid":0}')
+  assertEq(decodeJson(env.lastSent("cnr_setupAI").data).model, "etk800")
+  env.cleanup()
+end)
+
+test("practice with no room for all AI ends and releases bystanders without deleting retained traffic", function()
+  local env = trafficBoot({ maxCars = 3, vehicles = { [1] = { [0] = "round car", [1] = "parked traffic" } } })
+  env.panel(1, "test runner")
+  env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  env.call("cnr_myVehicle", 1, '{"vid":0}')
+  env.clock = 16
+  env.call("cnr_tick")
+  assertEq(env.lastSent("cnr_setupAI"), nil)
+  assertEq(env.lastSent("cnr_roundEnd").pid, 1)
+  assertEq(env.noticeHas("vehicle slots", "warn"), true)
+  assertEq(decodeJson(env.lastSent("cnr_parkBystanderCars").data).on, false)
+  assertEq(#env.removed, 0)
+  env.cleanup()
+end)
+
 test("the panel shows the traffic note", function()
   local env = trafficBoot({ maxCars = 4 })
   env.call("cnr_panel", 1, '{"action":"open"}')

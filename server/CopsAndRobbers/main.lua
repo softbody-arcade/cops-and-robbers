@@ -56,6 +56,8 @@ local sitOut = {}
 local spectators = {}
 local parkedBystanders = {}
 local aiSpawnsLeft = 0
+local pendingAISetup
+local AI_SLOT_WAIT_SECONDS = 15
 local gridClients = {}
 local START_ROAD_SEARCH = 2000
 local WATCHING_AI = "You can't spawn a car while watching the AI"
@@ -472,6 +474,28 @@ local function rememberPreRoundVehicles(pid)
   preRoundVehicles[pid] = existing
 end
 
+local function dispatchAISetup()
+  local setup = pendingAISetup
+  if not setup then return end
+  local pid, payload = setup.pid, setup.payload
+  if setup.capacity then
+    if not payload.aiOnly and allowRoundSpawn[pid] then return end
+    local vehicles = MP.GetPlayerVehicles(pid)
+    local occupied = 0
+    if type(vehicles) == "table" then
+      for _ in pairs(vehicles) do occupied = occupied + 1 end
+      if occupied + #payload.ai > setup.capacity then
+        setup.deadline = setup.deadline or now() + AI_SLOT_WAIT_SECONDS
+        return
+      end
+    end
+  end
+  pendingAISetup = nil
+  aiSpawnsLeft = payload.aiOnly and #payload.ai or 0
+  send(pid, "cnr_setupAI", payload)
+  if not payload.aiOnly and registeredRoundCar[pid] then openTraffic(pid) end
+end
+
 local function applyEffects(effects)
   for _, e in ipairs(effects) do
     if e.kind == "reply" then
@@ -480,6 +504,7 @@ local function applyEffects(effects)
       if e.meters then log(string.format("%s %.0f m", e.msg, e.meters)) end
       if e.to then notify(e.to, e.msg, e.tone) else broadcast(e.msg, e.tone) end
     elseif e.kind == "pickVehicle" then
+      pendingAISetup = nil
       send(e.pid, "cnr_pickVehicle", { includeMods = cfg.includeModVehicles, excludedModels = cfg.excludedModels })
     elseif e.kind == "planStart" then
       send(e.pid, "cnr_planStart", { id = e.id, count = e.count, anchor = e.anchor,
@@ -529,12 +554,16 @@ local function applyEffects(effects)
         list[#list + 1] = { id = a.id, role = a.role, index = current.startGrid and a.index or #list + 1, startPose = a.startPose, name = a.name, color = colorTable((colors.parseHex(a.colorHex))) }
       end
       if e.aiOnly then rememberPreRoundVehicles(e.pid) end
-      aiSpawnsLeft = e.aiOnly and #list or 0
-      send(e.pid, "cnr_setupAI", {
+      aiSpawnsLeft = 0
+      local capacity = maxCars()
+      local payload = {
         model = current.vehicle.model, config = current.vehicle.config, ai = list,
         runnerId = current.runnerId, copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
         aiOnly = e.aiOnly,
-      })
+      }
+      pendingAISetup = { pid = e.pid, payload = payload,
+        capacity = capacity and capacity >= #list + (e.aiOnly and 0 or 1) and capacity or nil }
+      dispatchAISetup()
     elseif e.kind == "countdown" then
       send(e.to or -1, "cnr_countdown", { seconds = e.seconds })
     elseif e.kind == "runnerGo" then
@@ -575,6 +604,7 @@ local function applyEffects(effects)
       trafficVids = {}
       spectators = {}
       aiSpawnsLeft = 0
+      pendingAISetup = nil
       clearRoundCars()
       partsBaseline = {}
       missingCount = {}
@@ -596,6 +626,7 @@ local function applyEffects(effects)
     elseif e.kind == "requestSetup" then
       send(e.pid, "cnr_requestSetup", {})
     elseif e.kind == "rebuild" then
+      if pendingAISetup then pendingAISetup.payload.config = e.config end
       for pid in pairs(current.players) do
         if not round.isAI(pid) then
           placing(pid)
@@ -1376,7 +1407,7 @@ function cnrOnMyVehicle(pid, data)
   log(string.format("%s placed the round car (vid %s)", MP.GetPlayerName(pid) or tostring(pid), tostring(vid)))
   applyEffects(current:vehiclePlaced(now(), pid))
   applyEffects(current:vehicleReady(now(), pid, tonumber(decoded.rebuild)))
-  openTraffic(pid)
+  if pendingAISetup then dispatchAISetup() else openTraffic(pid) end
   pushRoundCars()
 end
 
@@ -1485,6 +1516,13 @@ function cnrTick()
   lastLobbyError = not lobbyOk and lobbyErr or nil
   if autoNextAt and now() >= autoNextAt then startAutoRound() end
   if not current:isActive() then return end
+  dispatchAISetup()
+  if pendingAISetup and pendingAISetup.deadline and now() >= pendingAISetup.deadline then
+    local pid = pendingAISetup.pid
+    applyEffects(current:stop(now(), pid))
+    notify(pid, "Practice cancelled: too few free vehicle slots for the AI. Free a slot or increase MaxCars.", "warn")
+    return
+  end
   local cars = {}
   for pid in pairs(current.players) do cars[pid] = carFor(pid) end
   applyEffects(current:tick(now(), cars, stations, trafficCars()))
