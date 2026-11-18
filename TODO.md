@@ -7,9 +7,9 @@ Priorities run from `!!!!` (highest) through `!!!` (high), `!!` (normal), and `!
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
-- [ ] ! Directional cop sight and weather visibility. The [design](docs/superpowers/specs/2026-11-18-cop-visibility-design.md), [diagram](docs/superpowers/specs/cop-visibility.svg) and [implementation plan](docs/superpowers/plans/2026-11-18-cop-visibility.md) passed review. Implementation is queued for the next session.
+- [ ] ! Directional cop sight and weather visibility. The [design](docs/superpowers/specs/2026-11-18-cop-visibility-design.md), [diagram](docs/superpowers/specs/cop-visibility.svg) and [implementation plan](docs/superpowers/plans/2026-11-18-cop-visibility.md) passed review and the user approved the design. Implementation is queued for the next session.
   - Use the driving camera for human cops and car heading for Practice AI. At the default, the rear mirror gives 200 m straight behind the car in clear daylight. Looking directly back gives 400 m.
-  - Cop sight that follows visibility: the sight range is worked out from what the game knows (fog thickness, how dark it is, street lights near the runner, whether the runner's lights are on, rain). Comes after night and weather rounds
+  - Scale spotting range with daylight, fog, precipitation, the runner’s headlights and nearby streetlights. In Practice, losing sight changes the shared spotting report while AI cops keep chasing.
 
 ## In-game checks
 Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to decide what needs a player. Record deferred checks here with the action, expected observation and open question. Remove a check once verified and record failures under Issues.
