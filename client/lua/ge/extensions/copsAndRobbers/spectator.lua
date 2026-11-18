@@ -27,7 +27,8 @@ local function ownCars()
   local parkedCars = parking and parking.getParkedCarsData and parking.getParkedCarsData() or {}
   local function add(veh)
     local id = veh and veh:getID()
-    if id and not parkedCars[id] and not seen[id] and not isTraffic(id) then
+    if id and not seen[id] and not parkedCars[id] and not isTraffic(id)
+      and veh.vehicleGroup ~= "autoParking" and veh.vehicleGroup ~= "autoTraffic" then
       seen[id] = true
       list[#list + 1] = veh
     end
@@ -47,6 +48,14 @@ end
 function M.personalCar()
   for _, car in ipairs(ownCars()) do
     if car:getJBeamFilename() ~= "unicycle" then return car end
+  end
+end
+
+function M.removeExtras(roundId, aiCars)
+  local keep = { [roundId] = true }
+  for _, car in ipairs(aiCars) do keep[car.obj:getID()] = true end
+  for _, car in ipairs(ownCars()) do
+    if not keep[car:getID()] then car:delete() end
   end
 end
 
@@ -91,14 +100,33 @@ local function saveHitches(byId)
   end
 end
 
-function M.park()
-  if parked then return end
-  restoring = nil
-  parked = {}
+local function rigRegistered(id, visited)
+  if visited[id] then return true end
+  visited[id] = true
+  if not MPVehicleGE.getVehicleByGameID(id) then return false end
+  for _, pair in ipairs(core_vehicles.attachedCouplers or {}) do
+    local peer = pair[1] == id and pair[2] or pair[2] == id and pair[1]
+    if peer and not rigRegistered(peer, visited) then return false end
+  end
+  return true
+end
+
+function M.park(includeNewCars)
+  if not parked then
+    restoring = nil
+    parked = {}
+  elseif not includeNewCars then
+    return
+  end
   local cars = ownCars()
+  if includeNewCars then
+    for i = #cars, 1, -1 do
+      if not rigRegistered(cars[i]:getID(), {}) then table.remove(cars, i) end
+    end
+  end
   if #cars == 0 then return end
   local cmds = rawget(_G, "commands")
-  if game.ownVehicle() and cmds and cmds.setFreeCamera then cmds.setFreeCamera() end
+  if cars[1] == game.ownVehicle() and cmds and cmds.setFreeCamera then cmds.setFreeCamera() end
   local byId = {}
   for _, veh in ipairs(cars) do
     if veh:getJBeamFilename() ~= "unicycle" then
