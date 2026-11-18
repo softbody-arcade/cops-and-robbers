@@ -21,8 +21,9 @@ local function isTraffic(id)
   return type(entry) == "table" and entry.isAi == true
 end
 
-local function ownCars()
+local function ownCars(aiCars)
   local list, seen = {}, {}
+  for _, car in ipairs(aiCars or {}) do seen[car.obj:getID()] = true end
   local parking = gameplay_parking
   local parkedCars = parking and parking.getParkedCarsData and parking.getParkedCarsData() or {}
   local function add(veh)
@@ -33,7 +34,8 @@ local function ownCars()
       list[#list + 1] = veh
     end
   end
-  add(game.ownVehicle())
+  local seated = game.ownVehicle()
+  if seated then add(getObjectByID(seated:getID())) end
   local own = MPVehicleGE and MPVehicleGE.getOwnMap and MPVehicleGE.getOwnMap() or {}
   local ids = {}
   for id in pairs(own) do
@@ -52,10 +54,8 @@ function M.personalCar()
 end
 
 function M.removeExtras(roundId, aiCars)
-  local keep = { [roundId] = true }
-  for _, car in ipairs(aiCars) do keep[car.obj:getID()] = true end
-  for _, car in ipairs(ownCars()) do
-    if not keep[car:getID()] then car:delete() end
+  for _, car in ipairs(ownCars(aiCars)) do
+    if car:getID() ~= roundId then car:delete() end
   end
 end
 
@@ -111,18 +111,14 @@ local function rigRegistered(id, visited)
   return true
 end
 
-function M.park(includeNewCars)
+function M.park(aiCars)
   if not parked then
     restoring = nil
     parked = {}
-  elseif not includeNewCars then
-    return
   end
-  local cars = ownCars()
-  if includeNewCars then
-    for i = #cars, 1, -1 do
-      if not rigRegistered(cars[i]:getID(), {}) then table.remove(cars, i) end
-    end
+  local cars = ownCars(aiCars)
+  for i = #cars, 1, -1 do
+    if not rigRegistered(cars[i]:getID(), {}) then table.remove(cars, i) end
   end
   if #cars == 0 then return end
   local cmds = rawget(_G, "commands")
@@ -200,7 +196,8 @@ local function updateHitch(car, expired)
   if not (MPVehicleGE.isOwn(tow.id) and MPVehicleGE.isOwn(car.id)) then return false end
   if not hitch.placed then
     local ball = tow.couplerCache[hitch.towNode]
-    if not (ball and ball.couplerTag == hitch.tag and car.couplerCache[hitch.trailerNode]) then
+    local socket = car.couplerCache[hitch.trailerNode]
+    if not (ball and ball.couplerTag == hitch.tag and socket and socket.tag == hitch.tag) then
       log("W", "cnr_spectate", "missing saved coupler node on restored rig " .. tow.id .. " and " .. car.id)
       return true
     end

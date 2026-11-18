@@ -57,7 +57,7 @@ local sitOut = {}
 local parkedBystanders = {}
 local aiSpawnsLeft = 0
 local pendingAISetup
-local AI_SLOT_WAIT_SECONDS = 15
+local AI_SETUP_WAIT_SECONDS = 15
 local gridClients = {}
 local START_ROAD_SEARCH = 2000
 local WATCHING_AI = "You can't spawn a car while watching the AI"
@@ -501,16 +501,13 @@ local function dispatchAISetup()
   local setup = pendingAISetup
   if not setup then return end
   local pid, payload = setup.pid, setup.payload
+  if not payload.aiOnly and allowRoundSpawn[pid] then return end
   if setup.capacity then
-    if not payload.aiOnly and allowRoundSpawn[pid] then return end
     local vehicles = MP.GetPlayerVehicles(pid)
     local occupied = 0
     if type(vehicles) == "table" then
       for _ in pairs(vehicles) do occupied = occupied + 1 end
-      if occupied + #payload.ai > setup.capacity then
-        setup.deadline = setup.deadline or now() + AI_SLOT_WAIT_SECONDS
-        return
-      end
+      if occupied + #payload.ai > setup.capacity then return end
     end
   end
   pendingAISetup = nil
@@ -587,7 +584,7 @@ local function applyEffects(effects)
         runnerId = current.runnerId, copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
         aiOnly = e.aiOnly,
       }
-      pendingAISetup = { pid = e.pid, payload = payload,
+      pendingAISetup = { pid = e.pid, payload = payload, deadline = now() + AI_SETUP_WAIT_SECONDS,
         capacity = capacity and capacity >= #list + (e.aiOnly and 0 or 1) and capacity or nil }
       dispatchAISetup()
     elseif e.kind == "countdown" then
@@ -1551,10 +1548,12 @@ function cnrTick()
   if autoNextAt and now() >= autoNextAt then startAutoRound() end
   if not current:isActive() then return end
   dispatchAISetup()
-  if pendingAISetup and pendingAISetup.deadline and now() >= pendingAISetup.deadline then
+  if pendingAISetup and now() >= pendingAISetup.deadline then
     local pid = pendingAISetup.pid
+    local waitingForCar = not pendingAISetup.payload.aiOnly and allowRoundSpawn[pid]
     applyEffects(current:stop(now(), pid))
-    notify(pid, "Practice cancelled: too few free vehicle slots for the AI. Free a slot or increase MaxCars.", "warn")
+    notify(pid, waitingForCar and "Practice cancelled: your round car did not register in time."
+      or "Practice cancelled: too few free vehicle slots for the AI. Free a slot or increase MaxCars.", "warn")
     return
   end
   local cars = {}

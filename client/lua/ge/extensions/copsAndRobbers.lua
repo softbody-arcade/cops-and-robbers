@@ -365,6 +365,7 @@ local function onSpectate(data)
   inputs.lockEditing("all")
   traffic.removeOwn()
   spectator.park()
+  nextCarCleanup = clock + 1
   local phase = d.phase or "running"
   applySetupSky(d.sky, phase)
   runnerOut = phase == "headstart" or phase == "running"
@@ -391,7 +392,7 @@ local function onParkBystanderCars(data)
   local d = jsonDecode(data) or {}
   if d.on == true and not parkingBystander then
     parkingBystander = true
-    spectator.park(true)
+    spectator.park()
     nextCarCleanup = clock + 1
   elseif d.on == false and parkingBystander then
     parkingBystander, nextCarCleanup = false, nil
@@ -1048,8 +1049,8 @@ end
 local function updateCarCleanup()
   if not nextCarCleanup or clock < nextCarCleanup then return end
   nextCarCleanup = clock + 1
-  if parkingBystander then
-    spectator.park(true)
+  if parkingBystander or spectating then
+    spectator.park(ai.objects())
   elseif active then
     if not personalCarId or not getObjectByID(personalCarId) then
       if drivingPractice then
