@@ -1103,7 +1103,7 @@ local function onUpdate(dtReal, dtSim)
     resetAllowed = resetAllowed, resetHint = lastHint, penalty = penaltyActive, infoParts = infoParts, infoSeenAt = infoSeenAt, infoTag = infoTag,
     timer = timerEnd and { label = timerLabel, endsAt = timerEnd } or nil,
     spectate = spectating and { name = spectator.watchedName(ai.nameOf) } or nil,
-    forecast = sky.forecast(heliOn),
+    heliOn = heliOn,
   })
 end
 

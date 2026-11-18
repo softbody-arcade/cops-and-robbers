@@ -122,6 +122,10 @@ function Round:runnerName()
   return self.players[self.runnerId] or tostring(self.runnerId)
 end
 
+function Round:clockSeconds(now)
+  if self.countdownStartedAt then return math.max(0, now - self.countdownStartedAt) end
+end
+
 function Round:timing(now, e)
   e.phase = self.state
   e.heli = self.heli and helicopter.status(self.heli, now) or nil
@@ -181,7 +185,7 @@ function Round:finish(now, reason, copPids)
       lostCount = self.cfg.sightMaxMeters > 0 and self.lostCount or nil,
       timeline = self.timeline,
       mode = self.evolving and "evolving" or "random", buildStep = self.buildStep, buildName = self.buildName,
-      sky = sky.record(self.sky, self.cfg, now - self.countdownStartedAt),
+      sky = sky.record(self.sky, self.cfg, self:clockSeconds(now)),
       traffic = (self.traffic or 0) > 0 and self.traffic or nil,
       trafficRunnerOnly = (self.traffic or 0) > 0 and self.trafficRunnerOnly or nil,
       helicopter = self.heli and helicopter.flew(self.heli) or nil,
@@ -408,7 +412,7 @@ function Round:tick(now, cars, stations, traffic)
   if self.state == "idle" or self.state == "prep" or self.state == "applying" or self.state == "ready" then return fx end
 
   if self.state == "countdown" then
-    if now - self.countdownStartedAt < self.cfg.runnerCountdownSeconds then return fx end
+    if self:clockSeconds(now) < self.cfg.runnerCountdownSeconds then return fx end
     self.state = "headstart"
     self.startedAt = now
     for _, tracker in pairs(self.resetTrackers) do tracker:grant(now, SETUP_GRACE_SECONDS) end
@@ -421,7 +425,7 @@ function Round:tick(now, cars, stations, traffic)
     self.nearestAt = now
     fx[#fx + 1] = { kind = "release" }
     if self.cfg.helicopter then
-      self.heli = helicopter.new(self.cfg, weather.groundedAt(self.sky, now - self.countdownStartedAt), now)
+      self.heli = helicopter.new(self.cfg, weather.groundedAt(self.sky, self:clockSeconds(now)), now)
       heliNew = true
     end
   end
@@ -457,7 +461,7 @@ function Round:tick(now, cars, stations, traffic)
     end
     progress, caught = self.catchTracker:update(now, runnerCar, cops)
     if caught then self.catchers = self:copsNear(runnerCar, cars) end
-    if self.heli and not caught and (helicopter.update(self.heli, now, self.runnerCovered, self.inSight, weather.groundedAt(self.sky, now - self.countdownStartedAt)) or heliNew) then
+    if self.heli and not caught and (helicopter.update(self.heli, now, self.runnerCovered, self.inSight, weather.groundedAt(self.sky, self:clockSeconds(now))) or heliNew) then
       local s = helicopter.status(self.heli, now)
       fx[#fx + 1] = { kind = "heli", phase = s.phase, seconds = s.seconds, reason = s.reason, seed = s.seed, guided = s.guided }
     end

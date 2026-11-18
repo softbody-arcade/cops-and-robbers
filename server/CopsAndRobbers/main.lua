@@ -544,7 +544,7 @@ local function applyEffects(effects)
         sightMaxMeters = cfg.sightMaxMeters,
         runnerShown = e.runnerShown, heli = e.heli,
         evolving = current.evolving or nil, rebuild = current.rebuildId, practice = current.test or nil,
-        sky = sky.payload(current.sky, cfg, current.countdownStartedAt and math.max(0, now() - current.countdownStartedAt) or nil),
+        sky = sky.payload(current.sky, cfg, current:clockSeconds(now())),
       })
       if delivered == false then
         log(string.format("setup failed for %s: %s", MP.GetPlayerName(e.pid) or tostring(e.pid), tostring(reason)))
@@ -568,7 +568,7 @@ local function applyEffects(effects)
         runnerId = current.runnerId, runnerName = current:runnerName(), phase = e.phase,
         countdownRemaining = e.countdownRemaining, headStartRemaining = e.headStartRemaining, chaseElapsed = e.chaseElapsed,
         heli = e.heli,
-        sky = sky.payload(current.sky, cfg, current.countdownStartedAt and math.max(0, now() - current.countdownStartedAt) or nil),
+        sky = sky.payload(current.sky, cfg, current:clockSeconds(now())),
       })
     elseif e.kind == "setupAI" then
       for pid in pairs(MP.GetPlayers() or {}) do parkBystander(pid) end
