@@ -14,6 +14,10 @@
           </template>
           <HudChase v-if="chaseShown" :status="hud.status" :bar="hud.catch" />
           <HudSpectate v-if="hud.spectate" :spectate="hud.spectate" @help="openHelp" @toggle="toggleApp" @sit-out="setSitOut" />
+          <BngButton v-if="!hud.prep && !settingsOpen" class="cnr-btn round-settings" :accent="ACCENTS.secondary" @click="openSettings">
+            <span class="cnr-swatch" :class="{ empty: !settings.color }" :style="settings.color ? { background: settings.color } : null"></span>
+            <span>Settings</span>
+          </BngButton>
         </template>
         <HudSettings
           v-if="settingsShown"
@@ -31,6 +35,7 @@
 
 <script setup>
 import { ref, computed, watch, onBeforeUnmount } from "vue"
+import { BngButton, ACCENTS } from "@/common/components/base"
 import CnrRoot from "../../copsAndRobbers/CnrRoot.vue"
 import { useCnrHud } from "../../copsAndRobbers/hud.js"
 import { useFit } from "../../copsAndRobbers/fit.js"
@@ -54,7 +59,7 @@ const settingsOpen = ref(false)
 const colorDraft = ref("")
 const mode = computed(() => hud.value.mode)
 const chaseShown = computed(() => !!(hud.value.status || (hud.value.catch && hud.value.catch.visible)))
-const settingsAllowed = computed(() => !!(hud.value.visible && ((mode.value === "lobby" && hud.value.lobby && !hud.value.lobby.hudHidden) || (mode.value === "round" && hud.value.prep))))
+const settingsAllowed = computed(() => !!(hud.value.visible && (mode.value === "round" || (mode.value === "lobby" && hud.value.lobby && !hud.value.lobby.hudHidden))))
 
 const settingsShown = computed(() => settingsOpen.value && settingsAllowed.value)
 
@@ -132,5 +137,11 @@ function clearColor() {
   width: 40rem;
   max-width: 100%;
   transform-origin: bottom center;
+}
+.round-settings {
+  pointer-events: auto;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  text-shadow: none;
 }
 </style>

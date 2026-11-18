@@ -4860,3 +4860,91 @@ test("light, emitter and pending thunder are discarded when their round or seed 
     end)
   end
 end)
+
+local function withBridge(fn)
+  withThunder(function(env, _, lines)
+    local camera, cast = core_camera, castRayStatic
+    local pos, rays = vec3(0, 0, 0), 0
+    _G.core_camera = {getPosition = function() return pos end}
+    _G.castRayStatic = function(origin, direction, distance)
+      if direction.z == 1 and distance == 12 then
+        rays = rays + 1
+        if origin.x >= 4 then return 5 end
+      end
+      return distance
+    end
+    local ok, err = pcall(function()
+      local sky = thunderSky(0)
+      sky.lightningSeed = 700
+      chaseWith(env, sky)
+      env.M.onUpdate(0.01)
+      assertEq(rays, 1)
+      fn(env, pos, function() return rays end, lines)
+    end)
+    _G.core_camera, _G.castRayStatic = camera, cast
+    assert(ok, err)
+  end)
+end
+
+test("the first flash checks the moved camera under a bridge before rain's next poll", function()
+  withBridge(function(env, pos, rays, lines)
+    pos.x = 7
+    env.M.onUpdate(0.13)
+    assertEq(env.sky.objects.cnr_lightning_flash, nil)
+    assertEq(lines(), 0)
+    assertEq(rays(), 4)
+    env.M.onUpdate(6)
+    assertEq(thunderPlays(env), 1)
+  end)
+end)
+
+test("a moving camera in a dark gap checks the roof when the return pulse starts", function()
+  withBridge(function(env, pos, rays, lines)
+    env.M.onUpdate(0.13)
+    local light = assert(env.sky.objects.cnr_lightning_flash)
+    local drawn = lines()
+    assert(drawn > 0)
+    assertEq(rays(), 1)
+    pos.x = 7
+    env.M.onUpdate(0.07)
+    assertEq(light.fields.isEnabled, "0")
+    assertEq(rays(), 1)
+    env.M.onUpdate(0.048)
+    assertEq(env.sky.objects.cnr_lightning_flash, nil)
+    assertEq(lines(), drawn)
+    assertEq(rays(), 4)
+    env.M.onUpdate(6)
+    assertEq(thunderPlays(env), 1)
+  end)
+end)
+
+test("unavailable or failing roof rays at the moved camera suppress the flash and preserve thunder", function()
+  for _, failure in ipairs({"missing", "thrown"}) do
+    withBridge(function(env, pos, _, lines)
+      pos.x = 7
+      if failure == "missing" then _G.castRayStatic = nil
+      else _G.castRayStatic = function() error("ray unavailable") end end
+      env.M.onUpdate(0.13)
+      assertEq(env.sky.objects.cnr_lightning_flash, nil, failure)
+      assertEq(lines(), 0)
+      env.M.onUpdate(6)
+      assertEq(thunderPlays(env), 1)
+    end)
+  end
+end)
+
+test("a moving camera on a rain poll and an open pulse shares the one roof sample", function()
+  withBridge(function(env, pos, rays, lines)
+    pos.y = 7
+    env.M.onUpdate(0.25)
+    assertEq(rays(), 2)
+    assertEq(env.sky.objects.cnr_lightning_flash.fields.isEnabled, "1")
+    assert(lines() > 0)
+    pos.y = 8
+    env.M.onUpdate(0.01)
+    assertEq(rays(), 3)
+    assertEq(env.sky.objects.cnr_lightning_flash.pos.y, 8)
+    env.M.onUpdate(0.01)
+    assertEq(rays(), 3)
+  end)
+end)

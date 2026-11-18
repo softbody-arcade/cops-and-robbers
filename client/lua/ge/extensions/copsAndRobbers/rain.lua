@@ -12,6 +12,7 @@ local cur, goal, rateOut, rateIn = nil, nil, 0, 0
 local sinceWrite, sinceCover = 0, 0
 local cover = shelter.new()
 local roofDemand, roofReading
+local sampleX, sampleY, sampleZ
 
 local function castUp(pos, range)
   return castRayStatic(pos, vec3(0, 0, 1), range)
@@ -170,27 +171,35 @@ function M.target(spec, seconds)
   end
 end
 
-function M.covered()
-  return roofReading
+local function sampleCover(cam)
+  cam = cam or (core_camera and core_camera.getPosition and core_camera.getPosition())
+  if not cam or not castRayStatic then return end
+  sampleX, sampleY, sampleZ = cam.x, cam.y, cam.z
+  return shelter.roofed(cam, castUp)
 end
 
-local function sampleCover()
-  local cam = core_camera and core_camera.getPosition and core_camera.getPosition()
-  if cam and castRayStatic then return shelter.roofed(cam, castUp) end
+local function readCover(cam)
+  local ok, roof = pcall(sampleCover, cam)
+  if ok then return roof end
+end
+
+function M.covered(cam)
+  if cam and (not castRayStatic or cam.x ~= sampleX or cam.y ~= sampleY or cam.z ~= sampleZ) then
+    roofReading = readCover(cam)
+  end
+  if roofReading ~= nil then return roofReading or cover.covered end
 end
 
 local function updateCover(dt, prime)
   sinceCover = sinceCover + dt
   if not prime and sinceCover < COVER_INTERVAL then return false end
   sinceCover = 0
-  local ok, roof = pcall(sampleCover)
-  if not ok or roof == nil then
-    roofReading = nil
+  roofReading = readCover()
+  if roofReading == nil then
     cover.pending, cover.count = nil, 0
     return false
   end
-  local changed = shelter.step(cover, roof)
-  roofReading = roof or cover.covered
+  local changed = shelter.step(cover, roofReading)
   if changed and cur then
     local obj = scenetree.findObject(M.NAME)
     if obj then setHidden(obj, cover.covered) end

@@ -10,6 +10,7 @@ end
 local function scene(fn)
   local cast, camera, pack, draw = castRayStatic, core_camera, color, package.loaded["utils/debugDraw"]
   local savedLightning = package.loaded["copsAndRobbers/lightning"]
+  local savedRain, savedSky = package.loaded["copsAndRobbers/rain"], package.loaded["copsAndRobbers/sky"]
   local between, bolt = strikes.between, strikes.bolt
   local ok, err = pcall(function()
     local e = fakeEnvironment()
@@ -37,6 +38,7 @@ local function scene(fn)
       return events
     end
     strikes.bolt = function(seed) e.shapes = e.shapes + 1; return bolt(seed) end
+    package.loaded["copsAndRobbers/rain"], package.loaded["copsAndRobbers/sky"] = nil, nil
     package.loaded["copsAndRobbers/lightning"] = nil
     local lightning = require("copsAndRobbers/lightning")
     local s = lightning.new()
@@ -48,6 +50,7 @@ local function scene(fn)
     fn(e, lightning, s)
   end)
   _G.castRayStatic, _G.core_camera, _G.color, package.loaded["utils/debugDraw"] = cast, camera, pack, draw
+  package.loaded["copsAndRobbers/rain"], package.loaded["copsAndRobbers/sky"] = savedRain, savedSky
   package.loaded["copsAndRobbers/lightning"] = savedLightning
   strikes.between, strikes.bolt = between, bolt
   assert(ok, err)
@@ -228,7 +231,6 @@ end)
 test("crossing the end of thunderstorm easing shares roof clearance until the last visual ends", function()
   for _, mode in ipairs({"roof", "camera", "ray", "open"}) do
     scene(function(e, lightning, s)
-      for _, name in ipairs({"sky", "rain"}) do package.loaded["copsAndRobbers/" .. name] = nil end
       local sky = require("copsAndRobbers/sky")
       local rain = require("copsAndRobbers/rain")
       local p = {weather = "thunderstorm", lightningSeed = 8, changes = {{at = 100, to = "clear"}}}

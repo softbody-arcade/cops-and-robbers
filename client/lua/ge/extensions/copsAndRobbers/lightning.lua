@@ -1,3 +1,4 @@
+local rain = require("copsAndRobbers/rain")
 local strikes = require("copsAndRobbers/strikes")
 
 local M = {}
@@ -172,7 +173,7 @@ local function render(s, now, cam)
       for j, pulse in ipairs(visual.event.pulses) do
         if elapsed >= pulse.start and elapsed < pulse.start + pulse.length then
           cam = cam or getCamera()
-          if not cam then M.hide(s); return end
+          if not cam or rain.covered(cam) ~= false then M.hide(s); return end
           strongest = math.max(strongest, visual.strength * pulse.level)
           if visual.bolt then
             local ok, err = pcall(drawBolt, visual, j)

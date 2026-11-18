@@ -8,6 +8,7 @@ test:
 
 vuecheck:
 	cd tools/vuecheck && npm install --silent --no-audit --no-fund && node check.mjs ../../client/ui
+	cd tools/vuecheck && node --experimental-vm-modules hud-settings.test.mjs
 
 package: clean
 	mkdir -p dist/Client dist/Server
