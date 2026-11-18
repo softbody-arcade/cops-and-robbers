@@ -3,10 +3,10 @@
     <BngTabs v-model="tab" :show-arrows="false">
       <div tab-heading="Basics" class="htp-tab">
         <p>
-          One player is the <b class="runner">runner</b>, everyone else is a <b class="cop">cop</b>. Everyone drives the same car.
+          One player is the <b class="cnr-tone-runner">runner</b>, everyone else is a <b class="cnr-tone-cop">cop</b>. Everyone drives the same car.
           The runner's score is how long they survive.
         </p>
-        <p v-if="trafficOn">There's traffic: <span class="v">{{ value("trafficPerPlayer") }}</span> cars around {{ r.trafficRunnerOnly === true ? "the runner" : "each player" }}.</p>
+        <p v-if="trafficOn">There's traffic: <span class="v cnr-mono">{{ value("trafficPerPlayer") }}</span> cars around {{ r.trafficRunnerOnly === true ? "the runner" : "each player" }}.</p>
         <div class="flow">
           <div class="step">
             <div class="step-name"><BngIcon :type="icons.cogSolid" />Prep</div>
@@ -14,16 +14,16 @@
           </div>
           <div class="step">
             <div class="step-name"><BngIcon :type="icons.play" />GO</div>
-            <div class="step-text">The host presses GO and the runner goes <span class="v">{{ sec("runnerCountdownSeconds") }}</span> later.</div>
+            <div class="step-text">The host presses GO and the runner goes <span class="v cnr-mono">{{ sec("runnerCountdownSeconds") }}</span> later.</div>
           </div>
           <div class="step">
             <div class="step-name"><BngIcon :type="icons.timer" />Head start</div>
-            <div class="step-text">Cops wait <span class="v">{{ sec("headStartSeconds") }}</span> more.</div>
+            <div class="step-text">Cops wait <span class="v cnr-mono">{{ sec("headStartSeconds") }}</span> more.</div>
           </div>
           <div class="step">
             <div class="step-name"><BngIcon :type="icons.carChase01" />Chase</div>
             <div class="step-text">
-              The clock runs until the runner is caught<template v-if="!noLimit"> or <span class="v">{{ duration("roundTimeLimitSeconds") }}</span> is up</template>.
+              The clock runs until the runner is caught<template v-if="!noLimit"> or <span class="v cnr-mono">{{ duration("roundTimeLimitSeconds") }}</span> is up</template>.
             </div>
           </div>
           <div class="step">
@@ -42,17 +42,17 @@
 
       <div tab-heading="Runner" class="htp-tab">
         <div class="li">
-          <BngIcon class="runner" :type="icons.carChase01" />
+          <BngIcon class="cnr-tone-runner" :type="icons.carChase01" />
           <span>
-            <b>Being caught:</b> a cop within <span class="v">{{ dist("catchRadiusMeters") }}</span> while you're under
-            <span class="v">{{ kmh("catchMaxSpeedKmh") }}</span>, or stuck (rocking back and forth within 3 m in 4 s counts), fills the BEING CAUGHT bar, and after
-            <span class="v">{{ sec("catchHoldSeconds") }}</span> you're caught. Drive away and it empties twice as fast as it filled.
+            <b>Being caught:</b> a cop within <span class="v cnr-mono">{{ dist("catchRadiusMeters") }}</span> while you're under
+            <span class="v cnr-mono">{{ kmh("catchMaxSpeedKmh") }}</span>, or stuck (rocking back and forth within 3 m in 4 s counts), fills the BEING CAUGHT bar, and after
+            <span class="v cnr-mono">{{ sec("catchHoldSeconds") }}</span> you're caught. Drive away and it empties twice as fast as it filled.
           </span>
         </div>
         <div class="li">
           <BngIcon :type="sightOff ? icons.eyeSolidClosed : icons.eyeSolidOpened" />
           <span v-if="!sightOff">
-            <b>SPOTTED / HIDDEN:</b> whether any cop can see you, up to <span class="v">{{ dist("sightMaxMeters") }}</span> away.
+            <b>SPOTTED / HIDDEN:</b> whether any cop can see you, up to <span class="v cnr-mono">{{ dist("sightMaxMeters") }}</span> away.
             While you're spotted, every cop sees where you are.
             <template v-if="heliOn">SPOTTED / HIDDEN is about cop sight only: while the helicopter tracks you, cops see you anyway
               (your live position, the minimap and your name tag).</template>
@@ -66,13 +66,13 @@
           <span>
             <b>Police helicopter:</b>
             <template v-if="arrivalNow">it arrives as the cops are released</template>
-            <template v-else>it arrives <span class="v">{{ duration("helicopterArrivalSeconds") }}</span> after the cops are released</template>
-            and flies for <span class="v">{{ duration("helicopterUpSeconds") }}</span>.
+            <template v-else>it arrives <span class="v cnr-mono">{{ duration("helicopterArrivalSeconds") }}</span> after the cops are released</template>
+            and flies for <span class="v cnr-mono">{{ duration("helicopterUpSeconds") }}</span>.
             <template v-if="refuelNever">Then it stays up.</template>
-            <template v-else>Then it refuels for <span class="v">{{ duration("helicopterRefuelSeconds") }}</span>.</template>
+            <template v-else>Then it refuels for <span class="v cnr-mono">{{ duration("helicopterRefuelSeconds") }}</span>.</template>
             It starts by searching from where you are as it arrives or, after a refuel, from where it last knew you were, and it searches the same way when it loses you. If you were moving, it searches along the road ahead, then the best other branch, then back; if not, it circles that spot. In a tunnel it watches each way out in turn, then searches the road beyond. When a cop sees you in a tunnel, it waits at the exit ahead.
             When a cop sees you, it flies to you; AI cops in practice don't guide it.
-            It finds you only by seeing you itself, within <span class="v">{{ meters(400) }}</span>. Then it tracks you, and the cops know where you are.
+            It finds you only by seeing you itself, within <span class="v cnr-mono">{{ meters(400) }}</span>. Then it tracks you, and the cops know where you are.
             Buildings, hills, tunnels and garages hide you: it loses you after 2 s out of its sight.
             <template v-if="refuelNever">Before it arrives, it can't see you.</template>
             <template v-else>Before it arrives and while it refuels, it can't see you.</template>
@@ -97,23 +97,23 @@
         <div class="li">
           <BngIcon :type="icons.stopwatchArrows02" />
           <span v-if="noLimit">There's <b>no time limit</b>: the chase runs until you're caught.</span>
-          <span v-else><b>Time limit:</b> survive <span class="v">{{ duration("roundTimeLimitSeconds") }}</span> and you escape.</span>
+          <span v-else><b>Time limit:</b> survive <span class="v cnr-mono">{{ duration("roundTimeLimitSeconds") }}</span> and you escape.</span>
         </div>
       </div>
 
       <div tab-heading="Cop" class="htp-tab">
         <div class="li">
-          <BngIcon class="cop" :type="icons.carChase01" />
+          <BngIcon class="cnr-tone-cop" :type="icons.carChase01" />
           <span>
-            <b>Catch:</b> keep the runner under <span class="v">{{ kmh("catchMaxSpeedKmh") }}</span>, or stuck (rocking back and forth within 3 m in 4 s), with a cop within
-            <span class="v">{{ dist("catchRadiusMeters") }}</span> for <span class="v">{{ sec("catchHoldSeconds") }}</span>.
+            <b>Catch:</b> keep the runner under <span class="v cnr-mono">{{ kmh("catchMaxSpeedKmh") }}</span>, or stuck (rocking back and forth within 3 m in 4 s), with a cop within
+            <span class="v cnr-mono">{{ dist("catchRadiusMeters") }}</span> for <span class="v cnr-mono">{{ sec("catchHoldSeconds") }}</span>.
             Every cop that close shares the catch.
           </span>
         </div>
         <div class="li">
           <BngIcon :type="sightOff ? icons.eyeSolidClosed : icons.eyeSolidOpened" />
           <span v-if="!sightOff">
-            <b>Sight:</b> while any cop can see the runner (up to <span class="v">{{ dist("sightMaxMeters") }}</span>), every cop sees
+            <b>Sight:</b> while any cop can see the runner (up to <span class="v cnr-mono">{{ dist("sightMaxMeters") }}</span>), every cop sees
             where the runner is. Otherwise the runner is hidden on the minimap and by name tag.
           </span>
           <span v-else>
@@ -129,13 +129,13 @@
           <span>
             <b>Police helicopter:</b>
             <template v-if="arrivalNow">it arrives as you're released</template>
-            <template v-else>it arrives <span class="v">{{ duration("helicopterArrivalSeconds") }}</span> after you're released</template>
-            and flies for <span class="v">{{ duration("helicopterUpSeconds") }}</span>.
+            <template v-else>it arrives <span class="v cnr-mono">{{ duration("helicopterArrivalSeconds") }}</span> after you're released</template>
+            and flies for <span class="v cnr-mono">{{ duration("helicopterUpSeconds") }}</span>.
             <template v-if="refuelNever">Then it stays up.</template>
-            <template v-else>Then it refuels for <span class="v">{{ duration("helicopterRefuelSeconds") }}</span>.</template>
+            <template v-else>Then it refuels for <span class="v cnr-mono">{{ duration("helicopterRefuelSeconds") }}</span>.</template>
             It starts by searching from where the runner is as it arrives or, after a refuel, from where it last knew they were, and it searches the same way when it loses them. If they were moving, it searches along the road ahead, then the best other branch, then back; if not, it circles that spot. In a tunnel it watches each way out in turn, then searches the road beyond.
             While any cop sees the runner, it flies to them; seen in a tunnel, it waits at the exit ahead.
-            It finds them only by seeing them itself, within <span class="v">{{ meters(400) }}</span>. While it tracks the runner, every cop sees where they are.
+            It finds them only by seeing them itself, within <span class="v cnr-mono">{{ meters(400) }}</span>. While it tracks the runner, every cop sees where they are.
             Buildings, hills, tunnels and garages hide them: it loses them after 2 s out of its sight.
             <template v-if="refuelNever">Before it arrives, it can't see the runner.</template>
             <template v-else>Before it arrives and while it refuels, it can't see the runner.</template>
@@ -145,10 +145,10 @@
           </span>
         </div>
         <div class="li">
-          <BngIcon class="warn" :type="icons.caution" />
+          <BngIcon class="cnr-tone-warn" :type="icons.caution" />
           <span>
-            <b>Crash penalty:</b> crash into someone hard (losing <span class="v">{{ kmh("crashSpeedLossKmh") }}</span> in half a second)
-            within <span class="v">{{ dist("copResetMinDistanceMeters") }}</span> of the runner and you're frozen for <span class="v">{{ sec("crashPenaltySeconds") }}</span>. Getting hit doesn't count.<template v-if="trafficOn"> Driving into traffic counts too; being hit by it doesn't.</template>
+            <b>Crash penalty:</b> crash into someone hard (losing <span class="v cnr-mono">{{ kmh("crashSpeedLossKmh") }}</span> in half a second)
+            within <span class="v cnr-mono">{{ dist("copResetMinDistanceMeters") }}</span> of the runner and you're frozen for <span class="v cnr-mono">{{ sec("crashPenaltySeconds") }}</span>. Getting hit doesn't count.<template v-if="trafficOn"> Driving into traffic counts too; being hit by it doesn't.</template>
           </span>
         </div>
         <div class="li">
@@ -160,18 +160,18 @@
       <div tab-heading="Resets" class="htp-tab">
         <div class="two">
           <div class="box">
-            <div class="box-title good"><BngIcon :type="icons.checkmarkBold" />You may reset</div>
+            <div class="box-title cnr-tone-good"><BngIcon :type="icons.checkmarkBold" />You may reset</div>
             <div class="li">
               <BngIcon :type="icons.mapPoint" />
               <span>standing still at a gas station</span>
             </div>
             <div class="li">
               <BngIcon :type="icons.timer" />
-              <span>after standing still for <span class="v">{{ sec("resetWaitSeconds") }}</span>, rocking in place still counts</span>
+              <span>after standing still for <span class="v cnr-mono">{{ sec("resetWaitSeconds") }}</span>, rocking in place still counts</span>
             </div>
             <div class="li">
               <BngIcon :type="icons.carChase01" />
-              <span>as a cop, any time you're <span class="v">{{ dist("copResetMinDistanceMeters") }}</span> or more from the runner</span>
+              <span>as a cop, any time you're <span class="v cnr-mono">{{ dist("copResetMinDistanceMeters") }}</span> or more from the runner</span>
             </div>
             <div class="li">
               <BngIcon :type="icons.restart" />
@@ -179,7 +179,7 @@
             </div>
           </div>
           <div class="box">
-            <div class="box-title warn"><BngIcon :type="icons.abandon" />You may not</div>
+            <div class="box-title cnr-tone-warn"><BngIcon :type="icons.abandon" />You may not</div>
             <div class="li">
               <BngIcon :type="icons.danger" />
               <span>as the runner, while you're being caught</span>
@@ -215,7 +215,7 @@
           </span>
         </div>
         <div class="li">
-          <BngIcon class="warn" :type="icons.caution" />
+          <BngIcon class="cnr-tone-warn" :type="icons.caution" />
           <span>
             <b>Shown to everyone:</b> a reset at the wrong moment, a teleport, and parts changed during a round.
           </span>
@@ -327,26 +327,12 @@ b {
   font-weight: 700;
 }
 .v {
-  font-family: var(--fnt-mono);
-  font-variant-numeric: tabular-nums;
   font-weight: 700;
   color: var(--cnr-me);
   white-space: nowrap;
 }
 .muted {
   color: var(--cnr-muted);
-}
-.runner {
-  color: var(--cnr-runner-text);
-}
-.cop {
-  color: var(--cnr-cop-text);
-}
-.warn {
-  color: var(--cnr-warn);
-}
-.good {
-  color: var(--cnr-good);
 }
 .flow {
   display: grid;

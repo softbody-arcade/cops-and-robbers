@@ -1,18 +1,18 @@
 <template>
   <div v-if="result" class="hud-result">
-    <div class="title" :class="'tone-' + titleTone">{{ result.title }}</div>
+    <div class="cnr-hud-title" :class="'cnr-tone-' + titleTone">{{ result.title }}</div>
     <div v-if="result.runner || result.catchers" class="summary">
-      <template v-if="result.runner">{{ result.runner }} survived <span v-if="result.time" class="mono">{{ result.time }}</span></template>
+      <template v-if="result.runner">{{ result.runner }} survived <span v-if="result.time" class="cnr-mono">{{ result.time }}</span></template>
       <template v-if="result.catchers">{{ result.runner ? " · caught by " : "Caught by " }}{{ result.catchers }}</template>
     </div>
     <div v-else-if="result.message" class="summary">{{ result.message }}</div>
     <div v-if="rows.length" class="rows">
       <div v-for="r in rows" :key="r.rank" class="row" :class="{ me: r.me }">
         <span class="player">{{ r.rank }} · {{ r.player }}</span>
-        <span class="mono">{{ r.time }}</span>
+        <span class="cnr-mono">{{ r.time }}</span>
       </div>
     </div>
-    <div v-if="result.nextIn" class="next">NEXT ROUND IN <span class="mono">{{ result.nextIn }}</span></div>
+    <div v-if="result.nextIn" class="next">NEXT ROUND IN <span class="cnr-mono">{{ result.nextIn }}</span></div>
   </div>
 </template>
 
@@ -35,13 +35,6 @@ const rows = computed(() => (props.result && Array.isArray(props.result.rows) ? 
   flex-direction: column;
   align-items: center;
   text-align: center;
-}
-.title {
-  font-size: 2.5rem;
-  font-style: italic;
-  font-weight: 900;
-  line-height: 1.1;
-  letter-spacing: 0.01em;
 }
 .summary {
   margin-top: 0.25rem;
@@ -81,15 +74,5 @@ const rows = computed(() => (props.result && Array.isArray(props.result.rows) ? 
   font-size: 1rem;
   font-weight: 800;
   letter-spacing: 0.1em;
-}
-.mono {
-  font-family: var(--fnt-mono);
-  font-variant-numeric: tabular-nums;
-}
-.tone-runner {
-  color: var(--cnr-runner-text);
-}
-.tone-good {
-  color: var(--cnr-good);
 }
 </style>

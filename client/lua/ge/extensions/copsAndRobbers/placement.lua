@@ -1,11 +1,5 @@
 local M = {}
 
-local function copy(t)
-  local c = {}
-  for k, v in pairs(t or {}) do c[k] = v end
-  return c
-end
-
 local function deepCopy(t)
   if type(t) ~= "table" then return t end
   local c = {}
@@ -33,6 +27,35 @@ local function same(a, b)
   return true
 end
 
+local UNITS = { [""] = true, ["%"] = true, px = true, em = true, rem = true }
+local GEOMETRY_KEYS = { "left", "right", "top", "bottom", "width", "height" }
+
+local function placementLength(value)
+  if type(value) == "string" then
+    local number, unit = value:lower():match("^%s*(-?%d*%.?%d+)%s*([%a%%]*)%s*$")
+    value = UNITS[unit] and tonumber(number)
+  end
+  if type(value) == "number" and math.abs(value) < math.huge then return value end
+end
+
+local function usablePlacement(value, defaults)
+  if type(value) ~= "table" then return nil end
+  local result = deepCopy(value)
+  local usable = false
+  for _, key in ipairs(GEOMETRY_KEYS) do
+    local length = placementLength(value[key])
+    local size = key == "width" or key == "height"
+    if length and (not size or length > 0) then
+      usable = true
+    elseif size then
+      result[key] = defaults[key]
+    elseif value[key] ~= "" then
+      result[key] = nil
+    end
+  end
+  return usable and result or nil
+end
+
 function M.group()
   return { createdCopy = {}, hidMod = {} }
 end
@@ -51,6 +74,8 @@ function M.leave(state, env, closeLayout)
   state.active = false
   state.placed, state.optedOut = {}, {}
   local api = env.api
+  local saved = env.savedPlacements
+  local changed = false
   for _, layout in ipairs(api.getAvailableLayouts() or {}) do
     local name = layout.filename
     local fresh = env.readLayout(name) or deepCopy(layout)
@@ -58,6 +83,14 @@ function M.leave(state, env, closeLayout)
     for i = #(fresh.apps or {}), 1, -1 do
       local app = fresh.apps[i]
       if app.appName == state.appName and (name == closeLayout or (type(app.settings) == "table" and app.settings.cnrAutoPlaced == true)) then
+        if saved then
+          local geometry = usablePlacement(app.placement, state.placement)
+          if same(geometry, state.placement) then geometry = nil end
+          if not same(saved[name], geometry) then
+            saved[name] = geometry
+            changed = true
+          end
+        end
         table.remove(fresh.apps, i)
         removed = true
       end
@@ -79,6 +112,7 @@ function M.leave(state, env, closeLayout)
       group.hidMod[name] = nil
     end
   end
+  if changed then env.savePlacements() end
   local current = api.getCurrentLayout()
   if type(current) == "table" and current.filename then api.setCurrentLayout(current.filename) end
 end
@@ -110,7 +144,8 @@ function M.tick(state, env)
   local modApps = not makesCopy and env.fromMod and env.fromMod(name) and deepCopy(fresh.apps or {})
   local updated = deepCopy(fresh)
   updated.apps = updated.apps or {}
-  updated.apps[#updated.apps + 1] = { appName = state.appName, placement = copy(state.placement), settings = { cnrAutoPlaced = true } }
+  local remembered = env.savedPlacements and usablePlacement(env.savedPlacements[name], state.placement)
+  updated.apps[#updated.apps + 1] = { appName = state.appName, placement = remembered or deepCopy(state.placement), settings = { cnrAutoPlaced = true } }
   api.saveLayout(updated)
   local written = env.readLayout(name)
   if written and appIndex(written, state.appName) then

@@ -10,7 +10,7 @@
       <BngButton class="p-btn" :accent="ACCENTS.main" :icon="icons.mapPoint" @click="emit('station', 'add')">Add station here</BngButton>
       <BngButton class="p-btn" :accent="ACCENTS.secondary" :disabled="!canRemove" @click="emit('station', 'remove')">Remove nearest</BngButton>
     </div>
-    <div v-if="stations && !canRemove" class="p-why">No station within 50 m to remove</div>
+    <div v-if="fresh && stations && !canRemove" class="p-why">No station within 50 m to remove</div>
 
     <template v-if="stations">
       <template v-if="nearest.length">
@@ -41,7 +41,8 @@ const emit = defineEmits(["station", "refresh"])
 const REFRESH_MS = 2000
 
 const events = useEvents()
-const stations = ref(null)
+const stations = defineModel("stations", { type: Object, default: null })
+const fresh = ref(false)
 let refreshTimer = null
 
 const count = computed(() => {
@@ -53,13 +54,20 @@ const nearest = computed(() => {
   const list = stations.value && stations.value.nearest
   return Array.isArray(list) ? list.filter(n => n && Number.isFinite(Number(n.meters))).slice(0, 3) : []
 })
-const canRemove = computed(() => !!(stations.value && stations.value.canRemove === true))
+const canRemove = computed(() => fresh.value && stations.value?.canRemove === true)
 
 events.on("CnRStations", data => {
-  stations.value = data && typeof data === "object" ? data : null
+  if (!data || data.map !== props.state.map) return
+  const expectedCount = Number(props.state.stationCount)
+  if (Number.isFinite(expectedCount) && Number(data.count) !== expectedCount) return
+  stations.value = data
+  fresh.value = true
 })
 
-watch(() => props.state.stationCount, () => emit("refresh"))
+watch([() => props.state.map, () => props.state.stationCount], () => {
+  fresh.value = false
+  emit("refresh")
+})
 onMounted(() => {
   emit("refresh")
   refreshTimer = setInterval(() => emit("refresh"), REFRESH_MS)

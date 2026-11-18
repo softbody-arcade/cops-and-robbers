@@ -261,23 +261,31 @@ local function schedule(c, cfg, random, releaseAt, endAt)
     if not running and not fitted and fitsAt(x) then fitted = true end
   end
 
+  local function crossing(u, v)
+    local lift = cur == "fog" and u + (LIFT_AT - todAt(u)) * ds or nil
+    return stops(cur, u, v, tempAt(u), tempAt(v), lift)
+  end
+
   reach(releaseAt)
   fitted = fitsAt(releaseAt)
   slot = releaseAt + interval()
-  local u, grid = releaseAt, releaseAt + 1
+  local u = releaseAt
   while u < endAt do
     local scan = ds and not running and CAN_STOP[cur]
     local v = math.min(endAt, slot, running or math.huge)
     if ds then v = math.min(v, points[nextFill - 1].t * ds) end
     if scan then
-      if grid <= u then grid = releaseAt + math.floor(u - releaseAt) + 1 end
-      v = math.min(v, grid)
+      if fitted then
+        local boundary = crossing(u, v) or v
+        local beforeBoundary = releaseAt + math.floor(boundary - releaseAt) - 1
+        u = math.max(u, beforeBoundary)
+      end
+      local nextSecond = releaseAt + math.floor(u - releaseAt) + 1
+      if nextSecond <= u then nextSecond = nextSecond + 1 end
+      v = math.min(v, nextSecond)
     end
     local x
-    if scan and fitted then
-      local lift = cur == "fog" and u + (LIFT_AT - todAt(u)) * ds or nil
-      x = stops(cur, u, v, tempAt(u), tempAt(v), lift)
-    end
+    if scan and fitted then x = crossing(u, v) end
     if x then
       if x >= endAt then break end
       u = x

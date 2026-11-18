@@ -62,7 +62,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from "vue"
+import { computed } from "vue"
 import { BngButton, BngIcon, BngSwitch, ACCENTS, icons } from "@/common/components/base"
 import { vBngTextInput, vBngTooltip } from "@/common/directives"
 import { settingGroups, shown, liveItem } from "./settings.js"
@@ -75,7 +75,7 @@ const props = defineProps({
 const emit = defineEmits(["command"])
 
 const { armed, confirm } = useConfirm()
-const moreOpen = ref(false)
+const moreOpen = defineModel("moreOpen", { type: Boolean, default: false })
 
 const locked = computed(() => !(props.state.can && props.state.can.settings === true))
 

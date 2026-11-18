@@ -69,7 +69,7 @@ function bootClient(opts)
     end
     return cp(t)
   end
-  _G.guihooks = { trigger = function(name, data) env.triggers[#env.triggers + 1] = { name = name, data = data } end }
+  _G.guihooks = { trigger = function(name, data, extra) env.triggers[#env.triggers + 1] = { name = name, data = data, extra = extra } end }
   _G.ui_message = function(msg) env.toasts[#env.toasts + 1] = msg end
   env.veh = fakeVehicle(env, 100, v3(0, 0, 0))
   _G.getPlayerVehicle = function()
@@ -240,7 +240,7 @@ function bootClient(opts)
   end
   function env.lastTrigger(name)
     for i = #env.triggers, 1, -1 do
-      if env.triggers[i].name == name then return env.triggers[i].data end
+      if env.triggers[i].name == name then return env.triggers[i].data, env.triggers[i].extra end
     end
   end
   function env.lastSent(ev)

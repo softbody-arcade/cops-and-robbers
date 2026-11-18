@@ -401,6 +401,33 @@ test("the same seed gives the same schedule, another seed another one", function
   assertEq(fingerprint(weather.build(s, c)) ~= fingerprint(a), true)
 end)
 
+test("the weather scan advances from a fractional release time", function()
+  local c = cfg({ dayLength = "fast", runnerCountdownSeconds = 3, headStartSeconds = 7.4 })
+  local s = { time = "noon", weather = "fog", month = 10, weatherSeed = 1 }
+  debug.sethook(function() error("weather scan did not finish") end, "", 1000000)
+  local ok, result = pcall(weather.build, s, c)
+  debug.sethook()
+  assert(ok, result)
+  assertEq(result.releaseAt, 10.4)
+  local lift = result.changes[#result.changes]
+  assertEq(lift.to, "clear")
+  assertEq(lift.cross, true)
+  assertNear(lift.at, 1725, 1e-9)
+end)
+
+test("a seeded fog lift keeps later one-minute weather slots in order", function()
+  local c = cfg({ dayLength = "fast", roundTimeLimitSeconds = 3600, weatherChangeMinMinutes = 1, weatherChangeMaxMinutes = 1 })
+  local s = { time = "noon", weather = "clear", month = 12, weatherSeed = 827 }
+  local changes = weather.build(s, c).changes
+  local last = changes[#changes]
+  assertEq(last.to, "clear")
+  assertNear(last.at, 3585, 1e-9)
+  local clearing = changes[#changes - 1]
+  assertNear(clearing.at, 3525, 1e-9)
+  assertEq(clearing.to, "cloudy")
+  assertEq(clearing.cross, nil)
+end)
+
 local function noSlots(o)
   local t = { dayLength = "fast", weatherChangeMinMinutes = 1000, weatherChangeMaxMinutes = 1000 }
   for k, v in pairs(o or {}) do t[k] = v end

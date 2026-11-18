@@ -21,18 +21,21 @@ local function isTraffic(id)
   return type(entry) == "table" and entry.isAi == true
 end
 
-local function ownCars()
+local function ownCars(aiCars)
   local list, seen = {}, {}
+  for _, car in ipairs(aiCars or {}) do seen[car.obj:getID()] = true end
   local parking = gameplay_parking
   local parkedCars = parking and parking.getParkedCarsData and parking.getParkedCarsData() or {}
   local function add(veh)
     local id = veh and veh:getID()
-    if id and not parkedCars[id] and not seen[id] and not isTraffic(id) then
+    if id and not seen[id] and not parkedCars[id] and not isTraffic(id)
+      and veh.vehicleGroup ~= "autoParking" and veh.vehicleGroup ~= "autoTraffic" then
       seen[id] = true
       list[#list + 1] = veh
     end
   end
-  add(game.ownVehicle())
+  local seated = game.ownVehicle()
+  if seated then add(getObjectByID(seated:getID())) end
   local own = MPVehicleGE and MPVehicleGE.getOwnMap and MPVehicleGE.getOwnMap() or {}
   local ids = {}
   for id in pairs(own) do
@@ -47,6 +50,12 @@ end
 function M.personalCar()
   for _, car in ipairs(ownCars()) do
     if car:getJBeamFilename() ~= "unicycle" then return car end
+  end
+end
+
+function M.removeExtras(roundId, aiCars)
+  for _, car in ipairs(ownCars(aiCars)) do
+    if car:getID() ~= roundId then car:delete() end
   end
 end
 
@@ -79,22 +88,41 @@ local function saveHitches(byId)
       end
       if vehicles.couplerTagsOptions[tag] and offsets[a] and offsets[a][nodeA] and offsets[b] and offsets[b][nodeB] then
         byId[b].hitch = {
-          tow = byId[a], towNode = nodeA, trailerNode = nodeB,
-          ball = offsets[a][nodeA], socket = offsets[b][nodeB], tag = tag
+          tow = byId[a], towNode = nodeA, trailerNode = nodeB, tag = tag
         }
+        for _, id in ipairs({a, b}) do
+          local veh = getObjectByID(id)
+          byId[id].safeSpawn = false
+          byId[id].rot = quatFromDir(veh:getDirectionVector(), veh:getDirectionVectorUp())
+        end
       end
     end
   end
 end
 
-function M.park()
-  if parked then return end
-  restoring = nil
-  parked = {}
-  local cars = ownCars()
+local function rigRegistered(id, visited)
+  if visited[id] then return true end
+  visited[id] = true
+  if not MPVehicleGE.getVehicleByGameID(id) then return false end
+  for _, pair in ipairs(core_vehicles.attachedCouplers or {}) do
+    local peer = pair[1] == id and pair[2] or pair[2] == id and pair[1]
+    if peer and not rigRegistered(peer, visited) then return false end
+  end
+  return true
+end
+
+function M.park(aiCars)
+  if not parked then
+    restoring = nil
+    parked = {}
+  end
+  local cars = ownCars(aiCars)
+  for i = #cars, 1, -1 do
+    if not rigRegistered(cars[i]:getID(), {}) then table.remove(cars, i) end
+  end
   if #cars == 0 then return end
   local cmds = rawget(_G, "commands")
-  if game.ownVehicle() and cmds and cmds.setFreeCamera then cmds.setFreeCamera() end
+  if cars[1] == game.ownVehicle() and cmds and cmds.setFreeCamera then cmds.setFreeCamera() end
   local byId = {}
   for _, veh in ipairs(cars) do
     if veh:getJBeamFilename() ~= "unicycle" then
@@ -113,7 +141,9 @@ function M.restore()
   if not list or #list == 0 or not core_vehicles then return true end
   local allBack = true
   for i, car in ipairs(list) do
-    local ok, veh = pcall(core_vehicles.spawnNewVehicle, car.model, { config = car.config, pos = car.pos, rot = car.rot, autoEnterVehicle = i == 1 })
+    local ok, veh = pcall(core_vehicles.spawnNewVehicle, car.model, {
+      config = car.config, pos = car.pos, rot = car.rot, safeSpawn = car.safeSpawn, autoEnterVehicle = i == 1
+    })
     if ok and veh then
       car.id = veh:getID()
       car.couplerCache = core_vehicles.vehsCouplerCache and core_vehicles.vehsCouplerCache[car.id]
@@ -141,10 +171,19 @@ local function hitchStatus(tow, towNode, trailer, trailerNode)
   if occupied then return "occupied" end
 end
 
+local function alignHitch(tow, trailer, hitch, lockRadius)
+  local ball = tow:getPosition() + tow:getNodePosition(hitch.towNode)
+  local pos = ball - trailer:getNodePosition(hitch.trailerNode)
+  if pos:distance(trailer:getPosition()) > lockRadius then
+    trailer:setClusterPosRelRot(-1, pos.x, pos.y, pos.z, 0, 0, 0, 1)
+  end
+end
+
 local function updateHitch(car, expired)
   local hitch, tow = car.hitch, car.hitch.tow
   local vehicle = tow.id and getObjectByID(tow.id)
-  if not (vehicle and car.id and getObjectByID(car.id)) then return true end
+  local trailer = car.id and getObjectByID(car.id)
+  if not (vehicle and trailer) then return true end
   local caches = core_vehicles.vehsCouplerCache
   if caches[tow.id] ~= tow.couplerCache or caches[car.id] ~= car.couplerCache then return true end
   local status = hitchStatus(tow.id, hitch.towNode, car.id, hitch.trailerNode)
@@ -156,7 +195,13 @@ local function updateHitch(car, expired)
   if not (tow.couplerCache and car.couplerCache) or status == "occupied" or tow.hitch then return false end
   if not (MPVehicleGE.isOwn(tow.id) and MPVehicleGE.isOwn(car.id)) then return false end
   if not hitch.placed then
-    local ok, err = pcall(spawn.placeTrailer, tow.id, hitch.ball, car.id, hitch.socket)
+    local ball = tow.couplerCache[hitch.towNode]
+    local socket = car.couplerCache[hitch.trailerNode]
+    if not (ball and ball.couplerTag == hitch.tag and socket and socket.tag == hitch.tag) then
+      log("W", "cnr_spectate", "missing saved coupler node on restored rig " .. tow.id .. " and " .. car.id)
+      return true
+    end
+    local ok, err = pcall(alignHitch, vehicle, trailer, hitch, ball.couplerLockRadius or 0.025)
     if not ok then
       log("W", "cnr_spectate", "could not place parked trailer " .. car.id .. ": " .. tostring(err))
       return true
