@@ -15,7 +15,6 @@ One entry per piece of work that has started: what it is, its branch (or "design
   - Leaderboard Cops tab: cops with only assists get no row (`leaderboard.lua` `cops`). Showing them needs a sort and empty-state decision, since the tab ranks catches
   - Leaving the server removes every app the mod placed, also one the player removed and then added back themselves (`apps.lua` leave). Preserve manual entries and remove auto-placed entries
 
-- [ ] ! All five logo-and-name app previews passed review (`fix/logo-app-previews`, `b316dcc`). On local build `788cdba`, open the HUD app picker and confirm all five labels are readable.
 
 ## In-game checks
 Things only a player in the game can confirm, each with what to look for. Add them here when work is merged or deployed without the check; delete a line once it is checked, and turn anything that fails into an Issue.
