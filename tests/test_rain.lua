@@ -6,9 +6,11 @@ local function load()
   rain = require("copsAndRobbers/rain")
 end
 
-local RAIN = { dataBlock = "rain_medium", numDrops = 3000, dropSize = 1, minSpeed = 0.4, maxSpeed = 0.5, volume = 1.0 }
-local STORM = { dataBlock = "rain_medium", numDrops = 7000, dropSize = 1.3, minSpeed = 0.6, maxSpeed = 0.8, volume = 2.0 }
-local SNOW = { dataBlock = "Snow_menu", numDrops = 5000, dropSize = 0.2, minSpeed = 0.1, maxSpeed = 0.3 }
+local weather = require("copsAndRobbers/sky").WEATHER
+local RAIN = weather.rain.precipitation
+local STORM = weather.storm.precipitation
+local SNOW = weather.snow.precipitation
+local LARGE_DROPS = { dataBlock = "rain_medium", numDrops = 3000, dropSize = 1.3, minSpeed = 0.6, maxSpeed = 0.8, volume = 2.0 }
 
 local function run(seconds)
   for _ = 1, math.floor(seconds * 10 + 0.5) do rain.update(0.1) end
@@ -27,9 +29,9 @@ test("rain fades in over the blend with its sound", function()
   assertEq(obj:getField("dataBlock"), "rain_medium"); assertEq(obj:getField("splashSize"), "0.25"); assertEq(obj:getField("hitVehicles"), nil)
   assertEq(obj:getField("minSpeed"), "0.4"); assertEq(obj.canSave, false)
   for _ = 1, 14 do rain.update(0.1) end
-  assertNear(tonumber(obj:getField("numDrops")), 1500, 120)
+  assertNear(tonumber(obj:getField("numDrops")), 1125, 90)
   for _ = 1, 20 do rain.update(0.1) end
-  assertEq(obj:getField("numDrops"), "3000")
+  assertEq(obj:getField("numDrops"), "2250")
   local snd = fake.objects.cnr_rain_sound
   assertEq(snd:getField("track"), "amb_rain_medium"); assertNear(snd.volume, 1.0, 1e-6)
   assertEq(snd.playing, true); assertEq(snd.canSave, false)
@@ -40,7 +42,7 @@ test("rain to clear fades out, then removes rain and sound", function()
   full(RAIN)
   rain.target(nil, 3)
   run(1.5)
-  assertNear(tonumber(fake.objects.cnr_precipitation:getField("numDrops")), 1500, 220)
+  assertNear(tonumber(fake.objects.cnr_precipitation:getField("numDrops")), 1125, 165)
   run(1.6)
   assertEq(fake.objects.cnr_precipitation, nil); assertEq(fake.objects.cnr_rain_sound, nil)
   assertEq(rain.active(), false)
@@ -52,7 +54,7 @@ test("rain to storm moves the count and raises the volume", function()
   rain.target(STORM, 3)
   run(3.1)
   local obj = fake.objects.cnr_precipitation
-  assertEq(obj:getField("numDrops"), "7000"); assertEq(obj:getField("minSpeed"), "0.6")
+  assertEq(obj:getField("numDrops"), "3000"); assertEq(obj:getField("minSpeed"), "0.4")
   assertNear(fake.objects.cnr_rain_sound.volume, 2.0, 1e-6)
   local created = 0
   for _, n in ipairs(fake.deleted) do if n == "cnr_precipitation" then created = created + 1 end end
@@ -135,7 +137,7 @@ end)
 test("a zero length target lands at once", function()
   load()
   rain.target(STORM, 0)
-  assertEq(fake.objects.cnr_precipitation:getField("numDrops"), "7000")
+  assertEq(fake.objects.cnr_precipitation:getField("numDrops"), "3000")
   rain.clear()
   assertEq(fake.objects.cnr_precipitation, nil); assertEq(fake.objects.cnr_rain_sound, nil)
   assertEq(rain.active(), false)
@@ -248,10 +250,10 @@ test("the roof halves the volume after a rain to storm change", function()
   end)
 end)
 
-test("rain to storm switches the drop size and speed at half the change", function()
+test("a transition to larger drops switches size and speed at half the change", function()
   load()
   full(RAIN)
-  rain.target(STORM, 60)
+  rain.target(LARGE_DROPS, 60)
   run(29.9)
   local obj = fake.objects.cnr_precipitation
   assertEq(obj:getField("dropSize"), "1"); assertEq(obj:getField("minSpeed"), "0.4"); assertEq(obj:getField("maxSpeed"), "0.5")
@@ -262,7 +264,7 @@ end)
 test("a zero length target sets the drop fields at once", function()
   load()
   full(RAIN)
-  rain.target(STORM, 60)
+  rain.target(LARGE_DROPS, 60)
   run(1)
   rain.target(RAIN, 0)
   assertEq(fake.objects.cnr_precipitation:getField("dropSize"), "1")
