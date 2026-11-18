@@ -706,34 +706,6 @@ test("stale geo reports do not count", function()
   env.cleanup()
 end)
 
-test("earth stations merge and dedupe", function()
-  local env = boot({ map = EARTH })
-  local function st(north, name) return string.format('{"lat":%.9f,"lon":%.9f,"name":"%s"}', LAT + north / M_PER_DEG, LON, name) end
-  env.call("cnr_stations", 1, '{"map":"beamng_earth","geo":true,"stations":[' .. st(0, "Shell") .. "," .. st(2000, "BP") .. ']}')
-  env.call("cnr_stations", 2, '{"map":"beamng_earth","geo":true,"stations":[' .. st(20, "Shell") .. "," .. st(4000, "Esso") .. ']}')
-  local saved = assert(io.open(env.dir .. "data/stations/beamng_earth.json")):read("*a")
-  local n = 0
-  for _ in saved:gmatch('"lat"') do n = n + 1 end
-  assertEq(n, 3)
-  env.cleanup()
-end)
-
-test("earth gas station reset uses geo positions", function()
-  local env = boot({ map = EARTH })
-  env.call("cnr_stations", 1, string.format('{"map":"beamng_earth","geo":true,"stations":[{"lat":%.9f,"lon":%.9f}]}', LAT + 400 / M_PER_DEG, LON))
-  env.panel(2, "start rein")
-  report(env, 1, geoCar(0)); report(env, 2, geoCar(900))
-  env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
-  env.go()
-  for _ = 1, 44 do env.clock = env.clock + 0.25; report(env, 1, geoCar(0)); report(env, 2, geoCar(900)); env.call("cnr_tick") end
-  env.sent = {}
-  env.clock = env.clock + 0.25; report(env, 1, geoCar(400)); report(env, 2, geoCar(900)); env.call("cnr_tick")
-  local st
-  for _, m in ipairs(env.sent) do if m.ev == "cnr_state" and m.pid == 1 then st = m.data end end
-  assertEq(st:find("gas station", 1, true) ~= nil, true)
-  env.cleanup()
-end)
-
 test("earth AI cars are reported by the test issuer", function()
   local env = boot({ map = EARTH, vehicles = { [1] = { [0] = "x" } } })
   env.panel(1, "test runner")
@@ -1096,16 +1068,6 @@ test("New sky needs a random setting", function()
   env.startRound()
   env.panel(1, "sky")
   assertEq(env.replyHas("to random first"), true)
-  env.cleanup()
-end)
-
-test("Earth rounds get no sky", function()
-  local env = boot({ map = EARTH, config = '{"dayLength":"fast","weather":"rain"}' })
-  env.startRound()
-  local setup = env.lastSent("cnr_roundSetup")
-  if setup then assertEq(setup.data:find('"sky"', 1, true), nil) end
-  env.panel(1, "sky")
-  assertEq(env.replyHas("BeamNG.Earth"), true)
   env.cleanup()
 end)
 
@@ -2066,29 +2028,35 @@ test("Map tab adds and removes a station where you stand", function()
   env.cleanup()
 end)
 
+test("station discovery persists the first matching map report with its radius", function()
+  local env = boot()
+  env.call("onPlayerJoin", 1)
+  assertEq(decodeJson(env.lastSent("cnr_requestStations").data).map, "west_coast_usa")
+  local function report(map, z)
+    env.call("cnr_stations", 1, string.format('{"map":"%s","stations":[{"x":1,"y":2,"z":%d,"r":12}]}', map, z))
+  end
+  report("italy", 100)
+  report("west_coast_usa", 5)
+  report("west_coast_usa", 200)
+  local f = assert(io.open(env.dir .. "data/stations/west_coast_usa.json"))
+  local stations = decodeJson(f:read("*a")).stations
+  f:close()
+  assertEq(#stations, 1)
+  assertEq(stations[1].z, 5)
+  assertEq(stations[1].r, 12)
+  env.cleanup()
+end)
+
 test("stations list", function()
   local env = boot()
   env.positions[1] = 0
   env.call("cnr_panel", 1, '{"action":"station","op":"add"}')
   env.call("cnr_panel", 1, '{"action":"stations"}')
   local d = decodeJson(sentTo(env, "cnr_stationList", 1))
-  assertEq(d.geo, false)
+  for key in pairs(d) do assertEq(key, "stations") end
   assertEq(#d.stations, 1)
   assertEq(d.stations[1].x, 0)
   assertEq(d.stations[1].y ~= nil and d.stations[1].z ~= nil, true)
-  env.cleanup()
-end)
-
-test("stations list on earth has lat and lon", function()
-  local env = boot({ map = EARTH })
-  report(env, 1, geoCar(0))
-  env.call("cnr_panel", 1, '{"action":"station","op":"add"}')
-  assertEq(env.replyHas("Gas station added (1 on beamng_earth)"), true)
-  env.call("cnr_panel", 1, '{"action":"stations"}')
-  local d = decodeJson(sentTo(env, "cnr_stationList", 1))
-  assertEq(d.geo, true)
-  assertEq(math.abs(d.stations[1].lat - LAT) < 1e-6, true)
-  assertEq(math.abs(d.stations[1].lon - LON) < 1e-6, true)
   env.cleanup()
 end)
 
@@ -2336,7 +2304,6 @@ end)
 test("station count", function()
   local env = boot()
   assertEq(panelOf(env).stationCount, 0)
-  assertEq(panelOf(env).geo, false)
   env.cleanup()
 end)
 
@@ -2495,7 +2462,6 @@ test("no go-ahead without room", function()
   local cases = {
     { maxCars = 1 },
     { maxCars = 6, config = '{"trafficPerPlayer":0}' },
-    { maxCars = 6, map = "/levels/beamng_earth/info.json" },
   }
   for i, opts in ipairs(cases) do
     local env = boot(opts)
@@ -2700,9 +2666,6 @@ test("How to play gets the effective traffic", function()
   local env = trafficBoot({ maxCars = 4 })
   assertEq(env.lastSent("cnr_rules").data:find('"trafficPerPlayer":3', 1, true) ~= nil, true)
   env.cleanup()
-  local earth = trafficBoot({ map = "/levels/beamng_earth/info.json" })
-  assertEq(earth.lastSent("cnr_rules").data:find('"trafficPerPlayer":0', 1, true) ~= nil, true)
-  earth.cleanup()
 end)
 
 test("the panel shows the traffic note", function()

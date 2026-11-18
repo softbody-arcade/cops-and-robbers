@@ -2,12 +2,8 @@ local game = require("copsAndRobbers/game")
 
 local M = {}
 
-local PLACES_INTERVAL = 60
-local PLACES_MOVE_METERS = 1000
-local PLACES_RADIUS = 3000
 local COMPASS = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
 
-local lastPlacesAt, lastPlacesGeo = -math.huge, nil
 local gpsTarget
 
 function M.api()
@@ -87,38 +83,6 @@ function M.sendGeo(aiObjects)
   if veh then add(veh, nil) end
   for _, entry in ipairs(aiObjects or {}) do add(entry.obj, entry.id) end
   if #cars > 0 then game.sendServer("cnr_geo", { cars = cars }) end
-end
-
-local function geoDistance(a, b)
-  local dLat = (a.lat - b.lat) * 111320
-  local dLon = (a.lon - b.lon) * 111320 * math.cos(math.rad(a.lat))
-  return math.sqrt(dLat * dLat + dLon * dLon)
-end
-
-function M.resetPlaces()
-  lastPlacesAt, lastPlacesGeo = -math.huge, nil
-end
-
-function M.lookupStations(clock)
-  local api = M.api()
-  if not api or not api.has or not api.has("places") then return end
-  local veh = game.ownVehicle()
-  local lat, lon = M.toGeo(veh and veh:getPosition())
-  if not lat then return end
-  local here = { lat = lat, lon = lon }
-  if lastPlacesGeo and clock - lastPlacesAt < PLACES_INTERVAL and geoDistance(here, lastPlacesGeo) < PLACES_MOVE_METERS then return end
-  lastPlacesAt, lastPlacesGeo = clock, here
-  local level = getCurrentLevelIdentifier()
-  api.places(lat, lon, { radius = PLACES_RADIUS, categories = { "gas_station" } }, function(r)
-    if type(r) ~= "table" or type(r.places) ~= "table" then return end
-    local list = {}
-    for _, p in ipairs(r.places) do
-      if p.lat and p.lon and p.open ~= "permanently_closed" then
-        list[#list + 1] = { lat = p.lat, lon = p.lon, name = p.name }
-      end
-    end
-    if #list > 0 then game.sendServer("cnr_stations", { map = level, geo = true, stations = list }) end
-  end)
 end
 
 return M

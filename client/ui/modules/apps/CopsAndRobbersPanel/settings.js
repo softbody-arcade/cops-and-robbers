@@ -12,7 +12,7 @@ export const GROUPS = [
     { key: "autoNextDelaySeconds", label: "Next round delay", unit: "s", step: 5, min: 0,
       help: "With automatic rounds on, the wait before the next round" },
   ] },
-  { title: "Sky", noEarth: true, items: [
+  { title: "Sky", items: [
     { key: "timeOfDay", label: "Time of day", kind: "choice", common: true,
       options: [["sunrise", "Sunrise"], ["morning", "Morning"], ["noon", "Noon"], ["afternoon", "Afternoon"], ["sunset", "Sunset"], ["night", "Night"], ["random", "Random"]],
       help: "The time the chase is played at (with a moving clock it starts just before); random follows the night chance" },
@@ -35,7 +35,7 @@ export const GROUPS = [
     { key: "weatherChangeMaxMinutes", label: "Longest between changes", unit: "min", step: 1, min: 1, when: v => v("weatherChanges"),
       help: "The most time between two weather changes; never below the shortest" },
   ] },
-  { title: "Traffic", noEarth: true, items: [
+  { title: "Traffic", items: [
     { key: "trafficPerPlayer", label: "Traffic", unit: "per player", step: 1, min: 0, max: 20, common: true, offAtZero: true,
       help: "AI traffic cars around each player during a round",
       vary: v => v("trafficRunnerOnly") === true && { unit: "for the runner", help: "AI traffic cars around the runner during a round" } },

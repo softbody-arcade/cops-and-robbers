@@ -525,7 +525,6 @@ local function onMode(data)
   local d = jsonDecode(data) or {}
   geoMode = d.geo == true
   hudfeed.sitOut(false)
-  geo.resetPlaces()
   guihooks.trigger("CnRPanel", {})
   guihooks.trigger("CnRBoard", {})
   hudfeed.warning("earth", geoMode and not geo.api() and "Cops and Robbers needs a newer BeamNG.Earth (API v1) on this map" or nil)
@@ -699,13 +698,12 @@ local function onStationList(data)
   local list = type(d.stations) == "table" and d.stations or {}
   local points = {}
   for _, s in ipairs(list) do
-    if type(s) == "table" then
-      local p = d.geo and geo.toGame(s) or (tonumber(s.x) and tonumber(s.y) and { x = s.x, y = s.y, z = tonumber(s.z) or 0 })
-      if p then points[#points + 1] = p end
+    if type(s) == "table" and tonumber(s.x) and tonumber(s.y) then
+      points[#points + 1] = { x = tonumber(s.x), y = tonumber(s.y), z = tonumber(s.z) or 0 }
     end
   end
   local own = ownVehicle()
-  local near = own and nearby.nearest(points, own:getPosition(), 3, d.geo == true) or {}
+  local near = own and nearby.nearest(points, own:getPosition(), 3) or {}
   local result = {}
   for i, n in ipairs(near) do result[i] = { meters = n.meters } end
   guihooks.trigger("CnRStations", {
@@ -820,7 +818,6 @@ local function updateGeo()
     lastGeoSent = clock
     geo.sendGeo(ai.objects())
   end
-  geo.lookupStations(clock)
 end
 
 local function updateGpsInfo()

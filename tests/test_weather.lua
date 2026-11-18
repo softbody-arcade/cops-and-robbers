@@ -174,7 +174,7 @@ local function fingerprint(r)
   return table.concat(parts, ";")
 end
 
-test("no changes with Weather changes off, without a weather or on Earth; temps still come with a weather", function()
+test("no changes with Weather changes off or without a weather; temps still come with a weather", function()
   local s = { time = "noon", weather = "rain", month = 3, weatherSeed = 7 }
   local r = weather.build(s, cfg({ weatherChanges = false }))
   assertEq(#r.changes, 0)

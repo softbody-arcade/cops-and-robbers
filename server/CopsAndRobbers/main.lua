@@ -49,13 +49,9 @@ local rawConfig = {}
 local geoMode = false
 local geoRef
 local geoReports = {}
-local geoStations = {}
-local localStationsCache
 local lastGeoByName = {}
 local GEO_STALE_SECONDS = 2
 local PARTS_PLACING_SECONDS, PARTS_SETTLE_SECONDS = 10, 3
-local GEO_STATION_MERGE_METERS = 50
-local GEO_STATION_RADIUS = 20
 local GEO_RESET_VERDICT_DELAY = 1
 local GEO_LIVE_MIN_SECONDS = 3
 local lastLiveSentAt = -math.huge
@@ -266,18 +262,6 @@ local function stationsPath() return stationsDir .. mapName .. ".json" end
 local function loadStations()
   local decoded = decodeFile(stationsPath())
   stations = {}
-  geoStations = {}
-  localStationsCache = nil
-  if geoMode then
-    for _, s in ipairs(decoded and decoded.stations or {}) do
-      local lat, lon = tonumber(s.lat), tonumber(s.lon)
-      if geo.valid(lat, lon) then
-        geoStations[#geoStations + 1] = { lat = lat, lon = lon, r = tonumber(s.r) or GEO_STATION_RADIUS, name = s.name }
-      end
-    end
-    log(string.format("%d gas stations loaded for %s", #geoStations, mapName))
-    return
-  end
   for _, s in ipairs(decoded and decoded.stations or {}) do
     local v = vec.toVec(s)
     if v then
@@ -289,13 +273,10 @@ local function loadStations()
 end
 
 local function saveStations()
-  localStationsCache = nil
-  local list = geoMode and geoStations or stations
-  writeFile(stationsPath(), Util.JsonPrettify(Util.JsonEncode({ stations = list })))
+  writeFile(stationsPath(), Util.JsonPrettify(Util.JsonEncode({ stations = stations })))
 end
 
 local function requestStations(pid)
-  if geoMode then return end
   if #stations > 0 or stationsRequested[pid] then return end
   stationsRequested[pid] = true
   send(pid, "cnr_requestStations", { map = mapName })
@@ -338,7 +319,7 @@ end
 
 local function trafficFor(pid)
   if cfg.trafficRunnerOnly and not current.test and pid ~= current.runnerId then return 0 end
-  return traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), geoMode, current.test and pid == current.issuerId)
+  return traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), current.test and pid == current.issuerId)
 end
 
 local function openTraffic(pid)
@@ -396,21 +377,6 @@ end
 
 local function geoPoint(r)
   return r and { lat = r.lat, lon = r.lon, h = r.h } or nil
-end
-
-local function roundStations()
-  if not geoMode then return stations end
-  if not geoRef then return {} end
-  if not localStationsCache then
-    localStationsCache = {}
-    for _, s in ipairs(geoStations) do
-      local p = geo.toLocal(geoRef, s.lat, s.lon, 0)
-      p.z = nil
-      local here = { x = p.x, y = p.y, z = 0, r = s.r }
-      localStationsCache[#localStationsCache + 1] = here
-    end
-  end
-  return localStationsCache
 end
 
 local function carFor(pid)
@@ -772,7 +738,7 @@ function handlers.start(pid, cmd)
   lastResult = nil
   local sittingOut = {}
   for p in pairs(sitOut) do sittingOut[p] = true end
-  applyEffects(current:start(now(), runnerId, pid, players, { build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random, geoMode), traffic = traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), geoMode, false), trafficRunnerOnly = cfg.trafficRunnerOnly == true, sittingOut = sittingOut }))
+  applyEffects(current:start(now(), runnerId, pid, players, { build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random), traffic = traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), false), trafficRunnerOnly = cfg.trafficRunnerOnly == true, sittingOut = sittingOut }))
 end
 
 function handlers.test(pid, cmd)
@@ -785,12 +751,12 @@ function handlers.test(pid, cmd)
   aiVid = {}
   local role = cmd.args[1] and cmd.args[1]:lower()
   if cfg.carMode == "evolving" and not currentBuild then return refuse(pid, "Start a new build first") end
-  local opts = { test = true, role = role, aiOnly = sitOut[pid] == true, build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random, geoMode) }
+  local opts = { test = true, role = role, aiOnly = sitOut[pid] == true, build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random) }
   applyEffects(current:start(now(), nil, pid, MP.GetPlayers() or {}, opts))
 end
 
 local function pushRules(pid)
-  send(pid or -1, "cnr_rules", rules.payload(cfg, traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), geoMode, false)))
+  send(pid or -1, "cnr_rules", rules.payload(cfg, traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), false)))
 end
 
 local function lobbyState()
@@ -852,14 +818,13 @@ function handlers.reroll(pid)
 end
 
 function handlers.sky(pid)
-  if geoMode then return refuse(pid, "Not available on BeamNG.Earth yet") end
   if current.state ~= "prep" and current.state ~= "ready" then return refuse(pid, "You can only change the sky before GO") end
   if not sky.hasRandom(cfg) then return refuse(pid, "Set time of day or weather to random first") end
   local before = current.sky or {}
-  local picked = sky.pick(cfg, math.random, geoMode)
+  local picked = sky.pick(cfg, math.random)
   for _ = 1, 10 do
     if picked.time ~= before.time or picked.weather ~= before.weather then break end
-    picked = sky.pick(cfg, math.random, geoMode)
+    picked = sky.pick(cfg, math.random)
   end
   current.sky = picked
   local data = sky.payload(current.sky, cfg, nil)
@@ -869,13 +834,6 @@ end
 
 
 function handlers.addstation(pid)
-  if geoMode then
-    local r = geoOf(pid)
-    if not r then return refuse(pid, "You need to be in a vehicle") end
-    geoStations[#geoStations + 1] = { lat = r.lat, lon = r.lon, r = GEO_STATION_RADIUS }
-    saveStations()
-    return reply(pid, string.format("Gas station added (%d on %s)", #geoStations, mapName))
-  end
   local car = carFor(pid)
   if not car then return refuse(pid, "You need to be in a vehicle") end
   stations[#stations + 1] = { x = car.pos.x, y = car.pos.y, z = car.pos.z, r = 0 }
@@ -884,21 +842,6 @@ function handlers.addstation(pid)
 end
 
 function handlers.removestation(pid)
-  if geoMode then
-    local r = geoOf(pid)
-    if not r then return refuse(pid, "You need to be in a vehicle") end
-    local ref = geo.newRef(r.lat, r.lon)
-    local bestIndex, bestDist
-    for i, st in ipairs(geoStations) do
-      local p = geo.toLocal(ref, st.lat, st.lon, 0)
-      local d = math.sqrt(p.x * p.x + p.y * p.y)
-      if d <= 50 and (not bestDist or d < bestDist) then bestIndex, bestDist = i, d end
-    end
-    if not bestIndex then return refuse(pid, "No gas station within 50 m") end
-    table.remove(geoStations, bestIndex)
-    saveStations()
-    return reply(pid, string.format("Gas station removed (%d left on %s)", #geoStations, mapName))
-  end
   local car = carFor(pid)
   if not car then return refuse(pid, "You need to be in a vehicle") end
   local bestIndex, bestDist
@@ -986,9 +929,9 @@ local function panelState()
     build = buildInfo,
     nextRunner = nextName, lastRunner = lastPid and players[lastPid] or nil,
     loading = loading, autoNext = autoNext, lastResult = lastResult,
-    stationCount = #(geoMode and geoStations or stations), geo = geoMode,
-    skyRandom = not geoMode and sky.hasRandom(cfg),
-    trafficNote = traffic.note(cfg.trafficPerPlayer, maxCars(), geoMode, count, cfg.trafficRunnerOnly == true),
+    stationCount = #stations,
+    skyRandom = sky.hasRandom(cfg),
+    trafficNote = traffic.note(cfg.trafficPerPlayer, maxCars(), count, cfg.trafficRunnerOnly == true),
   })
 end
 
@@ -1067,10 +1010,10 @@ function cnrOnPanel(pid, data)
     if not ran then error(err, 0) end
   elseif msg.action == "stations" then
     local list = {}
-    for _, st in ipairs(geoMode and geoStations or stations) do
-      list[#list + 1] = geoMode and { lat = st.lat, lon = st.lon, name = st.name } or { x = st.x, y = st.y, z = st.z }
+    for _, st in ipairs(stations) do
+      list[#list + 1] = { x = st.x, y = st.y, z = st.z }
     end
-    send(pid, "cnr_stationList", { geo = geoMode, stations = list })
+    send(pid, "cnr_stationList", { stations = list })
   elseif msg.action == "settings" then
     panelSettings(pid, msg.values, msg.id)
   elseif msg.action == "build" then
@@ -1392,26 +1335,6 @@ function cnrOnAiVehicles(pid, data)
   end
 end
 
-local function mergeGeoStations(list)
-  local added = 0
-  for _, s in ipairs(list or {}) do
-    local lat, lon = tonumber(s.lat), tonumber(s.lon)
-    if geo.valid(lat, lon) then
-      local ref = geo.newRef(lat, lon)
-      local duplicate = false
-      for _, existing in ipairs(geoStations) do
-        local p = geo.toLocal(ref, existing.lat, existing.lon, 0)
-        if math.sqrt(p.x * p.x + p.y * p.y) <= GEO_STATION_MERGE_METERS then duplicate = true break end
-      end
-      if not duplicate then
-        geoStations[#geoStations + 1] = { lat = lat, lon = lon, r = GEO_STATION_RADIUS, name = type(s.name) == "string" and s.name or nil }
-        added = added + 1
-      end
-    end
-  end
-  return added
-end
-
 function cnrOnGeo(pid, data)
   if not geoMode then return end
   local ok, decoded = pcall(Util.JsonDecode, data)
@@ -1481,15 +1404,6 @@ end
 
 function cnrOnStations(pid, data)
   local ok, decoded = pcall(Util.JsonDecode, data)
-  if geoMode then
-    if not ok or type(decoded) ~= "table" or decoded.map ~= mapName then return end
-    local added = mergeGeoStations(decoded.stations)
-    if added > 0 then
-      saveStations()
-      log(string.format("%d new gas stations on %s (%d known)", added, mapName, #geoStations))
-    end
-    return
-  end
   if not ok or type(decoded) ~= "table" or decoded.map ~= mapName or #stations > 0 then return end
   for _, s in ipairs(decoded.stations or {}) do
     local v = vec.toVec(s)
@@ -1535,7 +1449,7 @@ function cnrTick()
   if not current:isActive() then return end
   local cars = {}
   for pid in pairs(current.players) do cars[pid] = carFor(pid) end
-  applyEffects(current:tick(now(), cars, roundStations(), trafficCars()))
+  applyEffects(current:tick(now(), cars, stations, trafficCars()))
 end
 
 FS.CreateDirectory(stationsDir)

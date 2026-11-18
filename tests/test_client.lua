@@ -1840,7 +1840,7 @@ end)
 test("station list gives the nearest three and whether one can be removed", function()
   local env = bootClient()
   env.veh.pos = vec3(0, 0, 0)
-  env.fire("cnr_stationList", { geo = false, stations = { { x = 400, y = 0, z = 0 }, { x = 30, y = 0, z = 0 }, { x = 100, y = 0, z = 0 }, { x = 200, y = 0, z = 0 } } })
+  env.fire("cnr_stationList", { stations = { { x = 400, y = 0, z = 0 }, { x = 30, y = 0, z = 0 }, { x = 100, y = 0, z = 0 }, { x = 200, y = 0, z = 0 } } })
   local s = env.lastTrigger("CnRStations")
   assertEq(s.count, 4); assertEq(#s.nearest, 3)
   assertEq(s.nearest[1].meters, 30); assertEq(s.nearest[3].meters, 200)
@@ -1852,33 +1852,6 @@ test("station list gives the nearest three and whether one can be removed", func
   assertEq(s.count, 0); assertEq(#s.nearest, 0); assertEq(s.canRemove, false)
   env.fire("cnr_stationList", {})
   assertEq(env.lastTrigger("CnRStations").count, 0)
-end)
-
-test("station list with geo points converts them to game space", function()
-  local env = bootClient()
-  _G.beamngEarth_api = { version = function() return 1 end, toGame = function(lat, lon, h) return lon, lat, h end }
-  env.veh.pos = vec3(0, 0, 0)
-  env.fire("cnr_stationList", { geo = true, stations = { { lat = 20, lon = 0, name = "A" }, { lat = 0, lon = 40 }, { lat = "x" } } })
-  _G.beamngEarth_api = nil
-  local s = env.lastTrigger("CnRStations")
-  assertEq(s.count, 3); assertEq(#s.nearest, 2)
-  assertEq(s.nearest[1].meters, 20); assertEq(s.nearest[2].meters, 40)
-  assertEq(s.canRemove, true)
-end)
-
-test("geo station distances ignore height and skip points that don't convert", function()
-  local env = bootClient()
-  _G.beamngEarth_api = {
-    version = function() return 1 end,
-    toGame = function(lat, lon, h) if lat == 99 then return nil end return lon, lat, h end,
-  }
-  env.veh.pos = vec3(0, 0, 300)
-  env.fire("cnr_stationList", { geo = true, stations = { { lat = 0, lon = 10 }, { lat = 99, lon = 0 } } })
-  _G.beamngEarth_api = nil
-  local s = env.lastTrigger("CnRStations")
-  assertEq(s.count, 2); assertEq(#s.nearest, 1)
-  assertEq(s.nearest[1].meters, 10)
-  assertEq(s.canRemove, true)
 end)
 
 test("station list without a car of your own has nothing nearby", function()

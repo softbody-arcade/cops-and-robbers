@@ -12,7 +12,7 @@ end
 local function cfg(o) return (config.merge(o)) end
 
 test("pick rolls a weather seed and a schedule", function()
-  local s = sky.pick(cfg(nil), rng(0.5, 1), false, 2026)
+  local s = sky.pick(cfg(nil), rng(0.5, 1), 2026)
   assertEq(s.weatherSeed, 1)
   assertEq(type(s.changes), "table"); assertEq(type(s.temps), "table")
   assertEq(#s.temps >= 2, true)
@@ -21,9 +21,6 @@ test("pick rolls a weather seed and a schedule", function()
   local again = weather.build({ time = s.time, weather = s.weather, month = s.month, weatherSeed = 1 }, cfg(nil))
   assertEq(#s.changes, #again.changes)
   assertEq(s.changes[1].at, again.changes[1].at)
-  local draws = 0
-  assertEq(next(sky.pick(cfg(nil), function() draws = draws + 1; return 1 end, true)), nil)
-  assertEq(draws, 0)
 end)
 
 test("payload carries the schedule", function()
@@ -39,16 +36,16 @@ test("payload carries the schedule", function()
 end)
 
 test("random choices are the default and still pick wind", function()
-  local s = sky.pick(cfg(nil), rng(0.5, 1), false, 2026)
+  local s = sky.pick(cfg(nil), rng(0.5, 1), 2026)
   assertEq(s.time, "sunrise"); assertEq(s.weather, "clear"); assertEq(s.windDir, 0); assertEq(s.windSeed, 1)
   assertEq(s.year, 2026); assertEq(s.month, 1); assertEq(s.day, 1)
 end)
 
 test("the date follows the weather", function()
-  local s = sky.pick(cfg({ weather = "snow" }), rng(0.5, 1), false, 2026)
+  local s = sky.pick(cfg({ weather = "snow" }), rng(0.5, 1), 2026)
   assertEq(s.month, 12); assertEq(s.day, 1)
-  assertEq(sky.pick(cfg({ weather = "fog" }), rng(0.5, 1), false, 2026).month, 10)
-  assertEq(sky.pick(cfg({ weather = "rain" }), rng(0.5, 1), false, 2026).month, 3)
+  assertEq(sky.pick(cfg({ weather = "fog" }), rng(0.5, 1), 2026).month, 10)
+  assertEq(sky.pick(cfg({ weather = "rain" }), rng(0.5, 1), 2026).month, 3)
 end)
 
 local DAYS = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
@@ -83,7 +80,7 @@ test("every date in a window exists and each day comes up once", function()
 end)
 
 test("the year defaults to the server's current year", function()
-  assertEq(sky.pick(cfg(nil), rng(0.5, 1), false).year, tonumber(os.date("%Y")))
+  assertEq(sky.pick(cfg(nil), rng(0.5, 1)).year, tonumber(os.date("%Y")))
 end)
 
 test("fixed choices are kept", function()
@@ -101,10 +98,6 @@ end)
 test("random weather follows the bad weather chance", function()
   assertEq(sky.pick(cfg({ weather = "random", badWeatherChancePercent = 100 }), rng(0.5, 4)).weather, "snow")
   assertEq(sky.pick(cfg({ weather = "random", badWeatherChancePercent = 0 }), rng(0.5, 2)).weather, "cloudy")
-end)
-
-test("nothing is picked on BeamNG.Earth", function()
-  assertEq(next(sky.pick(cfg({ weather = "rain", timeOfDay = "night" }), rng(0, 1), true)), nil)
 end)
 
 test("hasRandom sees a random time or weather", function()
@@ -132,9 +125,8 @@ test("payload sends driving only with a weather and the switch on", function()
   assertEq(sky.payload(s, cfg({ dayLength = "off" }), nil).daySeconds, nil)
 end)
 
-test("nothing is sent on BeamNG.Earth", function()
+test("a missing sky has no payload", function()
   local c = cfg({ dayLength = "fast", weather = "rain" })
-  assertEq(sky.payload(sky.pick(c, rng(0, 1), true), c, nil), nil)
   assertEq(sky.payload(nil, c, nil), nil)
 end)
 
