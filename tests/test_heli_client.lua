@@ -2096,6 +2096,64 @@ test("the moving helicopter clears a rooftop along its flight and descends after
   end)
 end)
 
+local function flyOverSurface(cast, duration, check)
+  load()
+  state.random = function() return 0.25 end
+  local car = { getPosition = target.getPosition, getVelocity = function() return vec3(40, 0, 0) end }
+  withCast(cast, function()
+    heli.set(state, { phase = "tracking" }, 0)
+    for i = 0, duration * 100 do
+      local t = i / 100
+      pos.x, pos.y, pos.z = 40 + 40 * t, 0, 0
+      heli.lightTick(state, car, false, t)
+      check(heli.flying(state, t).pos)
+    end
+  end)
+end
+
+test("the aircraft clears a narrow rooftop structure between its ground samples", function()
+  local frames = 0
+  local function cast(p, dir, len)
+    if dir.z == -1 then
+      local roof = p.x >= 19 and p.x <= 22 and 210 or 145
+      return math.min(len, p.z - roof)
+    end
+    if dir.x > 0 and p.z > 145 and p.z < 210 and p.x < 19 then
+      return math.min(len, (19 - p.x) / dir.x)
+    end
+    return len
+  end
+  flyOverSurface(cast, 1, function(p)
+    if p.x >= 19 and p.x <= 22 then
+      frames = frames + 1
+      assertEq(p.z > 210, true, "aircraft inside rooftop structure at x=" .. p.x)
+    end
+  end)
+  assertEq(frames >= 6, true)
+end)
+
+test("the helicopter climbs a continuous 1:1 hillside smoothly at 40 m/s", function()
+  for _, crest in ipairs({ math.huge, 95 }) do
+    local previousZ
+    local scans = 0
+    local function cast(p, dir, len)
+      scans = scans + 1
+      if dir.z == -1 then return math.min(len, p.z - math.min(crest, math.max(0, p.x))) end
+      if dir.x > 0 and p.z >= p.x and p.z <= crest then return math.min(len, (p.z - p.x) / dir.x) end
+      return len
+    end
+    flyOverSurface(cast, 4, function(p)
+      if previousZ then
+        assertEq(p.z - previousZ <= 0.75, true, "single-frame climb " .. (p.z - previousZ))
+      end
+      assertEq(p.z > math.min(crest, math.max(0, p.x)), true)
+      previousZ = p.z
+    end)
+    assertEq(previousZ > math.min(crest + 5, 160), true)
+    assertEq(scans <= 125, true, "ray count " .. scans)
+  end
+end)
+
 test("a failed clearance scan preserves the last floor and the next scan can climb again", function()
   load()
   local surface = 145
