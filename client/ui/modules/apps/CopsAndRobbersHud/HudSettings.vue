@@ -1,84 +1,87 @@
 <template>
   <CnrCard class="hud-settings" title="Your settings" closable @close="emit('close')">
-    <div class="section">Car colour</div>
-    <BngColorPicker v-model="hsl" view="compact_luminosity" @change="fromPicker" />
-    <div class="hex-row">
-      <span class="cnr-swatch" :class="{ empty: !valid }" :style="valid ? { background: normalized } : null"></span>
-      <input
-        :value="draft"
-        v-bng-text-input
-        class="hex"
-        :class="{ bad: draft && !valid }"
-        type="text"
-        maxlength="7"
-        spellcheck="false"
-        placeholder="#RRGGBB"
-        @input="fromText"
-        @keydown.enter="done"
-      />
-      <BngButton class="cnr-btn" :accent="ACCENTS.secondary" @click="clear">No colour</BngButton>
-    </div>
-    <div v-if="draft && !valid" class="hint">Use six hex digits, like #2FB36B</div>
-    <div class="divider"></div>
-    <div class="row">
-      <div class="label">
-        <div class="name">Auto headlights</div>
-        <div class="desc">On at night and in bad weather</div>
+    <div>
+      <div class="section">Car colour</div>
+      <BngColorPicker v-model="hsl" view="compact_luminosity" @change="fromPicker" />
+      <div class="hex-row">
+        <span class="cnr-swatch" :class="{ empty: !valid }" :style="valid ? { background: normalized } : null"></span>
+        <input
+          :value="draft"
+          v-bng-text-input
+          class="hex"
+          :class="{ bad: draft && !valid }"
+          type="text"
+          maxlength="7"
+          spellcheck="false"
+          placeholder="#RRGGBB"
+          @input="fromText"
+          @keydown.enter="done"
+        />
+        <BngButton class="cnr-btn" :accent="ACCENTS.secondary" @click="clear">No colour</BngButton>
       </div>
-      <BngSwitch :model-value="settings.headlights === true" @update:modelValue="v => emit('setting', 'headlights', v)" />
+      <div v-if="draft && !valid" class="hint">Use six hex digits, like #2FB36B</div>
     </div>
-    <div class="row">
-      <div class="label">
-        <div class="name">Searchlight beam</div>
-        <div class="desc">The helicopter's beam in the air; off helps the frame rate</div>
+    <div>
+      <div class="row">
+        <div class="label">
+          <div class="name">Auto headlights</div>
+          <div class="desc">On at night and in bad weather</div>
+        </div>
+        <BngSwitch :model-value="settings.headlights === true" @update:modelValue="v => emit('setting', 'headlights', v)" />
       </div>
-      <BngSwitch :model-value="settings.beam !== false" @update:modelValue="v => emit('setting', 'beam', v)" />
-    </div>
-    <div class="row">
-      <div class="label">
-        <div class="name">Helicopter sound</div>
-        <div class="desc">The police helicopter's rotor; heard from far off</div>
+      <div class="row">
+        <div class="label">
+          <div class="name">Searchlight beam</div>
+          <div class="desc">The helicopter's beam in the air; off helps the frame rate</div>
+        </div>
+        <BngSwitch :model-value="settings.beam !== false" @update:modelValue="v => emit('setting', 'beam', v)" />
       </div>
-      <BngSwitch :model-value="settings.sound !== false" @update:modelValue="v => emit('setting', 'sound', v)" />
-    </div>
-    <div class="row">
-      <div class="label">
-        <div class="name">Helicopter model</div>
-        <div class="desc">The police helicopter's body and lights, seen from far off</div>
+      <div class="row">
+        <div class="label">
+          <div class="name">Helicopter sound</div>
+          <div class="desc">The police helicopter's rotor; heard from far off</div>
+        </div>
+        <BngSwitch :model-value="settings.sound !== false" @update:modelValue="v => emit('setting', 'sound', v)" />
       </div>
-      <BngSwitch :model-value="settings.model !== false" @update:modelValue="v => emit('setting', 'model', v)" />
-    </div>
-    <div class="row">
-      <div class="label">
-        <div class="name">Lightning flashes</div>
-        <div class="desc">Show flashes and bolts during thunderstorms. Thunder still plays.</div>
+      <div class="row">
+        <div class="label">
+          <div class="name">Helicopter model</div>
+          <div class="desc">The police helicopter's body and lights, seen from far off</div>
+        </div>
+        <BngSwitch :model-value="settings.model !== false" @update:modelValue="v => emit('setting', 'model', v)" />
       </div>
-      <BngSwitch :model-value="settings.lightning !== false" @update:modelValue="v => emit('setting', 'lightning', v)" />
-    </div>
-    <div class="row" :class="{ off: !settings.sirensAllowed }">
-      <div class="label">
-        <div class="name">Siren</div>
-        <div class="desc">{{ settings.sirensAllowed ? "As a cop, once cops are released" : "Turned off by the host" }}</div>
+      <div class="row">
+        <div class="label">
+          <div class="name">Lightning flashes</div>
+          <div class="desc">Show flashes and bolts during thunderstorms. Thunder still plays.</div>
+        </div>
+        <BngSwitch :model-value="settings.lightning !== false" @update:modelValue="v => emit('setting', 'lightning', v)" />
       </div>
-      <BngSwitch
-        :model-value="settings.sirensAllowed === true && settings.siren === true"
-        :disabled="!settings.sirensAllowed"
-        @update:modelValue="v => emit('setting', 'siren', v)"
-      />
-    </div>
-    <div class="row stack">
-      <div class="label">
-        <div class="name">Route to the runner</div>
-        <div class="desc">As a cop</div>
+      <div class="row" :class="{ off: !settings.sirensAllowed }">
+        <div class="label">
+          <div class="name">Siren</div>
+          <div class="desc">{{ settings.sirensAllowed ? "As a cop, once cops are released" : "Turned off by the host" }}</div>
+        </div>
+        <BngSwitch
+          :model-value="settings.sirensAllowed === true && settings.siren === true"
+          :disabled="!settings.sirensAllowed"
+          @update:modelValue="v => emit('setting', 'siren', v)"
+        />
       </div>
-      <div class="choices">
-        <BngButton
-          v-for="c in ROUTES"
-          :key="c.value"
-          class="cnr-btn"
-          :accent="(settings.route || 'sight') === c.value ? ACCENTS.main : ACCENTS.secondary"
-          @click="emit('setting', 'route', c.value)"
-        >{{ c.label }}</BngButton>
+      <div class="row stack">
+        <div class="label">
+          <div class="name">Route to the runner</div>
+          <div class="desc">As a cop</div>
+        </div>
+        <div class="choices">
+          <BngButton
+            v-for="c in ROUTES"
+            :key="c.value"
+            class="cnr-btn"
+            :accent="(settings.route || 'sight') === c.value ? ACCENTS.main : ACCENTS.secondary"
+            @click="emit('setting', 'route', c.value)"
+          >{{ c.label }}</BngButton>
+        </div>
       </div>
     </div>
     <template #actions>
@@ -145,10 +148,18 @@ function done() {
 
 <style scoped>
 .hud-settings {
-  width: 26rem;
+  width: 40rem;
+  max-height: 100%;
   max-width: 100%;
   text-shadow: none;
   pointer-events: auto;
+}
+.hud-settings :deep(.cnr-card-body) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  align-items: start;
+  gap: 0.75rem 1.25rem;
+  overflow-y: auto;
 }
 .hud-settings :deep(.cnr-card-title) {
   font-size: 1.125rem;
@@ -161,6 +172,7 @@ function done() {
 }
 .hex-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   margin-top: 0.75rem;
@@ -193,12 +205,6 @@ function done() {
   font-size: 0.875rem;
   font-weight: 700;
   color: var(--cnr-warn);
-}
-.divider {
-  height: 0.0625rem;
-  margin: 0.75rem 0 0.25rem;
-  background: var(--cnr-muted);
-  opacity: 0.4;
 }
 .row {
   display: flex;

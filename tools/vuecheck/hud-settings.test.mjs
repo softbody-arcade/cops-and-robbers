@@ -63,30 +63,35 @@ const module = await component("app.vue")
 await module.evaluate()
 for (const state of [
   { mode: "lobby", lobby: {} },
-  { mode: "round", prep: {} },
+  { mode: "round", prep: {}, change: { title: "New change", canApply: true } },
   { mode: "round", status: { role: "runner", time: "3:12" }, catch: { visible: true, label: "BEING CAUGHT" } },
   { mode: "round", status: { role: "cop", time: "3:12" } },
-  { mode: "round", spectate: { name: "Free camera", time: "3:12" } },
+  { mode: "round", spectate: { name: "Free camera", time: "3:12", forecast: { text: "Forecast: clearing" } } },
 ]) {
-  hud.value = { visible: true, settings: { lightning: true }, ...state }
+  hud.value = { visible: true, notices: [{ text: "Round notice" }], settings: { lightning: true }, ...state }
   const root = node("root")
   const app = renderer.createApp(module.namespace.default)
   app.mount(root)
   const button = buttonFor(root, "Settings")
   assert.ok(button, `Settings button for ${JSON.stringify(state)}`)
+  const oldText = descendants(root).map(el => el.text).filter(Boolean)
   button.props.onClick()
   await Vue.nextTick()
-  if (state.status || state.spectate) assert.ok(descendants(root).some(el => el.text === "3:12"))
-  if (state.catch) assert.ok(descendants(root).some(el => el.text === "BEING CAUGHT"))
+  const settingsText = descendants(root).map(el => el.text)
+  for (const text of oldText) assert.ok(!settingsText.includes(text), `HUD content still visible in Settings: ${text}`)
   const label = descendants(root).find(el => el.text === "Lightning flashes")
   assert.ok(label, `Lightning flashes switch for ${JSON.stringify(state)}`)
   const toggle = descendants(label.parent.parent).find(el => el.type === "switch")
   assert.equal(toggle.props["model-value"], true)
   toggle.props["onUpdate:modelValue"](false)
   assert.deepEqual(actions.pop(), { action: "setting", key: "lightning", value: false })
+  if (state.spectate) hud.value.spectate.time = "3:19"
   buttonFor(root, "Done").props.onClick()
   await Vue.nextTick()
-  assert.ok(buttonFor(root, "Settings"))
+  const restored = descendants(root).map(el => el.text)
+  for (const text of oldText) {
+    assert.ok(restored.includes(state.spectate && text === "3:12" ? "3:19" : text))
+  }
   app.unmount()
 }
 console.log("HUD Settings opens and changes Lightning flashes in lobby, prep, both chase roles and spectator mode")
