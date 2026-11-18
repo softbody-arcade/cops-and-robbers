@@ -11,6 +11,9 @@ One entry per piece of work that has started: what it is, its branch (or "design
   - `fix/restore-trailer-hitch`: restoring a turned truck and trailer straightens the trailer, which can move it into a building. Preserve their parked angle and footprint.
   - `fix/active-round-trailer`: normal and practice rounds should contain only the round vehicles and traffic. Remove active players’ spare cars and trailers after successful placement, keep their round cars at the end, and preserve Sit out restoration.
 
+- [ ] !! Helicopter weather relaunch (`fix/heli-weather-relaunch`). When grounding weather clears, launch immediately with a full tank.
+- [ ] ! Sky grip regression coverage (`test/weather-surface-grip`). Check the wet and dry transition on a non-asphalt surface.
+
 ## In-game checks
 Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to decide what needs a player. Record deferred checks here with the action, expected observation and open question. Remove a check once verified and record failures under Issues.
 
@@ -43,7 +46,7 @@ Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to 
 - [ ] ! `useFit` (`fit.js`) only shrinks text and never grows it in a large app. Decide whether it should
 - [ ] ! `drop` during a restore blend freezes the sky half-way for a player whose environment was locked. It's reachable only from `onClientEndMission`, where the level unloads anyway (`sky.lua`)
 - [ ] ! HUD styles repeated across components: `.title`, `.tone-*` and `.mono` (HudCenter, HudResult, HudChase) and the root container (Hud, Announcements and How to play `app.vue`). Move them into the shared kit; needs a visual check in game. (`.hud-btn` and `.swatch` are already shared: `.cnr-btn`, `.cnr-swatch` in `CnrRoot.vue`)
-- [ ] ! Weather polish left from the 2.11.0 reviews, all can-wait: sky grip tests use ASPHALT only; `sky.forecast` allocates every frame; `stepCurve` builds 3 tables per step; `windAt` calls `wind.at` twice when the weather doesn't change; the 1 s scan grid is redundant once a weather fits; the round clock expression is repeated in `round.lua`; three copies of the grounding weather set; `run.helicopter` is unread
+- [ ] ! Weather polish left from the 2.11.0 reviews, all can-wait: `sky.forecast` allocates every frame; `stepCurve` builds 3 tables per step; `windAt` calls `wind.at` twice when the weather doesn't change; the 1 s scan grid is redundant once a weather fits; the round clock expression is repeated in `round.lua`; three copies of the grounding weather set; `run.helicopter` is unread
 - [ ] ! Helicopter search details from the 2.9.4 reviews, all rare or cosmetic: small per-frame allocations (`f.spotVel`, `lastKnown`, the `opts` table, two `vec3` and a camera call in the sound, and since 2.10.0 a `vec3` in `roadAim`)
 - [ ] ! Helicopter test gaps from the 2.10.0 task reviews, all can-wait: the drop test passes via the phase-change branch; the dropped gap-3 refuel case and its dead loop (`test_heli_client.lua` ~886); blind-scaled distance bounds (~165, ~756, ~1451, ~897); no test for the behind entry's turn and rotation; `state.tunnelLogged` now also covers road failures; `heliSearch.tick` writes the light's `lightPhase`
 - [ ] ! Helicopter search test gaps from the 2.9.4 reviews: tunnels with n2 == n1 or nil, the car on a node, a node with no links, a one-way link, a road at exactly 15 m, the budget summed across branches, and `roofedIds` matching by x,y only; the extra-1 refuel test only checks `leaving ~= nil`; reusing a leftover emitter mid-round; `core_camera` isn't stubbed in the client env, so the sound's muffle in `updateHeli` never runs in a client test
