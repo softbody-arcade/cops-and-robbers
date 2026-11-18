@@ -33,7 +33,7 @@ end)
 
 test("the rules payload carries the effective traffic", function()
   local cfg = config.merge(nil)
-  assertEq(rules.payload(cfg).trafficPerPlayer, 5)
+  assertEq(rules.payload(cfg).trafficPerPlayer, 0)
   assertEq(rules.payload(cfg, 3).trafficPerPlayer, 3)
 end)
 

@@ -661,7 +661,7 @@ test("cnr_cover from the runner reaches the round", function()
 end)
 
 test("pick request carries the excluded models", function()
-  local env = boot()
+  local env = boot({ config = '{"excludedModels":["citybus"]}' })
   env.panel(2, "start rein")
   assertEq(env.lastSent("cnr_pickVehicle").data:find("citybus", 1, true) ~= nil, true)
   env.cleanup()
@@ -2299,6 +2299,7 @@ end)
 local function trafficBoot(opts)
   opts = opts or {}
   if opts.maxCars == nil then opts.maxCars = 6 end
+  if opts.config == nil then opts.config = '{"trafficPerPlayer":5}' end
   return boot(opts)
 end
 
@@ -2329,7 +2330,7 @@ test("after the round car is placed, the game is told how much traffic to spawn"
 end)
 
 test("with traffic for the runner only, only the runner's game spawns traffic, with the same count", function()
-  local env = trafficBoot({ config = '{"trafficRunnerOnly":true}' })
+  local env = trafficBoot({ config = '{"trafficPerPlayer":5,"trafficRunnerOnly":true}' })
   env.startRound()
   env.call("cnr_myVehicle", 2, '{"vid":0}')
   assertEq(env.lastSent("cnr_trafficStart"), nil)
@@ -2340,9 +2341,10 @@ test("with traffic for the runner only, only the runner's game spawns traffic, w
   env.cleanup()
 end)
 
-test("no go-ahead without room", function()
+test("no traffic go-ahead by default, when disabled, or without room", function()
   local cases = {
-    { maxCars = 1 },
+    { maxCars = 6 },
+    { maxCars = 1, config = '{"trafficPerPlayer":5}' },
     { maxCars = 6, config = '{"trafficPerPlayer":0}' },
   }
   for i, opts in ipairs(cases) do
@@ -2558,7 +2560,7 @@ test("the panel shows the traffic note", function()
 end)
 
 test("with traffic for the runner only, the panel's traffic note says so", function()
-  local env = trafficBoot({ maxCars = 4, config = '{"trafficRunnerOnly":true}' })
+  local env = trafficBoot({ maxCars = 4, config = '{"trafficPerPlayer":5,"trafficRunnerOnly":true}' })
   env.call("cnr_panel", 1, '{"action":"open"}')
   assertEq(env.lastSent("cnr_panelState").data:find('"trafficNote":"MaxCars is 4 on this server: 3 for the runner"', 1, true) ~= nil, true)
   env.cleanup()
@@ -2615,7 +2617,7 @@ test("the board app can filter by traffic", function()
 end)
 
 test("a recorded run keeps traffic for the runner only", function()
-  local env = trafficBoot({ config = '{"trafficRunnerOnly":true}' })
+  local env = trafficBoot({ config = '{"trafficPerPlayer":5,"trafficRunnerOnly":true}' })
   env.startRound()
   chase(env)
   env.panel(2, "end")
