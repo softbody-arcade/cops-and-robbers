@@ -12,12 +12,12 @@ One entry per piece of work that has started: what it is, its branch (or "design
 - [ ] !!! Trailer hitch restoration. The restored hitch held on `7ff57c8` and shipped in 2.14.3. Both follow-ups are deferred to a later release.
   - `fix/restore-trailer-hitch`: restoring a turned truck and trailer straightens the trailer, which can move it into a building. Preserve their parked angle and footprint.
   - `fix/active-round-trailer`: normal and practice rounds should contain only the round vehicles and traffic. Remove active players’ spare cars and trailers after successful placement, keep their round cars at the end, and preserve Sit out restoration.
-
 - [ ] !! Round defaults (`fix/round-defaults`). Traffic off, an empty excluded-car list, strikes every 5–20 seconds in a full thunderstorm, and a 30-minute chase limit with five-minute panel steps.
 
 ## In-game checks
 Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to decide what needs a player. Record deferred checks here with the action, expected observation and open question. Remove a check once verified and record failures under Issues.
 
+- [ ] !!! Multiplayer retest for the lightning and reconnect fixes. Start a night thunderstorm with a runner and a cop. Compare a bolt against the same landmark. Have the cop disconnect and rejoin during the chase. They should see SPECTATING, and the runner should see no new car queued for them. Watch another bolt from nearby viewpoints and compare its landmark and flash timing again.
 - [ ] !! Deferred solo check for 2.14.3. In Practice as cop, hold the throttle during prep and the runner’s head start. The car should stay in its slot until release, then drive away without a second teleport. This checks the in-game freeze and release.
 
 
@@ -33,6 +33,8 @@ Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to 
 - [ ] ! Leaderboard filter by conditions (All / Normal / Night / Bad weather), next to the car-mode filter, so storm records don't compete with clear-day runs unless wanted. Runs already record their conditions (night and weather rounds)
 - [ ] ! Dry roads in tunnels: in rain, storm and snow rounds the road grip is the same inside a tunnel as outside, because the mod changes the map-wide surface types (`surfaces.lua`). The roof check that hides the rain (`shelter.lua`) could switch the surfaces back to dry while the player's own car is under a roof, with a short delay at tunnel mouths so grip doesn't flicker. Grip is simulated per player, so only your own car's grip changes noticeably; on your machine every road is briefly dry while you're under the roof
 - [ ] ! Cop sight that follows visibility: the sight range is worked out from what the game knows (fog thickness, how dark it is, street lights near the runner, whether the runner's lights are on, rain). Comes after night and weather rounds
+
+- [ ] ! Workflow request. Make it easy to see which subagents are currently working when the session list also contains completed agents.
 
 ## Issues
 - [ ] ! The game's Vehicle Radar app shows hidden cars nearby (about 30 m, up to about 54 m ahead with its offset slider): it walks `be:getObject(i)` directly (`vehicleRadarApp.lua:187`), so the hiding can't filter it. The user accepted this (2026-11-17); fix only if an easy way turns up
