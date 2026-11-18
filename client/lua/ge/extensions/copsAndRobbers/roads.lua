@@ -313,7 +313,7 @@ local function closestNodeFallback(pos)
   return best, bestLink
 end
 
-function M.nearestRoad(pos, heading)
+function M.nearestRoad(pos, heading, followOneWay)
   local n1, n2 = map.findClosestRoad(pos)
   if not n1 then n1, n2 = closestNodeFallback(pos) end
   if not n1 then return nil end
@@ -321,7 +321,13 @@ function M.nearestRoad(pos, heading)
   local a, b = nodes[n1], nodes[n2]
   if not a or not b then return nil end
   local dir = (b.pos - a.pos):normalized()
-  if heading and dir.x * heading.x + dir.y * heading.y < 0 then dir = dir * -1 end
+  local links = followOneWay and graph()
+  local link = links and links[n1] and links[n1][n2]
+  if link and link.oneWay then
+    if link.inNode == n2 then dir = dir * -1 end
+  elseif heading and dir.x * heading.x + dir.y * heading.y < 0 then
+    dir = dir * -1
+  end
   return a.pos, quatFromDir(dir, vec3(0, 0, 1)), dir
 end
 

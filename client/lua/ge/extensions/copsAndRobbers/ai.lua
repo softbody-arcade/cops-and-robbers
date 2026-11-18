@@ -115,7 +115,7 @@ function M.setup(d, center, heading)
     local pos, rot
     if center and aiOnly and a.role == "runner" then
       local runnerHeading
-      pos, rot, runnerHeading = roads.nearestRoad(center, heading)
+      pos, rot, runnerHeading = roads.nearestRoad(center, heading, true)
       heading = runnerHeading or heading
       copCenter = pos or center
     elseif center then

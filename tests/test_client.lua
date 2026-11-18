@@ -4438,9 +4438,9 @@ local function spyRoads()
     calls.cop[#calls.cop + 1] = { center = center, index = index, heading = heading }
     return find(center, minD, maxD, index, heading)
   end
-  roads.nearestRoad = function(pos, heading)
+  roads.nearestRoad = function(pos, heading, followOneWay)
     calls.road[#calls.road + 1] = { pos = pos, heading = heading }
-    return near(pos, heading)
+    return near(pos, heading, followOneWay)
   end
   return calls
 end
@@ -4468,6 +4468,39 @@ test("watching AI practice: the runner starts on the road by your parked car and
     assertEq(#calls.cop, 2)
     assertEq(calls.cop[1].center.y, 60); assertEq(calls.cop[1].index, 1); assertEq(calls.cop[1].heading.y, 1)
     assertEq(calls.cop[2].center.y, 60); assertEq(calls.cop[2].index, 2)
+  end)
+end)
+
+test("watching AI practice on the West Coast one-way turn starts both cops behind the runner", function()
+  withCamera(function()
+    local env = bootClient()
+    env.veh.pos = vec3(-360.06, 619.75, 75.05)
+    function env.veh:getDirectionVector() return vec3(-1, 0, 0) end
+    local waypoints = {
+      { "wp25", -432.85, 681.35 }, { "wp19", -395.25, 643.95 }, { "wp31", -380.15, 636.80 },
+      { "wp30", -364.93, 621.97 }, { "wp29", -355.37, 621.09 },
+    }
+    local nodes, graph = {}, {}
+    for i, wp in ipairs(waypoints) do
+      local id = wp[1]
+      nodes[id], graph[id] = { pos = vec3(wp[2], wp[3], 74.9) }, {}
+      if i > 1 then
+        local previous = waypoints[i - 1][1]
+        local link = { inNode = previous, outNode = id, oneWay = true }
+        graph[previous][id], graph[id][previous] = link, link
+      end
+    end
+    map.getMap = function() return { nodes = nodes } end
+    map.getGraphpath = function() return { graph = graph } end
+    map.findClosestRoad = function() return "wp30", "wp29" end
+    watchPractice(env)
+    local runner = env.spawned[1].opt
+    for i = 2, 3 do
+      local offset = env.spawned[i].opt.pos - runner.pos
+      assertEq(offset.x * runner.rot.dir.x + offset.y * runner.rot.dir.y < 0, true, "cop starts behind")
+    end
+    assertEq(runner.rot.dir.x > 0.99, true, "runner faces the legal exit toward wp29")
+    assertEq(env.spawned[2].opt.pos:distance(env.spawned[3].opt.pos) >= 8, true)
   end)
 end)
 

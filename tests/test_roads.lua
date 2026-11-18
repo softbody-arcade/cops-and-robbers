@@ -92,6 +92,15 @@ test("nearest road backup finds a node whose links are stored elsewhere", functi
   assertEq(pos.x, 10)
 end)
 
+test("the watched runner follows a one-way link even when the closest-road lookup returns its exit first", function()
+  useMap({ a = { 0, 0 }, b = { 100, 0 } }, { { "a", "b", oneWay = true } }, { closest = { "b", "a" } })
+  local pos, heading = vec3(80, 0, 0), vec3(-1, 0, 0)
+  local _, _, watched = roads.nearestRoad(pos, heading, true)
+  local _, _, human = roads.nearestRoad(pos, heading)
+  assertEq(watched.x, 1)
+  assertEq(human.x, -1)
+end)
+
 local function road(nodes, links, prefix, points, oneWay, flip)
   local ids = {}
   for i, p in ipairs(points) do
