@@ -162,7 +162,7 @@ test("a close strike whose channel midpoint coincides with the camera lights fro
     e.tick(1)
     local light = assert(e.objects[LIGHT])
     assertEq(light.fields.castShadows, "1")
-    assertLightPosition(light, 10, 0, 750)
+    assertEq(light.pos.x, 10); assertEq(light.pos.y, 0); assertEq(light.pos.z, 750)
   end)
 end)
 
