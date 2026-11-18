@@ -621,6 +621,27 @@ test("a lead that jumps 1 km keeps the limits", function()
   end
 end)
 
+test("departure from a moving lead follows the fly-away with no lead velocity added", function()
+  local car, parked = vec3(0, 0, 0), vec3(0, 0, 0)
+  local lead, vel = vec3(1000, 200, 15), vec3(0, 45, 0)
+  local f = flight.at(car, parked, seeded(8))
+  local reference = flight.at(car, parked, seeded(8))
+  for _ = 1, 600 do
+    lead = vec3(lead.x, lead.y + vel.y * DT, lead.z)
+    flight.lead(f, lead, vel)
+    flight.step(f, car, parked, DT)
+  end
+  reference.pos, reference.vel = f.pos, f.vel
+  flight.leave(reference, lead, seeded(2))
+  flight.leave(f, lead, seeded(2))
+  for _ = 1, math.floor(flight.DEPART_SECONDS / DT) do
+    flight.step(f, car, parked, DT)
+    flight.step(reference, car, parked, DT)
+    assertNear(dist(f.pos, reference.pos), 0, 1e-9)
+    assertNear(dist(f.vel, reference.vel), 0, 1e-9)
+  end
+end)
+
 test("a car jump shifts the lead", function()
   local car = vec3(0, 0, 0)
   local f = flight.at(car, vec3(0, 0, 0), seeded(6))

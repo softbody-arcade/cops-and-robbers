@@ -209,6 +209,7 @@ local function roadTick(state, f, s, dt, clock)
     return
   end
   s.mode, s.run = "contain", nil
+  s.returning = not roadSearch.withinWaitRadius(f.pos, s.origin)
   flight.search(f, s.origin)
   state.sweepAt, state.retargetAt = clock, clock
 end
@@ -329,7 +330,12 @@ local function retarget(state, f, phase, last, car, target, carVel, dt, clock, o
   end
   local s = state.search
   if s and s.mode == "tunnel" then watchTick(state, f, s, clock, opts) end
-  if s and s.mode == "road" then roadTick(state, f, s, dt, clock) end
+  if s and s.mode == "road" then
+    roadTick(state, f, s, dt, clock)
+  elseif s and s.returning and roadSearch.withinWaitRadius(f.pos, s.origin) then
+    s.returning = nil
+    state.sweepAt, state.retargetAt = clock, clock
+  end
 end
 
 local function flyingAway(phase)
@@ -370,9 +376,12 @@ end
 
 function M.roadAim(state, clock)
   local s, f = state.search, state.flight
-  if not (f and s and s.mode == "road" and s.run and s.run.routes[s.run.index]) then return nil end
+  if not (f and s and (s.run or s.returning)) then return nil end
   local p = f.pos
-  return roadSearch.aimPoint(s.run, clock - (state.sweepAt or clock), vec3(p.x, p.y, p.z - flight.HELI_HEIGHT))
+  local from = vec3(p.x, p.y, p.z - flight.HELI_HEIGHT)
+  local t = clock - (state.sweepAt or clock)
+  if s.returning then return roadSearch.approachAim(from, s.origin, t) end
+  return roadSearch.aimPoint(s.run, t, from)
 end
 
 function M.flying(state, clock)

@@ -355,6 +355,13 @@ local function advance(state, car, clock)
   end
   local light = f.pos
   local aim = state.aim
+  if state.aimPos and state.retargetAt ~= state.aimRetarget then
+    local jx, jy, jz = flight.jumpOf(aim.lastCar, car)
+    if jx then
+      local prev = state.aimPos
+      state.aimPos = vec3(prev.x + jx, prev.y + jy, prev.z + jz)
+    end
+  end
   local carAim = M.aimStep(aim, car, aim.lastClock and clock - aim.lastClock or 0, clock, state.random, f.vel)
   aim.lastClock = clock
   local aimPos = aimAt(state, f, carAim, extra, clock)

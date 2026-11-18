@@ -2106,11 +2106,13 @@ test("a refuel while searching flies away with the light", function()
   nightStatus(c, "searching", nil, opts)
   local f, obj = state.flight, fake.objects[LIGHT]
   assertNear(horiz(f.spot, pos), 300, 1e-9)
-  c = nightRun(c, c + 30, opts)
+  c = nightRun(c, c + 5, opts)
+  assertNear(horiz(f.spot, pos), 300, 1e-9)
   c = c + 0.05
   nightStatus(c, "refuelling", nil, opts)
   local left = c
-  assertEq(f.leaving ~= nil, true)
+  assertNear(horiz(f.leaving, f.spot), 600, 1e-6)
+  assertNear(f.leaving.z - f.spot.z, 150, 1e-9)
   assertEq(state.fx.mode, "depart")
   local dx, dy = f.leaving.x - f.spot.x, f.leaving.y - f.spot.y
   local len = math.sqrt(dx * dx + dy * dy)
@@ -2604,6 +2606,30 @@ test("the road aim sits on the ground", function()
   end)
 end)
 
+test("a jump on the tick a road search finds the runner carries the switching light with it", function()
+  local function reacquire(jump)
+    local c, opts = roadNight(50)
+    c = nightRun(c, c + 4, opts)
+    local aim = copyPos(state.aimPos)
+    assertEq(horiz(aim, pos) > 100, true)
+    pos = vec3(pos.x + jump.x, pos.y + jump.y, pos.z + jump.z)
+    c = c + 0.05
+    nightStatus(c, "tracking", nil, opts)
+    local relative = {}
+    local function sample()
+      local p = state.aimPos
+      relative[#relative + 1] = vec3(p.x - pos.x, p.y - pos.y, p.z - pos.z)
+    end
+    sample()
+    samePos(state.aimPos, vec3(aim.x + jump.x, aim.y + jump.y, aim.z + jump.z), 1e-6)
+    nightRun(c, c + 2, opts, sample)
+    return relative
+  end
+  local plain = reacquire(vec3(0, 0, 0))
+  local jumped = reacquire(vec3(2000, -100, 50))
+  for i, p in ipairs(plain) do samePos(jumped[i], p, 1, tostring(i)) end
+end)
+
 test("switching from tracking to a road search doesn't jump the aim", function()
   load()
   state.random = seeded(53)
@@ -2655,7 +2681,7 @@ local function finite(p, msg)
   end
 end
 
-test("a night road search never jumps the aim at a route change, and aims within range while it waits", function()
+test("a night road search keeps the beam in range between legs and on the return to containment", function()
   load()
   state.random = seeded(56)
   pos = vec3(0, 0, 0)
@@ -2667,12 +2693,27 @@ test("a night road search never jumps the aim at a route change, and aims within
   local g = aimGuard(c)
   g.speed = 76.5
   local index, changes, waits = 1, 0, 0
+  local returnedFrom, reachedOrigin, localSweep
   nightRun(c, c + 240, opts, function(t)
     g.check(t)
     finite(state.aimPos, tostring(t))
     finite(f.pos, tostring(t))
     finite(f.vel, tostring(t))
-    if state.search.mode ~= "road" then return end
+    if state.search.mode == "contain" then
+      local distance = horiz(state.lightPos, state.search.origin)
+      returnedFrom = returnedFrom or distance
+      local slant = dist3(state.aimPos, state.lightPos)
+      assertEq(slant <= heli.RANGE_MAX, true, string.format("%.2f: return aim %.1f m from the light", t, slant))
+      if distance > 400 and t > state.sweepAt + 3 then
+        local dx, dy = state.search.origin.x - f.pos.x, state.search.origin.y - f.pos.y
+        local ax, ay = state.aimPos.x - f.pos.x, state.aimPos.y - f.pos.y
+        assertNear((dx * ax + dy * ay) / distance, 60, 1)
+        assertEq(math.abs(dx * ay - dy * ax) / distance < 16, true)
+        localSweep = true
+      end
+      if distance <= 150 then reachedOrigin = true end
+      return
+    end
     finiteLead(f)
     if run.index ~= index then index, changes = run.index, changes + 1 end
     if run.waiting then
@@ -2684,6 +2725,10 @@ test("a night road search never jumps the aim at a route change, and aims within
   assertEq(changes, 2)
   assertEq(waits > 100, true, tostring(waits))
   assertEq(state.search.mode, "contain")
+  assertEq(returnedFrom > 800, true, tostring(returnedFrom))
+  assertEq(localSweep, true)
+  assertEq(reachedOrigin, true)
+  samePos(state.aimPos, heli.sweepPoint(state.search.origin, state.lastClock - state.sweepAt), 0.01)
   assertEq(g.switches >= 2 * changes + 1, true, tostring(g.switches))
 end)
 
@@ -2850,6 +2895,45 @@ test("guidance overrides every mode", function()
   samePos(state.search.origin, pos, 1e-9)
   assertEq(f.spot, nil)
   finiteLead(f)
+end)
+
+test("guidance on the phase-change tick chooses the live car or builds a road search once", function()
+  load()
+  state.random = seeded(46)
+  pos = vec3(0, 0, 0)
+  local opts, vel = roadOpts(), vec3(10, 0, 0)
+  local roadSearch = require("copsAndRobbers/roadSearch")
+  local routes, builds = roadSearch.routes, 0
+  roadSearch.routes = function(...)
+    builds = builds + 1
+    return routes(...)
+  end
+  local c = 0
+  status(c, "tracking", nil, opts)
+  c = drive(c, c + 1, vel, opts)
+  nudge(vel)
+  c = c + 0.05
+  status(c, "searching", { guided = true }, opts)
+  c = drive(c, c + 1, vel, opts)
+  samePos(state.flight.spot, pos, 1e-9)
+  assertEq(builds, 0)
+
+  for search = 1, 2 do
+    c = c + 0.05
+    nudge(vel)
+    status(c, "tracking", { guided = true }, opts)
+    assertEq(state.flight.spot, nil)
+    assertEq(state.flight.lead, nil)
+    c = c + 0.05
+    nudge(vel)
+    status(c, "searching", nil, opts)
+    assertEq(state.search.mode, "road")
+    samePos(state.search.origin, pos, 1e-9)
+    assertEq(builds, search)
+    c = flyTo(c, c + 150, opts)
+    assertEq(state.search.mode, "contain")
+    assertEq(builds, search)
+  end
 end)
 
 test("no road data gives containment", function()

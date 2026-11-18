@@ -80,20 +80,19 @@ test("the alternative is the other branch at the first junction within 500 m", f
     g.link(100, 101)
     return g
   end
-  local g = build(3)
-  local routes = roadSearch.routes(v(0, 0, 0), 1, 0, roadsOf(g, 1, 2, 0), 0)
+  local g = build(6)
+  local routes = roadSearch.routes(v(100, 0, 0), 1, 0, roadsOf(g, 1, 2, 0), 0)
   local alt = routes[2]
-  assertEq(alt.points[1].x, 300)
+  assertEq(alt.points[1].x, 600)
   assertEq(alt.points[1].y, 0)
   assertEq(alt.points[2].y, 100)
   assertEq(alt.points[3].y, 200)
-  local far = build(6)
-  local list = roadSearch.routes(v(50, 0, 0), 1, 0, roadsOf(far, 1, 2, 0), 0)
+  local list = roadSearch.routes(v(99.99, 0, 0), 1, 0, roadsOf(g, 1, 2, 0), 0)
   assertEq(#list, 2)
   assertEq(list[2].points[2].x, 0)
 end)
 
-test("the back route walks the other way", function()
+test("the back route walks the other way and stops at the dead end", function()
   local g = lineGraph(9, 100)
   local routes = roadSearch.routes(v(450, 0, 0), 1, 0, roadsOf(g, 5, 6, 0), 0)
   assertEq(routes[1].points[2].x, 500)
@@ -101,6 +100,8 @@ test("the back route walks the other way", function()
   assertEq(back.points[1].x, 450)
   assertEq(back.points[2].x, 400)
   assertEq(back.points[3].x, 300)
+  assertEq(lastPoint(back).x, 0)
+  near(back.length, 450)
 end)
 
 test("without the back route only ahead and the alternative are built", function()
@@ -119,7 +120,7 @@ test("the caps", function()
   g.node(100, 2600, 100)
   g.link(27, 100)
   for i = 1, 20 do
-    g.node(100 + i, 2600, 100 + i * 100)
+    g.node(100 + i, 2600, 100 + i * 120)
     g.link(99 + i, 100 + i)
   end
   local routes = roadSearch.routes(v(2500, 0, 0), 1, 0, roadsOf(g, 26, 27, 0), 0)
@@ -127,6 +128,8 @@ test("the caps", function()
   near(routes[1].length, 2500)
   near(lastPoint(routes[1]).x, 5000)
   near(routes[2].length, 1500)
+  near(lastPoint(routes[2]).x, 2600)
+  near(lastPoint(routes[2]).y, 1500)
   near(routes[3].length, 1000)
   near(lastPoint(routes[3]).x, 1500)
 
@@ -162,7 +165,7 @@ test("the same input gives the same routes", function()
   end
 end)
 
-test("a ring road ends", function()
+test("a ring road stops before revisiting the start", function()
   local g = graph()
   for i = 1, 20 do
     local a = 2 * math.pi * i / 20
@@ -170,7 +173,12 @@ test("a ring road ends", function()
   end
   for i = 1, 20 do g.link(i, i % 20 + 1) end
   local routes = roadSearch.routes(g.nodes[1].pos, 0, 1, roadsOf(g, 1, 2, 0), 0)
-  assertEq(#routes[1].points <= 20, true)
+  local points = routes[1].points
+  assertEq(#points, 20)
+  for i, p in ipairs(points) do
+    near(p.x, g.nodes[i].pos.x)
+    near(p.y, g.nodes[i].pos.y)
+  end
 end)
 
 local function straightRun(length)
@@ -190,10 +198,10 @@ test("the search point moves at 45 m/s and waits within 150 m", function()
   pos, vel = roadSearch.step(run, v(300, 0, 100), 1)
   near(pos.x, 0)
   near(vel.x, 0)
-  pos, vel = roadSearch.step(run, v(300, 0, 100), 1)
+  pos, vel = roadSearch.step(run, v(-150.01, 0, 400), 1)
   near(pos.x, 0)
   near(vel.x, 0)
-  pos, vel = roadSearch.step(run, v(-140, 0, 400), 1)
+  pos, vel = roadSearch.step(run, v(-150, 0, 400), 1)
   near(pos.x, 45)
   near(vel.x, 45)
   roadSearch.step(run, v(0, 0, 0), 5)
@@ -201,9 +209,11 @@ test("the search point moves at 45 m/s and waits within 150 m", function()
 end)
 
 test("routes under 1 m are dropped", function()
-  local run = roadSearch.newRun({ straightRun(0.5), straightRun(100) })
-  local pos = roadSearch.step(run, v(0, 0, 0), 1)
-  near(pos.x, 45)
+  local run = roadSearch.newRun({ straightRun(0.5), straightRun(1), straightRun(100) })
+  local here = v(0, 0, 0)
+  near(roadSearch.step(run, here, 0).x, 0)
+  near(roadSearch.step(run, here, 1).x, 1)
+  near(roadSearch.step(run, here, 1).x, 45)
   assertEq(roadSearch.step(roadSearch.newRun({}), v(0, 0, 0), 1), nil)
 end)
 
