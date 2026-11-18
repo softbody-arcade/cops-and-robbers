@@ -8,12 +8,12 @@ Priorities run from `!!!!` (highest) through `!!!` (high), `!!` (normal), and `!
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
 - [ ] !!! `fix/restore-trailer-hitch` — Sitting out disconnects a previously hitched trailer. Confirmed in game on West Coast USA with `fixes-16` at `89c351e` (2026-11-18, check 3). After the round restores both vehicles, the trailer should remain hitched when the tow vehicle pulls away. The restore checks the saved hitch nodes. Review found a BeamNG coupling search can outlive our timeout at `905b554`; cancellation is being fixed. Verify the latch in game.
-- [ ] !! Resolve the five double-priority issues on `fix/double-priority`. All five passed independent review at `aace26b` and are on local in build `788cdba` for playtesting.
-  - The client's 5 s `PLACEMENT_TIMEOUT` (`copsAndRobbers.lua`) starts before the round car spawns: if the first spawn freezes the game for 5 s or more, the placement is dropped with no report, so the joiner stays at the spawn point, gets no traffic and isn't in the round cars (unproven; found while debugging the mid-round join, fixes-7)
-  - Very slow rocking still escapes the catch: rocking ±1.5 m at 5 km/h peaks is caught only after about 15 s, and with a slow drift (0.25 m/s) not at all (`catch.lua`, `ROCK_FACTOR = 2`, `STUCK_WINDOW_SECONDS = 4`). If players use it, lower `ROCK_FACTOR` to about 1.5
-  - Weather details left from the 2.11.0 reviews, all can-wait: lights and the beam switch at the start of a clearing change, while the rain or fog is still strong for 30-60 s (plan-mandated); a joiner's rain isn't the in-between amount for up to 30 s
-  - Leaderboard Cops tab: cops with only assists get no row (`leaderboard.lua` `cops`). Showing them needs a sort and empty-state decision, since the tab ranks catches
-  - Leaving the server removes every app the mod placed, also one the player removed and then added back themselves (`apps.lua` leave). Preserve manual entries and remove auto-placed entries
+- [ ] !! Five fixes on `fix/double-priority` passed review at `aace26b` and are on local in build `788cdba`.
+  - **In game, round-car placement.** Check the car holds its assigned spot during prep and releases at the correct time. Delayed BeamMP registration through GO is covered by automation.
+  - **In game, clearing weather.** Check the visible fade of the helicopter beam and the timing of automatic headlights during daytime clearing. Automated tests cover rain intensity and phase for a late joiner.
+  - **In game, layout persistence.** Manually remove and re-add an automatically placed app in BeamNG’s HUD editor, leave another auto-placed app alone, then disconnect. The saved layout should retain the manual copy in its chosen position and remove the automatic one.
+  - **Verified by automation, slow rocking.** Catch tests cover rocking with and without drift and a straight crawl.
+  - **Verified by automation, assist-only cops.** Leaderboard tests cover assist eligibility, zero-catch rows, ranking and an absent fastest catch.
 
 
 ## In-game checks
