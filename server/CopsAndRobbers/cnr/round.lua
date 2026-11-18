@@ -26,8 +26,6 @@ function M.isAI(id)
   return type(id) == "number" and id <= M.AI_FIRST
 end
 local SETUP_GRACE_SECONDS = 5
-local RELOCATE_GRACE_SECONDS = 3
-local PLACE_TIMEOUT_SECONDS = 60
 local MAX_TIMELINE = 50
 local TELEPORT_BASE_METERS = 60
 local TELEPORT_MAX_SPEED = 100
@@ -41,10 +39,10 @@ local function copy(t)
   return c
 end
 
-local function without(players, set, other)
+local function playingRoster(players, sittingOut, previousRoster)
   local c = {}
   for pid, name in pairs(players or {}) do
-    if not set[pid] and not (other and other[pid]) then c[pid] = name end
+    if not sittingOut[pid] and (not previousRoster or previousRoster[pid] == name) then c[pid] = name end
   end
   return c
 end
@@ -86,14 +84,13 @@ function Round:clear()
   self.pickStartedAt = nil
   self.players = {}
   self.sittingOut = {}
-  self.watching = {}
   self.resetTrackers = {}
   self.crashDetectors = {}
   self.penalties = {}
   self.freeResetUntil = nil
   self.prevCars = {}
-  self.leftPlayers = {}
-  self.placing = {}
+  self.departedCopSight = {}
+  self.returnedCopSight = {}
   self.teleportAnnounced = {}
   self.lastTickAt = nil
   self.sight = sight.new()
@@ -196,6 +193,10 @@ function Round:finish(now, reason, copPids)
         run.copSight[#run.copSight + 1] = self.copSight[pid] or 0
       end
     end
+    for _, pid in ipairs(sortedPids(self.returnedCopSight)) do
+      run.copIds[#run.copIds + 1] = pid
+      run.copSight[#run.copSight + 1] = self.returnedCopSight[pid]
+    end
   end
   self:clear()
   return fx
@@ -239,7 +240,7 @@ function Round:start(now, runnerId, issuerId, players, opts)
   else
     self.runnerId = runnerId
     self.sittingOut = copy(opts and opts.sittingOut)
-    self.players = without(players, self.sittingOut)
+    self.players = playingRoster(players, self.sittingOut)
   end
   self.gridPlanner = opts and opts.gridPlanner
   self.state = "picking"
@@ -305,7 +306,7 @@ end
 
 function Round:vehiclePicked(now, pid, model, config, players)
   if self.state ~= "picking" or pid ~= self.issuerId or self.pendingGrid then return {} end
-  if not self.test then self.players = without(players, self.sittingOut, self.watching) end
+  if not self.test then self.players = playingRoster(players, self.sittingOut, self.vehicle and self.players) end
   if not self.test and not self.players[self.runnerId] then
     return self:cancel(now, "Runner left, round cancelled")
   end
@@ -434,8 +435,6 @@ function Round:tick(now, cars, stations, traffic)
         if untilTime and now >= untilTime then
           self.penalties[pid] = nil
           fx[#fx + 1] = { kind = "penaltyEnd", pid = pid }
-        elseif not untilTime and self:isPlacing(now, pid) then
-          if self.crashDetectors[pid] then self.crashDetectors[pid]:reset() end
         elseif not untilTime and self.crashDetectors[pid] and self.crashDetectors[pid]:update(now, cars[pid])
           and nearRunner(cars[pid], runnerCar, self.cfg) then
           local fault, nearest = crash.atFault(self.prevCars[pid], self:otherCars(pid))
@@ -496,7 +495,7 @@ function Round:tick(now, cars, stations, traffic)
     for _, pid in ipairs(sortedPids(self.players)) do
       local before, after, tracker = self.prevCars[pid], cars[pid], self.resetTrackers[pid]
       local moved = before and after and before.pos and after.pos and vec.dist(before.pos, after.pos)
-      if moved and moved > allowedMove and not (tracker and tracker:inGrace(now)) and not self:isPlacing(now, pid) then
+      if moved and moved > allowedMove and not (tracker and tracker:inGrace(now)) then
         if not self.teleportAnnounced[pid] or now - self.teleportAnnounced[pid] >= TELEPORT_ANNOUNCE_GAP then
           self.teleportAnnounced[pid] = now
           fx[#fx + 1] = { kind = "broadcast", msg = string.format("%s teleported", self.players[pid]), tone = "warn", meters = moved }
@@ -548,40 +547,13 @@ end
 
 function Round:playerJoined(now, pid, name)
   if self.state == "idle" or self.test then return {} end
-  local left = self.leftPlayers[name]
-  if self.state ~= "picking" and not left then
-    self.watching[pid] = true
-    return { self:spectateFor(now, pid) }
+  if not self.vehicle then
+    self.players[pid] = name
+    return {}
   end
-  self.players[pid] = name
-  if self.state == "picking" then return {} end
-  local setup = self:setupFor(now, pid)
-  self.placing[pid] = { untilTime = now + PLACE_TIMEOUT_SECONDS }
-  local fx = { setup }
-  if left then
-    self.leftPlayers[name] = nil
-    setup.resumePos = left.pos
-    self.copSight[pid] = left.copSight
-    if left.penaltyUntil and left.penaltyUntil > now then
-      self.penalties[pid] = left.penaltyUntil
-      self.resetTrackers[pid]:block(left.penaltyUntil)
-      fx[#fx + 1] = { kind = "penalty", pid = pid, seconds = left.penaltyUntil - now, name = name }
-    end
-  end
-  return fx
-end
-
-function Round:isPlacing(now, pid)
-  local p = self.placing[pid]
-  return p ~= nil and now <= p.untilTime
-end
-
-function Round:vehiclePlaced(now, pid)
-  local p = self.placing[pid]
-  if not p or p.placedAt then return {} end
-  p.placedAt = now
-  p.untilTime = now + RELOCATE_GRACE_SECONDS
-  return self:relocated(now, pid)
+  if self.players[pid] ~= nil then return {} end
+  self.returnedCopSight[pid] = self.departedCopSight[name]
+  return { self:spectateFor(now, pid) }
 end
 
 function Round:sightReport(now, pid, seen)
@@ -674,7 +646,7 @@ end
 
 function Round:playerLeft(now, pid)
   self.sittingOut[pid] = nil
-  self.watching[pid] = nil
+  self.returnedCopSight[pid] = nil
   if self.aiOnly and pid == self.issuerId and self.state ~= "idle" then return self:cancel(now, "Round cancelled") end
   if self.state == "idle" or self.players[pid] == nil then return {} end
   sight.forget(self.sight, pid)
@@ -686,13 +658,9 @@ function Round:playerLeft(now, pid)
     return self:cancel(now, "Round cancelled")
   end
   local name = self.players[pid]
-  local prev = self.prevCars[pid]
-  if self.state ~= "picking" then
-    self.leftPlayers[name] = { pos = prev and prev.pos, penaltyUntil = self.penalties[pid], copSight = self.copSight[pid] }
-  end
+  if self.vehicle then self.departedCopSight[name] = self.copSight[pid] or 0 end
   self.copSight[pid] = nil
   self.players[pid] = nil
-  self.placing[pid] = nil
   self.resetTrackers[pid] = nil
   self.crashDetectors[pid] = nil
   self.penalties[pid] = nil
@@ -705,23 +673,13 @@ function Round:vehicleReset(now, pid)
   local tracker = self.resetTrackers[pid]
   if (self.state ~= "headstart" and self.state ~= "running") or not tracker then return {} end
   self.lastState[pid] = nil
-  if self:isPlacing(now, pid) or tracker:consume(now) then
+  if tracker:consume(now) then
     if pid == self.runnerId then self.freeResetUntil = nil end
     if self.crashDetectors[pid] then self.crashDetectors[pid]:reset() end
     return {}
   end
   self:note(now, "illegalReset", self.players[pid])
   return { { kind = "broadcast", msg = string.format("%s reset illegally", self.players[pid] or tostring(pid)), tone = "warn" } }
-end
-
-function Round:relocated(now, pid)
-  local tracker = self.resetTrackers[pid]
-  if not tracker then return {} end
-  self.lastState[pid] = nil
-  tracker:grant(now, RELOCATE_GRACE_SECONDS)
-  if self.crashDetectors[pid] then self.crashDetectors[pid]:reset() end
-  self.prevCars[pid] = nil
-  return {}
 end
 
 function Round:endCalled(now, pid)
@@ -752,7 +710,7 @@ function Round:stop(now, issuerId)
   return self:cancel(now, "Round cancelled")
 end
 
-for _, name in ipairs({ "start", "vehiclePicked", "go", "tick", "playerJoined", "playerLeft", "vehicleReset", "stop", "endCalled", "reroll", "relocated", "vehiclePlaced", "apply", "setupReceived", "vehicleReady" }) do
+for _, name in ipairs({ "start", "vehiclePicked", "go", "tick", "playerJoined", "playerLeft", "vehicleReset", "stop", "endCalled", "reroll", "apply", "setupReceived", "vehicleReady" }) do
   local method = Round[name]
   Round[name] = function(self, ...)
     local issuer = self.test and self.issuerId

@@ -33,10 +33,9 @@ test("a cop round places the car, reports it and shows the prep line", function(
   assertEq(h.prep.waiting, "Waiting for the host to press GO")
 end)
 
-test("a rejoining player reports the round car once BeamMP assigns its late server ID", function()
+test("a player reports the round car once BeamMP assigns its late server ID", function()
   local env = bootClient()
   local setup = copy(SETUP)
-  setup.phase, setup.resumePos = "running", { x = 900, y = 9, z = 15 }
   local ready = false
   MPVehicleGE.getVehicleByGameID = function(id)
     if ready then return { serverVehicleString = "1-" .. id } end
@@ -1780,14 +1779,6 @@ test("the runner's chase line counts down to the cops' release", function()
   env.fire("cnr_release", {})
   env.tick(1.2)
   assertEq(env.hud().status.releaseIn, nil); assertEq(env.hud().status.time, "0:01")
-end)
-
-test("a runner who rejoins in the head start sees the release countdown on the chase line", function()
-  local env = bootClient()
-  env.fire("cnr_roundSetup", { role = "runner", runnerId = 1, model = "pickup", config = "vehicles/pickup/base.pc", phase = "headstart", headStartRemaining = 4 })
-  env.tick(0.2)
-  assertEq(env.hud().center, nil)
-  assertEq(env.hud().status.releaseIn, 4)
 end)
 
 test("hello pushes right away", function()
@@ -3739,12 +3730,13 @@ test("a runner never sees the cops' name tags or minimap markers, from setup to 
   end)
 end)
 
-test("a rejoining cop gets the hidden runner from setup", function()
+test("a cop hides and shows the runner as sightings change", function()
   withMinimap({ 100, 300 }, function(draw)
     local env = bootClient()
     local d = copy(SETUP)
-    d.phase, d.runnerShown, d.resumePos = "running", false, { x = 40, y = 0, z = 0 }
     env.fire("cnr_roundSetup", d)
+    env.fire("cnr_runnerGo", { headStartSeconds = 7 })
+    env.fire("cnr_runnerShown", { shown = false })
     env.addObject(300, vec3(0, 0, 0))
     env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
     env.fire("cnr_roundCars", { keys = { "1-0", "2-0" } })
@@ -3864,19 +3856,6 @@ test("a cop uses the runner's XYZ for placement and falls back to the cop's car"
     assertEq(center.z, available and 12 or 5)
     assertEq(env.lastSent("cnr_myVehicle").vid, 100)
   end
-end)
-
-test("a rejoining cop uses the saved XYZ when there is no road nearby", function()
-  local env = bootClient()
-  local d = copy(SETUP)
-  d.phase, d.resumePos = "running", { x = 900, y = 9, z = 15 }
-  local roads = package.loaded["copsAndRobbers/roads"]
-  roads.nearestRoad = function() return nil end
-  env.fire("cnr_roundSetup", d)
-  env.tick(1)
-  assertEq(env.teleported, 1)
-  assertEq(env.veh.pos.x, 900); assertEq(env.veh.pos.y, 9); assertEq(env.veh.pos.z, 15)
-  assertEq(env.lastSent("cnr_myVehicle").vid, 100)
 end)
 
 test("a cop's start spot is searched along the runner car's heading", function()

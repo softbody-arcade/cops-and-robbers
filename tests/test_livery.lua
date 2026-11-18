@@ -51,13 +51,6 @@ test("a repaint in prep drops the livery", function()
   cleared(env.replaced[#env.replaced].opt)
 end)
 
-test("a rejoin keeps the colour over the livery", function()
-  local env = bootClient({ files = files() })
-  env.fire("cnr_roundSetup", setup("runner", { phase = "running", inPlace = true }))
-  env.tick(1)
-  cleared(env.replaced[#env.replaced].opt)
-end)
-
 test("without a colour the livery stays and the config is passed as is", function()
   local env = bootClient({ files = files() })
   env.fire("cnr_roundSetup", setup("runner", { color = false }))

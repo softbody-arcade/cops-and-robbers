@@ -602,16 +602,16 @@ test("practice as runner sends the heli to the issuer only and no runnerShown", 
   env.cleanup()
 end)
 
-test("a rejoining cop gets runnerShown and heli in setup", function()
+test("a rejoining cop gets the current helicopter as a spectator", function()
   local env = boot({ config = '{"helicopterArrivalSeconds": 0, "weather": "clear"}' })
   runToChase(env)
   env.call("onPlayerDisconnect", 2)
   env.sent = {}
   env.call("onPlayerJoin", 2)
-  local setup = env.lastSent("cnr_roundSetup")
-  assertEq(setup ~= nil and setup.pid == 2, true)
-  local d = decodeJson(setup.data)
-  assertEq(d.role, "cop"); assertEq(d.runnerShown, false)
+  assertEq(env.lastSent("cnr_roundSetup"), nil)
+  local watch = env.lastSent("cnr_spectate")
+  assertEq(watch.pid, 2)
+  local d = decodeJson(watch.data)
   assertEq(d.heli.phase, "searching")
   env.cleanup()
 end)
@@ -625,8 +625,8 @@ test("cnr_heli carries the seed while up", function()
   env.call("onPlayerDisconnect", 2)
   env.sent = {}
   env.call("onPlayerJoin", 2)
-  local setup = env.lastSent("cnr_roundSetup")
-  assertEq(type(decodeJson(setup.data).heli.seed), "number")
+  local watch = env.lastSent("cnr_spectate")
+  assertEq(type(decodeJson(watch.data).heli.seed), "number")
   env.cleanup()
 end)
 
@@ -828,7 +828,7 @@ test("a recorded run sends the top 3 for the map", function()
   env.cleanup()
 end)
 
-test("a mid-chase rejoin gets chaseElapsed in its setup", function()
+test("a mid-chase rejoin gets chaseElapsed in the spectator event", function()
   local env = boot()
   env.startRound(); env.go()
   env.positions[1], env.positions[2] = 0, 900
@@ -836,9 +836,9 @@ test("a mid-chase rejoin gets chaseElapsed in its setup", function()
   env.sent = {}
   env.call("onPlayerDisconnect", 2)
   env.call("onPlayerJoin", 2)
-  local setup = env.lastSent("cnr_roundSetup")
-  assertEq(setup.pid, 2)
-  assertEq(setup.data:find('"chaseElapsed":5', 1, true) ~= nil, true)
+  local watch = env.lastSent("cnr_spectate")
+  assertEq(watch.pid, 2)
+  assertEq(watch.data:find('"chaseElapsed":5', 1, true) ~= nil, true)
   env.cleanup()
 end)
 
@@ -1025,7 +1025,7 @@ test("a mid-chase rejoin gets clockSeconds", function()
   local before = decodeJson(env.lastSent("cnr_roundSetup").data).sky
   env.call("onPlayerDisconnect", 2)
   env.call("onPlayerJoin", 2)
-  local joined = decodeJson(env.lastSent("cnr_roundSetup").data).sky
+  local joined = decodeJson(env.lastSent("cnr_spectate").data).sky
   assertNear(joined.clockSeconds, 15, 0.01)
   assertEq(joined.month, before.month); assertEq(joined.day, before.day); assertEq(joined.daySeconds, 1800)
   env.cleanup()
@@ -1620,7 +1620,7 @@ test("a car report from before the rebuild doesn't make a player ready", functio
   env.cleanup()
 end)
 
-test("a player who rejoins while applying gets the rebuild id with his setup", function()
+test("a returning spectator does not delay the other players applying a rebuild", function()
   local env = boot()
   evolving(env); newBuild(env)
   env.panel(2, "start rein")
@@ -1628,10 +1628,12 @@ test("a player who rejoins while applying gets the rebuild id with his setup", f
   env.call("cnr_setup", 1, '{"parts":{"pickup_engine":"v8_60"},"vars":{},"changes":[]}')
   local id = rebuildId(env)
   env.call("onPlayerDisconnect", 2)
+  env.sent = {}
   env.call("onPlayerJoin", 2)
-  local setup = env.lastSent("cnr_roundSetup")
-  assertEq(setup.pid, 2)
-  assertEq(setup.data:find('"rebuild":' .. id, 1, true) ~= nil, true)
+  assertEq(env.lastSent("cnr_roundSetup"), nil)
+  assertEq(decodeJson(env.lastSent("cnr_spectate").data).phase, "applying")
+  env.call("cnr_myVehicle", 1, encode({vid=0, rebuild=id}))
+  assertEq(countSent(env, "cnr_applied"), 1)
   env.cleanup()
 end)
 
@@ -1781,7 +1783,7 @@ test("only the runner can apply the change", function()
   env.cleanup()
 end)
 
-test("someone rejoining during prep sees the runner's queued change", function()
+test("someone rejoining during prep spectates while the runner changes the car", function()
   local env = boot()
   evolving(env); newBuild(env)
   env.panel(2, "start rein")
@@ -1789,8 +1791,8 @@ test("someone rejoining during prep sees the runner's queued change", function()
   env.call("onPlayerDisconnect", 2)
   env.sent = {}
   env.call("onPlayerJoin", 2)
-  local q = env.lastSent("cnr_queued")
-  assertEq(q ~= nil and q.pid, 2)
+  assertEq(env.lastSent("cnr_spectate").pid, 2)
+  assertEq(env.lastSent("cnr_queued"), nil)
   env.cleanup()
 end)
 
@@ -2019,6 +2021,38 @@ test("a joiner gets rules, lobby and colour", function()
   env.cleanup()
 end)
 
+test("a player already included in the initial pick stays a cop when the join callback arrives", function()
+  local env = boot()
+  env.names = { "Reinder", "Bob", "Kim" }
+  env.startRound()
+  assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 3)).role, "cop")
+  env.call("onPlayerJoin", 3)
+  assertEq(sentTo(env, "cnr_spectate", 3), nil)
+  assertEq(env.call("onVehicleSpawn", 3, 0, 'USER:Kim:3-0:{"jbm":"pickup"}'), 0)
+  env.cleanup()
+end)
+
+test("a prep reroll keeps the playing roster when the online list changes before the join callback", function()
+  local env = boot()
+  env.names = { "Reinder", "Bob", "Kim" }
+  env.startRound()
+  env.call("onPlayerDisconnect", 3)
+  env.names[3], env.names[4] = "Dan", "Kim"
+  env.panel(2, "reroll")
+  env.sent = {}
+  assertEq(env.call("onVehicleSpawn", 4, 0, 'USER:Kim:4-0:{"jbm":"etk800"}'), 1)
+  env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  for _, pid in ipairs({3, 4}) do
+    assertEq(sentTo(env, "cnr_roundSetup", pid), nil)
+    assertEq(decodeJson(sentTo(env, "cnr_spectate", pid)).phase, "prep")
+    env.call("onPlayerJoin", pid)
+    env.call("cnr_myVehicle", pid, '{"vid":0}')
+    assertEq(env.call("onVehicleSpawn", pid, 0, '{"jbm":"pickup"}'), 1)
+  end
+  assertEq(countSent(env, "cnr_roundSetup"), 2)
+  env.cleanup()
+end)
+
 test("a mid-round rejoiner also gets them", function()
   local env = boot()
   env.startRound()
@@ -2030,7 +2064,7 @@ test("a mid-round rejoiner also gets them", function()
   assertEq(sentTo(env, "cnr_rules", 2) ~= nil, true)
   assertEq(sentTo(env, "cnr_lobby", 2):find('"active":true', 1, true) ~= nil, true)
   assertEq(sentTo(env, "cnr_myColor", 2) ~= nil, true)
-  assertEq(sentTo(env, "cnr_roundSetup", 2):find('"phase":"running"', 1, true) ~= nil, true)
+  assertEq(sentTo(env, "cnr_spectate", 2):find('"phase":"running"', 1, true) ~= nil, true)
   env.cleanup()
 end)
 
@@ -2545,19 +2579,26 @@ test("a New car re-pick lets no extra car past the cap", function()
   env.cleanup()
 end)
 
-test("a mid-round rejoiner gets the round cars and its own go-ahead", function()
+test("a returning spectator sees the round cars and cannot register or spawn their old car", function()
   local env = trafficBoot()
   env.names = { "Reinder", "Bob", "Kim" }
   env.startRound()
-  placed(env, 1); placed(env, 2)
+  placed(env, 1); placed(env, 2); placed(env, 3)
   chase(env)
   env.call("onPlayerDisconnect", 3)
+  assertEq(env.call("onVehicleSpawn", 3, 0, spawnOf(3, 0, "etk800")), 1)
   env.sent = {}
   env.call("onPlayerJoin", 3)
-  assertEq(sentTo(env, "cnr_roundCars", 3) ~= nil, true)
-  env.vehicles[3] = { [0] = "x" }
+  assertEq(sentTo(env, "cnr_roundSetup", 3), nil)
+  assertEq(decodeJson(sentTo(env, "cnr_spectate", 3)).phase, "running")
+  assertEq(table.concat(decodeJson(sentTo(env, "cnr_roundCars", 3)).keys, ","), "1-0,2-0")
+  env.vehicles[3] = { [0] = "x", [1] = "y" }
   env.call("cnr_myVehicle", 3, '{"vid":0}')
-  assertEq(env.lastSent("cnr_trafficStart").pid, 3)
+  assertEq(sentTo(env, "cnr_trafficStart", 3), nil)
+  assertEq(sentTo(env, "cnr_roundCars", -1), nil)
+  assertEq(#env.removed, 0)
+  assertEq(env.call("onVehicleSpawn", 3, 0, spawnOf(3, 0, "pickup", "vehicles/pickup/base.pc")), 1)
+  assertEq(env.noticeHas("You can't spawn a car while spectating"), true)
   env.cleanup()
 end)
 
@@ -2677,202 +2718,10 @@ test("a recorded run keeps traffic for the runner only", function()
   everyone.cleanup()
 end)
 
-local JOINER_SPAWN = '3:Kim:3-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc"}}'
-
 local function step(env)
   env.clock = env.clock + 0.25
   env.call("cnr_tick")
 end
-
-local function joinerAt(env, x, kmh)
-  env.vidPositions["3-0"] = { pos = { x, 0, 0 }, vel = { (kmh or 0) / 3.6, 0, 0 } }
-end
-
-local function midChaseJoin(env)
-  env.names = { "Reinder", "Bob", "Kim" }
-  env.startRound()
-  placed(env, 1); placed(env, 2)
-  env.positions[2] = 900
-  chase(env)
-  env.call("onPlayerDisconnect", 3)
-  env.call("onPlayerJoin", 3)
-  for _ = 1, 24 do step(env) end
-  assertEq(env.call("onVehicleSpawn", 3, 0, JOINER_SPAWN), 0)
-  env.vehicles[3] = { [0] = "x" }
-end
-
-test("a mid-chase joiner placed after the join grace is no teleport, illegal reset or crash", function()
-  local env = boot()
-  midChaseJoin(env)
-  joinerAt(env, 600)
-  step(env)
-  joinerAt(env, 100)
-  step(env)
-  env.call("onVehicleReset", 3, 0, "")
-  env.call("cnr_myVehicle", 3, '{"vid":0}')
-  for _ = 1, 8 do step(env) end
-  assertEq(env.noticeHas("Kim teleported"), false)
-  assertEq(env.noticeHas("Kim reset illegally"), false)
-  assertEq(env.noticeHas("Kim: crash penalty"), false)
-  env.cleanup()
-end)
-
-test("a mid-chase joiner reporting the placement before its new position arrives is no teleport", function()
-  local env = boot()
-  midChaseJoin(env)
-  joinerAt(env, 600)
-  step(env)
-  env.call("cnr_myVehicle", 3, '{"vid":0}')
-  env.call("onVehicleReset", 3, 0, "")
-  step(env)
-  joinerAt(env, 100)
-  for _ = 1, 8 do step(env) end
-  assertEq(env.noticeHas("Kim teleported"), false)
-  assertEq(env.noticeHas("Kim reset illegally"), false)
-  env.cleanup()
-end)
-
-test("a mid-chase joiner's car that is moving when the mod places it gets no crash penalty", function()
-  local env = boot()
-  midChaseJoin(env)
-  joinerAt(env, 600, 60)
-  step(env)
-  joinerAt(env, 100)
-  step(env)
-  env.call("cnr_myVehicle", 3, '{"vid":0}')
-  for _ = 1, 8 do step(env) end
-  assertEq(env.noticeHas("Kim: crash penalty"), false)
-  assertEq(sentTo(env, "cnr_penalty", 3), nil)
-  env.cleanup()
-end)
-
-test("a cop rejoining mid-chase is placed back on his road without a teleport or illegal reset", function()
-  local env = boot()
-  env.startRound()
-  placed(env, 1); placed(env, 2)
-  env.vidPositions["2-0"] = { pos = { 900, 9, 15 }, vel = { 0, 0, 0 } }
-  chase(env)
-  env.call("onPlayerDisconnect", 2)
-  env.vehicles[2], env.positions[2], env.vidPositions["2-0"] = nil, nil, nil
-  for _ = 1, 8 do step(env) end
-  env.sent = {}
-  env.call("onPlayerJoin", 2)
-  local resume = decodeJson(sentTo(env, "cnr_roundSetup", 2)).resumePos
-  assertEq(resume.x, 900); assertEq(resume.y, 9); assertEq(resume.z, 15)
-  for _ = 1, 24 do step(env) end
-  assertEq(env.call("onVehicleSpawn", 2, 0, spawnOf(2, 0, "pickup", "vehicles/pickup/base.pc")), 0)
-  env.vehicles[2] = { [0] = "x" }
-  env.vidPositions["2-0"] = { pos = { 400, 0, 0 }, vel = { 0, 0, 0 } }
-  step(env)
-  env.vidPositions["2-0"] = { pos = { 905, 0, 0 }, vel = { 0, 0, 0 } }
-  step(env)
-  env.call("onVehicleReset", 2, 0, "")
-  env.call("cnr_myVehicle", 2, '{"vid":0}')
-  for _ = 1, 8 do step(env) end
-  assertEq(env.noticeHas("Bob teleported"), false)
-  assertEq(env.noticeHas("Bob reset illegally"), false)
-  env.cleanup()
-end)
-
-test("a cop rejoining without a saved vehicle sample still gets placement grace", function()
-  local env = boot()
-  env.startRound()
-  placed(env, 1); placed(env, 2)
-  env.positions[2] = 900
-  chase(env)
-  env.vehicles[2], env.positions[2] = nil, nil
-  step(env)
-  env.call("onPlayerDisconnect", 2)
-  env.sent = {}
-  env.call("onPlayerJoin", 2)
-  local setup = decodeJson(sentTo(env, "cnr_roundSetup", 2))
-  assertEq(setup.role, "cop")
-  assertEq(setup.resumePos, nil)
-  assertEq(env.call("onVehicleSpawn", 2, 0, spawnOf(2, 0, "pickup", "vehicles/pickup/base.pc")), 0)
-  env.vehicles[2] = { [0] = "x" }
-  env.vidPositions["2-0"] = { pos = { 900, 0, 0 }, vel = { 20, 0, 0 } }
-  step(env)
-  env.call("onVehicleReset", 2, 0, "")
-  env.call("cnr_myVehicle", 2, '{"vid":0}')
-  env.vidPositions["2-0"] = { pos = { 100, 0, 0 }, vel = { 0, 0, 0 } }
-  step(env)
-  assertEq(env.noticeHas("Bob teleported"), false)
-  assertEq(env.noticeHas("Bob reset illegally"), false)
-  assertEq(sentTo(env, "cnr_penalty", 2), nil)
-  env.cleanup()
-end)
-
-test("a placed joiner who jumps once the placement has settled is a teleport again", function()
-  local env = boot()
-  midChaseJoin(env)
-  joinerAt(env, 600)
-  step(env)
-  env.call("cnr_myVehicle", 3, '{"vid":0}')
-  joinerAt(env, 100, 20)
-  for _ = 1, 16 do step(env) end
-  assertEq(env.noticeHas("Kim teleported"), false)
-  joinerAt(env, 700, 20)
-  step(env)
-  assertEq(env.noticeHas("Kim teleported", "warn"), true)
-  env.cleanup()
-end)
-
-test("each step of a mid-round join is logged", function()
-  local env = boot()
-  midChaseJoin(env)
-  assertEq(env.logHas("setup sent to Kim: cop, running"), true)
-  assertEq(env.logHas("Kim spawned pickup (vid 0): allowed"), true)
-  assertEq(env.call("onVehicleSpawn", 3, 1, '3:Kim:3-1:{"jbm":"etk800","vcf":{}}'), 1)
-  assertEq(env.logHas("Kim spawned etk800 (vid 1): refused"), true)
-  env.call("onVehicleEdited", 3, 0, '3-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc"}}')
-  assertEq(env.logHas("Kim edited pickup (vid 0): allowed"), true)
-  joinerAt(env, 600)
-  step(env)
-  env.call("cnr_myVehicle", 3, '{"vid":0}')
-  assertEq(env.logHas("Kim placed the round car (vid 0)"), true)
-  joinerAt(env, 100, 120)
-  for _ = 1, 16 do step(env) end
-  joinerAt(env, 700, 120)
-  step(env)
-  assertEq(env.logHas("Kim teleported 600 m"), true)
-  joinerAt(env, 701, 0)
-  step(env)
-  assertEq(env.logHas("Kim: crash penalty 10s"), true)
-  env.cleanup()
-end)
-
-test("a rejoin's setup is logged as resuming", function()
-  local env = boot({ config = '{"helicopterArrivalSeconds": 0, "weather": "clear"}' })
-  runToChase(env)
-  env.call("onPlayerDisconnect", 2)
-  env.call("onPlayerJoin", 2)
-  assertEq(env.logHas("setup sent to Bob: cop, running, resuming"), true)
-  env.cleanup()
-end)
-
-test("a rejoiner whose game already has a car when the setup arrives is replaced and placed without a teleport", function()
-  local env = boot()
-  env.names = { "Reinder", "Bob", "Kim" }
-  env.startRound()
-  placed(env, 1); placed(env, 2)
-  env.positions[2] = 900
-  chase(env)
-  env.call("onPlayerDisconnect", 3)
-  assertEq(env.call("onVehicleSpawn", 3, 0, '3:Kim:3-0:{"jbm":"etk800","vcf":{}}'), 0)
-  env.vehicles[3] = { [0] = "x" }
-  joinerAt(env, 600)
-  env.call("onPlayerJoin", 3)
-  for _ = 1, 24 do step(env) end
-  assertEq(env.call("onVehicleEdited", 3, 0, '3-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc"}}'), 0)
-  joinerAt(env, 100)
-  step(env)
-  env.call("onVehicleReset", 3, 0, "")
-  env.call("cnr_myVehicle", 3, '{"vid":0}')
-  for _ = 1, 8 do step(env) end
-  assertEq(env.noticeHas("Kim teleported"), false)
-  assertEq(env.noticeHas("Kim reset illegally"), false)
-  env.cleanup()
-end)
 
 local function logCount(env, text)
   local n = 0
@@ -2880,26 +2729,9 @@ local function logCount(env, text)
   return n
 end
 
-test("allowed spawns and edits are logged only while the car is placed", function()
-  local env = trafficBoot()
-  midChaseJoin(env)
-  assertEq(env.call("onVehicleEdited", 2, 0, '2-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc"}}'), 0)
-  assertEq(env.logHas("Bob edited"), false)
-  joinerAt(env, 600)
-  step(env)
-  env.call("cnr_myVehicle", 3, '{"vid":0}')
-  for _ = 1, 16 do step(env) end
-  assertEq(env.call("onVehicleEdited", 3, 0, '3-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc"}}'), 0)
-  assertEq(env.logHas("Kim edited"), false)
-  assertEq(env.call("onVehicleSpawn", 3, 1, '3:Kim:3-1:{"jbm":"etk800","vcf":{}}'), 0)
-  assertEq(env.call("onVehicleEdited", 3, 1, '3-1:{"jbm":"etk800","vcf":{}}'), 0)
-  assertEq(env.logHas("etk800"), false)
-  env.cleanup()
-end)
-
 test("a refused car is logged at most once per 10 s per player", function()
   local env = boot()
-  midChaseJoin(env)
+  env.startRound()
   for _ = 1, 3 do assertEq(env.call("onVehicleSpawn", 2, 7, spawnOf(2, 7, "etk800")), 1) end
   assertEq(logCount(env, "Bob spawned etk800 (vid 7): refused"), 1)
   for _ = 1, 39 do step(env) end
@@ -3527,7 +3359,7 @@ test("starting grid replies must match the outstanding pick, planner, slot count
   env.cleanup()
 end)
 
-test("a joining cop extends the starting grid around its first anchor and a returning cop resumes separately", function()
+test("a cop joining during the initial pick extends the starting grid around its first anchor", function()
   local env = boot()
   env.names = { "Reinder", "Bob" }
   env.call("cnr_startGridReady", 1, "{}")
@@ -3548,17 +3380,6 @@ test("a joining cop extends the starting grid around its first anchor and a retu
   env.positions[1] = 10000
   env.call("cnr_startGrid", 1, encode({ id = extended.id, slots = { runner, cop, false } }))
   assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 3)).startPose, false)
-  env.go()
-  env.clock = 60
-  env.call("cnr_tick")
-  env.clock = 120
-  env.call("cnr_tick")
-  env.call("onPlayerDisconnect", 2)
-  env.names[2], env.names[4] = nil, "Bob"
-  env.call("onPlayerJoin", 4)
-  local resume = decodeJson(sentTo(env, "cnr_roundSetup", 4))
-  assertEq(resume.startPose, nil)
-  assertEq(resume.resumePos.x, env.positions[2])
   env.cleanup()
 end)
 

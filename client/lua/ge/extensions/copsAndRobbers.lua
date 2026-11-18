@@ -201,12 +201,6 @@ local function onPickVehicle(data)
 end
 
 local function setupPosition(d)
-  local resume = d.resumePos and vec3(d.resumePos.x, d.resumePos.y, d.resumePos.z)
-  if resume then
-    local pos, rot = roads.nearestRoad(resume)
-    if not pos then return resume, nil end
-    return pos, rot
-  end
   if d.startPose ~= nil then
     local pos, rot = startGrid.pose(d.startPose)
     if not d.startPose or d.startPose.offRoad then
