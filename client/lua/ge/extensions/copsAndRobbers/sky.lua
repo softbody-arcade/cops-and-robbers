@@ -10,8 +10,8 @@ M.WEATHER = {
   clear = { cloudCover = 0.4, fogDensity = 0.4, windSpeed = 0.1 },
   cloudy = { cloudCover = 1.8, fogDensity = 1, windSpeed = 0.3 },
   rain = {
-    cloudCover = 2.2, fogDensity = 3, windSpeed = 0.5,
-    precipitation = { dataBlock = "rain_medium", numDrops = 2250, dropSize = 1, minSpeed = 0.4, maxSpeed = 0.5, volume = 1.0 },
+    cloudCover = 2.2, fogDensity = 2, windSpeed = 0.5,
+    precipitation = { dataBlock = "rain_medium", numDrops = 1500, dropSize = 1, minSpeed = 0.4, maxSpeed = 0.5, volume = 1.0 },
   },
   storm = {
     cloudCover = 3.0, fogDensity = 4, windSpeed = 1.5,

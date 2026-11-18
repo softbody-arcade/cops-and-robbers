@@ -22,11 +22,15 @@ local function forkGenerator(parentSeed)
   end
 end
 
-local function candidate(previousAt, seed)
+local function validInterval(seconds)
+  return type(seconds) == "number" and seconds >= 1 and seconds < math.huge and seconds == math.floor(seconds)
+end
+
+local function candidate(cursor, previousAt, seed)
   local waitSeed = nextSeed(seed)
   local keepSeed = nextSeed(waitSeed)
   return {
-    at = previousAt - 25 * math.log(1 - waitSeed / MODULUS),
+    at = previousAt + (cursor.minimum + cursor.span * (waitSeed / MODULUS)),
     keep = keepSeed / MODULUS,
     detailSeed = nextSeed(keepSeed),
   }
@@ -40,11 +44,11 @@ end
 local function loadWindow(cursor, start)
   if cursor.start == start then return end
   local pending = cursor.pending
-  if not pending or start < cursor.start then pending = candidate(0, cursor.seed) end
+  if not pending or start < cursor.start then pending = candidate(cursor, 0, cursor.seed) end
   local events = {}
   while pending.at < start + WINDOW do
     if pending.at >= start then events[#events + 1] = pending end
-    pending = candidate(pending.at, pending.detailSeed)
+    pending = candidate(cursor, pending.at, pending.detailSeed)
   end
   cursor.start, cursor.events, cursor.pending = start, events, pending
 end
@@ -90,6 +94,13 @@ end
 function M.between(cursor, p, lo, hi)
   local events = {}
   if not cursor or not p or cursor.seed ~= p.lightningSeed or hi <= lo or hi <= 0 then return events end
+  if not cursor.minimum then
+    local minimum, maximum = p.lightningMinSeconds, p.lightningMaxSeconds
+    if not validInterval(minimum) or not validInterval(maximum) or maximum < minimum then
+      minimum, maximum = 10, 40
+    end
+    cursor.minimum, cursor.span = minimum, maximum - minimum
+  end
   local first = math.floor(math.max(lo, 0) / WINDOW) * WINDOW
   local last = math.floor(hi / WINDOW) * WINDOW
   for start = first, last, WINDOW do

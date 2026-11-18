@@ -137,7 +137,7 @@ function M.applyValues(raw, values)
   end
   if #keys == 0 then return nil, "Nothing to save" end
   table.sort(keys, function(a, b)
-    local am, bm = a == "weatherChangeMinMinutes", b == "weatherChangeMinMinutes"
+    local am, bm = config.TIMING_RANGES[a] ~= nil, config.TIMING_RANGES[b] ~= nil
     if am ~= bm then return am end
     return a < b
   end)
