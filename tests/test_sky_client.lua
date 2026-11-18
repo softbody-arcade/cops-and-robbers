@@ -653,6 +653,16 @@ test("an immediate restore during the round-end blend lands the sky and lock", f
   assertEq(#fake.setStates, n); assertEq(fake.locked, true)
 end)
 
+test("dropping a locked sky during the restore blend finishes it before relocking", function()
+  local sky, fake = load({ locked = true })
+  fake.state.cloudCover = 0.05
+  sky.apply(RAIN_NIGHT); sky.update(4); sky.restore()
+  fake.state.cloudCover = 1.1
+  sky.drop()
+  assertEq(fake.state.cloudCover, 0.05)
+  assertEq(fake.locked, true)
+end)
+
 test("drop removes rain and sound at once and cancels the lock timer", function()
   local sky, fake = load()
   sky.apply(RAIN_NIGHT); sky.update(1)
@@ -824,6 +834,19 @@ test("the curve moves on only at a turning point, and the two curves agree there
     curve = w.curve
   end
   assertEq(writes[1].curve[2][2], 9); assertEq(writes[2].curve[1][2], 20)
+end)
+
+test("steady wind samples the current weather once before and after a change", function()
+  local sky = started({ weather = "rain", driving = true, changes = { { at = 20, to = "storm" } } })
+  local wind = require("copsAndRobbers/wind")
+  local at, samples = wind.at, {}
+  wind.at = function(kind, ...)
+    samples[#samples + 1] = kind
+    return at(kind, ...)
+  end
+  sky.update(1)
+  sky.update(80)
+  assertEq(table.concat(samples, ","), "rain,storm")
 end)
 
 test("the wind cross-fades", function()

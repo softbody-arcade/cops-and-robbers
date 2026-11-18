@@ -927,12 +927,14 @@ end)
 
 test("the setup and New sky payloads carry the schedule and strike seed", function()
   local env = boot({ config = '{"weather":"random"}' })
+  math.randomseed(1)
   env.startRound()
   local function check(s)
     assertEq(type(s.lightningSeed), "number")
     assertEq(s.lightningSeed % 1, 0)
     assertEq(s.lightningSeed >= 1 and s.lightningSeed <= 2147483646, true)
     assertEq(type(s.changes), "table")
+    assertEq(#s.changes > 0, true)
     assertEq(#s.temps >= 2, true)
     assertEq(type(s.gameStart), "number"); assertEq(type(s.releaseAt), "number")
   end
@@ -943,7 +945,6 @@ test("the setup and New sky payloads carry the schedule and strike seed", functi
   end
   local setup = decodeJson(env.lastSent("cnr_roundSetup").data).sky
   check(setup)
-  assertEq(#setup.changes > 0, true)
   env.sent = {}
   env.panel(1, "sky")
   local again = decodeJson(env.lastSent("cnr_sky").data)

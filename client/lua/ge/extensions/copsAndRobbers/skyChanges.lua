@@ -137,7 +137,7 @@ local function tod(hour)
   return 2 / 24
 end
 
-function M.curve(p, clockStart, t)
+function M.curve(p, clockStart, t, previousIndex)
   local temps = p and p.temps
   if not temps or #temps < 2 then return nil end
   local u = wrapHalf((clockStart or 0) - (p.gameStart or 0))
@@ -147,6 +147,7 @@ function M.curve(p, clockStart, t)
     if temps[j].t <= u then index = j end
   end
   index = math.max(1, math.min(#temps - 1, index))
+  if index == previousIndex then return nil end
   local a, b = temps[index], temps[index + 1]
   local pa = { tod(a.hour), a.c }
   local pb = { tod(b.hour), b.c }

@@ -1,4 +1,5 @@
 local hud = require("copsAndRobbers/hud")
+local sky = require("copsAndRobbers/sky")
 local apps = require("copsAndRobbers/apps")
 local units = require("copsAndRobbers/units")
 
@@ -205,7 +206,7 @@ local function push(clock, info)
     active = info.active, role = info.role, chaseStart = info.chaseStart,
     resetAllowed = info.resetAllowed, resetHint = info.resetHint, penalty = info.penalty, infoParts = info.infoParts, infoSeenAt = info.infoSeenAt, units = units.read(), infoTag = info.infoTag,
     timer = info.timer, flash = flash, prep = prep, events = events, resetFlashUntil = resetFlashUntil,
-    change = change, applying = applying, releaseAt = releaseAt, heli = heli, forecast = info.forecast,
+    change = change, applying = applying, releaseAt = releaseAt, heli = heli, forecast = sky.forecast(info.heliOn),
     result = result, rules = rules, lobby = lobby, color = color, settings = prefs, warnings = M.warnings(), apps = appsOpen, helpOpen = helpOpen,
     spectate = info.spectate, sitOut = sitOut,
   }))

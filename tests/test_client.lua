@@ -2510,6 +2510,26 @@ test("the forecast reaches the HUD under the timer, with the helicopter hint whe
   assertEq(env.hud().status.forecast.text, "Forecast: a storm in 5-8 min"); assertEq(env.hud().status.forecast.heli, nil)
 end)
 
+test("a weather forecast is computed only when the HUD is pushed", function()
+  local env = bootClient()
+  chaseWith(env, rainToStorm())
+  local sky = require("copsAndRobbers/sky")
+  local forecast = sky.forecast
+  local calls = 0
+  sky.forecast = function(...)
+    calls = calls + 1
+    return forecast(...)
+  end
+  env.triggers = {}
+  env.tick(1, 1 / 60)
+  local pushes = 0
+  for _, event in ipairs(env.triggers) do
+    if event.name == "CnRHud" then pushes = pushes + 1 end
+  end
+  assertEq(pushes > 0, true)
+  assertEq(calls <= pushes, true)
+end)
+
 test("prep shows the first change's forecast", function()
   local env = bootClient()
   local d = copy(SETUP)

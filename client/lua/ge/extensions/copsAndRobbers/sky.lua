@@ -102,10 +102,11 @@ local function windAt(p, t)
   if not p.driving then return 0, 0, 0, false end
   local from, to, progress = skyChanges.at(p, t)
   if not (wind.WEATHER[to] or (progress < 1 and wind.WEATHER[from])) then return 0, 0, 0, false end
+  local bx, by, bz = wind.at(to, p.windSeed, p.windDir, t)
+  if progress >= 1 or from == to then return bx, by, bz, true end
   local k = skyChanges.smooth(progress)
   local j = 1 - k
   local ax, ay, az = wind.at(from, p.windSeed, p.windDir, t)
-  local bx, by, bz = wind.at(to, p.windSeed, p.windDir, t)
   return ax * j + bx * k, ay * j + by * k, az * j + bz * k, true
 end
 
@@ -333,8 +334,8 @@ local function stepClouds(from, to, progress)
 end
 
 local function stepCurve()
-  local curve, index = skyChanges.curve(round, clockStart, roundTime)
-  if not curve or index == curveIndex then return end
+  local curve, index = skyChanges.curve(round, clockStart, roundTime, curveIndex)
+  if not curve then return end
   curveIndex = index
   local ok, err = lockedWrite({ temperatureCurveOverrideC = curve })
   if not ok then fail("curve", err) end
@@ -494,6 +495,7 @@ function M.drop()
     if saved then
       core_environment.enableChanges(not wasLocked)
     elseif restoring then
+      if restoring.wasLocked then core_environment.setState(restoring.state) end
       core_environment.enableChanges(not restoring.wasLocked)
     end
   end
