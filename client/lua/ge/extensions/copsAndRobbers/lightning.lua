@@ -5,6 +5,9 @@ local M = {}
 local LIGHT_NAME = "cnr_lightning_flash"
 local SOUND_SLOTS = 3
 local BOLT_RANGE = 4000
+local SHADOW_RANGE = 1000
+local CHANNEL_MIDPOINT_HEIGHT = 450
+local LIGHT_DISTANCE = 300
 local MAIN_WIDTH, BRANCH_WIDTH, BRANCH_FADE = 4, 2, 45
 local lineInstance
 
@@ -95,11 +98,12 @@ local function lightFields(obj)
   obj:setField("castShadows", 0, "0")
 end
 
-local function updateLight(s, cam, strength)
-  if strength > 0 then
+local function updateLight(s, cam, winner, strength)
+  if winner then
     if not s.light then s.light = create(s, "PointLight", LIGHT_NAME, lightFields) end
     if not s.light then return end
-    s.light:setPosition(vec3(cam.x, cam.y, cam.z + 300))
+    s.light:setPosition(winner.shadowPos or vec3(cam.x, cam.y, cam.z + LIGHT_DISTANCE))
+    s.light:setField("castShadows", 0, winner.shadowPos and "1" or "0")
   elseif not s.enabled then
     return
   end
@@ -141,8 +145,20 @@ local function capture(s, event, ref, cam, visible, now)
   local last = event.pulses[#event.pulses]
   local endsAt = event.at + last.start + last.length
   if visible and now < endsAt then
+    local shadowPos
+    if distance < SHADOW_RANGE then
+      local aimZ = dz + CHANNEL_MIDPOINT_HEIGHT
+      local length = math.sqrt(dx * dx + dy * dy + aimZ * aimZ)
+      if length > 0 then
+        local scale = LIGHT_DISTANCE / length
+        shadowPos = vec3(cam.x + dx * scale, cam.y + dy * scale, cam.z + aimZ * scale)
+      else
+        shadowPos = vec3(cam.x, cam.y, cam.z + LIGHT_DISTANCE)
+      end
+    end
     s.visuals[#s.visuals + 1] = {
       event = event, endsAt = endsAt, landing = landing, strength = strikes.strength(distance), bolt = distance <= BOLT_RANGE,
+      shadowPos = shadowPos,
     }
   end
 end
@@ -164,6 +180,7 @@ end
 
 local function render(s, now, cam)
   local strongest = 0
+  local winner
   for i = #s.visuals, 1, -1 do
     local visual = s.visuals[i]
     if now >= visual.endsAt then
@@ -174,7 +191,8 @@ local function render(s, now, cam)
         if elapsed >= pulse.start and elapsed < pulse.start + pulse.length then
           cam = cam or getCamera()
           if not cam or rain.covered(cam) ~= false then M.hide(s); return end
-          strongest = math.max(strongest, visual.strength * pulse.level)
+          local strength = visual.strength * pulse.level
+          if strength > strongest then strongest, winner = strength, visual end
           if visual.bolt then
             local ok, err = pcall(drawBolt, visual, j)
             if not ok then visual.bolt = false; report(s, "bolt", err) end
@@ -185,7 +203,7 @@ local function render(s, now, cam)
     end
   end
   if not M.hasVisualTail(s) then M.hide(s); return end
-  local ok, err = pcall(updateLight, s, cam, strongest)
+  local ok, err = pcall(updateLight, s, cam, winner, strongest)
   if not ok then
     remove(s.light)
     s.light, s.enabled = nil, nil
