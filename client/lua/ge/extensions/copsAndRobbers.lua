@@ -976,7 +976,8 @@ local function updateHeli(target)
     end
   end
   if active or spectating then
-    local opts = { weather = traffic.weather(), beam = prefs.beam ~= false, roads = roadData }
+    local from, to, progress = sky.weatherBlend()
+    local opts = { weather = to, weatherFrom = from, weatherProgress = progress, beam = prefs.beam ~= false, roads = roadData }
     if castRayStatic then opts.roofedAt = roofedAt end
     local wantsNight = heli.wantsNight(heliState)
     local night = (wantsNight or heliState.flight ~= nil) and sky.isNight()
@@ -995,8 +996,8 @@ end
 local function onUpdate(dtReal)
   clock = clock + (dtReal or 0)
   local change = sky.update(dtReal or 0, lightning.hasVisualTail(lightningState))
+  if active or spectating then traffic.setWeather(sky.weather()) end
   if change then
-    traffic.setWeather(change.to)
     hudfeed.event(change.notice, clock, "info")
   end
   updatePendingPlacement()

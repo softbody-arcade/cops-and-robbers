@@ -73,12 +73,14 @@ test("traffic headlights go off once when it clears by day, and not at night", f
     assertEq(sent(obj, "electrics.setLightsState(1)") > 0, true)
     assertEq(sent(obj, OFF), 0)
   end
+  day.tick(60)
+  for _, obj in ipairs(cars) do assertEq(sent(obj, OFF), 0) end
   day.tick(3)
   for _, obj in ipairs(cars) do assertEq(sent(obj, OFF), 1) end
   day.tick(10)
   for _, obj in ipairs(cars) do assertEq(sent(obj, OFF), 1) end
   local night = clearingRound("night")
-  night.tick(15)
+  night.tick(75)
   local dark = trafficCars(night)
   assertEq(#dark, 3)
   for _, obj in ipairs(dark) do assertEq(sent(obj, OFF), 0) end

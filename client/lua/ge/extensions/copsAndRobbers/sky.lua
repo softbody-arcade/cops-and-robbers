@@ -37,6 +37,7 @@ local DAYS_IN_MONTH = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
 
 local saved, wasLocked, round, clockStart, target
 local stormSpans, frameLo, frameHi, frameCovered, frameStorm
+local weatherFrom, weatherTo, weatherProgress
 local lockTimer, lockAfter, restoring
 local roundTime, started, sinceWind = 0, false, 0
 local sinceStep, wrote, curveIndex, rainIndex, seenIndex, windOn, failed = 0, nil, nil, 0, 0, false, {}
@@ -44,6 +45,7 @@ local sinceStep, wrote, curveIndex, rainIndex, seenIndex, windOn, failed = 0, ni
 local function forget()
   wind.reset()
   stormSpans, frameLo = nil, nil
+  weatherFrom, weatherTo, weatherProgress = nil, nil, nil
   saved, wasLocked, round, clockStart, target = nil, false, nil, nil, nil
   roundTime, started, sinceWind = 0, false, 0
   sinceStep, wrote, curveIndex, rainIndex, seenIndex, windOn, failed = 0, nil, nil, 0, 0, false, {}
@@ -84,6 +86,14 @@ end
 local function precipitation(weather)
   local spec = M.WEATHER[weather]
   return spec and spec.precipitation or nil
+end
+
+local function resumeRain(from, to, progress)
+  if progress >= 1 then
+    rain.target(precipitation(to), 0)
+  else
+    rain.resume(precipitation(from), precipitation(to), skyChanges.CHANGE_SECONDS, skyChanges.CHANGE_SECONDS * progress)
+  end
 end
 
 local function windAt(p, t)
@@ -235,6 +245,7 @@ function M.apply(p, prep)
   local at = started and roundTime or tonumber(p.clockSeconds) or 0
   local state, curveNow = roundState(env, p, at)
   local from, to, progress, index = skyChanges.at(p, at)
+  weatherFrom, weatherTo, weatherProgress = from, to, progress
   round, clockStart, target = p, state.time, state
   stormSpans, roundTime = thunderstormSpans(p), at
   if started then runningDay(state, clockStart, p.daySeconds, at) end
@@ -245,8 +256,7 @@ function M.apply(p, prep)
     blend(env, state)
     if newRound then rain.resetRoof() end
     if index > 0 and progress < 1 then
-      rain.target(precipitation(from), 0)
-      rain.target(precipitation(to), skyChanges.CHANGE_SECONDS * (1 - progress))
+      resumeRain(from, to, progress)
     else
       rain.target(precipitation(to), M.BLEND_SECONDS)
     end
@@ -321,10 +331,10 @@ local function stepCurve()
   if not ok then fail("curve", err) end
 end
 
-local function stepRain(to, progress, index)
+local function stepRain(from, to, progress, index)
   if index == rainIndex then return end
   rainIndex = index
-  local ok, err = pcall(rain.target, precipitation(to), skyChanges.CHANGE_SECONDS * (1 - progress))
+  local ok, err = pcall(resumeRain, from, to, progress)
   if not ok then
     pcall(rain.clear)
     fail("rain", err)
@@ -338,9 +348,10 @@ end
 
 local function step()
   local from, to, progress, index = skyChanges.at(round, roundTime)
+  weatherFrom, weatherTo, weatherProgress = from, to, progress
   if not failed.clouds then stepClouds(from, to, progress) end
   if not failed.curve then stepCurve() end
-  if not failed.rain then stepRain(to, progress, index) end
+  if not failed.rain then stepRain(from, to, progress, index) end
   if round.driving and not failed.grip then stepGrip() end
 end
 
@@ -407,8 +418,14 @@ function M.update(dt, hasVisualTail)
 end
 
 function M.weather()
-  if not round then return nil end
-  return skyChanges.current(round, roundTime)
+  if weatherProgress and weatherProgress < 1 and M.isBadWeather(weatherFrom) and not M.isBadWeather(weatherTo) then
+    return weatherFrom
+  end
+  return weatherTo
+end
+
+function M.weatherBlend()
+  return weatherFrom, weatherTo, weatherProgress and skyChanges.smooth(weatherProgress)
 end
 
 function M.forecast(heliOn)

@@ -397,11 +397,12 @@ local function castBeam(state, lightPos, aimPos, clock)
   if d and d < axisLen - M.HIT_MARGIN and lightPos.z + az / axisLen * d > aimPos.z + M.HIT_MARGIN then state.beamHit = d end
 end
 
-local function drawBeam(state, clock, weather)
+local function drawBeam(state, clock, opts)
   local lightPos, aimPos = state.lightPos, state.aimPos
   castBeam(state, lightPos, aimPos, clock)
   local camPos = core_camera and core_camera.getPosition and core_camera.getPosition() or nil
-  local n = beam.quads(lightPos, aimPos, beam.strength(weather, state.fx.bright), state.beamHit, camPos, state.beamQuads)
+  local strength = beam.strength(opts and opts.weather, state.fx.bright, opts and opts.weatherFrom, opts and opts.weatherProgress)
+  local n = beam.quads(lightPos, aimPos, strength, state.beamHit, camPos, state.beamQuads)
   drawTri = require("utils/debugDraw").drawTriSolid
   beam.draw(state.beamQuads, n, drawQuad, color)
 end
@@ -409,7 +410,7 @@ end
 local function beamTick(state, clock, opts)
   if (opts and opts.beam == false) or state.beamFailed or not color then return end
   if slantOf(state.lightPos, state.aimPos) > M.RANGE_MAX then return end
-  local ok, err = pcall(drawBeam, state, clock, opts and opts.weather)
+  local ok, err = pcall(drawBeam, state, clock, opts)
   if not ok then
     state.beamFailed = true
     log("E", "cnr_heli", "searchlight beam stopped: " .. tostring(err))

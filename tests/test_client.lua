@@ -2454,6 +2454,20 @@ test("a weather change during the chase shows its notice and moves the lights an
   assertEq(notices.n, 1)
 end)
 
+test("traffic headlights stay on until the daytime rain has cleared", function()
+  local env = bootClient()
+  chaseWith(env, { time = "noon", weather = "rain", clockSeconds = 40, changes = { { at = 30, to = "cloudy", forecastFrom = 0 } } })
+  env.fire("cnr_trafficStart", { count = 2 })
+  env.tick(10, 0.5)
+  local cars = trafficObjects(env)
+  assertEq(#cars, 2)
+  for _, car in ipairs(cars) do assertEq(hasCommand(car, "electrics.setLightsState(1)"), true) end
+  env.tick(35, 0.5)
+  for _, car in ipairs(cars) do assertEq(hasCommand(car, "electrics.setLightsState(0)"), false) end
+  env.tick(10, 0.5)
+  for _, car in ipairs(cars) do assertEq(hasCommand(car, "electrics.setLightsState(0)"), true) end
+end)
+
 test("a mid-chase joiner starts with the weather in effect and no notice for a change already past", function()
   local env = bootClient()
   local traffic = package.loaded["copsAndRobbers/traffic"]
@@ -2532,6 +2546,8 @@ test("practice AI cars switch their headlights on in bad weather by day", functi
   env.tick(3)
   local car = env.spawned[1].veh
   assertEq(hasCommand(car, "electrics.setLightsState(1)"), true)
+  assertEq(hasCommand(car, "electrics.setLightsState(0)"), false)
+  env.tick(60)
   assertEq(hasCommand(car, "electrics.setLightsState(0)"), false)
   env.tick(10)
   assertEq(hasCommand(car, "electrics.setLightsState(0)"), true)
