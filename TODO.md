@@ -7,6 +7,7 @@ Priorities run from `!!!!` (highest) through `!!!` (high), `!!` (normal), and `!
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
+- [ ] !!! Multiplayer lightning sync (`fix/multiplayer-lightning-sync`). On 2.14.3, a late spectator saw a large mismatch. Players who started together also reported that some bolts appeared to hit different spots. Check world placement and flash timing separately.
 - [ ] !!! Trailer hitch restoration. The restored hitch held on `7ff57c8` and shipped in 2.14.3. Both follow-ups are deferred to a later release.
   - `fix/restore-trailer-hitch`: restoring a turned truck and trailer straightens the trailer, which can move it into a building. Preserve their parked angle and footprint.
   - `fix/active-round-trailer`: normal and practice rounds should contain only the round vehicles and traffic. Remove active players’ spare cars and trailers after successful placement, keep their round cars at the end, and preserve Sit out restoration.
@@ -14,11 +15,8 @@ One entry per piece of work that has started: what it is, its branch (or "design
 ## In-game checks
 Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to decide what needs a player. Record deferred checks here with the action, expected observation and open question. Remove a check once verified and record failures under Issues.
 
-- [ ] !!! **Two-player lightning sync (deferred).** The player passed checks 1–3 on local build `61b3d12` (prep rain under a roof, in-round lightning, shelter/settings/cleanup) and deferred check 4. In a night Thunderstorm, have a second player join after GO as a spectator. Compare the next visible strikes for matching pulse times and shapes. Thunder delay depends on each camera’s distance from the strike.
-- [ ] !!! 5. Multiplayer spectators (deployed 2026-11-17 in 2.11.0): join mid-round and you spectate in free camera, Tab and Ctrl+Tab cycle through every round car (runner included), Shift+C free camera, the HUD says SPECTATING; nobody sees a phantom car; Sit out on the lobby card: your car disappears for the round and comes back where it stood, with its paint, and your lobby traffic is gone; a joiner during prep keeps spectating through a New car; a rejoining cop's car may only be reachable with Tab once the watched car is slow (BeamMP's spawn queue)
 - [ ] !!! 6. Rejoin placement (deployed 2026-11-17 as 2.10.0): a player who rejoins mid-round is put back without "teleported", "reset illegally" or a crash penalty; the server log shows `setup sent`, `placed the round car` and no refusals for them. Others may only see their car once they slow down (BeamMP's spawn queue)
 - [ ] !! Deferred solo check for 2.14.3. In Practice as cop, hold the throttle during prep and the runner’s head start. The car should stay in its slot until release, then drive away without a second teleport. This checks the in-game freeze and release.
-- [ ] !! 7. Runner order (deployed 2026-11-17 in 2.11.0): the panel's next runner is who actually runs; after everyone has run once the next cycle comes in a different order, and nobody runs twice in a row while someone else can
 
 
 ## Ideas
