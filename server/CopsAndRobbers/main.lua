@@ -1260,7 +1260,8 @@ end
 function cnrOnLightningClock(pid, data)
   local timer = current.sky and current.sky.lightningTimer
   if not timer or not current:isActive() then return end
-  if not (current.players[pid] or spectators[pid] or (current.test and pid == current.issuerId)) then return end
+  local players = MP.GetPlayers() or {}
+  if not players[pid] or (current.test and pid ~= current.issuerId) then return end
   local ok, d = pcall(Util.JsonDecode, data)
   if not ok or type(d) ~= "table" or d.seed ~= current.sky.lightningSeed or not finite(d.id) then return end
   send(pid, "cnr_lightningClock", {seed = d.seed, id = d.id, elapsed = timer:GetCurrent()})

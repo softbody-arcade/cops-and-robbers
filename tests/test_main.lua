@@ -1017,17 +1017,26 @@ test("the storm clock is private to the practice issuer", function()
   env.cleanup()
 end)
 
-test("a mid-chase rejoin gets clockSeconds", function()
-  local env = boot()
+test("a mid-chase rejoin gets the spectator sky and can sync the storm clock on its new player ID", function()
+  local env = boot({config = '{"weather":"thunderstorm"}'})
   env.startRound(); env.go()
   env.positions[1], env.positions[2] = 0, 900
   for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
   local before = decodeJson(env.lastSent("cnr_roundSetup").data).sky
   env.call("onPlayerDisconnect", 2)
-  env.call("onPlayerJoin", 2)
+  env.names = { [1] = "Reinder", [3] = "Bob" }
+  env.call("onPlayerJoin", 3)
   local joined = decodeJson(env.lastSent("cnr_spectate").data).sky
   assertNear(joined.clockSeconds, 15, 0.01)
   assertEq(joined.month, before.month); assertEq(joined.day, before.day); assertEq(joined.daySeconds, 1800)
+  local request = encode({seed = joined.lightningSeed, id = 5})
+  env.call("cnr_lightningClock", 3, request)
+  local reply = env.lastSent("cnr_lightningClock")
+  assertEq(reply and reply.pid, 3)
+  assertNear(decodeJson(reply.data).elapsed, 15, 0.01)
+  env.sent = {}
+  env.call("cnr_lightningClock", 2, request)
+  assertEq(env.lastSent("cnr_lightningClock"), nil)
   env.cleanup()
 end)
 
