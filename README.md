@@ -93,7 +93,7 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `copSpawnMinMeters` / `copSpawnMaxMeters` | 50 / 150 | Cop start distance from the runner, by road |
 | `crashSpeedLossKmh` | 50 | Speed lost within 0.5 s that counts as a crash (~2.8 G) |
 | `crashPenaltySeconds` | 10 | Freeze for the cop at fault, within `copResetMinDistanceMeters` of the runner |
-| `helicopter` | true | Police helicopter that searches for and tracks the runner. Grounded in storms, thunderstorms, fog and snow until the weather clears |
+| `helicopter` | true | Police helicopter that searches for the runner and tracks them while it sees them. Grounded in storms, thunderstorms, fog and snow until the weather clears |
 | `helicopterArrivalSeconds` | 60 | It arrives this long after the cops are released (0 = at release) |
 | `helicopterUpSeconds` | 120 | How long it flies before it refuels (more than 0) |
 | `helicopterRefuelSeconds` | 90 | How long it is away refuelling (0 = stays up) |
@@ -118,8 +118,8 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `badWeatherChancePercent` | 25 | Chance of picking the bad-weather group (rain, storm, thunderstorm, fog or snow) for a random start or at a planned slot with both calm and bad options |
 | `weatherDriving` | true | Weather changes grip and adds wind (not on BeamNG.Earth) |
 | `weatherChanges` | true | Planned slots during the chase can keep the current weather or pick an eligible change based on the current weather, temperature and time of day. Available on regular maps |
-| `weatherChangeMinMinutes` | 3 | Shortest interval between planned slots, in whole minutes (at least 1). Forced changes can occur between slots |
-| `weatherChangeMaxMinutes` | 8 | Longest interval between planned slots (at least the minimum). Stays can extend the time between actual changes |
+| `weatherChangeMinMinutes` | 3 | Shortest wait before the next planned slot, in whole minutes (at least 1). The wait starts at cop release, the previous slot or a forced change |
+| `weatherChangeMaxMinutes` | 8 | Longest wait drawn from the same starting point (at least the minimum). A forced change restarts the wait, and stays can extend the time between actual changes |
 | `trafficPerPlayer` | 5 | AI traffic cars around each player during a round (0 = off, at most 20; normal maps only, not on BeamNG.Earth yet) |
 | `trafficRunnerOnly` | false | Only the runner's game spawns traffic (the same `trafficPerPlayer` count); cops spawn none. Fewer AI cars for better performance |
 
