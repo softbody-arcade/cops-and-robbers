@@ -1019,7 +1019,7 @@ local function onUpdate(dtReal, dtSim)
   local target = role == "runner" and ownVehicle() or runnerObj
   if active or spectating then
     local p, lo, hi, covered, intersectsStorm = sky.lightningFrame()
-    lightning.tick(lightningState, p, lo, hi, target, prefs.lightning ~= false, covered, intersectsStorm)
+    lightning.tick(lightningState, p, lo, hi, prefs.lightning ~= false, covered, intersectsStorm)
   end
   updateSight(runnerObj)
   updateHiding(runnerObj)
@@ -1121,6 +1121,7 @@ local function onExtensionLoaded()
   AddEventHandler("cnr_penalty", onPenalty)
   AddEventHandler("cnr_setupAI", onSetupAI)
   AddEventHandler("cnr_sky", onSky)
+  AddEventHandler("cnr_lightningPositions", function(data) sky.setLightningPositions(jsonDecode(data)) end)
   AddEventHandler("cnr_trafficStart", function(data)
     local d = jsonDecode(data) or {}
     traffic.start(d.count, not runnerOut, clock)

@@ -5207,8 +5207,16 @@ test("round result, leave, mission end and unload release the lightning scene", 
   end
 end)
 
-local function thunderSky(clock)
-  return {weather = "thunderstorm", lightningSeed = 55, clockSeconds = clock, driving = false}
+local function thunderSky(clock, seed, minimum, maximum)
+  local p = {weather = "thunderstorm", lightningSeed = seed or 55, clockSeconds = clock, driving = false,
+    lightningMinSeconds = minimum, lightningMaxSeconds = maximum, lightningPositions = {}}
+  local schedule = require("cnr.strikeSchedule")
+  for _, event in ipairs(schedule.between(schedule.new(p.lightningSeed), p, 0, 700)) do
+    local angle = math.rad(event.bearing)
+    p.lightningPositions[#p.lightningPositions + 1] = {id = event.id, at = event.at,
+      x = event.range * math.sin(angle), y = event.range * math.cos(angle), z = 0}
+  end
+  return p
 end
 
 local function withThunder(fn)
@@ -5216,7 +5224,7 @@ local function withThunder(fn)
   local previousScene = package.loaded["copsAndRobbers/lightningScene"]
   local previousStrikes = package.loaded["copsAndRobbers/strikes"]
   local env = bootClient({files = {["settings/cnr_settings.json"] = {sound = false}}})
-  local oldCamera, oldColor, oldDraw = core_camera, color, package.loaded["utils/debugDraw"]
+  local oldCamera, oldColor, oldDraw, oldCast = core_camera, color, package.loaded["utils/debugDraw"], castRayStatic
   local loadMaterials = loadJsonMaterialsFile
   local triangles = 0
   _G.core_camera = {getPosition = function() return vec3(0, 0, 0) end}
@@ -5229,7 +5237,7 @@ local function withThunder(fn)
   local strikes = require("copsAndRobbers/strikes")
   local events = strikes.between(strikes.new(55), thunderSky(), 0, 100)
   local ok, err = pcall(fn, env, events, function() return triangles end)
-  _G.core_camera, _G.color, package.loaded["utils/debugDraw"] = oldCamera, oldColor, oldDraw
+  _G.core_camera, _G.color, package.loaded["utils/debugDraw"], _G.castRayStatic = oldCamera, oldColor, oldDraw, oldCast
   _G.loadJsonMaterialsFile = loadMaterials
   package.loaded["copsAndRobbers/lightning"] = previousLightning
   package.loaded["copsAndRobbers/lightningScene"] = previousScene
@@ -5253,16 +5261,15 @@ local function thunderPlays(env)
   return count
 end
 
-test("GO and joined lightning frames use the runner for each role", function()
+test("GO and joined lightning frames use the shared sky for each role", function()
   for _, role in ipairs({"runner", "cop", "spectator", "AI spectator", "missing runner"}) do
     withThunder(function(env)
       local sky = thunderSky(613.4)
       local lightning = require("copsAndRobbers/lightning")
       local frame
-      lightning.tick = function(_, p, lo, hi, target, flashes, covered, intersects)
-        frame = {p = p, lo = lo, hi = hi, target = target, flashes = flashes, covered = covered, intersects = intersects}
+      lightning.tick = function(_, p, lo, hi, flashes, covered, intersects)
+        frame = {p = p, lo = lo, hi = hi, flashes = flashes, covered = covered, intersects = intersects}
       end
-      local target
       if role == "runner" then
         local d = copy(SETUP)
         d.role, d.runnerId, d.sky = "runner", 1, sky
@@ -5270,26 +5277,19 @@ test("GO and joined lightning frames use the runner for each role", function()
         env.M.onUpdate(0.1)
         assertEq(frame and frame.p, nil)
         env.fire("cnr_countdown", {seconds = 3})
-        target = env.veh
       elseif role == "AI spectator" then
         watchPractice(env, {phase = "running", sky = sky})
       elseif role == "spectator" then
         spectate(env, {phase = "running", sky = sky})
         roundCars(env)
-        target = env.objects[201]
       else
         chaseWith(env, sky)
-        if role == "cop" then
-          roundCars(env)
-          target = env.objects[201]
-        end
+        if role == "cop" then roundCars(env) end
       end
       env.M.onUpdate(0.1)
-      if role == "AI spectator" then target = assert(env.spawned[1]).veh end
       assertEq(frame and frame.p, sky, role)
       assertNear(frame.lo, role == "runner" and 0 or 613.4, 1e-8, role)
       assertNear(frame.hi, role == "runner" and 0.1 or 613.5, 1e-8, role)
-      assertEq(frame.target, target, role)
       assertEq(frame.flashes, true, role)
       assertEq(frame.covered, false, role)
       assertEq(frame.intersects, true, role)
@@ -5305,9 +5305,8 @@ test("a countdown player and delayed spectator render the same pulse on the serv
       local uptime = spectator and 3000 or 500
       _G.Engine = {Platform = {getRuntime = function() return uptime + serverAt end}}
       local ok, err = pcall(function()
-        local sky = thunderSky(spectator and 8.9 or nil)
+        local sky = thunderSky(spectator and 8.9 or nil, 55, 5, 5)
         sky.lightningClockSync = true
-        sky.lightningMinSeconds, sky.lightningMaxSeconds = 5, 5
         if spectator then
           spectate(env, {phase = "running", sky = sky})
         else
@@ -5348,9 +5347,8 @@ test("expired clock samples and older replies cannot rewind a storm or replay pa
     local previousEngine, uptime = Engine, 300
     _G.Engine = {Platform = {getRuntime = function() return uptime end}}
     local ok, err = pcall(function()
-      local p = thunderSky(2)
+      local p = thunderSky(2, 55, 5, 5)
       p.lightningClockSync = true
-      p.lightningMinSeconds, p.lightningMaxSeconds = 5, 5
       spectate(env, {phase = "running", sky = p})
       env.M.onUpdate(0.01)
       local first = assert(env.lastSent("cnr_lightningClock"))
@@ -5382,11 +5380,46 @@ test("expired clock samples and older replies cannot rewind a storm or replay pa
   end)
 end)
 
+test("the runner, a cop and a late spectator see one bolt at the announced landmark", function()
+  for _, role in ipairs({"runner", "cop", "spectator"}) do
+    withThunder(function(env)
+      local p = thunderSky(role == "spectator" and 4.9 or 0, 55, 5, 5)
+      local landing = {id = p.lightningPositions[1].id, at = 5, x = 820, y = -375, z = 12}
+      p.lightningPositions = role == "spectator" and {landing} or nil
+      local camera = role == "runner" and vec3(120, 20, 80) or vec3(-1100, 500, 20)
+      core_camera.getPosition = function() return camera end
+      local rays = {}
+      _G.castRayStatic = function(origin, direction, distance)
+        if direction.z < 0 and distance == 5000 then
+          rays[#rays + 1] = origin
+          return 2425
+        end
+        return distance
+      end
+      if role == "spectator" then
+        spectate(env, {phase = "running", sky = p})
+      else
+        local d = copy(SETUP)
+        d.role, d.runnerId, d.sky = role, role == "runner" and 1 or 2, p
+        env.fire("cnr_roundSetup", d)
+        if role == "cop" then roundCars(env) end
+        env.fire("cnr_countdown", {seconds = 3})
+        env.fire("cnr_lightningPositions", {lightningSeed = 55, positions = {landing}})
+        env.fire("cnr_lightningPositions", {lightningSeed = 56, positions = {}})
+      end
+      env.M.onUpdate(role == "spectator" and 0.101 or 5.001)
+      assertEq(#rays, 1, role)
+      assertEq(rays[1].x, 820, role)
+      assertEq(rays[1].y, -375, role)
+      assert(boltRods(env) > 0, role)
+    end)
+  end
+end)
+
 test("a fixed five-second storm flashes five seconds after the countdown starts", function()
   withThunder(function(env, _, lines)
     local d = copy(SETUP)
-    d.sky = thunderSky(0)
-    d.sky.lightningMinSeconds, d.sky.lightningMaxSeconds = 5, 5
+    d.sky = thunderSky(0, 55, 5, 5)
     env.fire("cnr_roundSetup", d)
     env.M.onUpdate(12)
     assertEq(lines(), 0)
@@ -5516,9 +5549,7 @@ local function withBridge(fn)
       return distance
     end
     local ok, err = pcall(function()
-      local sky = thunderSky(9.865)
-      sky.lightningSeed = 700
-      sky.lightningMinSeconds, sky.lightningMaxSeconds = 10, 10
+      local sky = thunderSky(9.865, 700, 10, 10)
       chaseWith(env, sky)
       env.M.onUpdate(0.01)
       assertEq(rays, 1)

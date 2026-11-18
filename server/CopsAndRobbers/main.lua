@@ -12,6 +12,7 @@ local tables = require("cnr.tables")
 local build = require("cnr.build")
 local panel = require("cnr.panel")
 local sky = require("cnr.sky")
+local strikeSchedule = require("cnr.strikeSchedule")
 local traffic = require("cnr.traffic")
 
 local VERSION = "2.14.3"
@@ -372,6 +373,30 @@ local function carFor(pid)
   return { pos = pos, vel = vel }
 end
 
+local function announceLightning(runner)
+  local s = current.sky
+  if not (s and s.strikeCursor) then return end
+  local elapsed = s.lightningTimer:GetCurrent()
+  local horizon = elapsed + 1.25
+  s.lastRunnerPos = runner and runner.pos or s.lastRunnerPos
+  local events = strikeSchedule.between(s.strikeCursor, s, math.max(s.lightningHorizon or 0, elapsed - 2), horizon)
+  s.lightningHorizon = horizon
+  if #events == 0 then return end
+  local positions = {}
+  for _, p in ipairs(s.lightningPositions or {}) do
+    if p.at >= elapsed - 2 then positions[#positions + 1] = p end
+  end
+  local start = current.startGrid and current.startGrid[1]
+  local ref = s.lastRunnerPos or start and start.pos or {x = 0, y = 0, z = 0}
+  for _, event in ipairs(events) do
+    local angle = math.rad(event.bearing)
+    positions[#positions + 1] = {id = event.id, at = event.at, x = ref.x + event.range * math.sin(angle),
+      y = ref.y + event.range * math.cos(angle), z = ref.z}
+  end
+  s.lightningPositions = positions
+  send(current.test and current.issuerId or -1, "cnr_lightningPositions", {lightningSeed = s.lightningSeed, positions = positions})
+end
+
 local function trafficCars()
   local list = {}
   for pid, set in pairs(trafficVids) do
@@ -512,7 +537,11 @@ local function applyEffects(effects)
         aiOnly = e.aiOnly,
       })
     elseif e.kind == "countdown" then
-      if sky.hasThunderstorm(current.sky) then current.sky.lightningTimer = MP.CreateTimer() end
+      if sky.hasThunderstorm(current.sky) then
+        current.sky.lightningTimer = MP.CreateTimer()
+        current.sky.strikeCursor = strikeSchedule.new(current.sky.lightningSeed)
+        announceLightning(carFor(current.runnerId))
+      end
       send(e.to or -1, "cnr_countdown", { seconds = e.seconds })
     elseif e.kind == "runnerGo" then
       send(e.to or -1, "cnr_runnerGo", { headStartSeconds = e.headStartSeconds })
@@ -1434,6 +1463,7 @@ function cnrTick()
   if not current:isActive() then return end
   local cars = {}
   for pid in pairs(current.players) do cars[pid] = carFor(pid) end
+  announceLightning(cars[current.runnerId])
   applyEffects(current:tick(now(), cars, stations, trafficCars()))
 end
 

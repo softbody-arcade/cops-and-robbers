@@ -388,6 +388,12 @@ function M.syncLightningClock(reply)
   if started then strikeClock.receive(syncedStrikes, reply) end
 end
 
+function M.setLightningPositions(packet)
+  if round and packet and round.lightningSeed == packet.lightningSeed then
+    round.lightningPositions = packet.positions
+  end
+end
+
 function M.lightningFrame()
   if frameLo then return round, frameLo, frameHi, frameCovered, frameStorm end
 end

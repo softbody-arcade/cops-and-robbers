@@ -3611,3 +3611,63 @@ test("an ambiguous personal vehicle sample still permits a bounded initial grid"
   assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 1)).startPose.pos.x, 12000)
   env.cleanup()
 end)
+
+test("normal and practice strikes are announced ahead around the moving server runner", function()
+  for _, mode in ipairs({"round", "practice"}) do
+    local env = boot({config = '{"weather":"thunderstorm","lightningMinSeconds":1,"lightningMaxSeconds":1}'})
+    if mode == "round" then
+      env.names = {"Reinder", "Bob", "Kim"}
+      sitOut(env, 3, true)
+      env.startRound()
+      assert(sentTo(env, "cnr_spectate", 3))
+    else
+      env.panel(1, "test cop")
+      env.call("cnr_vehiclePicked", 1, PICK)
+      env.call("cnr_aiVehicles", 1, '{"ai":[{"id":-10,"vid":8}]}')
+    end
+    local key = mode == "round" and "1-0" or "1-8"
+    env.vidPositions[key] = {pos = {92000, -33000, 125}, vel = {0, 0, 0}}
+    env.go()
+    local first = env.lastSent("cnr_lightningPositions")
+    assert(first, mode .. " must announce the first strike before it is due")
+    assertEq(first.pid, mode == "round" and -1 or 1)
+    local packet = decodeJson(first.data)
+    local landing = packet.positions[1]
+    assertEq(landing.at, 1)
+    assertEq(landing.z, 125)
+    local range = math.sqrt((landing.x - 92000)^2 + (landing.y + 33000)^2)
+    assert(range >= 300 and range <= 6000)
+    env.vidPositions[key].pos = {-72000, 53000, 13}
+    env.clock = 1
+    env.call("cnr_tick")
+    local follow = decodeJson(env.lastSent("cnr_lightningPositions").data).positions
+    local nextLanding = follow[#follow]
+    assertEq(follow[1].id, landing.id)
+    assertEq(follow[1].x, landing.x)
+    assertEq(follow[1].y, landing.y)
+    assert(nextLanding.id ~= landing.id and nextLanding.at > landing.at)
+    assertEq(nextLanding.z, 13)
+    range = math.sqrt((nextLanding.x + 72000)^2 + (nextLanding.y - 53000)^2)
+    assert(range >= 300 and range <= 6000)
+    if mode == "round" then
+      env.names[4] = "Ann"
+      env.call("onPlayerJoin", 4)
+      local pending = decodeJson(env.lastSent("cnr_spectate").data).sky.lightningPositions
+      local joined = pending[#pending]
+      assertEq(joined.id, nextLanding.id)
+      assertEq(joined.x, nextLanding.x)
+      assertEq(joined.y, nextLanding.y)
+    end
+    env.cleanup()
+  end
+end)
+
+test("clear-only rounds do not announce strike positions", function()
+  local env = boot({config = '{"weather":"clear","weatherChanges":false,"lightningMinSeconds":1,"lightningMaxSeconds":1}'})
+  env.startRound()
+  env.go()
+  env.clock = 5
+  env.call("cnr_tick")
+  assertEq(env.lastSent("cnr_lightningPositions"), nil)
+  env.cleanup()
+end)

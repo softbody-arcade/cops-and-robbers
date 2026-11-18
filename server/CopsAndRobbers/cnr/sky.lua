@@ -90,6 +90,7 @@ function M.payload(s, cfg, clockSeconds)
     windDir = s.windDir,
     windSeed = s.windSeed,
     lightningSeed = s.lightningSeed,
+    lightningPositions = s.lightningPositions,
     lightningMinSeconds = s.lightningMinSeconds or config.DEFAULTS.lightningMinSeconds,
     lightningMaxSeconds = s.lightningMaxSeconds or config.DEFAULTS.lightningMaxSeconds,
     clockSeconds = clockSeconds,
