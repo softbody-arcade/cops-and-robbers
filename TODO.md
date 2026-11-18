@@ -17,7 +17,7 @@ One entry per piece of work that has started: what it is, its branch (or "design
 
 
 ## In-game checks
-Things only a player in the game can confirm, each with what to look for. Add them here when work is merged or deployed without the check; delete a line once it is checked, and turn anything that fails into an Issue.
+Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to decide what needs a player. Record deferred checks here with the action, expected observation and open question. Remove a check once verified and record failures under Issues.
 
 - [ ] !!! **Two-player lightning sync (deferred).** The player passed checks 1–3 on local build `61b3d12` (prep rain under a roof, in-round lightning, shelter/settings/cleanup) and deferred check 4. In a night Thunderstorm, have a second player join after GO as a spectator. Compare the next visible strikes for matching pulse times and shapes. Thunder delay depends on each camera’s distance from the strike.
 - [ ] !!! 5. Multiplayer spectators (deployed 2026-11-17 in 2.11.0): join mid-round and you spectate in free camera, Tab and Ctrl+Tab cycle through every round car (runner included), Shift+C free camera, the HUD says SPECTATING; nobody sees a phantom car; Sit out on the lobby card: your car disappears for the round and comes back where it stood, with its paint, and your lobby traffic is gone; a joiner during prep keeps spectating through a New car; a rejoining cop's car may only be reachable with Tab once the watched car is slow (BeamMP's spawn queue)
