@@ -4003,8 +4003,8 @@ local function parkedTrailer()
   end
   local placements = {}
   spawn.placeTrailer = function(tow, towOffset, trailer, trailerOffset, tag)
-    assertEq(towOffset, ball); assertEq(trailerOffset, socket); assertEq(tag, "tow_hitch")
-    placements[#placements + 1] = {tow, trailer}
+    assertEq(towOffset, ball); assertEq(trailerOffset, socket)
+    placements[#placements + 1] = {tow, trailer, tag}
   end
   spectate(env)
   env.fire("cnr_roundEnd", { reason = "cancelled" })
@@ -4096,6 +4096,54 @@ test("a pending hitch is forgotten on leave or when a restored vehicle disappear
     MPVehicleGE.isOwn = function() return true end
     env.tick(1)
     assertEq(#placements, 0)
+  end
+end)
+
+test("an unavailable vehicle command queue ends the hitch request once", function()
+  local env, _, warnings = parkedTrailer()
+  MPVehicleGE.isOwn = function() return true end
+  local calls = 0
+  env.spawned[1].veh.queueLuaCommand = function(_, command)
+    if command:find("attachExternalCoupler", 1, true) then calls = calls + 1; error("queue failed") end
+  end
+  env.tick(12, 1)
+  assertEq(calls, 1); assertEq(#warnings, 1)
+  assert(warnings[1]:find("queue failed", 1, true))
+end)
+
+test("trailer restoration targets only its saved partner and stops on timeout, removal or leave", function()
+  for _, stop in ipairs({"timeout", "remove", "leave"}) do
+    local env, placements, warnings = parkedTrailer()
+    local tow, trailer = env.spawned[1].veh, env.spawned[2].veh
+    local attempts, latching = 0, false
+    local vm = {
+      beamstate = { couplerCache = { [22] = { cid = 22, couplerTag = "tow_hitch", couplerStrength = 801000 } } },
+      obj = {
+        getNodeLatch = function() return latching and 1 or 0 end,
+        getNodeCoupler = function() return 0 end,
+        attachExternalCoupler = function(_, node, target, targetNode, strength, radius, lockRadius, speed, targets)
+          assertEq(node, 22); assertEq(target, trailer.id); assertEq(targetNode, 11); assertEq(strength, 801000)
+          assertEq(radius, 0.2); assertEq(lockRadius, 0.025); assertEq(speed, 0.3); assertEq(targets, 0)
+          assertEq(latching, false); attempts = attempts + 1; latching = true
+        end,
+      },
+    }
+    function tow:queueLuaCommand(command)
+      if command:find("attachExternalCoupler", 1, true) then assert(load(command, nil, "t", vm))() end
+    end
+    MPVehicleGE.isOwn = function() return true end
+    env.tick(1.5)
+    assertEq(#placements, 1); assertEq(placements[1][3], nil)
+    assert(attempts > 0)
+    if stop == "timeout" then env.tick(10, 1)
+    elseif stop == "remove" then trailer:delete()
+    else env.M.onBeamMPServerLeave() end
+    local finished = attempts
+    latching = false
+    env.tick(55, 1)
+    assertEq(attempts, finished); assertEq(#placements, 1)
+    assertEq(#warnings, stop == "timeout" and 1 or 0)
+    if stop == "timeout" then assert(warnings[1]:find("timed out", 1, true)) end
   end
 end)
 

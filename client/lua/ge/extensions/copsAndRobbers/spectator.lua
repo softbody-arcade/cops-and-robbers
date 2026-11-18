@@ -5,6 +5,14 @@ local M = {}
 local parked, restoring
 local hitchWait = 0
 local HITCH_SETTLE_SECONDS, HITCH_TIMEOUT_SECONDS = 0.2, 10
+local HITCH_RETRY_SECONDS = 0.5
+local ATTACH_HITCH = [[
+local c = beamstate.couplerCache[%d]
+if c and c.couplerTag == %q and obj:getNodeLatch(c.cid) <= 0 and obj:getNodeCoupler(c.cid) <= 0 then
+  obj:attachExternalCoupler(c.cid, %d, %d, c.couplerStrength or 1000000, c.couplerRadius or 0.2,
+    c.couplerLockRadius or 0.025, c.couplerLatchSpeed or 0.3, c.couplerTargets or 0)
+end
+]]
 
 local function isTraffic(id)
   local gt = gameplay_traffic
@@ -134,21 +142,33 @@ end
 
 local function updateHitch(car, expired)
   local hitch, tow = car.hitch, car.hitch.tow
-  if not (car.id and tow.id and getObjectByID(car.id) and getObjectByID(tow.id)) then return true end
+  local vehicle = tow.id and getObjectByID(tow.id)
+  if not (vehicle and car.id and getObjectByID(car.id)) then return true end
   local status = hitchStatus(tow.id, hitch.towNode, car.id, hitch.trailerNode)
   if status == "attached" then return true end
   if expired then
     log("W", "cnr_spectate", "timed out restoring trailer hitch between " .. tow.id .. " and " .. car.id)
     return true
   end
-  if hitch.placed or status == "occupied" or tow.hitch then return false end
-  if MPVehicleGE.isOwn(tow.id) and MPVehicleGE.isOwn(car.id) then
-    local ok, err = pcall(spawn.placeTrailer, tow.id, hitch.ball, car.id, hitch.socket, hitch.tag)
+  if status == "occupied" or tow.hitch or not (MPVehicleGE.isOwn(tow.id) and MPVehicleGE.isOwn(car.id)) then return false end
+  if not hitch.placed then
+    local ok, err = pcall(spawn.placeTrailer, tow.id, hitch.ball, car.id, hitch.socket)
     if not ok then
       log("W", "cnr_spectate", "could not place parked trailer " .. car.id .. ": " .. tostring(err))
       return true
     end
     hitch.placed = true
+    if core_vehicles.couplerTagsOptions[hitch.tag] == "autoCouple" then
+      hitch.nextAttach = hitchWait + HITCH_RETRY_SECONDS
+    end
+  elseif hitch.nextAttach and hitchWait >= hitch.nextAttach then
+    local cmd = string.format(ATTACH_HITCH, hitch.towNode, hitch.tag, car.id, hitch.trailerNode)
+    local ok, err = pcall(vehicle.queueLuaCommand, vehicle, cmd)
+    if not ok then
+      log("W", "cnr_spectate", "could not couple parked trailer " .. car.id .. ": " .. tostring(err))
+      return true
+    end
+    hitch.nextAttach = hitchWait + HITCH_RETRY_SECONDS
   end
   return false
 end
