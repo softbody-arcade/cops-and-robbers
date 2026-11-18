@@ -41,11 +41,11 @@
 
 - [ ] Update scene tests to assert the inclusive range, actual seeded midpoint, full-strength shadow pulses nearby, overhead flash beyond range, and continued thunder on visual failure. Verify expiry, hide, seed change and clear remove rods as well as the light, including after an inactive pulse frame.
 - [ ] Replace the line drawing path with native scene ownership per visual. Keep the public `new`, `tick`, `hide`, `clear` and `hasVisualTail` behavior. Reuse the round's captured landing and pulse times to drive the scene and light. Preserve the existing roof checks and sound path.
-- [ ] Overlap a nearby and a distant strike. Verify both keep their own visuals while the strongest active pulse positions the shared light. Check the handoff when it ends and that equal strengths favor the newer strike.
+- [ ] Overlap a nearby and a distant strike. Verify both keep their pulse schedules while the strongest active pulse positions the shared light. With two nearby bolts, both sets of rods should remain visible during overlapping pulses. Check the handoff when it ends and that equal strengths favor the newer strike.
 - [ ] Run `luajit -bl client/lua/ge/extensions/copsAndRobbers/lightning.lua >/dev/null` and `make test`, then commit and request independent review.
 
 ## Task 3 — verify the reviewed build
 
 - [ ] Have a fresh reviewer check the whole branch, then run `make package` and check that the client ZIP includes the rod, material and GE renderer.
 - [ ] Stage the reviewed SHA from `git archive` on the local test server using the repository workflow, preserve its installed configuration, restart the server and report the SHA.
-- [ ] In a West Coast USA Night + Thunderstorm round, check shadow direction beside a car or tree, cloud fade while moving, and near and far pulse brightness. Check that the first strike after joining is visible on a cold renderer. Check cover, the Lightning flashes switch, round end and delayed thunder. Compare the next strike with a second player who joins after GO. Wait for the multiplayer playtest result or explicit deferral before merging.
+- [ ] In a West Coast USA Night + Thunderstorm round, check shadow direction beside a car or tree, cloud fade while moving, and near and far pulse brightness. Check that the first bolt within 4 km after joining is visible on a cold renderer. Check cover, the Lightning flashes switch, round end and delayed thunder. Compare the next strike with a second player who joins after GO. Wait for the multiplayer playtest result or explicit deferral before merging.
