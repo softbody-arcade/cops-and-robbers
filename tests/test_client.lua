@@ -33,6 +33,28 @@ test("a cop round places the car, reports it and shows the prep line", function(
   assertEq(h.prep.waiting, "Waiting for the host to press GO")
 end)
 
+test("a rejoining player reports the round car once BeamMP assigns its late server ID", function()
+  local env = bootClient()
+  local setup = copy(SETUP)
+  setup.phase, setup.resumePos = "running", { x = 900, y = 9, z = 15 }
+  local ready = false
+  MPVehicleGE.getVehicleByGameID = function(id)
+    if ready then return { serverVehicleString = "1-" .. id } end
+  end
+  env.fire("cnr_roundSetup", setup)
+  env.tick(8)
+  assertEq(env.lastSent("cnr_myVehicle"), nil)
+  local roundCar = env.veh
+  env.veh = env.addObject(301, vec3(0, 0, 0))
+  ready = true
+  env.tick(0.25)
+  local report = env.lastSent("cnr_myVehicle")
+  assertEq(report and report.vid, roundCar:getID())
+  assertEq(env.teleported, 1)
+  env.tick(1)
+  assertEq(env.teleported, 1)
+end)
+
 test("helicopter events drive the status item", function()
   local env = bootClient()
   startCop(env)

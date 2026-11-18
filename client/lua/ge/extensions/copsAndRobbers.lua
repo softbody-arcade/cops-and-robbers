@@ -27,7 +27,6 @@ local spectator = require("copsAndRobbers/spectator")
 local CLIENT_VERSION = "2.14.0"
 local LIGHTS_OFF = "electrics.set_lightbar_signal(0)"
 local SETUP_DELAY = 0.5
-local PLACEMENT_TIMEOUT = 5
 local FREEZE_REASSERT = 0.5
 local POSE_JUMP = 30
 local SIGHT_CHECK_INTERVAL = 0.25
@@ -124,15 +123,14 @@ local function placeVehicle(model, config, pos, rot, color, initialGrid, persona
   end
   if initialGrid then
     personalCarId = veh and veh:getID()
-    if not personalCarId then
-      pendingPlacement = nil
-      hudfeed.event("Could not spawn your round car", clock, "warn")
-      return
-    end
     pos, rot = nil, nil
   end
-  pendingPlacement = { at = clock + SETUP_DELAY, deadline = clock + PLACEMENT_TIMEOUT, pos = pos, rot = rot,
-    gameId = initialGrid and personalCarId or nil, rebuild = rebuildId }
+  if not veh then
+    pendingPlacement = nil
+    hudfeed.event("Could not spawn your round car", clock, "warn")
+    return
+  end
+  pendingPlacement = { at = clock + SETUP_DELAY, pos = pos, rot = rot, gameId = veh:getID(), rebuild = rebuildId }
 end
 
 local function startStatus()
@@ -768,10 +766,14 @@ end
 local function updatePendingPlacement()
   local p = pendingPlacement
   if not p or clock < p.at then return end
-  local veh
-  if p.gameId then veh = getObjectByID(p.gameId) else veh = ownVehicle() end
-  local vid = veh and game.serverVid(veh)
-  if veh and vid then
+  local veh = getObjectByID(p.gameId)
+  if not veh then
+    pendingPlacement = nil
+    hudfeed.event("Your round car disappeared before placement", clock, "warn")
+    return
+  end
+  local vid = game.serverVid(veh)
+  if vid then
     pendingPlacement = nil
     if p.pos then teleport(veh, p.pos, p.rot) end
     local restore = modes.restoreCommand(modes.forModel(modesState, roundModel))
@@ -780,8 +782,6 @@ local function updatePendingPlacement()
     if frozen then veh:queueLuaCommand("controller.setFreeze(1)") end
     sendServer("cnr_myVehicle", { vid = vid, rebuild = p.rebuild })
     lightsPlaced = true
-  elseif clock >= p.deadline then
-    pendingPlacement = nil
   end
 end
 
