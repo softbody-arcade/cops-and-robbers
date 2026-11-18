@@ -348,7 +348,8 @@ function Round:vehiclePicked(now, pid, model, config, players)
     end
     fx[#fx + 1] = { kind = "setupAI", pid = pid, ai = ai, aiOnly = self.aiOnly or nil }
   else
-    for _, p in ipairs(sortedPids(self.players)) do fx[#fx + 1] = self:setupFor(now, p) end
+    fx[#fx + 1] = self:setupFor(now, self.runnerId)
+    for _, cop in ipairs(self:copPids()) do fx[#fx + 1] = self:setupFor(now, cop) end
     for _, p in ipairs(sortedPids(players or {})) do
       if self.players[p] == nil then fx[#fx + 1] = self:spectateFor(now, p) end
     end

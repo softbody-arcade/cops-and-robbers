@@ -2067,17 +2067,17 @@ test("a cop still loading at the initial pick joins as a spectator and earns no 
   env.cleanup()
 end)
 
-test("an unreachable runner cancels prep without sending more car setups", function()
+test("an unreachable runner cancels prep before any other player replaces their car", function()
   local env = boot()
-  env.names = { "Reinder", "Bob", "Kim" }
-  env.loading = { [1] = true }
+  env.names = { "Kim", "Bob", "Reinder" }
+  env.loading = { [3] = true }
   env.sent = {}
   env.startRound()
   assertEq(decodeJson(env.lastSent("cnr_roundEnd").data).reason, "cancelled")
   assertEq(countSent(env, "cnr_roundSetup"), 0)
-  env.loading[1] = nil
-  env.call("onPlayerJoin", 1)
-  assertEq(decodeJson(sentTo(env, "cnr_lobby", 1)).active, false)
+  env.loading[3] = nil
+  env.call("onPlayerJoin", 3)
+  assertEq(decodeJson(sentTo(env, "cnr_lobby", 3)).active, false)
   env.cleanup()
 end)
 
