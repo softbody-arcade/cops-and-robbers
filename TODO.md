@@ -47,7 +47,7 @@ Things only a player in the game can confirm, each with what to look for. Add th
 - [ ] ! Trees sometimes hide the runner from the helicopter's line of sight; the user thinks that's fair with thermals for now (2026-11-17). Revisit if it feels unfair
 - [ ] ! The helicopter's position ignores terrain and buildings (100 m up and 60 m to the side since 2.10.0): if the light or its line of sight is blocked too often downtown or in mountains, fly higher (80-100 m) or keep a floor above the ground under the target point (2.9.1 final review)
 - [ ] ! Night falling while the helicopter is up pops the light in at full brightness (the spec keeps it; decide whether a fade is wanted)
-- [ ] ! How to play forgets its size and position when reopened (`apps.lua` resets its placement). Decide whether to remember it
+- [ ] ! How to play, Panel and Leaderboard forget their size and position when closed and reopened. The shared close action removes the layout entry and reopening uses the app defaults (`apps.lua`, `placement.lua`). Decide whether to remember each app’s placement per HUD layout.
 - [ ] ! Panel tabs forget their state when you switch tabs, because the game only renders the open tab: the Settings "more" fold, the Car tab's choice and the Map tab's stations. Decide which to keep in Panel `app.vue`
 - [ ] ! `useFit` (`fit.js`) only shrinks text and never grows it in a large app. Decide whether it should
 - [ ] ! `drop` during a restore blend freezes the sky half-way for a player whose environment was locked. It's reachable only from `onClientEndMission`, where the level unloads anyway (`sky.lua`)
