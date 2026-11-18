@@ -22,6 +22,48 @@
   color: var(--cnr-text);
   font-family: var(--fnt-defs);
 }
+.cnr-fit-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  --bng-icon-color: currentColor;
+}
+.cnr-root.cnr-hud-text {
+  font-family: var(--cnr-display);
+  text-shadow: var(--cnr-shadow-strong);
+}
+.cnr-fit-content {
+  flex: none;
+  box-sizing: border-box;
+  max-width: calc(100% / var(--cnr-fit-growth, 1));
+}
+.cnr-root .cnr-hud-title {
+  font-size: 2.5rem;
+  font-style: italic;
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+}
+.cnr-root .cnr-mono {
+  font-family: var(--fnt-mono);
+  font-variant-numeric: tabular-nums;
+}
+.cnr-root .cnr-tone-runner {
+  color: var(--cnr-runner-text);
+}
+.cnr-root .cnr-tone-cop {
+  color: var(--cnr-cop-text);
+}
+.cnr-root .cnr-tone-warn {
+  color: var(--cnr-warn);
+}
+.cnr-root .cnr-tone-good {
+  color: var(--cnr-good);
+}
 .cnr-root .cnr-btn {
   font-family: var(--cnr-display);
   font-weight: 700;
