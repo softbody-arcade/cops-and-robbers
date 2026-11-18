@@ -7,21 +7,16 @@ Priorities run from `!!!!` (highest) through `!!!` (high), `!!` (normal), and `!
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
-- [ ] ! Flight clearance and searchlight at dusk (`fix/heli-flight-clearance`).
-  - The helicopter's position ignores terrain and buildings (100 m up and 60 m to the side since 2.10.0): if the light or its line of sight is blocked too often downtown or in mountains, fly higher (80-100 m) or keep a floor above the ground under the target point (2.9.1 final review)
-  - Night falling while the helicopter is up pops the light in at full brightness (the spec keeps it; decide whether a fade is wanted)
-- [ ] ! Helicopter search performance and flight regressions (`fix/heli-search-runtime`).
-  - Helicopter search details from the 2.9.4 reviews, all rare or cosmetic: small per-frame allocations (`f.spotVel`, `lastKnown`, the `opts` table, two `vec3` and a camera call in the sound, and since 2.10.0 a `vec3` in `roadAim`)
-  - Helicopter test gaps from the 2.10.0 task reviews, all can-wait: the drop test passes via the phase-change branch; the dropped gap-3 refuel case and its dead loop (`test_heli_client.lua` ~886); blind-scaled distance bounds (~165, ~756, ~1451, ~897); no test for the behind entry's turn and rotation; `state.tunnelLogged` now also covers road failures; `heliSearch.tick` writes the light's `lightPhase`
-- [ ] ! Helicopter search, tunnel and sound regressions (`fix/heli-search-coverage`).
-  - Helicopter search test gaps from the 2.9.4 reviews: tunnels with n2 == n1 or nil, the car on a node, a node with no links, a one-way link, a road at exactly 15 m, the budget summed across branches, and `roofedIds` matching by x,y only; the extra-1 refuel test only checks `leaving ~= nil`; reusing a leftover emitter mid-round; `core_camera` isn't stubbed in the client env, so the sound's muffle in `updateHeli` never runs in a client test
-- [ ] ! Share helicopter grounding-weather rules between flight, weather changes and the forecast (`fix/heli-grounding-rules`).
+- [ ] ! Helicopter fixes on `playtest/heli-fixes` at `07b17e3`. Independently reviewed and staged locally with 1,632 tests passing. Awaiting the solo visual check below before merging.
+  - The helicopter anticipates terrain and roofs. Its body, sight, light and sound share the corrected position. The searchlight fades in over one second at dusk.
+  - Search and rotor updates reuse temporary vectors and camera samples. Regressions cover refuel and target loss, tunnels and road search, rotor muffling and emitter reuse. Flight and forecasts share the same grounding-weather rules.
 
 ## In-game checks
 Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to decide what needs a player. Record deferred checks here with the action, expected observation and open question. Remove a check once verified and record failures under Issues.
 
 - [ ] !!! Multiplayer retest on live 2.14.5 (`82ae368`). Start a night thunderstorm with a runner and a cop. From nearby viewpoints, compare a bolt against the same landmark and check that both screens flash together. Have the cop disconnect and rejoin during the chase. They should see SPECTATING, and the runner should see no new car queued for them. Compare another bolt’s landmark and timing.
 - [ ] !! Deferred solo check for 2.14.3. In Practice as cop, hold the throttle during prep and the runner’s head start. The car should stay in its slot until release, then drive away without a second teleport. This checks the in-game freeze and release.
+- [ ] ! Helicopter visuals on local `07b17e3`. In solo Practice on West Coast USA, use Clear weather, Sunset, Fast day length, arrival at release and refuel off. Drive downtown and toward a hillside. Watch for the helicopter to clear roofs and slopes smoothly and settle back to its usual height. Keep it airborne through dusk and check that the searchlight, glare and enabled beam brighten together over about one second.
 
 
 ## Ideas
