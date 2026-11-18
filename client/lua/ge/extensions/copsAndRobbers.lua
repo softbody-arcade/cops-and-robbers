@@ -1267,6 +1267,7 @@ M.onWorldReadyState = function(st)
   if st == 2 then apps.start(clock) end
 end
 M.onUpdate = onUpdate
+M.onVehicleSpawned = spectator.vehicleSpawned
 M.onBeforeVehicleReplaced = spectator.forgetVehicle
 M.onVehicleDestroyed = spectator.forgetVehicle
 M.onVehicleResetted = onVehicleResetted

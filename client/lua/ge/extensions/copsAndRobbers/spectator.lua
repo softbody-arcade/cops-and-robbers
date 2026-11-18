@@ -116,6 +116,7 @@ function M.restore()
     local ok, veh = pcall(core_vehicles.spawnNewVehicle, car.model, { config = car.config, pos = car.pos, rot = car.rot, autoEnterVehicle = i == 1 })
     if ok and veh then
       car.id = veh:getID()
+      car.couplerCache = core_vehicles.vehsCouplerCache and core_vehicles.vehsCouplerCache[car.id]
       if car.hitch then restoring, hitchWait = list, 0 end
     else
       allBack = false
@@ -144,13 +145,16 @@ local function updateHitch(car, expired)
   local hitch, tow = car.hitch, car.hitch.tow
   local vehicle = tow.id and getObjectByID(tow.id)
   if not (vehicle and car.id and getObjectByID(car.id)) then return true end
+  local caches = core_vehicles.vehsCouplerCache
+  if caches[tow.id] ~= tow.couplerCache or caches[car.id] ~= car.couplerCache then return true end
   local status = hitchStatus(tow.id, hitch.towNode, car.id, hitch.trailerNode)
   if status == "attached" then return true end
   if expired then
     log("W", "cnr_spectate", "timed out restoring trailer hitch between " .. tow.id .. " and " .. car.id)
     return true
   end
-  if status == "occupied" or tow.hitch or not (MPVehicleGE.isOwn(tow.id) and MPVehicleGE.isOwn(car.id)) then return false end
+  if not (tow.couplerCache and car.couplerCache) or status == "occupied" or tow.hitch then return false end
+  if not (MPVehicleGE.isOwn(tow.id) and MPVehicleGE.isOwn(car.id)) then return false end
   if not hitch.placed then
     local ok, err = pcall(spawn.placeTrailer, tow.id, hitch.ball, car.id, hitch.socket)
     if not ok then
@@ -190,14 +194,21 @@ function M.updateHitches(dt)
   if not pending then restoring = nil end
 end
 
-function M.forgetVehicle(id)
+local function restoringCar(id)
   if not restoring then return end
   for _, car in ipairs(restoring) do
-    if car.id == id then
-      car.id = nil
-      return
-    end
+    if car.id == id then return car end
   end
+end
+
+function M.vehicleSpawned(id)
+  local car = restoringCar(id)
+  if car and not car.couplerCache then car.couplerCache = core_vehicles.vehsCouplerCache[id] end
+end
+
+function M.forgetVehicle(id)
+  local car = restoringCar(id)
+  if car then car.id = nil end
 end
 
 function M.drop()

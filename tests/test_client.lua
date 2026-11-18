@@ -3985,7 +3985,7 @@ test("a sitting-out player's car is parked on spectate and comes back where it s
   end)
 end)
 
-local function parkedTrailer()
+local function parkedTrailer(delayedSpawn)
   local env = bootClient()
   env.addObject(90, vec3(0, -4, 0)).model = "cargotrailer"
   env.addObject(150, vec3(8, -4, 0)).model = "cargotrailer"
@@ -4000,6 +4000,13 @@ local function parkedTrailer()
   function env.veh:delete()
     core_vehicles.attachedCouplers, core_vehicles.vehsCouplerOffset = {}, {}
     remove(self)
+  end
+  core_vehicles.vehsCouplerCache = {}
+  local spawnCar = core_vehicles.spawnNewVehicle
+  core_vehicles.spawnNewVehicle = function(model, options)
+    local car = spawnCar(model, options)
+    if not delayedSpawn then core_vehicles.vehsCouplerCache[car.id] = {} end
+    return car
   end
   local placements = {}
   spawn.placeTrailer = function(tow, towOffset, trailer, trailerOffset, tag)
@@ -4132,6 +4139,37 @@ test("destroying a trailer cancels retries even if its ID returns before the nex
   env.addObject(trailer.id, vec3(10, 20, 0))
   env.tick(12, 1)
   assertEq(#placements, 1); assertEq(attempts, 1); assertEq(#warnings, 0)
+end)
+
+test("a parts edit on either restored vehicle cancels the saved hitch", function()
+  for _, index in ipairs({1, 2}) do
+    for _, placed in ipairs({false, true}) do
+      local env, placements, warnings = parkedTrailer()
+      MPVehicleGE.isOwn = function() return true end
+      if placed then env.tick(0.3) end
+      local id = env.spawned[index].veh.id
+      core_vehicles.vehsCouplerCache[id] = {}
+      env.M.onVehicleSpawned(id)
+      env.tick(12, 1)
+      assertEq(#placements, placed and 1 or 0)
+      for _, cmd in ipairs(env.spawned[1].veh.commands) do assert(not cmd:find("attachExternalCoupler", 1, true)) end
+      assertEq(#warnings, 0)
+    end
+  end
+end)
+
+test("deferred initial spawn callbacks still allow the saved hitch", function()
+  local env, placements = parkedTrailer(true)
+  MPVehicleGE.isOwn = function() return true end
+  env.tick(1)
+  assertEq(#placements, 0)
+  for _, spawnResult in ipairs(env.spawned) do
+    local id = spawnResult.veh.id
+    core_vehicles.vehsCouplerCache[id] = {}
+    env.M.onVehicleSpawned(id)
+  end
+  env.tick(1)
+  assertEq(#placements, 1)
 end)
 
 test("replacing an unrelated vehicle keeps the pending hitch", function()
