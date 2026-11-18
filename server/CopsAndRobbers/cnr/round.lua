@@ -740,9 +740,9 @@ function Round:reroll(now, pid)
     return { { kind = "reply", pid = pid, msg = "You can only reroll during prep", tone = "warn" } }
   end
   self.state = "picking"
-  self.issuerId = pid
+  if not self.test then self.issuerId = pid end
   self.pickStartedAt = now
-  return { { kind = "pickVehicle", pid = pid } }
+  return { { kind = "pickVehicle", pid = self.issuerId } }
 end
 
 function Round:stop(now, issuerId)

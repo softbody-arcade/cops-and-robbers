@@ -369,13 +369,11 @@ test("spawn in real roles:name:pid-vid format is parsed", function()
   env.cleanup()
 end)
 
-test("client reports its vehicle, extras are removed", function()
+test("registering a round car leaves owner-classified traffic and parked cars intact", function()
   local env = boot({ vehicles = { [1] = { [0] = "x", [1] = "y", [2] = "z" }, [2] = { [0] = "x" } } })
   env.startRound()
   env.call("cnr_myVehicle", 1, '{"vid":1}')
-  assertEq(#env.removed, 2)
-  assertEq(env.removed[1] == "1-0" or env.removed[2] == "1-0", true)
-  assertEq(env.removed[1] == "1-2" or env.removed[2] == "1-2", true)
+  assertEq(#env.removed, 0)
   env.cleanup()
 end)
 
@@ -472,7 +470,11 @@ test("test round events reach only the issuer", function()
   for _ = 1, 50 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
   env.panel(1, "stop")
   for _, m in ipairs(env.sent) do
-    if not (m.ev == "cnr_lobby" and m.pid == -1) then assertEq(m.pid, 1, m.ev) end
+    if m.ev == "cnr_parkBystanderCars" then
+      assertEq(m.pid, 2)
+    elseif m.ev ~= "cnr_lobby" or m.pid ~= -1 then
+      assertEq(m.pid, 1, m.ev)
+    end
   end
   env.cleanup()
 end)
@@ -2355,11 +2357,16 @@ test("no go-ahead without room", function()
   end
 end)
 
-test("the go-ahead comes after the clean-up", function()
+test("a driver who owns only traffic can spawn one validated round car alongside it", function()
   local env = trafficBoot({ vehicles = { [1] = { [0] = "x", [1] = "y", [2] = "z" }, [2] = { [0] = "x" } } })
   env.startRound()
-  env.call("cnr_myVehicle", 1, '{"vid":0}')
-  assertEq(#env.removed, 2)
+  env.call("cnr_color", 1, '{"hex":"#00ff00"}')
+  assertEq(env.call("onVehicleSpawn", 1, 3, spawnOf(1, 3, "etk800")), 1)
+  assertEq(env.call("onVehicleSpawn", 1, 3, spawnOf(1, 3, "pickup", "vehicles/pickup/base.pc")), 0)
+  env.vehicles[1][3] = "round car"
+  assertEq(env.call("onVehicleSpawn", 1, 4, spawnOf(1, 4, "pickup", "vehicles/pickup/base.pc")), 1)
+  env.call("cnr_myVehicle", 1, '{"vid":3}')
+  assertEq(#env.removed, 0)
   assertEq(env.lastSent("cnr_trafficStart").pid, 1)
   env.cleanup()
 end)
@@ -2380,6 +2387,31 @@ test("traffic spawns pass up to the count, the next is refused", function()
     env.vehicles[2][vid] = "t"
   end
   assertEq(env.call("onVehicleSpawn", 2, 6, spawnOf(2, 6, "etk800")), 1)
+  env.cleanup()
+end)
+
+test("with round traffic off, retained traffic can be edited and never takes over round-car tracking", function()
+  local env = trafficBoot({ config = '{"trafficPerPlayer":0}' })
+  env.startRound()
+  placed(env, 2)
+  env.vehicles[2][1] = "parked traffic"
+  local edit = '2-1:{"jbm":"etk800","vcf":{}}'
+  assertEq(env.call("onVehicleEdited", 2, 1, edit), 0)
+  assertEq(env.call("onVehicleEdited", 2, 0, edit), 1)
+  env.call("onVehicleDeleted", 2, 0)
+  env.vehicles[2][0] = nil
+  local queried = {}
+  local raw = MP.GetPositionRaw
+  MP.GetPositionRaw = function(pid, vid)
+    queried[pid .. "-" .. tostring(vid)] = true
+    return raw(pid, vid)
+  end
+  env.clock = env.clock + 0.25
+  env.call("cnr_tick")
+  assertEq(queried["2-1"], nil)
+  assertEq(env.call("onVehicleSpawn", 2, 9, spawnOf(2, 9, "pickup", "vehicles/pickup/base.pc")), 0)
+  env.vehicles[2][9] = "round car"
+  assertEq(env.call("onVehicleSpawn", 2, 10, spawnOf(2, 10, "pickup", "vehicles/pickup/base.pc")), 1)
   env.cleanup()
 end)
 
@@ -2879,6 +2911,31 @@ local function threePlayers(opts)
   return env
 end
 
+test("practice parks only bystanders, including late joiners, and releases them when the issuer leaves", function()
+  local env = boot()
+  env.panel(1, "test cop")
+  assertEq(env.lastSent("cnr_parkBystanderCars"), nil)
+  env.call("cnr_vehiclePicked", 1, PICK)
+  assertEq(sentTo(env, "cnr_parkBystanderCars", 1), nil)
+  assertEq(decodeJson(sentTo(env, "cnr_parkBystanderCars", 2)).on, true)
+  env.names = { "Reinder", "Bob", "Kim" }
+  env.call("onPlayerJoin", 3)
+  assertEq(decodeJson(sentTo(env, "cnr_parkBystanderCars", 3)).on, true)
+  assertEq(sentTo(env, "cnr_spectate", 3), nil)
+  assertEq(env.call("onVehicleSpawn", 3, 0, spawnOf(3, 0, "etk800")), 0)
+  env.sent = {}
+  env.panel(2, "reroll")
+  assertEq(env.lastSent("cnr_pickVehicle").pid, 1)
+  env.call("cnr_vehiclePicked", 1, PICK)
+  assertEq(env.lastSent("cnr_parkBystanderCars"), nil)
+  env.call("onPlayerDisconnect", 2)
+  env.call("onPlayerDisconnect", 1)
+  assertEq(decodeJson(sentTo(env, "cnr_parkBystanderCars", 3)).on, false)
+  assertEq(sentTo(env, "cnr_parkBystanderCars", 1), nil)
+  assertEq(sentTo(env, "cnr_parkBystanderCars", 2), nil)
+  env.cleanup()
+end)
+
 test("Sit out is answered, stored per player and cleared on disconnect", function()
   local env = threePlayers()
   env.sent = {}
@@ -3220,7 +3277,11 @@ test("practice while sitting out runs the AI alone, the issuer spectates and not
     for _ = 1, 90 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
     assertEq(env.caught(), true, cmd)
     for _, m in ipairs(env.sent) do
-      if not (m.ev == "cnr_lobby" and m.pid == -1) then assertEq(m.pid, 1, m.ev) end
+      if m.ev == "cnr_parkBystanderCars" then
+        assertEq(m.pid, 2)
+      elseif m.ev ~= "cnr_lobby" or m.pid ~= -1 then
+        assertEq(m.pid, 1, m.ev)
+      end
     end
     assertEq(io.open(env.dir .. "data/leaderboard.json"), nil)
     assertEq(env.call("onVehicleSpawn", 1, 4, string.format(AI_SPAWN, 4)), 0)

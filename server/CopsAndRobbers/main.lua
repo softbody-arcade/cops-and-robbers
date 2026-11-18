@@ -29,6 +29,8 @@ local board
 local mapName
 local stations = {}
 local activeVid = {}
+local registeredRoundCar = {}
+local allowRoundSpawn = {}
 local trafficOpen = {}
 local trafficVids = {}
 local lastRoundCars
@@ -51,6 +53,7 @@ local refusalLoggedAt = {}
 local colorStore = {}
 local sitOut = {}
 local spectators = {}
+local parkedBystanders = {}
 local aiSpawnsLeft = 0
 local gridClients = {}
 local START_ROAD_SEARCH = 2000
@@ -297,7 +300,7 @@ end
 local function vidFor(pid)
   local vid = activeVid[pid]
   if vid then return vid end
-  if trafficOpen[pid] then return nil end
+  if registeredRoundCar[pid] or trafficOpen[pid] then return nil end
   vid = firstVid(pid)
   activeVid[pid] = vid
   return vid
@@ -452,6 +455,12 @@ local function pushBoard()
   for pid in pairs(boardSubs) do sendBoard(pid) end
 end
 
+local function parkBystander(pid)
+  if pid == current.issuerId or parkedBystanders[pid] then return end
+  parkedBystanders[pid] = true
+  send(pid, "cnr_parkBystanderCars", { on = true })
+end
+
 local function applyEffects(effects)
   for _, e in ipairs(effects) do
     if e.kind == "reply" then
@@ -475,6 +484,7 @@ local function applyEffects(effects)
       local anchor = e.startPose ~= nil and current.startGrid[1]
       local runnerCar = not anchor and carFor(current.runnerId)
       placing(e.pid)
+      allowRoundSpawn[e.pid] = true
       log(string.format("setup sent to %s: %s, %s%s", MP.GetPlayerName(e.pid) or tostring(e.pid), e.role, tostring(e.phase), e.resumePos and ", resuming" or ""))
       send(e.pid, "cnr_roundSetup", {
         startPose = e.startPose,
@@ -501,6 +511,7 @@ local function applyEffects(effects)
         sky = sky.payload(current.sky, cfg, current.countdownStartedAt and math.max(0, now() - current.countdownStartedAt) or nil),
       })
     elseif e.kind == "setupAI" then
+      for pid in pairs(MP.GetPlayers() or {}) do parkBystander(pid) end
       local list = {}
       for _, a in ipairs(e.ai) do
         list[#list + 1] = { id = a.id, role = a.role, index = current.startGrid and a.index or #list + 1, startPose = a.startPose, name = a.name, color = colorTable((colors.parseHex(a.colorHex))) }
@@ -535,6 +546,8 @@ local function applyEffects(effects)
     elseif e.kind == "state" then
       send(e.pid, "cnr_state", { resetAllowed = e.resetAllowed, resetHint = e.resetHint, catchProgress = e.catchProgress })
     elseif e.kind == "roundEnd" then
+      for pid in pairs(parkedBystanders) do send(pid, "cnr_parkBystanderCars", { on = false }) end
+      parkedBystanders = {}
       local autoNext = cfg.autoNextRound and e.reason ~= "cancelled" and not e.to
       send(e.to or -1, "cnr_roundEnd", {
         runnerId = e.runnerId, runnerName = e.runnerName, survivedSeconds = e.survivedSeconds,
@@ -542,6 +555,8 @@ local function applyEffects(effects)
         autoNextSeconds = autoNext and cfg.autoNextDelaySeconds or nil,
       })
       activeVid = {}
+      registeredRoundCar = {}
+      allowRoundSpawn = {}
       trafficOpen = {}
       trafficVids = {}
       spectators = {}
@@ -1086,7 +1101,11 @@ local function vehicleAllowed(pid, vid, data, isSpawn)
   if not decoded or decoded.jbm ~= current.vehicle.model then return false, decoded end
   local pcFile = type(decoded.vcf) == "table" and decoded.vcf.partConfigFilename
   if pcFile and not current.evolving and normalizeConfig(pcFile) ~= normalizeConfig(current.vehicle.config) then return false, decoded end
-  if isSpawn and not trafficOpen[pid] and firstVid(pid) and not (current.test and pid == current.issuerId) then return false, decoded end
+  if isSpawn and not trafficOpen[pid] and not current.test then
+    local needsReplacement = registeredRoundCar[pid] and not own
+    if not needsReplacement and not allowRoundSpawn[pid] and firstVid(pid) then return false, decoded end
+    allowRoundSpawn[pid] = nil
+  end
   return true, decoded
 end
 
@@ -1144,6 +1163,16 @@ function cnrOnVehicleSpawn(pid, vid, data)
 end
 
 function cnrOnVehicleEdited(pid, vid, data)
+  if registeredRoundCar[pid] and activeVid[pid] ~= vid then
+    local isRoundAI = false
+    for _, ai in pairs(aiVid) do
+      if ai == vid then
+        isRoundAI = true
+        break
+      end
+    end
+    if not isRoundAI then return 0 end
+  end
   local allowed, decoded, why = vehicleAllowed(pid, vid, data, false)
   logVehicle(pid, "edited", vid, allowed, decoded)
   if not allowed then
@@ -1161,7 +1190,7 @@ function cnrOnVehicleDeleted(pid, vid)
 end
 
 function cnrOnVehicleReset(pid, vid)
-  if (activeVid[pid] or trafficOpen[pid]) and activeVid[pid] ~= vid then return end
+  if (activeVid[pid] or registeredRoundCar[pid] or trafficOpen[pid]) and activeVid[pid] ~= vid then return end
   applyEffects(current:vehicleReset(now(), pid))
 end
 
@@ -1208,6 +1237,7 @@ function cnrOnPlayerJoin(pid)
   pushLobby(pid)
   requestStations(pid)
   applyEffects(current:playerJoined(now(), pid, MP.GetPlayerName(pid)))
+  if current.test and current.vehicle then parkBystander(pid) end
   if current.evolving and current.state == "prep" and current.queued and current.players[pid] then
     send(pid, "cnr_queued", current.queued)
   end
@@ -1220,10 +1250,13 @@ function cnrOnPlayerDisconnect(pid)
   refusalLoggedAt[pid] = nil
   sitOut[pid] = nil
   spectators[pid] = nil
+  parkedBystanders[pid] = nil
   panelSubs[pid] = nil
   boardSubs[pid] = nil
   applyEffects(current:playerLeft(now(), pid))
   activeVid[pid] = nil
+  registeredRoundCar[pid] = nil
+  allowRoundSpawn[pid] = nil
   trafficOpen[pid] = nil
   trafficVids[pid] = nil
   pushRoundCars()
@@ -1304,18 +1337,12 @@ function cnrOnMyVehicle(pid, data)
   local vid = ok and type(decoded) == "table" and tonumber(decoded.vid)
   if not vid or not current:isActive() or current.players[pid] == nil then return end
   activeVid[pid] = vid
+  registeredRoundCar[pid] = true
+  allowRoundSpawn[pid] = nil
   placed(pid)
   log(string.format("%s placed the round car (vid %s)", MP.GetPlayerName(pid) or tostring(pid), tostring(vid)))
   applyEffects(current:vehiclePlaced(now(), pid))
   applyEffects(current:vehicleReady(now(), pid, tonumber(decoded.rebuild)))
-  if not current.test and not trafficOpen[pid] then
-    local vehicles = MP.GetPlayerVehicles(pid)
-    if type(vehicles) == "table" then
-      for other in pairs(vehicles) do
-        if other ~= vid then MP.RemoveVehicle(pid, other) end
-      end
-    end
-  end
   openTraffic(pid)
   pushRoundCars()
 end
