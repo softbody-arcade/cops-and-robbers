@@ -4122,33 +4122,51 @@ test("a sitting-out player's car is parked on spectate and comes back where it s
   end)
 end)
 
-local function parkedTrailer(delayedSpawn)
+local function parkedTrailer(delayedSpawn, tag)
+  tag = tag or "tow_hitch"
   local env = bootClient()
-  env.addObject(90, vec3(0, -4, 0)).model = "cargotrailer"
+  env.veh.pos = vec3(14.6, 11, 5.2)
+  function env.veh:getDirectionVector() return vec3(0.8, 0, 0.6) end
+  function env.veh:getDirectionVectorUp() return vec3(-0.6, 0, 0.8) end
+  local parked = env.addObject(90, vec3(13, 8.6, 2.2))
+  parked.model = "cargotrailer"
+  function parked:getDirectionVector() return vec3(0, 0.8, 0.6) end
+  function parked:getDirectionVectorUp() return vec3(0, -0.6, 0.8) end
   env.addObject(150, vec3(8, -4, 0)).model = "cargotrailer"
   env.addObject(180, vec3(0, 4, 0))
   env.ownCars = { [90] = true, [150] = true }
   core_vehicles.attachedCouplers = { {90, 100, 11, 22}, {100, 180, 22, 11}, {100, 100, 22, 30} }
-  core_vehicles.vehsCouplerTags = { [100] = { [22] = "tow_hitch" } }
+  core_vehicles.vehsCouplerTags = { [100] = { [22] = tag } }
   local ball, socket = vec3(0, 2, 0), vec3(0, -3, 0)
   core_vehicles.vehsCouplerOffset = { [90] = { [11] = socket }, [100] = { [22] = ball } }
-  core_vehicles.couplerTagsOptions = { tow_hitch = "autoCouple" }
+  core_vehicles.couplerTagsOptions = { tow_hitch = "autoCouple", fifthwheel_v2 = true }
   local remove = env.veh.delete
   function env.veh:delete()
     core_vehicles.attachedCouplers, core_vehicles.vehsCouplerOffset = {}, {}
     remove(self)
   end
   core_vehicles.vehsCouplerCache = {}
+  local placements = {}
   local spawnCar = core_vehicles.spawnNewVehicle
   core_vehicles.spawnNewVehicle = function(model, options)
     local car = spawnCar(model, options)
-    if not delayedSpawn then core_vehicles.vehsCouplerCache[car.id] = {} end
+    local cache = {}
+    if not delayedSpawn then core_vehicles.vehsCouplerCache[car.id] = cache end
+    if #env.spawned == 1 then
+      cache[22] = { cid = 22, couplerTag = tag }
+      function car:getNodePosition(node) assertEq(node, 22); return vec3(-1.6, 0, -1.2) end
+    elseif #env.spawned == 2 then
+      cache[11] = { cid = 11, tag = tag }
+      car.pos = car.pos + vec3(4, -5, 1)
+      function car:getNodePosition(node) assertEq(node, 11); return vec3(0, 2.4, 1.8) end
+    end
+    function car:setClusterPosRelRot(cluster, x, y, z, rx, ry, rz, rw)
+      assertEq(cluster, -1)
+      assertEq(rx, 0); assertEq(ry, 0); assertEq(rz, 0); assertEq(rw, 1)
+      self.pos = vec3(x, y, z)
+      placements[#placements + 1] = self.id
+    end
     return car
-  end
-  local placements = {}
-  spawn.placeTrailer = function(tow, towOffset, trailer, trailerOffset, tag)
-    assertEq(towOffset, ball); assertEq(trailerOffset, socket)
-    placements[#placements + 1] = {tow, trailer, tag}
   end
   spectate(env)
   env.fire("cnr_roundEnd", { reason = "cancelled" })
@@ -4168,8 +4186,56 @@ test("sitting out restores the saved hitch once both new vehicles are owned", fu
   assertEq(#placements, 0)
   MPVehicleGE.isOwn = function() return true end
   env.tick(1)
-  assertEq(#placements, 1); assertEq(placements[1][1], tow); assertEq(placements[1][2], trailer)
+  assertEq(#placements, 1); assertEq(placements[1], trailer)
   assertEq(env.objects[180] ~= nil, true)
+end)
+
+test("only the hitched vehicles bypass automatic ground and clearance placement", function()
+  local env = parkedTrailer()
+  assertEq(env.spawned[1].opt.safeSpawn, false)
+  assertEq(env.spawned[2].opt.safeSpawn, false)
+  assertEq(env.spawned[3].opt.safeSpawn ~= false, true)
+end)
+
+test("restoring an angled rig preserves each saved pose and closes the live hitch gap", function()
+  for _, tag in ipairs({"tow_hitch", "fifthwheel_v2"}) do
+    local env, placements = parkedTrailer(false, tag)
+    local tow, trailer = env.spawned[1], env.spawned[2]
+    MPVehicleGE.isOwn = function() return true end
+    env.tick(1)
+    assertNear(tow.opt.rot.dir:distance(vec3(0.8, 0, 0.6)), 0, 1e-6)
+    assertNear(tow.opt.rot.up:distance(vec3(-0.6, 0, 0.8)), 0, 1e-6)
+    assertNear(trailer.opt.rot.dir:distance(vec3(0, 0.8, 0.6)), 0, 1e-6)
+    assertNear(trailer.opt.rot.up:distance(vec3(0, -0.6, 0.8)), 0, 1e-6)
+    assertNear(tow.veh.pos:distance(vec3(14.6, 11, 5.2)), 0, 1e-6)
+    assertNear(trailer.veh.pos:distance(vec3(13, 8.6, 2.2)), 0, 1e-6)
+    assertEq(#placements, 1); assertEq(placements[1], trailer.veh.id)
+    assertNear(env.spawned[3].veh.pos:distance(vec3(8, -4, 0)), 0, 1e-6)
+  end
+end)
+
+test("a restored trailer already within hitch lock distance stays in its footprint", function()
+  local env, placements = parkedTrailer()
+  local trailer = env.spawned[2].veh
+  trailer.pos = vec3(13.001, 8.6, 2.2)
+  MPVehicleGE.isOwn = function() return true end
+  env.tick(1)
+  assertEq(#placements, 0)
+  assertEq(trailer.pos.x, 13.001)
+  assert(table.concat(env.spawned[1].veh.commands):find("attachExternalCoupler", 1, true))
+end)
+
+test("a restored config without the saved coupler cancels the request before placement", function()
+  for _, i in ipairs({1, 2}) do
+    local env, placements, warnings = parkedTrailer()
+    local car = env.spawned[i].veh
+    core_vehicles.vehsCouplerCache[car.id][i == 1 and 22 or 11] = nil
+    MPVehicleGE.isOwn = function() return true end
+    env.tick(12, 1)
+    assertEq(#placements, 0); assertEq(#warnings, 1)
+    assert(warnings[1]:find("coupler node", 1, true))
+    assert(not table.concat(env.spawned[1].veh.commands):find("attachExternalCoupler", 1, true))
+  end
 end)
 
 test("a trailer which latched during spawn is left in place", function()
@@ -4227,7 +4293,7 @@ test("a trailer placement error ends the request without interrupting the update
   local env, _, warnings = parkedTrailer()
   MPVehicleGE.isOwn = function() return true end
   local calls = 0
-  spawn.placeTrailer = function() calls = calls + 1; error("placement failed") end
+  env.spawned[2].veh.setClusterPosRelRot = function() calls = calls + 1; error("placement failed") end
   env.tick(12, 1)
   assertEq(calls, 1); assertEq(#warnings, 1)
   assert(warnings[1]:find("placement failed", 1, true))
@@ -4300,9 +4366,9 @@ test("deferred initial spawn callbacks still allow the saved hitch", function()
   MPVehicleGE.isOwn = function() return true end
   env.tick(1)
   assertEq(#placements, 0)
-  for _, spawnResult in ipairs(env.spawned) do
+  for i, spawnResult in ipairs(env.spawned) do
     local id = spawnResult.veh.id
-    core_vehicles.vehsCouplerCache[id] = {}
+    core_vehicles.vehsCouplerCache[id] = i == 1 and { [22] = { couplerTag = "tow_hitch" } } or { [11] = { tag = "tow_hitch" } }
     env.M.onVehicleSpawned(id)
   end
   env.tick(1)
@@ -4351,7 +4417,7 @@ test("trailer restoration targets only its saved partner and stops on timeout, r
     end
     MPVehicleGE.isOwn = function() return true end
     env.tick(1.5)
-    assertEq(#placements, 1); assertEq(placements[1][3], nil)
+    assertEq(#placements, 1)
     assert(attempts > 0)
     if stop == "timeout" then env.tick(10, 1)
     elseif stop == "remove" then trailer:delete()
