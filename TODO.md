@@ -10,16 +10,17 @@ One entry per piece of work that has started: what it is, its branch (or "design
 - [ ] !!! `fix/trailers-current` — integrating both trailer fixes with current round placement and rejoin behavior.
   - Sitting out with a truck and trailer parked at an angle straightens the trailer on return, which can move it into a building. Restore both vehicles in their parked positions, still hitched.
   - Choosing Play can leave a personal trailer or spare car on the map. In normal and practice rounds, remove active players’ spare vehicles after successful placement so only round vehicles and traffic remain. Active players keep their round cars afterward. Players sitting out get their parked vehicles back.
-- [ ] ! `fix/ui-app-placement` — implementing and testing.
+- [ ] ! `fix/ui-app-placement` — reviewed and integrated for the grouped playtest.
   - How to play, Panel and Leaderboard forget their size and position when closed and reopened. The shared close action removes the layout entry and reopening uses the app defaults (`apps.lua`, `placement.lua`). Decide whether to remember each app’s placement per HUD layout.
-- [ ] ! `fix/ui-panel-tabs` — implementing and testing.
+- [ ] ! `fix/ui-panel-tabs` — reviewed and integrated for the grouped playtest.
   - Panel tabs forget their state when you switch tabs, because the game only renders the open tab: the Settings "more" fold, the Car tab's choice and the Map tab's stations. Decide which to keep in Panel `app.vue`
-- [ ] ! `fix/ui-hud-sizing` — implementing and testing.
+- [ ] ! `fix/ui-hud-sizing` — reviewed and integrated for the grouped playtest.
   - `useFit` (`fit.js`) only shrinks text and never grows it in a large app. Decide whether it should
   - HUD styles repeated across components: `.title`, `.tone-*` and `.mono` (HudCenter, HudResult, HudChase) and the root container (Hud, Announcements and How to play `app.vue`). Move them into the shared kit; needs a visual check in game. (`.hud-btn` and `.swatch` are already shared: `.cnr-btn`, `.cnr-swatch` in `CnrRoot.vue`)
 
 - [ ] ! `fix/weather-housekeeping` — fixing locked sky restoration and the remaining weather review items.
   - `drop` during a restore blend freezes the sky half-way for a player whose environment was locked. It's reachable only from `onClientEndMission`, where the level unloads anyway (`sky.lua`)
+  - A random sky integration test sometimes generated a valid empty schedule and failed at `tests/test_main.lua:946`. Use repeatable setup and reroll inputs.
   - Weather polish left from the 2.11.0 reviews, all can-wait: `sky.forecast` allocates every frame; `stepCurve` builds 3 tables per step; `windAt` calls `wind.at` twice when the weather doesn't change; the 1 s scan grid is redundant once a weather fits; the round clock expression is repeated in `round.lua`
 
 ## In-game checks
