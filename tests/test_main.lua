@@ -307,9 +307,10 @@ test("a refused car is a warning notice", function()
   env.cleanup()
 end)
 
-test("edit in real pid-vid format with round car is allowed", function()
+test("edit in real pid-vid format with the registered round car is allowed", function()
   local env = boot()
   env.startRound()
+  env.call("cnr_myVehicle", 1, '{"vid":0}')
   assertEq(env.call("onVehicleEdited", 1, 0, '1-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc","parts":{"a":"b"}},"pro":"0"}'), 0)
   assertEq(env.call("onVehicleEdited", 1, 0, '1-0:{"jbm":"etk800","vcf":{"parts":{}}}'), 1)
   env.cleanup()
@@ -2390,6 +2391,25 @@ test("traffic spawns pass up to the count, the next is refused", function()
   env.cleanup()
 end)
 
+test("owners can edit their pre-existing traffic before round registration without losing it", function()
+  for _, mode in ipairs({ "normal", "practice", "watch" }) do
+    local env = trafficBoot({ vehicles = { [1] = { [0] = "traffic", [2] = "personal" } } })
+    if mode == "normal" then
+      env.startRound()
+    else
+      if mode == "watch" then env.call("cnr_sitOut", 1, '{"on":true}') end
+      env.panel(1, "test runner")
+      env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+    end
+    assertEq(env.call("onVehicleEdited", 1, 0, '1-0:{"jbm":"etk800","vcf":{}}'), 0, mode)
+    if mode ~= "watch" then
+      env.call("cnr_myVehicle", 1, '{"vid":2}')
+      assertEq(env.call("onVehicleEdited", 1, 2, '1-2:{"jbm":"etk800","vcf":{}}'), 1, mode)
+    end
+    env.cleanup()
+  end
+end)
+
 test("with round traffic off, retained traffic can be edited and never takes over round-car tracking", function()
   local env = trafficBoot({ config = '{"trafficPerPlayer":0}' })
   env.startRound()
@@ -2520,6 +2540,32 @@ test("with the round car gone, traffic resets are ignored and a round car can be
   env.vehicles[2][9] = "x"
   assertEq(env.call("onVehicleSpawn", 2, 11, spawnOf(2, 11, "pickup", "vehicles/pickup/base.pc")), 1)
   env.cleanup()
+end)
+
+test("above the configured traffic allowance one validated replacement is broadcast after deletion or a new car setup", function()
+  for _, reroll in ipairs({ false, true }) do
+    local env = trafficBoot({ config = '{"trafficPerPlayer":1}', maxCars = 10 })
+    env.startRound()
+    env.call("cnr_myVehicle", 2, '{"vid":0}')
+    env.vehicles[2] = { [0] = "round car", [1] = "traffic", [2] = "parked traffic" }
+    if reroll then
+      env.panel(1, "reroll")
+      assertEq(env.call("onVehicleSpawn", 2, 3, spawnOf(2, 3, "etk800")), 1)
+      env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+    else
+      env.call("onVehicleDeleted", 2, 0)
+      env.vehicles[2][0] = nil
+      assertEq(env.lastSent("cnr_roundCars").data:find('"2-0"', 1, true), nil)
+    end
+    assertEq(env.call("onVehicleSpawn", 2, 3, spawnOf(2, 3, "etk800")), 1)
+    assertEq(env.call("onVehicleSpawn", 2, 3, spawnOf(2, 3, "pickup", "vehicles/pickup/sport.pc")), 1)
+    assertEq(env.call("onVehicleSpawn", 2, 3, spawnOf(2, 3, "pickup", "vehicles/pickup/base.pc")), 0)
+    env.vehicles[2][3] = "replacement"
+    assertEq(env.lastSent("cnr_roundCars").data:find('"2-3"', 1, true) ~= nil, true)
+    assertEq(env.call("onVehicleSpawn", 2, 4, spawnOf(2, 4, "pickup", "vehicles/pickup/base.pc")), 1)
+    assertEq(env.call("onVehicleSpawn", 2, 4, spawnOf(2, 4, "etk800")), 1)
+    env.cleanup()
+  end
 end)
 
 test("a New car re-pick lets no extra car past the cap", function()
@@ -3449,6 +3495,7 @@ test("the runner and both cop slots use identical West Coast poses across normal
           elseif ev.ev == "cnr_spectate" or ev.ev == "cnr_setupAI" then
             client.fire(ev.ev, d)
             if ev.ev == "cnr_setupAI" then
+              client.tick(1)
               for i, a in ipairs(d.ai) do
                 local spawned = client.spawned[#client.spawned - #d.ai + i].opt
                 store(a.role == "runner" and 1 or a.index + 1, spawned.pos, spawned.rot)

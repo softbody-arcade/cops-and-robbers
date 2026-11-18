@@ -31,6 +31,7 @@ local stations = {}
 local activeVid = {}
 local registeredRoundCar = {}
 local allowRoundSpawn = {}
+local preRoundVehicles = {}
 local trafficOpen = {}
 local trafficVids = {}
 local lastRoundCars
@@ -461,6 +462,16 @@ local function parkBystander(pid)
   send(pid, "cnr_parkBystanderCars", { on = true })
 end
 
+local function rememberPreRoundVehicles(pid)
+  if registeredRoundCar[pid] or preRoundVehicles[pid] then return end
+  local existing = {}
+  local vehicles = MP.GetPlayerVehicles(pid)
+  if type(vehicles) == "table" then
+    for vid in pairs(vehicles) do existing[vid] = true end
+  end
+  preRoundVehicles[pid] = existing
+end
+
 local function applyEffects(effects)
   for _, e in ipairs(effects) do
     if e.kind == "reply" then
@@ -484,6 +495,7 @@ local function applyEffects(effects)
       local anchor = e.startPose ~= nil and current.startGrid[1]
       local runnerCar = not anchor and carFor(current.runnerId)
       placing(e.pid)
+      rememberPreRoundVehicles(e.pid)
       allowRoundSpawn[e.pid] = true
       log(string.format("setup sent to %s: %s, %s%s", MP.GetPlayerName(e.pid) or tostring(e.pid), e.role, tostring(e.phase), e.resumePos and ", resuming" or ""))
       send(e.pid, "cnr_roundSetup", {
@@ -516,6 +528,7 @@ local function applyEffects(effects)
       for _, a in ipairs(e.ai) do
         list[#list + 1] = { id = a.id, role = a.role, index = current.startGrid and a.index or #list + 1, startPose = a.startPose, name = a.name, color = colorTable((colors.parseHex(a.colorHex))) }
       end
+      if e.aiOnly then rememberPreRoundVehicles(e.pid) end
       aiSpawnsLeft = e.aiOnly and #list or 0
       send(e.pid, "cnr_setupAI", {
         model = current.vehicle.model, config = current.vehicle.config, ai = list,
@@ -557,6 +570,7 @@ local function applyEffects(effects)
       activeVid = {}
       registeredRoundCar = {}
       allowRoundSpawn = {}
+      preRoundVehicles = {}
       trafficOpen = {}
       trafficVids = {}
       spectators = {}
@@ -1079,6 +1093,12 @@ function cnrOnChatMessage(pid, name, msg)
   return 1
 end
 
+local function matchesRoundVehicle(decoded)
+  if not decoded or decoded.jbm ~= current.vehicle.model then return false end
+  local pcFile = type(decoded.vcf) == "table" and decoded.vcf.partConfigFilename
+  return not pcFile or current.evolving or normalizeConfig(pcFile) == normalizeConfig(current.vehicle.config)
+end
+
 local function vehicleAllowed(pid, vid, data, isSpawn)
   if current:isActive() and current.aiOnly and pid == current.issuerId then
     local decoded = parseVehicleData(data)
@@ -1090,22 +1110,21 @@ local function vehicleAllowed(pid, vid, data, isSpawn)
     return true, decoded
   end
   local own = activeVid[pid]
+  local roundPlayer = roundCarActive() and current.players[pid] ~= nil
+  if isSpawn and roundPlayer and not current.test and (allowRoundSpawn[pid] or (registeredRoundCar[pid] and not own)) then
+    local decoded = parseVehicleData(data)
+    if matchesRoundVehicle(decoded) then return true, decoded, nil, true end
+    if not own or not trafficOpen[pid] then return false, decoded end
+  end
   if current:isActive() and trafficOpen[pid] and current.players[pid] ~= nil and vid ~= own then
     if current.test and pid == current.issuerId then return true end
     if not isSpawn then return true end
-    if extraCars(pid) >= trafficOpen[pid] + (own and 0 or 1) then return false end
-    if own then return true end
+    return own ~= nil and extraCars(pid) < trafficOpen[pid]
   end
-  if not roundCarActive() or not current.players[pid] then return true end
+  if not roundPlayer then return true end
   local decoded = parseVehicleData(data)
-  if not decoded or decoded.jbm ~= current.vehicle.model then return false, decoded end
-  local pcFile = type(decoded.vcf) == "table" and decoded.vcf.partConfigFilename
-  if pcFile and not current.evolving and normalizeConfig(pcFile) ~= normalizeConfig(current.vehicle.config) then return false, decoded end
-  if isSpawn and not trafficOpen[pid] and not current.test then
-    local needsReplacement = registeredRoundCar[pid] and not own
-    if not needsReplacement and not allowRoundSpawn[pid] and firstVid(pid) then return false, decoded end
-    allowRoundSpawn[pid] = nil
-  end
+  if not matchesRoundVehicle(decoded) then return false, decoded end
+  if isSpawn and not current.test and firstVid(pid) then return false, decoded end
   return true, decoded
 end
 
@@ -1152,17 +1171,25 @@ function cnrOnVehicleSpawn(pid, vid, data)
     refuse(pid, "You can't spawn a car while spectating")
     return 1
   end
-  local allowed, decoded, why = vehicleAllowed(pid, vid, data, true)
+  local allowed, decoded, why, roundSpawn = vehicleAllowed(pid, vid, data, true)
   logVehicle(pid, "spawned", vid, allowed, decoded)
   if not allowed then
     refuse(pid, why or "Only the round car is allowed")
     return 1
   end
-  if tracksActive(pid) and not trafficOpen[pid] then activeVid[pid] = vid end
+  if preRoundVehicles[pid] then preRoundVehicles[pid][vid] = nil end
+  if roundSpawn then
+    activeVid[pid] = vid
+    allowRoundSpawn[pid] = nil
+    if registeredRoundCar[pid] then pushRoundCars() end
+  elseif tracksActive(pid) and not registeredRoundCar[pid] and not trafficOpen[pid] then
+    activeVid[pid] = vid
+  end
   return 0
 end
 
 function cnrOnVehicleEdited(pid, vid, data)
+  if preRoundVehicles[pid] and preRoundVehicles[pid][vid] then return 0 end
   if registeredRoundCar[pid] and activeVid[pid] ~= vid then
     local isRoundAI = false
     for _, ai in pairs(aiVid) do
@@ -1186,7 +1213,11 @@ function cnrOnVehicleEdited(pid, vid, data)
 end
 
 function cnrOnVehicleDeleted(pid, vid)
-  if activeVid[pid] == vid then activeVid[pid] = nil end
+  if preRoundVehicles[pid] then preRoundVehicles[pid][vid] = nil end
+  if activeVid[pid] == vid then
+    activeVid[pid] = nil
+    if registeredRoundCar[pid] then pushRoundCars() end
+  end
 end
 
 function cnrOnVehicleReset(pid, vid)
@@ -1257,6 +1288,7 @@ function cnrOnPlayerDisconnect(pid)
   activeVid[pid] = nil
   registeredRoundCar[pid] = nil
   allowRoundSpawn[pid] = nil
+  preRoundVehicles[pid] = nil
   trafficOpen[pid] = nil
   trafficVids[pid] = nil
   pushRoundCars()
@@ -1338,6 +1370,7 @@ function cnrOnMyVehicle(pid, data)
   if not vid or not current:isActive() or current.players[pid] == nil then return end
   activeVid[pid] = vid
   registeredRoundCar[pid] = true
+  preRoundVehicles[pid] = nil
   allowRoundSpawn[pid] = nil
   placed(pid)
   log(string.format("%s placed the round car (vid %s)", MP.GetPlayerName(pid) or tostring(pid), tostring(vid)))
@@ -1373,7 +1406,10 @@ function cnrOnAiVehicles(pid, data)
   if not ok or type(decoded) ~= "table" or type(decoded.ai) ~= "table" then return end
   for _, a in ipairs(decoded.ai) do
     local id, vid = tonumber(a.id), tonumber(a.vid)
-    if id and vid and round.isAI(id) and current.players[id] then aiVid[id] = vid end
+    if id and vid and round.isAI(id) and current.players[id] then
+      aiVid[id] = vid
+      if preRoundVehicles[pid] then preRoundVehicles[pid][vid] = nil end
+    end
   end
 end
 
