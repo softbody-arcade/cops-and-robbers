@@ -4,9 +4,14 @@ A cop driving through an intersection can look down a side street and spot a run
 
 ![A cop looking ahead, then looking into the same side street. The runner is only within range in the second view.](cop-visibility.svg)
 
+## Decisions and tuning
+
+- **Agreed for the first build.** Human cops spot furthest where they look with an attached driving camera. Practice AI uses its car heading. Both check sight from their own car. Keep the host default at 400 m, with 200 m to the side and 100 m behind in clear daylight. Practice AI keeps chasing while the runner is HIDDEN.
+- **Proposed for the first playtest.** The curve between those three distances, the night and weather multipliers, and the range gained from lights are tuning choices. Start with the table below. Use the side-street and night-road checks in the [implementation plan](../plans/2026-11-18-cop-visibility.md) to judge whether a sighting feels fair.
+
 ## Direction and distance
 
-The host’s **Sight range** is the maximum in clear daylight. At its default 400 m, a cop can see 400 m where they are looking, 200 m directly to either side and 100 m behind. A 200 m setting gives 200/100/50 m. Off (0) disables cop sight throughout, including Practice. Looking into a mirror or directly turning the camera behind the car are different actions. Turning an attached camera backwards gives full forward-looking range in that direction. The 100 m rear range is an allowance for awareness around the car.
+The host’s **Sight range** sets how far a cop can trigger a shared spotting report in clear daylight. A player can still see a car 500 m away on an open road. The 400 m default limits when a cop can share that sighting with the team. A 200 m setting gives 200/100/50 m. Off (0) disables cop sight throughout, including Practice. Looking into a mirror or directly turning the camera behind the car are different actions. Turning an attached camera backwards gives full forward-looking range in that direction. The 100 m rear range is an allowance for awareness around the car.
 
 There is a reason to reward looking. While viewing pursuit footage, drivers narrowed their visual search during nighttime pursuits. In a separate simulator study, drivers intentionally following another vehicle spent more time looking at it, scanned a narrower area and were less aware of pedestrians. Our inference is that pointing the view down a street should improve the chance of recognizing the runner there. The camera approximates attention. The metre values and curve are gameplay tuning. [Pursuit footage study](https://pubmed.ncbi.nlm.nih.gov/14570510/) · [Intentional car-following study](https://doi.org/10.1068/p5105)
 
@@ -18,7 +23,7 @@ Use the horizontal angle θ from the cop’s look direction to the runner. Given
 
 ## Darkness, lights and weather
 
-The numbers below are proposed first-playtest values. All the environmental effects scale the directional range. For daylight D, runner low/high beam L and the strongest local streetlight S, normalized to [0,1], use
+All the environmental effects scale the directional range. For daylight D, runner low/high beam L and the strongest local streetlight S, normalized to [0,1], use
 
 ```text
 night visibility   = 0.30 + 0.25 × L + 0.20 × S
@@ -30,13 +35,16 @@ effective range    = directional range × lighting factor × fog factor × preci
 | Runner, weather and lighting | Looking at runner | To the side | Behind |
 |---|---:|---:|---:|
 | Clear day | 400 m | 200 m | 100 m |
+| Cloudy day (raw 0.001) | 390 m | 195 m | 98 m |
+| Day, rain preset (raw 0.002) | 318 m | 159 m | 79 m |
+| Day, storm preset (raw 0.004) | 239 m | 119 m | 60 m |
+| Day, thunderstorm preset (raw 0.004) | 239 m | 119 m | 60 m |
+| Day, snow preset (raw 0.005) | 243 m | 122 m | 61 m |
+| Day, dense fog (raw 0.015), dry | 160 m | 80 m | 40 m |
 | Clear night, unlit road, lamps off | 120 m | 60 m | 30 m |
 | Clear night, unlit road, lamps on | 220 m | 110 m | 55 m |
 | Clear night, full streetlight, lamps off | 200 m | 100 m | 50 m |
 | Clear night, full streetlight, lamps on | 300 m | 150 m | 75 m |
-| Day, dense fog (raw 0.015), dry | 160 m | 80 m | 40 m |
-| Day, rain preset (raw 0.002) | 318 m | 159 m | 79 m |
-| Day, snow preset (raw 0.005) | 243 m | 122 m | 61 m |
 
 **Daylight.** Read the map’s clock from `core_environment.getTimeOfDay()` and sunrise and sunset from `core_solarTimeOfDay.getSolarTimeOfDayValues(tod)`. These share BeamNG’s wrapped 0–1 clock. Derive a signed distance in days to the nearer solar boundary, positive inside the sunrise-to-sunset interval. Smoothstep from D=0 at 30 in-game minutes before sunrise to D=1 at 30 minutes after, reversing at sunset. Work across the clock wrap and cache solar anchors by map/location/date/UTC offset/DST. For polar day or night use the `polar` field of `getSolarTimeOfDayEvents(tod)`. Where anchors are unavailable use a definite boolean from `core_environment.getLightState().isNight`; with neither signal use D=0. Graphics settings and the rendered exposure do not enter this calculation.
 
