@@ -13,7 +13,7 @@ Checked against: the game-engine facts in this file were last checked on 2026-11
 ## After any update: the quick check (about 15 minutes)
 
 1. Run `make test` and `make vuecheck`. The tests show our own logic is intact, but the game APIs are stubbed, so they say nothing about the update itself. `vuecheck` compiles every Vue file (SCSS imports resolve against the installed game's UI sources), syntax-checks our `.js` files and checks that each icon name exists (see the UI section).
-2. Run `make deploy`. The deploy log must say `Cops and Robbers <version> loaded`, with no `LUA ERROR`.
+2. Install the reviewed build on the local test server following the config-preserving procedure in [AGENTS.md](../AGENTS.md#verification-and-release). Restart the local server. Its log must say `Cops and Robbers <version> loaded`, with no `LUA ERROR`.
 3. Check the client log after joining: `~/.local/share/BeamNG/BeamNG.drive/current/beamng.log`. Run `grep -n "copsAndRobbers\|CnR" beamng.log`. Look for Lua errors, plus the `Adding new Event Handler to "cnr_..."` lines.
 4. Play a practice round from the panel (Practice: as cop), then press GO. Check:
    - **Setup:** the Announcements and HUD apps appear, your car is replaced and frozen, and the AI cars spawn.
@@ -21,7 +21,7 @@ Checked against: the game-engine facts in this file were last checked on 2026-11
    - **Lights:** the light bar or beacon flashes on your car and on the AI cop.
    - **Reset rules:** pressing your reset button gets refused and highlighted, and after waiting the reset is allowed.
    - **Catching:** the catch bar fills when you hold the AI runner.
-   - **Sky:** with Time of day Night and Weather Rain (panel), rain shows, the AI cars have headlights, and everything is back after End chase. The prep card shows the round's date (a December or January one for Snow). Set Time of day and Weather back to Random afterwards: the panel writes the live server's `config.json`.
+   - **Sky:** with Time of day Night and Weather Rain (panel), rain shows, the AI cars have headlights, and everything is back after End chase. The prep card shows the round's date (a December or January one for Snow). Set Time of day and Weather back to Random afterwards: the panel writes the connected server's `config.json`.
    - **Traffic** (needs `MaxCars` of 4 or more for practice): traffic cars spawn in prep and stand still until GO; they have no name tags and there are no police, emergency vehicles or taxis among them; driving into one gives "crash penalty 10s (traffic)"; all are gone after End chase. With Night and Clear weather, traffic standing still before GO is lit; with Night and Fog, traffic is lit while standing and while driving; with Rain it slows on wet roads and gusts push it.
    - **End:** End chase shows the result card. Leaving the server removes our apps from the layout.
 5. Open the control panel (Host panel button on the lobby card) and check:
@@ -60,7 +60,7 @@ Then do the checks for whatever actually updated.
 - **Lua version:** 5.3. We use integer/float formatting such as `%.10g` and `math.floor`.
 
 **On update, check:**
-- The deploy log line (step 2 above).
+- The server startup log line (step 2 above).
 - **Vehicle data format:** start a round. A car that's wrongly refused or deleted means the spawn or edit data format changed (`parseVehicleData`, `vehicleAllowed`).
 - **Parts edits:** during a round, change a part (through the console, since the menus are locked) and check that a yellow HUD notice shows `<name> changed parts during the round: <slots>`. If it shows up after a round setup, repaint or Apply, or when nothing changed, the `vcf.parts` shape changed or BeamMP reports it later than the quiet window in `main.lua` (`PARTS_SETTLE_SECONDS`).
 - **Account identity:** play a round and check that the leaderboard shows the account names. If they're missing, the `GetPlayerIdentifiers` format changed.
