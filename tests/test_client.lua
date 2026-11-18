@@ -592,7 +592,7 @@ test("existing manual panels keep their own placement until explicitly closed", 
   env.M.ui(toggle)
   assertEq(layoutEntry(L, L.name, panel), nil)
   env.M.ui(toggle)
-  assertPlacement(L, panel, { left = "12em", width = "45em" })
+  assertPlacement(L, panel, { left = "12em", width = "45em", height = "34em" })
   env.M.onBeamMPServerLeave()
   assertEq(layoutEntry(L, L.name, panel), nil)
   assertEq(layoutEntry(L, L.other, panel).placement.right, "15em")
@@ -614,6 +614,24 @@ test("unusable saved placements and manual entries without geometry use app defa
   env.M.ui(toggle)
   env.M.ui(toggle)
   assertPlacement(L, board, { left = "1em", top = "6em", width = "25em", height = "32em" })
+end)
+
+test("invalid saved dimensions use positive app defaults and retain the edited anchor", function()
+  for _, dimensions in ipairs({
+    { width = "", height = 0 },
+    { width = "-4em", height = "2vh" },
+    { width = "1..2px", height = "auto" },
+    { width = "1e2", height = {} },
+  }) do
+    local L = fakeLayouts()
+    local files = { ["settings/cnr_app_placements.json"] = { board = { [L.name] = {
+      right = "0em", bottom = "14px", width = dimensions.width, height = dimensions.height,
+    } } } }
+    local env = bootClient({ layouts = L, files = files })
+    env.tick(4, 0.5)
+    env.M.ui({ action = "toggleApp", name = "board" })
+    assertPlacement(L, "copsAndRobbersLeaderboard", { right = "0em", bottom = "14px", width = "25em", height = "32em" })
+  end
 end)
 
 test("isOpen sees an app the player added", function()

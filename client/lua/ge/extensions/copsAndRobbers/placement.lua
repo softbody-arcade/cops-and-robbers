@@ -27,12 +27,33 @@ local function same(a, b)
   return true
 end
 
-local function usablePlacement(value)
-  if type(value) ~= "table" then return nil end
-  for _, key in ipairs({ "left", "right", "top", "bottom", "width", "height" }) do
-    local v = value[key]
-    if type(v) == "number" or (type(v) == "string" and v ~= "") then return value end
+local UNITS = { [""] = true, ["%"] = true, px = true, em = true, rem = true }
+local GEOMETRY_KEYS = { "left", "right", "top", "bottom", "width", "height" }
+
+local function placementLength(value)
+  if type(value) == "string" then
+    local number, unit = value:lower():match("^%s*(-?%d*%.?%d+)%s*([%a%%]*)%s*$")
+    value = UNITS[unit] and tonumber(number)
   end
+  if type(value) == "number" and math.abs(value) < math.huge then return value end
+end
+
+local function usablePlacement(value, defaults)
+  if type(value) ~= "table" then return nil end
+  local result = deepCopy(value)
+  local usable = false
+  for _, key in ipairs(GEOMETRY_KEYS) do
+    local length = placementLength(value[key])
+    local size = key == "width" or key == "height"
+    if length and (not size or length > 0) then
+      usable = true
+    elseif size then
+      result[key] = defaults[key]
+    elseif value[key] ~= "" then
+      result[key] = nil
+    end
+  end
+  return usable and result or nil
 end
 
 function M.group()
@@ -63,10 +84,10 @@ function M.leave(state, env, closeLayout)
       local app = fresh.apps[i]
       if app.appName == state.appName and (name == closeLayout or (type(app.settings) == "table" and app.settings.cnrAutoPlaced == true)) then
         if saved then
-          local geometry = usablePlacement(app.placement)
+          local geometry = usablePlacement(app.placement, state.placement)
           if same(geometry, state.placement) then geometry = nil end
           if not same(saved[name], geometry) then
-            saved[name] = deepCopy(geometry)
+            saved[name] = geometry
             changed = true
           end
         end
@@ -123,8 +144,8 @@ function M.tick(state, env)
   local modApps = not makesCopy and env.fromMod and env.fromMod(name) and deepCopy(fresh.apps or {})
   local updated = deepCopy(fresh)
   updated.apps = updated.apps or {}
-  local remembered = env.savedPlacements and usablePlacement(env.savedPlacements[name])
-  updated.apps[#updated.apps + 1] = { appName = state.appName, placement = deepCopy(remembered or state.placement), settings = { cnrAutoPlaced = true } }
+  local remembered = env.savedPlacements and usablePlacement(env.savedPlacements[name], state.placement)
+  updated.apps[#updated.apps + 1] = { appName = state.appName, placement = remembered or deepCopy(state.placement), settings = { cnrAutoPlaced = true } }
   api.saveLayout(updated)
   local written = env.readLayout(name)
   if written and appIndex(written, state.appName) then
