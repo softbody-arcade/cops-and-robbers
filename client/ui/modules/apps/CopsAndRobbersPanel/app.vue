@@ -22,9 +22,24 @@
             @command="command"
             @fold="folded = true"
           />
-          <PanelCar tab-heading="Car" :state="state" :store="store" @new-build="newBuild" @reset-build="resetBuild" />
-          <PanelMap tab-heading="Map" :state="state" :map-label="mapLabel" @station="station" @refresh="refreshStations" />
-          <PanelSettings tab-heading="Settings" :state="state" :store="store" @command="command" />
+          <PanelCar
+            v-model:choice="carChoice"
+            tab-heading="Car"
+            :state="state"
+            :store="store"
+            :filter="carFilter"
+            @new-build="newBuild"
+            @reset-build="resetBuild"
+          />
+          <PanelMap
+            v-model:stations="stations"
+            tab-heading="Map"
+            :state="state"
+            :map-label="mapLabel"
+            @station="station"
+            @refresh="refreshStations"
+          />
+          <PanelSettings v-model:more-open="moreOpen" tab-heading="Settings" :state="state" :store="store" @command="command" />
         </BngTabs>
         <div v-if="reply.text" class="p-reply" :class="reply.tone ? `p-reply-${reply.tone}` : null">
           <BngIcon :type="reply.tone === 'good' ? icons.checkmarkBold : reply.tone === 'warn' ? icons.caution : icons.info" />
@@ -63,6 +78,9 @@ const state = ref({})
 const tab = ref(0)
 const folded = ref(false)
 const runnerPick = ref(null)
+const carChoice = ref(null)
+const moreOpen = ref(false)
+const stations = ref(null)
 const reply = ref({ text: "", tone: "" })
 let openTimer = null
 
@@ -92,6 +110,19 @@ function clearReply() {
 }
 
 const store = useSettings(state, send, clearReply)
+
+const carFilter = computed(() => {
+  if (can.value.build !== true || store.valueOf("carMode") !== "evolving") return null
+  const excluded = store.valueOf("excludedModels")
+  return { includeMods: store.valueOf("includeModVehicles") === true, excludedModels: Array.isArray(excluded) ? excluded : [] }
+})
+
+watch(() => !!carFilter.value, allowed => {
+  if (!allowed) carChoice.value = null
+})
+watch([() => state.value.map, () => state.value.stationCount], () => {
+  stations.value = null
+})
 
 function command(text) {
   clearReply()
@@ -171,6 +202,9 @@ events.on("CnRPanel", data => {
   state.value = data && typeof data === "object" && data.phase ? data : {}
   if (!state.value.phase) {
     store.clear()
+    moreOpen.value = false
+    carChoice.value = null
+    stations.value = null
     folded.value = false
   }
 })

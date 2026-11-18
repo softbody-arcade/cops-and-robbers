@@ -22,9 +22,16 @@
       <template v-if="!locked">
         <div class="p-sec">New build</div>
         <div class="p-buttons">
-          <BngDropdown v-model="choice" class="car-pick" :items="configs" show-search @open="loadConfigs">
+          <BngDropdown
+            :model-value="choice?.value"
+            class="car-pick"
+            :items="configs"
+            show-search
+            @open="loadConfigs"
+            @update:modelValue="selectConfig"
+          >
             <template #display>
-              <span class="car-pick-text">{{ choiceLabel || "Choose a car…" }}</span>
+              <span class="car-pick-text">{{ choice?.label || "Choose a car…" }}</span>
             </template>
           </BngDropdown>
           <BngButton class="p-btn p-fit" :accent="ACCENTS.secondary" @click="random">
@@ -32,8 +39,8 @@
           </BngButton>
         </div>
         <div v-if="choice" class="p-buttons">
-          <BngButton class="p-btn" :accent="ACCENTS.main" @click="startChosen">
-            {{ armed === "choose" ? "Click again to replace the build" : `Start build with ${choiceLabel || "this car"}` }}
+          <BngButton class="p-btn" :accent="ACCENTS.main" :disabled="!validChoice" @click="startChosen">
+            {{ armed === "choose" ? "Click again to replace the build" : `Start build with ${choice.label}` }}
           </BngButton>
         </div>
         <div v-if="build && (armed === 'choose' || armed === 'random')" class="p-why">This replaces the build at step {{ build.step }}</div>
@@ -80,16 +87,18 @@
 </template>
 
 <script setup>
-import { ref, computed } from "vue"
+import { ref, computed, watch, onMounted } from "vue"
 import { useBridge } from "@/bridge"
 import { useEvents } from "@/services/events"
 import { BngButton, BngDropdown, BngIcon, BngSwitch, ACCENTS, icons } from "@/common/components/base"
 import { vBngTextInput } from "@/common/directives"
 import { useConfirm } from "./confirm.js"
+import { same } from "./settings.js"
 
 const props = defineProps({
   state: { type: Object, required: true },
   store: { type: Object, required: true },
+  filter: Object,
 })
 const emit = defineEmits(["newBuild", "resetBuild"])
 
@@ -98,14 +107,14 @@ const events = useEvents()
 const { armed, confirm } = useConfirm()
 
 const configs = ref([])
-const choice = ref(null)
+const choice = defineModel("choice", { type: Object, default: null })
 const editing = ref(false)
+const validChoice = computed(() => !!choice.value && configs.value.some(c => c.value === choice.value.value))
 
 const can = computed(() => props.state.can || {})
 const locked = computed(() => can.value.build !== true)
 const evolving = computed(() => props.store.valueOf("carMode") === "evolving")
 const build = computed(() => (props.state.build && typeof props.state.build === "object" ? props.state.build : null))
-const choiceLabel = computed(() => (configs.value.find(c => c.value === choice.value) || {}).label || "")
 
 const excludedText = computed(() => {
   const list = props.store.valueOf("excludedModels")
@@ -121,13 +130,12 @@ const lastChangeText = computed(() => {
   return c.by ? `Last change by ${c.by}: ${c.text}` : `Last change: ${c.text}`
 })
 
-function filter() {
-  const excluded = props.store.valueOf("excludedModels")
-  return { includeMods: props.store.valueOf("includeModVehicles") === true, excludedModels: Array.isArray(excluded) ? excluded : [] }
+function selectConfig(value) {
+  choice.value = configs.value.find(c => c.value === value) || null
 }
 
 function loadConfigs() {
-  api.engineLua(`if copsAndRobbers then copsAndRobbers.configs(${api.serializeToLua(filter())}) end`)
+  if (props.filter) api.engineLua(`if copsAndRobbers then copsAndRobbers.configs(${api.serializeToLua(props.filter)}) end`)
 }
 
 function setMode(mode) {
@@ -136,23 +144,34 @@ function setMode(mode) {
 }
 
 function startChosen() {
-  const config = choice.value
+  if (!validChoice.value || !props.filter) return
+  const config = choice.value.value
   confirm("choose", !!build.value, () => {
-    emit("newBuild", { ...filter(), config })
+    emit("newBuild", { ...props.filter, config })
     choice.value = null
   })
 }
 
 function random() {
-  confirm("random", !!build.value, () => emit("newBuild", { ...filter(), random: true }))
+  confirm("random", !!build.value, () => emit("newBuild", { ...props.filter, random: true }))
 }
 
 function reset() {
   confirm("reset", true, () => emit("resetBuild"))
 }
 
-events.on("CnRConfigs", data => {
+onMounted(() => {
+  if (choice.value) loadConfigs()
+})
+watch(() => JSON.stringify(props.filter), () => {
+  configs.value = []
+  loadConfigs()
+})
+
+events.on("CnRConfigs", (data, filter) => {
+  if (!props.filter || filter?.includeMods !== props.filter.includeMods || !same(filter.excludedModels, props.filter.excludedModels)) return
   configs.value = Array.isArray(data) ? data.map(c => ({ value: c.config, label: c.label })) : []
+  if (choice.value) selectConfig(choice.value.value)
 })
 </script>
 

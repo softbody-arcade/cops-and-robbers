@@ -1002,7 +1002,7 @@ function cnrOnPanel(pid, data)
     for _, st in ipairs(stations) do
       list[#list + 1] = { x = st.x, y = st.y, z = st.z }
     end
-    send(pid, "cnr_stationList", { stations = list })
+    send(pid, "cnr_stationList", { map = mapName, stations = list })
   elseif msg.action == "settings" then
     panelSettings(pid, msg.values, msg.id)
   elseif msg.action == "build" then

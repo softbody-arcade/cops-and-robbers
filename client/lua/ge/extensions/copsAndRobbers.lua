@@ -740,7 +740,7 @@ local function onStationList(data)
   local result = {}
   for i, n in ipairs(near) do result[i] = { meters = n.meters } end
   guihooks.trigger("CnRStations", {
-    count = #list, nearest = result, canRemove = result[1] ~= nil and result[1].meters <= 50,
+    map = d.map, count = #list, nearest = result, canRemove = result[1] ~= nil and result[1].meters <= 50,
   })
 end
 
@@ -1200,7 +1200,7 @@ function M.applyChange()
 end
 
 function M.configs(opts)
-  guihooks.trigger("CnRConfigs", vehicles.configList(opts))
+  guihooks.trigger("CnRConfigs", vehicles.configList(opts), opts)
 end
 
 function M.newBuild(choice)
