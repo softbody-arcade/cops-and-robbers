@@ -1,8 +1,9 @@
 local strikes = require("copsAndRobbers/strikes")
 local clips = require("copsAndRobbers/thunderClips")
 
-local function storm(seed)
-  return {weather = "thunderstorm", lightningSeed = seed}
+local function storm(seed, minimum, maximum)
+  return {weather = "thunderstorm", lightningSeed = seed,
+          lightningMinSeconds = minimum, lightningMaxSeconds = maximum}
 end
 
 local function signature(s)
@@ -35,7 +36,7 @@ local function signatures(events, after)
 end
 
 test("frames, late joins, sky reapplication and backward seeks reconstruct the same strikes", function()
-  local p = storm(31415)
+  local p = storm(31415, 3, 17)
   p.changes = {{at = 200, to = "rain"}, {at = 515, to = "thunderstorm"}, {at = 800, to = "cloudy"},
                {at = 950, to = "thunderstorm"}}
   local cursor = strikes.new(p.lightningSeed)
@@ -89,7 +90,7 @@ test("storm weight follows the smoothed weather blend in both directions", funct
 end)
 
 test("thinning at each candidate time retains its original details", function()
-  for _, row in ipairs({{1, {5, 6}}, {42, {}}, {4242, {}}, {5333, {3}}}) do
+  for _, row in ipairs({{1, {5, 6}}, {42, {6, 7}}, {4242, {5}}, {5333, {4, 5}}}) do
     local seed = row[1]
     local p = storm(seed)
     local full = strikes.between(strikes.new(seed), p, 0, 160)
@@ -100,21 +101,49 @@ test("thinning at each candidate time retains its original details", function()
   end
 end)
 
-test("full storms follow the expected rate and distance bands", function()
-  local first = strikes.between(strikes.new(1), storm(1), 0, 1)[1]
-  assertNear(first.at, -25 * math.log(1 - 16807 / 2147483647), 1e-10)
-  local p, cursor = storm(4242), strikes.new(4242)
+test("fixed waits deliver a strike once at each frame and window boundary", function()
+  local p, cursor = storm(55, 5, 5), strikes.new(55)
+  assertEq(#strikes.between(cursor, p, -3, 4.99), 0)
+  local expectedShapes = {3876417, 1336741714, 901101044, 1370660142}
+  for at = 5, 125, 5 do
+    local events = strikes.between(cursor, p, at - 0.01, at)
+    assertEq(#events, 1)
+    assertEq(events[1].at, at)
+    if at <= 20 then assertEq(events[1].shapeSeed, expectedShapes[at / 5]) end
+    assertEq(#strikes.between(cursor, p, at, at + 4.99), 0)
+  end
+  local late = strikes.between(strikes.new(55), p, 60, 125)
+  assertEq(#late, 13)
+  assertEq(late[1].at, 65)
+end)
+
+test("old and malformed sky intervals use the default 10 to 40 seconds", function()
+  local expected = strikes.between(strikes.new(4242), storm(4242, 10, 40), 0, 150)
+  assertNear(expected[1].at, 10 + 30 * (4242 * 16807 / 2147483647), 1e-10)
+  for _, bounds in ipairs({{}, {5}, {nil, 5}, {0, 0}, {-1, 5}, {1.5, 9}, {1, 2.5},
+                           {3, 2}, {"5", 10}, {1, true}, {0/0, 9}, {1, math.huge}}) do
+    local p = storm(4242, bounds[1], bounds[2])
+    assertEq(signatures(strikes.between(strikes.new(4242), p, 0, 150)), signatures(expected))
+  end
+end)
+
+test("full storms draw uniformly within configured waits and retain the distance bands", function()
+  local p, cursor = storm(4242, 8, 36), strikes.new(4242)
+  local quartiles = {0, 0, 0, 0}
   local count, close, medium, last = 0, 0, 0, 0
   for lo = 0, 249999, 100 do
     for _, s in ipairs(strikes.between(cursor, p, lo, lo + 100)) do
-      assert(s.at > last and s.at > lo and s.at <= lo + 100)
+      local wait = s.at - last
+      assert(wait >= 8 and wait <= 36 and s.at > lo and s.at <= lo + 100)
+      local quartile = math.min(4, 1 + math.floor((wait - 8) / 7))
+      quartiles[quartile] = quartiles[quartile] + 1
       assert(s.range >= 300 and s.range <= 6000 and s.bearing >= 0 and s.bearing < 360)
       assert(s.soundRoll >= 0 and s.soundRoll < 1 and s.shapeSeed % 1 == 0)
       if s.range < 1000 then close = close + 1 elseif s.range < 3000 then medium = medium + 1 end
       last, count = s.at, count + 1
     end
   end
-  assertNear(last / count, 25, 2)
+  for _, n in ipairs(quartiles) do assertNear(n / count, 0.25, 0.02) end
   assertNear(close / count, 0.10, 0.02)
   assertNear(medium / count, 0.35, 0.02)
   assertNear((count - close - medium) / count, 0.55, 0.02)
@@ -140,7 +169,7 @@ test("a strike's distance leaves the next wait and keep roll independent", funct
     k.n = k.n + 1
     k.yes = k.yes + #strikes.between(cursor, blend, previous.at, following.at)
   end
-  for _, w in ipairs(waits) do assertNear(w.long / w.n, math.exp(-1), 0.06, "wait by distance band") end
+  for _, w in ipairs(waits) do assertNear(w.long / w.n, 0.5, 0.06, "wait by distance band") end
   for _, k in ipairs(kept) do assertNear(k.yes / k.n, 0.5, 0.08, "keep roll by within-band distance") end
 end)
 

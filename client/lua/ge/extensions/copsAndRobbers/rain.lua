@@ -216,6 +216,7 @@ local function switchFields(dt)
 end
 
 function M.update(dt, needRoof)
+  local startingRain = not cur and goal ~= nil and not roofDemand
   local prime = needRoof and not roofDemand
   roofDemand = needRoof
   if not cur and not goal and not needRoof then
@@ -232,6 +233,10 @@ function M.update(dt, needRoof)
       reached = true
     end
   end
+  if startingRain then
+    roofReading = readCover()
+    cover.covered = roofReading == true
+  end
   if goal and not cur and not create(goal) then goal = nil end
   if sameKind() and cur.drops ~= goal.numDrops then
     local diff = goal.numDrops - cur.drops
@@ -243,7 +248,7 @@ function M.update(dt, needRoof)
       cur.drops = cur.drops + (diff > 0 and step or -step)
     end
   end
-  local changed = (cur or needRoof) and updateCover(dt, prime)
+  local changed = not startingRain and (cur or needRoof) and updateCover(dt, prime)
   if not cur and not needRoof then roofReading = nil end
   if cur and (changed or reached or sinceWrite >= M.FADE_INTERVAL - EPSILON) then writeDrops() end
 end

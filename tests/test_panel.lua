@@ -120,6 +120,16 @@ test("applyValues saves both weather change minutes together in any order", func
   assertEq(u.weatherChangeMinMinutes, 6); assertEq(u.weatherChangeMaxMinutes, 6)
 end)
 
+test("saving both lightning intervals can lower them below the previous minimum", function()
+  local raw = { lightningMinSeconds = 20, lightningMaxSeconds = 50 }
+  local fixed = assert(panel.applyValues(raw, { lightningMaxSeconds = 5, lightningMinSeconds = 5 }))
+  assertEq(fixed.lightningMinSeconds, 5)
+  assertEq(fixed.lightningMaxSeconds, 5)
+  local raised = assert(panel.applyValues(fixed, { lightningMinSeconds = 12, lightningMaxSeconds = 8 }))
+  assertEq(raised.lightningMinSeconds, 12)
+  assertEq(raised.lightningMaxSeconds, 12)
+end)
+
 test("applyValues accepts list entries that are strings or numbers only", function()
   local updated = panel.applyValues({}, { excludedModels = { "a", 3 } })
   assertEq(updated.excludedModels[1], "a"); assertEq(updated.excludedModels[2], "3")
