@@ -129,34 +129,35 @@ function M.maps(board)
   return list
 end
 
+local function assisted(c, caught, chase, assistPercent)
+  return not caught[c.key] and chase > 0 and c.sight / chase * 100 >= assistPercent - 1e-9
+end
+
 function M.cops(board, map, limit, assistPercent)
   assistPercent = tonumber(assistPercent) or 20
   local byKey, list = {}, {}
-  for _, r in ipairs(board.runs) do
-    if validRun(r, map) then
-      local at = tonumber(r.endedAt) or 0
-      for _, c in ipairs(catcherList(r)) do
-        local s = byKey[c.key]
-        if not s then
-          s = { key = c.key, name = c.name, catches = 0, assists = 0, fastest = math.huge, nameAt = at }
-          byKey[c.key] = s
-          list[#list + 1] = s
-        end
-        s.catches = s.catches + 1
-        s.fastest = math.min(s.fastest, r.survivedSeconds)
-        if at >= s.nameAt then s.name, s.nameAt = c.name, at end
-      end
+  local function entry(c)
+    if not byKey[c.key] then
+      local row = { key = c.key, name = c.name, catches = 0, assists = 0 }
+      byKey[c.key] = row
+      list[#list + 1] = row
     end
+    return byKey[c.key]
   end
   for _, r in ipairs(board.runs) do
     if validRun(r, map) and r.endReason == "caught" then
       local caught = {}
-      for _, c in ipairs(catcherList(r)) do caught[c.key] = true end
+      for _, c in ipairs(catcherList(r)) do
+        caught[c.key] = true
+        local row = entry(c)
+        row.catches = row.catches + 1
+        row.fastest = math.min(row.fastest or r.survivedSeconds, r.survivedSeconds)
+      end
       local chase = tonumber(r.chaseSeconds) or r.survivedSeconds
       for _, c in ipairs(copList(r)) do
-        local s = byKey[c.key]
-        if s and not caught[c.key] and chase > 0 and c.sight / chase * 100 >= assistPercent - 1e-9 then
-          s.assists = s.assists + 1
+        if assisted(c, caught, chase, assistPercent) then
+          local row = entry(c)
+          row.assists = row.assists + 1
         end
       end
     end
@@ -165,10 +166,11 @@ function M.cops(board, map, limit, assistPercent)
   for _, s in ipairs(list) do s.name = names[s.key] or s.name end
   table.sort(list, function(a, b)
     if a.catches ~= b.catches then return a.catches > b.catches end
+    if a.assists ~= b.assists then return a.assists > b.assists end
     if a.fastest ~= b.fastest then return a.fastest < b.fastest end
-    return a.name < b.name
+    if a.name ~= b.name then return a.name < b.name end
+    return a.key < b.key
   end)
-  for _, s in ipairs(list) do s.nameAt = nil end
   while limit and #list > limit do table.remove(list) end
   return list
 end
@@ -209,7 +211,7 @@ function M.players(board, map, assistPercent)
       local chase = tonumber(r.chaseSeconds) or r.survivedSeconds
       for _, c in ipairs(copList(r)) do
         local p = entry(c.key, c.name, at)
-        if r.endReason == "caught" and not catchers[c.key] and chase > 0 and c.sight / chase * 100 >= assistPercent - 1e-9 then
+        if r.endReason == "caught" and assisted(c, catchers, chase, assistPercent) then
           p.assists = p.assists + 1
         end
       end

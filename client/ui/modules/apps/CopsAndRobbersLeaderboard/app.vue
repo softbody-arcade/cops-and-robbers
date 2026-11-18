@@ -250,7 +250,7 @@ onUnmounted(() => {
   grid-template-columns: 1.5rem minmax(0, 1fr) auto;
 }
 .cnr-board .b-cols-cops {
-  grid-template-columns: 1.5rem minmax(0, 1fr) 3.75rem 3.75rem;
+  grid-template-columns: 1.5rem minmax(0, 1fr) 3.75rem 3.25rem 3.75rem;
 }
 .cnr-board .b-cols-players {
   grid-template-columns: minmax(0, 1fr) 2.5rem 3rem 3.75rem 3.75rem;
