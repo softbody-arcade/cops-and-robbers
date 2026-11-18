@@ -15,17 +15,18 @@ local LOW_AT = 0.75
 local LIFT_AT = 0.875
 local DUSK_AT = 0.25
 
-local GROUNDS = { storm = true, fog = true, snow = true }
+local GROUNDS = { storm = true, fog = true, snow = true, thunderstorm = true }
 local NEXT = {
   clear = { { "cloudy" }, { "fog", "foggy" } },
-  cloudy = { { "clear" }, { "rain", "wet" }, { "snow", "cold" }, { "fog", "foggy" } },
-  rain = { { "cloudy" }, { "storm", "warm" }, { "snow", "cold" } },
+  cloudy = { { "clear" }, { "rain", "wet" }, { "snow", "cold" }, { "fog", "foggy" }, { "thunderstorm", "hot", 0.5 } },
+  rain = { { "cloudy" }, { "storm", "warm" }, { "snow", "cold" }, { "thunderstorm", "hot" } },
   storm = { { "rain" } },
   snow = { { "cloudy" }, { "rain", "wet" } },
   fog = { { "cloudy" }, { "clear" } },
+  thunderstorm = { { "rain" }, { "cloudy" } },
 }
-local CROSS = { snow = "rain", rain = "snow", storm = "rain" }
-local CAN_STOP = { snow = true, rain = true, storm = true, fog = true }
+local CROSS = { snow = "rain", rain = "snow", storm = "rain", thunderstorm = "rain" }
+local CAN_STOP = { snow = true, rain = true, storm = true, fog = true, thunderstorm = true }
 local LIFT = { "cloudy", "clear" }
 
 function M.seeded(seed)
@@ -141,7 +142,7 @@ end
 
 local function fits(w, T, tod)
   if w == "snow" then return T < 2 end
-  if w == "rain" or w == "storm" then return T > 1 end
+  if w == "rain" or w == "storm" or w == "thunderstorm" then return T > 1 end
   if w == "fog" then return T <= 12 and tod >= DUSK_AT and tod < LIFT_AT end
   return true
 end
@@ -150,7 +151,7 @@ local function stops(w, u, v, Tu, Tv, lift)
   local x
   if w == "snow" and Tv >= 2 then
     x = u + (v - u) * (2 - Tu) / (Tv - Tu)
-  elseif (w == "rain" or w == "storm") and Tv <= 1 then
+  elseif (w == "rain" or w == "storm" or w == "thunderstorm") and Tv <= 1 then
     x = u + (v - u) * (Tu - 1) / (Tu - Tv)
   elseif w == "fog" then
     if Tv > 12 then x = u + (v - u) * (12 - Tu) / (Tv - Tu) end
@@ -163,8 +164,8 @@ local function pick(random, list)
   return list[math.min(#list, math.floor(random() * #list) + 1)]
 end
 
-local function options(from, T, foggy, warm)
-  local ok = { wet = T >= 2, cold = T <= 1, foggy = foggy, warm = warm }
+local function options(from, T, foggy, warm, hot)
+  local ok = { wet = T >= 2, cold = T <= 1, foggy = foggy, warm = warm, hot = hot }
   local list = {}
   for _, o in ipairs(NEXT[from]) do
     if not o[2] or ok[o[2]] then list[#list + 1] = o[1] end
@@ -207,8 +208,9 @@ local function schedule(c, cfg, random, releaseAt, endAt)
 
   local function slotAt(x)
     local T = tempAt(x)
-    local warm = math.max(points[nextFill - 2].c, points[nextFill - 1].c) >= 15
-    add(x, pick(random, options(cur, T, fits("fog", T, todAt(x)), warm)))
+    local high = math.max(points[nextFill - 2].c, points[nextFill - 1].c)
+    local warm, hot = high >= 15, high >= 20
+    add(x, pick(random, options(cur, T, fits("fog", T, todAt(x)), warm, hot)))
   end
 
   local function fitsAt(x)

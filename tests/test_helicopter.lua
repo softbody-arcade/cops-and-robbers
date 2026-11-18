@@ -37,7 +37,7 @@ test("time up keeps counting while searching", function()
 end)
 
 test("a round that starts grounded stays grounded until the weather clears", function()
-  for _, w in ipairs({ "storm", "fog", "snow" }) do
+  for _, w in ipairs({ "storm", "fog", "snow", "thunderstorm" }) do
     local h = helicopter.new(std(), w, 10)
     local s = helicopter.status(h, 10)
     assertEq(s.phase, "grounded"); assertEq(s.reason, w); assertEq(s.seconds, nil)
@@ -50,8 +50,8 @@ test("a round that starts grounded stays grounded until the weather clears", fun
   assertEq(helicopter.new(std(), nil, 10).phase, "arriving")
 end)
 
-test("a change to storm, fog or snow grounds it from any phase", function()
-  for _, w in ipairs({ "storm", "fog", "snow" }) do
+test("a change to a grounding weather grounds it from any phase", function()
+  for _, w in ipairs({ "storm", "fog", "snow", "thunderstorm" }) do
     local h = helicopter.new(std(), "clear", 10)
     assertEq(helicopter.update(h, 20, false, false, w), true, w)
     local s = helicopter.status(h, 20)

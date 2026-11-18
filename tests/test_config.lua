@@ -160,7 +160,7 @@ test("every time, weather and day length choice is accepted", function()
   for _, t in ipairs({ "sunrise", "morning", "noon", "afternoon", "sunset", "night", "random" }) do
     assertEq(config.merge({ timeOfDay = t }).timeOfDay, t)
   end
-  for _, w in ipairs({ "clear", "cloudy", "rain", "storm", "fog", "snow", "random" }) do
+  for _, w in ipairs({ "clear", "cloudy", "rain", "storm", "fog", "snow", "thunderstorm", "random" }) do
     assertEq(config.merge({ weather = w }).weather, w)
   end
   for _, d in ipairs({ "off", "fast", "moderate", "slow", "realtime" }) do

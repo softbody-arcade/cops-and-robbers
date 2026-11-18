@@ -57,6 +57,7 @@ local WINDOWS = {
   fog = { 61, { [10] = true, [11] = true }, { 10, 1 }, { 11, 30 } },
   rain = { 122, { [3] = true, [4] = true, [10] = true, [11] = true }, { 3, 1 }, { 11, 30 } },
   storm = { 122, { [3] = true, [4] = true, [10] = true, [11] = true }, { 3, 1 }, { 11, 30 } },
+  thunderstorm = { 153, { [5] = true, [6] = true, [7] = true, [8] = true, [9] = true }, { 5, 1 }, { 9, 30 } },
   clear = { 365, nil, { 1, 1 }, { 12, 31 } },
   cloudy = { 365, nil, { 1, 1 }, { 12, 31 } },
 }
@@ -101,6 +102,13 @@ end)
 test("random weather follows the bad weather chance", function()
   assertEq(sky.pick(cfg({ weather = "random", badWeatherChancePercent = 100 }), rng(0.5, 4)).weather, "snow")
   assertEq(sky.pick(cfg({ weather = "random", badWeatherChancePercent = 0 }), rng(0.5, 2)).weather, "cloudy")
+end)
+
+test("thunderstorm is the fifth random bad weather and can be picked directly", function()
+  local random = sky.pick(cfg({ weather = "random", badWeatherChancePercent = 25 }), rng(0.2499, 5))
+  assertEq(random.weather, "thunderstorm")
+  local fixed = sky.pick(cfg({ weather = "thunderstorm", badWeatherChancePercent = 0 }), rng(0.5, 1))
+  assertEq(fixed.weather, "thunderstorm")
 end)
 
 test("nothing is picked on BeamNG.Earth", function()
@@ -160,4 +168,11 @@ test("record gives the worst weather and the start weather", function()
   assertEq(sky.record({ weather = "snow", changes = { { at = 1, to = "fog" } } }, cfg(nil), 5).weather, "snow")
   assertEq(sky.record({ weather = "fog", changes = { { at = 1, to = "snow" } } }, cfg(nil), 5).weather, "fog")
   assertEq(sky.record({ weather = "storm", changes = { { at = 1, to = "clear" } } }, cfg(nil), 5).weather, "storm")
+end)
+
+test("record prefers a thunderstorm to snow and keeps the first of equally severe storms", function()
+  local s = { weather = "snow", changes = { { at = 1, to = "thunderstorm" }, { at = 2, to = "storm" } } }
+  assertEq(sky.record(s, cfg(nil), 1).weather, "thunderstorm")
+  assertEq(sky.record(s, cfg(nil), 2).weather, "thunderstorm")
+  assertEq(sky.record({ weather = "storm", changes = { { at = 1, to = "thunderstorm" } } }, cfg(nil), 1).weather, "storm")
 end)

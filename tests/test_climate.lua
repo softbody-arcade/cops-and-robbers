@@ -6,9 +6,11 @@ test("climate gives the table's range per weather and month", function()
   lo, hi = climate.range("cloudy", 1); assertEq(lo, 2); assertEq(hi, 5)
   lo, hi = climate.range("snow", 12); assertEq(lo, -4); assertEq(hi, 0)
   lo, hi = climate.range("snow", 1); assertEq(lo, -5); assertEq(hi, -1)
+  lo, hi = climate.range("thunderstorm", 7); assertEq(lo, 22); assertEq(hi, 25)
+  lo, hi = climate.offset("thunderstorm"); assertEq(lo, 2); assertEq(hi, -6)
 end)
 test("the low is always below the high", function()
-  for _, w in ipairs({ "clear", "cloudy", "rain", "storm", "fog", "snow" }) do
+  for _, w in ipairs({ "clear", "cloudy", "rain", "storm", "fog", "snow", "thunderstorm" }) do
     for m = 1, 12 do
       local lo, hi = climate.range(w, m)
       assertEq(lo < hi, true, w .. " " .. m)

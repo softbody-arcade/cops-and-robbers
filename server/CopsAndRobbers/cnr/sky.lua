@@ -6,7 +6,7 @@ M.DAY_SECONDS = weather.DAY_SECONDS
 
 local DAY = { "sunrise", "morning", "noon", "afternoon", "sunset" }
 local CALM = { "clear", "cloudy" }
-local BAD = { "rain", "storm", "fog", "snow" }
+local BAD = { "rain", "storm", "fog", "snow", "thunderstorm" }
 local DAYS_IN_MONTH = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
 local SPRING_AUTUMN = { 3, 4, 10, 11 }
 local WHOLE_YEAR = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 }
@@ -15,6 +15,7 @@ local WINDOWS = {
   fog = { 10, 11 },
   rain = SPRING_AUTUMN,
   storm = SPRING_AUTUMN,
+  thunderstorm = { 5, 6, 7, 8, 9 },
   clear = WHOLE_YEAR,
   cloudy = WHOLE_YEAR,
 }
@@ -88,7 +89,7 @@ function M.payload(s, cfg, clockSeconds)
   return p
 end
 
-local RANK = { clear = 0, cloudy = 1, rain = 2, fog = 3, snow = 3, storm = 4 }
+local RANK = { clear = 0, cloudy = 1, rain = 2, fog = 3, snow = 3, storm = 4, thunderstorm = 4 }
 
 local function worst(s, clock)
   local w = s.weather
