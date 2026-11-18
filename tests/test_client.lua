@@ -4669,3 +4669,23 @@ test("practice where you drive, and spectating a real round, leave the game's sp
     assertEq(#spec.spawned, 1)
   end)
 end)
+
+test("round result, leave, mission end and unload release the lightning scene", function()
+  local exits = {
+    function(env) env.fire("cnr_roundEnd", {reason = "called", runnerName = "Bob", survivedSeconds = 3, runnerId = 2}) end,
+    function(env) env.M.onBeamMPServerLeave() end,
+    function(env) env.M.onClientEndMission() end,
+    function(env) env.M.onExtensionUnloaded() end,
+  }
+  for _, exit in ipairs(exits) do
+    local env = bootClient()
+    startCop(env)
+    local lightning = assert(package.loaded["copsAndRobbers/lightning"])
+    local clear, calls = lightning.clear, 0
+    lightning.clear = function(s) calls = calls + 1; return clear(s) end
+    local ok, err = pcall(exit, env)
+    lightning.clear = clear
+    assert(ok, err)
+    assertEq(calls, 1)
+  end
+end)

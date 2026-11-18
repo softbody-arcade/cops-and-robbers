@@ -11,6 +11,7 @@ local EPSILON = 1e-6
 local cur, goal, rateOut, rateIn = nil, nil, 0, 0
 local sinceWrite, sinceCover = 0, 0
 local cover = shelter.new()
+local roofDemand, roofReading
 
 local function castUp(pos, range)
   return castRayStatic(pos, vec3(0, 0, 1), range)
@@ -119,10 +120,12 @@ function M.clear()
   removeAll()
   goal = nil
   cover, sinceCover, sinceWrite = shelter.new(), 0, 0
+  roofDemand, roofReading = false, nil
 end
 
 function M.resetRoof()
   cover, sinceCover = shelter.new(), 0
+  roofDemand, roofReading = false, nil
   if not cur then return end
   cur.wroteDrops, cur.wroteVolume = nil, nil
   local obj = scenetree.findObject(M.NAME)
@@ -130,7 +133,7 @@ function M.resetRoof()
 end
 
 function M.target(spec, seconds)
-  if not M.active() then cover, sinceCover = shelter.new(), 0 end
+  if not M.active() and not roofDemand then M.resetRoof() end
   goal = spec
   if seconds <= 0 then
     if cur and not sameKind() then removeAll() end
@@ -167,16 +170,32 @@ function M.target(spec, seconds)
   end
 end
 
-local function updateCover(dt)
-  sinceCover = sinceCover + dt
-  if sinceCover < COVER_INTERVAL then return false end
-  sinceCover = 0
+function M.covered()
+  return roofReading
+end
+
+local function sampleCover()
   local cam = core_camera and core_camera.getPosition and core_camera.getPosition()
-  if not cam or not castRayStatic then return false end
-  if not shelter.step(cover, shelter.roofed(cam, castUp)) then return false end
-  local obj = scenetree.findObject(M.NAME)
-  if obj then setHidden(obj, cover.covered) end
-  return true
+  if cam and castRayStatic then return shelter.roofed(cam, castUp) end
+end
+
+local function updateCover(dt, prime)
+  sinceCover = sinceCover + dt
+  if not prime and sinceCover < COVER_INTERVAL then return false end
+  sinceCover = 0
+  local ok, roof = pcall(sampleCover)
+  if not ok or roof == nil then
+    roofReading = nil
+    cover.pending, cover.count = nil, 0
+    return false
+  end
+  local changed = shelter.step(cover, roof)
+  roofReading = roof or cover.covered
+  if changed and cur then
+    local obj = scenetree.findObject(M.NAME)
+    if obj then setHidden(obj, cover.covered) end
+  end
+  return changed
 end
 
 local function switchFields(dt)
@@ -187,7 +206,13 @@ local function switchFields(dt)
   if obj then setSpecFields(obj, cur.spec) end
 end
 
-function M.update(dt)
+function M.update(dt, needRoof)
+  local prime = needRoof and not roofDemand
+  roofDemand = needRoof
+  if not cur and not goal and not needRoof then
+    roofReading = nil
+    return
+  end
   sinceWrite = sinceWrite + dt
   if cur and cur.fieldsIn then switchFields(dt) end
   local reached = false
@@ -209,7 +234,8 @@ function M.update(dt)
       cur.drops = cur.drops + (diff > 0 and step or -step)
     end
   end
-  local changed = cur and updateCover(dt)
+  local changed = (cur or needRoof) and updateCover(dt, prime)
+  if not cur and not needRoof then roofReading = nil end
   if cur and (changed or reached or sinceWrite >= M.FADE_INTERVAL - EPSILON) then writeDrops() end
 end
 

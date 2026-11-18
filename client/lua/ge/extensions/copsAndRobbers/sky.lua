@@ -36,12 +36,14 @@ local MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", 
 local DAYS_IN_MONTH = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
 
 local saved, wasLocked, round, clockStart, target
+local stormSpans, frameLo, frameHi, frameCovered, frameStorm
 local lockTimer, lockAfter, restoring
 local roundTime, started, sinceWind = 0, false, 0
 local sinceStep, wrote, curveIndex, rainIndex, seenIndex, windOn, failed = 0, nil, nil, 0, 0, false, {}
 
 local function forget()
   wind.reset()
+  stormSpans, frameLo = nil, nil
   saved, wasLocked, round, clockStart, target = nil, false, nil, nil, nil
   roundTime, started, sinceWind = 0, false, 0
   sinceStep, wrote, curveIndex, rainIndex, seenIndex, windOn, failed = 0, nil, nil, 0, 0, false, {}
@@ -172,6 +174,36 @@ local function failGrip(err)
   pcall(surfaces.restore)
 end
 
+local function thunderstormSpans(p)
+  local seed = p.lightningSeed
+  if type(seed) ~= "number" or seed < 1 or seed > 2147483646 or seed ~= math.floor(seed) then return end
+  local spans = {}
+  local changes = p.changes or {}
+  local from = p.weather
+  if from == "thunderstorm" then
+    spans[#spans + 1] = {0, changes[1] and changes[1].at or math.huge}
+  end
+  for i, change in ipairs(changes) do
+    local finish = changes[i + 1] and changes[i + 1].at or math.huge
+    if change.to == "thunderstorm" then
+      spans[#spans + 1] = {change.at, finish}
+    elseif from == "thunderstorm" then
+      spans[#spans + 1] = {change.at, math.min(change.at + skyChanges.CHANGE_SECONDS, finish)}
+    end
+    from = change.to
+  end
+  return spans
+end
+
+local function intersectsStorm(lo, hi)
+  if hi > lo then
+    for _, span in ipairs(stormSpans) do
+      if hi >= span[1] and lo < span[2] and span[1] < span[2] then return true end
+    end
+  end
+  return false
+end
+
 function M.apply(p)
   local env = core_environment
   if not env or not setsSomething(p) then return end
@@ -190,6 +222,7 @@ function M.apply(p)
   local state, curveNow = roundState(env, p, at)
   local from, to, progress, index = skyChanges.at(p, at)
   round, clockStart, target = p, state.time, state
+  stormSpans, frameLo = thunderstormSpans(p), nil
   if not started then roundTime = at end
   wrote, curveIndex = { state.cloudCover, state.fogDensity, state.windSpeed }, curveNow
   rainIndex, seenIndex, sinceStep = index, index, 0
@@ -320,14 +353,26 @@ local function pushWind(dt)
   be:setGroundWind(vec3(x, y, z))
 end
 
-function M.update(dt)
-  if rain.active() then
-    local ok, err = pcall(rain.update, dt)
-    if not ok then
-      rain.clear()
-      log("E", "cnr_sky", tostring(err))
+function M.lightningFrame()
+  if frameLo then return round, frameLo, frameHi, frameCovered, frameStorm end
+end
+
+function M.update(dt, hasVisualTail)
+  frameLo = nil
+  if core_environment and started then
+    local lo = roundTime
+    roundTime = roundTime + dt
+    if stormSpans then
+      frameLo, frameHi = lo, roundTime
+      frameStorm = intersectsStorm(lo, roundTime)
     end
   end
+  local ok, err = pcall(rain.update, dt, frameLo ~= nil and (frameStorm or hasVisualTail))
+  if not ok then
+    rain.clear()
+    log("E", "cnr_sky", tostring(err))
+  end
+  frameCovered = rain.covered()
   if not core_environment then return nil end
   if lockTimer then
     lockTimer = lockTimer - dt
@@ -339,7 +384,6 @@ function M.update(dt)
   if not round then return nil end
   local change
   if started then
-    roundTime = roundTime + dt
     change = newChange()
     sinceStep = sinceStep + dt
     if sinceStep >= M.STEP_SECONDS - EPSILON and not lockTimer and (round.changes or round.temps) then

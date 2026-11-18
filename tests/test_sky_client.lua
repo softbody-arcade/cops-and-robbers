@@ -1099,3 +1099,26 @@ test("the prep label adds the first change's forecast to the sky label", functio
   assertEq(sky.prepLabel(p), "Noon · Clear")
   assertEq(sky.prepLabel(nil), nil)
 end)
+
+test("only seeded GO frames publish a strike interval, including short superseded blends", function()
+  local sky = load()
+  local changes = {{at = 10, to = "thunderstorm"}, {at = 20, to = "rain"}, {at = 30, to = "clear"}, {at = 100, to = "thunderstorm"}}
+  local p = {weather = "clear", lightningSeed = 1, changes = changes}
+  sky.apply(p)
+  sky.update(1)
+  assertEq(sky.lightningFrame(), nil)
+  sky.startClock(0)
+  for _, row in ipairs({{9, false}, {10, true}, {25, true}, {30, true}, {99, false}, {101, true}, {1000, true}}) do
+    local t = row[1]
+    local _, _, prev = sky.lightningFrame()
+    sky.update(t - (prev or 0))
+    local frame, lo, hi, _, intersects = sky.lightningFrame()
+    assertEq(frame, p); assertEq(lo, prev or 0); assertEq(hi, t); assertEq(intersects, row[2])
+  end
+  sky.restore(true)
+  assertEq(sky.lightningFrame(), nil)
+  sky.apply({weather = "thunderstorm"})
+  sky.startClock(0)
+  sky.update(1, true)
+  assertEq(sky.lightningFrame(), nil)
+end)

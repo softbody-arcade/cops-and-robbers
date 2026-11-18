@@ -24,7 +24,7 @@ function fakeEnvironment(opts)
   local fake = {
     locked = opts.locked or false,
     setStates = {}, profiles = {}, modelSets = {}, queued = {}, groundWinds = {},
-    objects = {}, deleted = {}, lerps = {}, resets = 0, resetAt = {},
+    objects = {}, deleted = {}, played = {}, lerps = {}, resets = 0, resetAt = {},
   }
   fake.state = {
     time = 0.1, play = true, dayLength = 1800, cloudCover = 0.3, fogDensity = 1,
@@ -99,14 +99,21 @@ function fakeEnvironment(opts)
     setGroundWind = function(_, v) fake.groundWinds[#fake.groundWinds + 1] = v end,
   }
 
-  _G.createObject = function()
-    local obj = { fields = {}, name = nil }
-    function obj:setField(name, _, value) self.fields[name] = value end
+  _G.createObject = function(class)
+    local obj = { class = class, fields = {}, writes = {} }
+    function obj:setField(name, _, value)
+      self.fields[name] = value
+      self.writes[#self.writes + 1] = name
+    end
+    function obj:postApply() self.writes[#self.writes + 1] = "postApply" end
     function obj:getField(name)
       if name == "numDrops" and self.numDrops then return tostring(self.numDrops) end
       return self.fields[name]
     end
-    function obj:play() self.playing = true end
+    function obj:play()
+      self.playing = true
+      fake.played[#fake.played + 1] = self
+    end
     function obj:stop() self.playing = false end
     function obj:setVolumePitchCT(v) self.volume = v end
     function obj:setTransform() end
@@ -130,7 +137,7 @@ function fakeEnvironment(opts)
   _G.MatrixF = function() return {} end
   _G.scenetree = {
     findObject = function(name) return fake.objects[name] end,
-    MissionGroup = { addObject = function() end },
+    MissionGroup = { addObject = function(_, obj) obj.inMission = true end },
   }
   return fake
 end

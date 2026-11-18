@@ -15,6 +15,7 @@ local nearby = require("copsAndRobbers/nearby")
 local sky = require("copsAndRobbers/sky")
 local heli = require("copsAndRobbers/heli")
 local heliSound = require("copsAndRobbers/heliSound")
+local lightning = require("copsAndRobbers/lightning")
 local heliVan = require("copsAndRobbers/heliVan")
 local shelter = require("copsAndRobbers/shelter")
 local traffic = require("copsAndRobbers/traffic")
@@ -209,6 +210,7 @@ end
 
 local heliState = heli.new()
 local soundState = heliSound.new()
+local lightningState = lightning.new()
 local vanState = heliVan.new()
 
 local function setHeli(h)
@@ -591,6 +593,7 @@ local function endRound(leaving)
   hudfeed.clearRound()
   heli.clear(heliState)
   heliSound.clear(soundState)
+  lightning.clear(lightningState)
   heliVan.clear(vanState)
   lightsState = nil
   sky.restore(leaving)
