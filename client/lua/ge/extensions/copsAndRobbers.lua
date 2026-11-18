@@ -27,7 +27,6 @@ local spectator = require("copsAndRobbers/spectator")
 local CLIENT_VERSION = "2.14.1"
 local LIGHTS_OFF = "electrics.set_lightbar_signal(0)"
 local SETUP_DELAY = 0.5
-local PLACEMENT_TIMEOUT = 5
 local FREEZE_REASSERT = 0.5
 local POSE_JUMP = 30
 local SIGHT_CHECK_INTERVAL = 0.25
@@ -90,9 +89,14 @@ local routeDrawn = false
 local lightsState, lightsPlaced, lastLightsCheck = nil, false, 0
 local lastLightSync, lightSyncCount = 0, 0
 
+local function roundVehicle()
+  if pendingPlacement then return getObjectByID(pendingPlacement.gameId) end
+  return ownVehicle()
+end
+
 local function setFreeze(on)
   frozen = on
-  local veh = ownVehicle()
+  local veh = roundVehicle()
   if veh then veh:queueLuaCommand("controller.setFreeze(" .. (on and 1 or 0) .. ")") end
 end
 
@@ -126,15 +130,14 @@ local function placeVehicle(model, config, pos, rot, color, initialGrid, persona
   end
   if initialGrid then
     personalCarId = veh and veh:getID()
-    if not personalCarId then
-      pendingPlacement = nil
-      hudfeed.event("Could not spawn your round car", clock, "warn")
-      return
-    end
     pos, rot = nil, nil
   end
-  pendingPlacement = { at = clock + SETUP_DELAY, deadline = clock + PLACEMENT_TIMEOUT, pos = pos, rot = rot,
-    gameId = initialGrid and personalCarId or nil, rebuild = rebuildId }
+  if not veh then
+    pendingPlacement = nil
+    hudfeed.event("Could not spawn your round car", clock, "warn")
+    return
+  end
+  pendingPlacement = { at = clock + SETUP_DELAY, pos = pos, rot = rot, gameId = veh:getID(), rebuild = rebuildId }
 end
 
 local function startStatus()
@@ -320,6 +323,7 @@ local function onRoundSetup(data)
   lightsPlaced = false
   traffic.setWeather(sky.weather())
   frozen = phase == "prep" or phase == "applying" or phase == "ready" or phase == "countdown" or (phase == "headstart" and role == "cop")
+  if frozen and pendingPlacement then setFreeze(true) end
   if phase == "applying" then hudfeed.applying(true) end
   if phase == "prep" or phase == "applying" or phase == "ready" then
     hudfeed.prep(role, game.carName(d.model), (evolving and phase == "prep") and "change" or "go", d.runnerName or playerName(d.runnerId), skyLabel)
@@ -651,11 +655,11 @@ local function endRound(leaving)
   penaltyActive = false
   timerEnd = nil
   roundModel, roundConfig, roundColor = nil, nil, nil
+  if frozen then setFreeze(false) end
   personalCarId = nil
   pendingPlacement = nil
   resetAllowed, serverResetAllowed, resetLockUntil = false, false, nil
   lastPose = nil
-  if frozen then setFreeze(false) end
   inputs.unlockAll()
 end
 
@@ -769,21 +773,25 @@ end
 
 local function updatePendingPlacement()
   local p = pendingPlacement
-  if not p or clock < p.at then return end
-  local veh
-  if p.gameId then veh = getObjectByID(p.gameId) else veh = ownVehicle() end
-  local vid = veh and game.serverVid(veh)
-  if veh and vid then
+  if not p or (p.at and clock < p.at) then return end
+  local veh = getObjectByID(p.gameId)
+  if not veh then
     pendingPlacement = nil
+    hudfeed.event("Your round car disappeared before placement", clock, "warn")
+    return
+  end
+  if p.at then
+    p.at = nil
     if p.pos then teleport(veh, p.pos, p.rot) end
     local restore = modes.restoreCommand(modes.forModel(modesState, roundModel))
     if restore then veh:queueLuaCommand(restore) end
     modesHoldUntil = clock + MODES_SETTLE
-    if frozen then veh:queueLuaCommand("controller.setFreeze(1)") end
-    sendServer("cnr_myVehicle", { vid = vid, rebuild = p.rebuild })
     lightsPlaced = true
-  elseif clock >= p.deadline then
+  end
+  local vid = game.serverVid(veh)
+  if vid then
     pendingPlacement = nil
+    sendServer("cnr_myVehicle", { vid = vid, rebuild = p.rebuild })
   end
 end
 
@@ -794,8 +802,8 @@ local function updateResetLock()
 end
 
 local function updateOwnCar()
-  if not active or pendingPlacement then return end
-  local veh = ownVehicle()
+  if not active or (pendingPlacement and pendingPlacement.at) then return end
+  local veh = roundVehicle()
   if not veh then return end
   local pos = veh:getPosition()
   if not lastPose or pos:distance(lastPose.pos) <= POSE_JUMP then
@@ -970,7 +978,8 @@ local function updateHeli(target)
     end
   end
   if active or spectating then
-    local opts = { weather = traffic.weather(), beam = prefs.beam ~= false, roads = roadData }
+    local from, to, progress = sky.weatherBlend()
+    local opts = { weather = to, weatherFrom = from, weatherProgress = progress, beam = prefs.beam ~= false, roads = roadData }
     if castRayStatic then opts.roofedAt = roofedAt end
     local wantsNight = heli.wantsNight(heliState)
     local night = (wantsNight or heliState.flight ~= nil) and sky.isNight()
@@ -989,8 +998,8 @@ end
 local function onUpdate(dtReal)
   clock = clock + (dtReal or 0)
   local change = sky.update(dtReal or 0, lightning.hasVisualTail(lightningState))
+  if active or spectating then traffic.setWeather(sky.weather()) end
   if change then
-    traffic.setWeather(change.to)
     hudfeed.event(change.notice, clock, "info")
   end
   updatePendingPlacement()

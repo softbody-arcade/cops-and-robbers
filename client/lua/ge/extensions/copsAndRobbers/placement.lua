@@ -46,19 +46,25 @@ function M.activate(state)
   state.active = true
 end
 
-function M.leave(state, env)
+function M.leave(state, env, closeLayout)
   local group = state.group
   state.active = false
   state.placed, state.optedOut = {}, {}
   local api = env.api
   for _, layout in ipairs(api.getAvailableLayouts() or {}) do
     local name = layout.filename
-    local fresh = env.readLayout(name) or layout
-    local idx = appIndex(fresh, state.appName)
-    while idx do
-      api.removeApp(name, idx - 1)
-      table.remove(fresh.apps, idx)
-      idx = appIndex(fresh, state.appName)
+    local fresh = env.readLayout(name) or deepCopy(layout)
+    local removed = false
+    for i = #(fresh.apps or {}), 1, -1 do
+      local app = fresh.apps[i]
+      if app.appName == state.appName and (name == closeLayout or (type(app.settings) == "table" and app.settings.cnrAutoPlaced == true)) then
+        table.remove(fresh.apps, i)
+        removed = true
+      end
+    end
+    if removed then
+      api.saveLayout(fresh)
+      fresh = env.readLayout(name) or layout
     end
     if group.createdCopy[name] and api.resetLayout and env.readOriginal then
       local original = env.readOriginal(name)
@@ -102,7 +108,12 @@ function M.tick(state, env)
   if state.optedOut[name] then return false end
   local makesCopy = current.userFileExists == false
   local modApps = not makesCopy and env.fromMod and env.fromMod(name) and deepCopy(fresh.apps or {})
-  if api.addApp(name, state.appName, copy(state.placement)) then
+  local updated = deepCopy(fresh)
+  updated.apps = updated.apps or {}
+  updated.apps[#updated.apps + 1] = { appName = state.appName, placement = copy(state.placement), settings = { cnrAutoPlaced = true } }
+  api.saveLayout(updated)
+  local written = env.readLayout(name)
+  if written and appIndex(written, state.appName) then
     state.placed[name] = true
     if makesCopy then state.group.createdCopy[name] = true end
     if modApps and not state.group.hidMod[name] then state.group.hidMod[name] = modApps end

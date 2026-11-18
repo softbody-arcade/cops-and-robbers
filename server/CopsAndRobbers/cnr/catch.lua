@@ -7,7 +7,7 @@ Tracker.__index = Tracker
 local DRAIN_FACTOR = 2
 local STUCK_WINDOW_SECONDS = 4
 local STUCK_METERS = 3
-local ROCK_FACTOR = 2
+local ROCK_FACTOR = 1.5
 
 function M.new(cfg)
   return setmetatable({ cfg = cfg, hold = 0, lastNow = nil, history = {} }, Tracker)
