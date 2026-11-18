@@ -3489,7 +3489,7 @@ test("the runner and both cop slots use identical West Coast poses across normal
   for _, mode in ipairs({ "normal", "runner", "cop", "watch" }) do
     local env = boot()
     env.names = { "Reinder", "Bob", "Alice" }
-    env.positions[1] = 8000
+    env.vidPositions["1-0"] = { pos = { -360.06, 619.75, 75.05 }, vel = { 0, 0, 0 } }
     local planner = bootClient()
     westCoastStart(planner)
     planner.fire("cnr_mode", { startGrid = true })
@@ -3579,6 +3579,11 @@ test("starting grid replies must match the outstanding pick, planner, slot count
     env.call("cnr_startGrid", pid, encode({ id = id, slots = slots }))
   end
   local slots = { pose, pose, false }
+  local distant = { geo = { lat = 51, lon = 5, h = 100 }, toward = { lat = 51.00001, lon = 5, h = 100 } }
+  reply(1, nextPick.id, { pose, distant, false })
+  reply(1, nextPick.id, { pose, { geo = pose.geo, toward = distant.geo }, false })
+  assertEq(env.lastSent("cnr_roundSetup"), nil, "geographic offsets are checked in metres")
+
   reply(1, first.id, slots)
   reply(2, nextPick.id, slots)
   reply(1, nextPick.id, { pose, pose })
@@ -3619,6 +3624,10 @@ test("a joining cop extends the starting grid around its first anchor and a retu
   local extended = decodeJson(env.lastSent("cnr_planStart").data)
   assertEq(extended.count, 3)
   assertEq(extended.anchor.pos.x, 12)
+  local moved = { pos = { x = 15, y = 24, z = 2 }, dir = dir }
+  env.call("cnr_startGrid", 1, encode({ id = extended.id, slots = { moved, cop, false } }))
+  assertEq(env.lastSent("cnr_roundSetup"), nil, "the extension keeps the accepted anchor")
+  env.positions[1] = 10000
   env.call("cnr_startGrid", 1, encode({ id = extended.id, slots = { runner, cop, false } }))
   assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 3)).startPose, false)
   env.go()
@@ -3650,5 +3659,37 @@ test("an evolving practice places the human cop and both AIs as soon as its grid
   assertEq(human.phase, "ready"); assertEq(human.startPose.pos.x, 20)
   assertEq(ai[1].role, "runner"); assertEq(ai[1].startPose.pos.x, 10)
   assertEq(ai[2].role, "cop"); assertEq(ai[2].startPose.pos.x, 30)
+  env.cleanup()
+end)
+
+test("the initial grid stays near a known runner and within the search range of its anchor", function()
+  local env = boot()
+  env.call("cnr_startGridReady", 1, "{}")
+  env.startRound()
+  local id = decodeJson(env.lastSent("cnr_planStart").data).id
+  local function pose(x)
+    return { pos = { x = x, y = 0, z = 0 }, dir = { x = 1, y = 0, z = 0 } }
+  end
+  local function submit(runnerX, copX)
+    env.call("cnr_startGrid", 1, encode({ id = id, slots = { pose(runnerX), pose(copX) } }))
+  end
+  env.positions[1] = 9000
+  submit(0, 120)
+  assertEq(env.lastSent("cnr_roundSetup"), nil, "known runner is outside the road search area")
+  submit(9000, 15000)
+  assertEq(env.lastSent("cnr_roundSetup"), nil, "cop is outside the largest search ring")
+  submit(9000, 11300)
+  assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 2)).startPose.pos.x, 11300, "widened ring")
+  env.cleanup()
+end)
+
+test("an ambiguous personal vehicle sample still permits a bounded initial grid", function()
+  local env = boot({ vehicles = { [1] = { [0] = "parked", [2] = "personal" }, [2] = { [0] = "cop" } } })
+  env.call("cnr_startGridReady", 1, "{}")
+  env.startRound()
+  local request = decodeJson(env.lastSent("cnr_planStart").data)
+  local pose = { pos = { x = 12000, y = 0, z = 0 }, dir = { x = 1, y = 0, z = 0 } }
+  env.call("cnr_startGrid", 1, encode({ id = request.id, slots = { pose, false } }))
+  assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 1)).startPose.pos.x, 12000)
   env.cleanup()
 end)

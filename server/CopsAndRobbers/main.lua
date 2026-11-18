@@ -67,6 +67,7 @@ local sitOut = {}
 local spectators = {}
 local aiSpawnsLeft = 0
 local gridClients = {}
+local START_ROAD_SEARCH = 2000
 local WATCHING_AI = "You can't spawn a car while watching the AI"
 local serverClock = MP.CreateTimer()
 
@@ -1361,12 +1362,31 @@ local function gamePoint(p)
   end
 end
 
+local function startDistance(a, b)
+  if not geoMode then return vec.dist(a, b) end
+  local ref = geo.newRef(a.lat, a.lon)
+  return vec.dist(geo.toLocal(ref, a.lat, a.lon, a.h), geo.toLocal(ref, b.lat, b.lon, b.h))
+end
+
+local function plannerPosition(pid)
+  if current.aiOnly then return nil end
+  local vehicles = MP.GetPlayerVehicles(pid)
+  if type(vehicles) ~= "table" then return nil end
+  local vid, data = next(vehicles)
+  if not vid or next(vehicles, vid) then return nil end
+  local vehicle = parseVehicleData(data)
+  if vehicle and vehicle.jbm == "unicycle" then return nil end
+  if geoMode then return geoPoint(geoOf(pid)) end
+  local raw, err = MP.GetPositionRaw(pid, vid)
+  if (not err or err == "") and type(raw) == "table" then return vec.toVec(raw.pos) end
+end
+
 local function startPose(p)
   if p == false then return false end
   if type(p) ~= "table" then return nil end
   if geoMode then
     local at, toward = earthPoint(p.geo), earthPoint(p.toward)
-    if at and toward and (at.lat ~= toward.lat or at.lon ~= toward.lon) then
+    if at and toward and (at.lat ~= toward.lat or at.lon ~= toward.lon) and startDistance(at, toward) <= 2 then
       return { geo = at, toward = toward, offRoad = p.offRoad == true or nil }
     end
   else
@@ -1388,6 +1408,20 @@ function cnrOnStartGrid(pid, data)
   for i = 1, pending.request.count do
     slots[i] = startPose(d.slots[i])
     if slots[i] == nil or (not slots[1] and slots[i]) then return end
+  end
+  local runner = slots[1]
+  local anchor = runner and (runner.pos or runner.geo)
+  if pending.request.anchor ~= nil then
+    if not tables.deepEqual(pending.request.anchor, runner) then return end
+  elseif anchor then
+    local known = plannerPosition(pid)
+    if known and not (startDistance(known, anchor) <= START_ROAD_SEARCH + 1) then return end
+  end
+  local limit = math.max(cfg.copSpawnMaxMeters, 1)
+  while limit < START_ROAD_SEARCH do limit = limit * 2 end
+  for i = 2, #slots do
+    local cop = slots[i]
+    if cop and not (startDistance(anchor, cop.pos or cop.geo) <= limit + 1) then return end
   end
   applyEffects(current:gridReceived(now(), slots, MP.GetPlayers() or {}))
 end
