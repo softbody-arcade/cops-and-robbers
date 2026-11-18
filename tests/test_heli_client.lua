@@ -1055,6 +1055,26 @@ beamTest("at night while tracking the beam is drawn and the light has a glare", 
   assertEq(drawsAt(0.05, true), 1200)
 end)
 
+beamTest("nightfall during a daylight flight brings up the spotlight, glare and beam together", function()
+  for _, phase in ipairs({ "tracking", "searching" }) do
+    load()
+    stubBeam()
+    heli.set(state, { phase = "tracking" }, 0)
+    assertEq(drawsAt(0, false), 0)
+    heli.set(state, { phase = phase }, 1)
+    assertEq(drawsAt(1, true), 0)
+    local light = fake.objects[LIGHT]
+    assertEq(tonumber(light.fields.brightness), 0)
+    assertEq(tonumber(light.fields.flareScale), 0)
+    assertEq(drawsAt(1.5, true, { weather = "rain" }) > 0, true)
+    assertNear(tonumber(light.fields.brightness), heli.BRIGHTNESS / 2, 0.01)
+    assertNear(tonumber(light.fields.flareScale), 0.5, 0.01)
+    drawsAt(2, true)
+    assertEq(tonumber(light.fields.brightness), heli.BRIGHTNESS)
+    assertEq(tonumber(light.fields.flareScale), 1)
+  end
+end)
+
 beamTest("the beam setting off draws no beam and keeps the glare; on again draws on the next tick", function()
   load()
   stubBeam()
@@ -1135,6 +1155,7 @@ beamTest("the occlusion ray ends the beam at a hit, every 0.25 s, ignoring a hit
   local casts = {}
   local short = false
   stubBeam(function(origin, dir, maxDist)
+    if dir.z >= 0 or dir.z == -1 then return maxDist end
     casts[#casts + 1] = { origin = origin, dir = dir, maxDist = maxDist }
     return short and maxDist - 1 or maxDist / 2
   end)
@@ -1164,6 +1185,7 @@ beamTest("a low beam's ray hitting the road at the lit spot does not cut the bea
   load()
   local mode, casts = "none", 0
   stubBeam(function(origin, dir, maxDist)
+    if dir.z >= 0 or dir.z == -1 then return maxDist end
     casts = casts + 1
     if mode == "road" then return maxDist - 2.6 end
     if mode == "deck" then return maxDist - 5 / -dir.z end
@@ -2018,7 +2040,7 @@ end)
 local function downwardRays(ground)
   local stub = { rays = 0, ground = ground }
   stub.cast = function(origin, dir, len)
-    if dir.x == 0 and dir.y == 0 and dir.z < 0 then
+    if dir.x == 0 and dir.y == 0 and dir.z < 0 and len == heli.SWEEP_RAY_LENGTH then
       stub.rays = stub.rays + 1
       stub.last = { origin = copyPos(origin), dir = copyPos(dir), len = len }
       return stub.ground
@@ -2035,6 +2057,95 @@ local function withCast(cast, fn)
   _G.castRayStatic = saved
   if not ok then error(err, 0) end
 end
+
+test("the moving helicopter clears a rooftop along its flight and descends after passing it", function()
+  load()
+  local speed = 40
+  local car = { getPosition = target.getPosition, getVelocity = function() return vec3(speed, 0, 0) end }
+  local scans = 0
+  local function roof(x, y)
+    return x >= 60 and x <= 125 and math.abs(y - pos.y) > 30
+  end
+  local function cast(origin, dir, len)
+    scans = scans + 1
+    if dir.z == -1 then
+      local surface = roof(origin.x, origin.y) and 145 or 0
+      local d = origin.z - surface
+      if d >= 0 and d < len then return d end
+    elseif dir.x > 0 and dir.z == 0 and origin.z < 145 and origin.x < 60 then
+      local d = (60 - origin.x) / dir.x
+      if d < len and roof(60, origin.y + d * dir.y) then return d end
+    end
+    return len
+  end
+  withCast(cast, function()
+    heli.set(state, { phase = "tracking", seed = 99 }, 0)
+    local start = pos.x
+    local roofFrames = 0
+    for i = 0, 1000 do
+      local t = i / 100
+      pos.x = start + speed * t
+      heli.lightTick(state, car, false, t)
+      local p = heli.flying(state, t).pos
+      if roof(p.x, p.y) then
+        roofFrames = roofFrames + 1
+        assertEq(p.z >= 150, true, "flight entered the rooftop at " .. t)
+      end
+    end
+    assertEq(roofFrames > 50, true)
+    assertNear(state.flight.pos.z, pos.z + 100, 0.1)
+    assertEq(scans < 220, true, tostring(scans))
+  end)
+end)
+
+test("a failed clearance scan preserves the last floor and the next scan can climb again", function()
+  load()
+  local surface = 145
+  withCast(function(p, dir, len)
+    if not surface then error("collision temporarily unavailable") end
+    return dir.z == -1 and p.z - surface or len
+  end, function()
+    flightUp()
+    local z = state.flight.pos.z
+    assertEq(z > 145, true)
+    surface = nil
+    heli.lightTick(state, target, false, 0.3)
+    assertNear(state.flight.pos.z, z, 0.05)
+    surface = 210
+    heli.lightTick(state, target, false, 0.6)
+    assertEq(state.flight.pos.z > 210, true)
+  end)
+end)
+
+test("a flight spawns above high ground and samples its new location immediately after a car teleport", function()
+  load()
+  local function cast(origin, dir, len)
+    if dir.z == -1 then
+      local d = origin.z - (origin.x < 500 and 230 or 475)
+      if d >= 0 and d < len then return d end
+    end
+    return len
+  end
+  withCast(cast, function()
+    night(0, "arriving")
+    night(1, "searching")
+    local light = fake.objects[LIGHT]
+    atFlight(light)
+    assertEq(light.pos.z > 230, true)
+    pos.x = pos.x + 2000
+    heli.lightTick(state, target, true, 1.01)
+    atFlight(light)
+    assertEq(light.pos.z > 475, true)
+    local originZ
+    local nearbyCar = { getPosition = function() return vec3(pos.x, pos.y, 300) end }
+    local covered = heli.coverTick(state, 1.01, nearbyCar, function(origin)
+      originZ = origin.z
+      return 1
+    end)
+    assertEq(covered, true)
+    assertEq(originZ, light.pos.z)
+  end)
+end)
 
 test("the sweep point sits on the ground", function()
   load()
@@ -2611,6 +2722,26 @@ test("the road aim sits on the ground", function()
     end, true)
     assertEq(ray.rays - before <= 10 and ray.rays - before >= 5, true, tostring(ray.rays - before))
   end)
+end)
+
+test("the road sweep stays on the road between search legs while the helicopter clears a high deck", function()
+  local c, opts = roadNight(52)
+  local waitingSamples = 0
+  withCast(function(p, dir, len)
+    if dir.z ~= -1 then return len end
+    local surface = p.z >= 360 and 360 or 0
+    return math.min(len, p.z - surface)
+  end, function()
+    nightRun(c, c + 65, opts, function(t)
+      local run = state.search.run
+      if run and run.waiting and t - state.sweepAt > 2 then
+        waitingSamples = waitingSamples + 1
+        assertEq(state.flight.pos.z > 360, true)
+        assertNear(state.aimPos.z, 0, 0.1)
+      end
+    end)
+  end)
+  assertEq(waitingSamples > 0, true)
 end)
 
 test("a jump on the tick a road search finds the runner carries the switching light with it", function()

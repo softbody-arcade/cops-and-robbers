@@ -449,10 +449,12 @@ local function tickLight(state, target, phase, last, night, clock, opts)
   if desired then
     if not state.light then
       if not createLight(state) then error("no light") end
+      if f.daylight then startFadeIn(state, clock) end
     elseif state.fx.mode == "fade" or state.fx.mode == "depart" then
       startFadeIn(state, clock)
     end
   end
+  if f then f.daylight = isUp(phase) and not night end
   if state.light and not (state.flight and advance(state, car, clock)) then removeLight(state) end
   if state.light then beamTick(state, clock, opts) end
 end
