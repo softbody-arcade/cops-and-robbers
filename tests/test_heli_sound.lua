@@ -368,6 +368,30 @@ test("it is always found by name", function()
   assertEq(#first.writes, writes)
 end)
 
+test("a fresh sound state during a flight reuses the playing emitter and takes over its position and gain", function()
+  load()
+  run(sound.new(), 0, 30, P, 1)
+  local existing = objects[NAME]
+  local nextPos = { x = 125, y = 240, z = 75 }
+  local reloaded = sound.new()
+  sound.tick(reloaded, nextPos, 1, 2)
+  assertEq(objects[NAME], existing)
+  assertEq(written(existing), 0)
+  assertEq(existing.pos.x, 125)
+  assertEq(existing.pos.y, 240)
+  assertEq(existing.pos.z, 75)
+  run(reloaded, 41, 50, nextPos, 1)
+  assertNear(written(existing), 0.5, 1e-9)
+  run(reloaded, 51, 61, nextPos, 1)
+  assertEq(written(existing), 1)
+  local plays = 0
+  for _, call in ipairs(existing.calls) do
+    if call == "play" then plays = plays + 1 end
+  end
+  assertEq(plays, 1)
+  assertEq(#made, 1)
+end)
+
 test("a leftover emitter is looked for about once a second and deleted while no sound is wanted", function()
   load()
   local s = sound.new()

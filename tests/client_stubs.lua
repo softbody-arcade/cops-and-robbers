@@ -37,6 +37,8 @@ function bootClient(opts)
   end
   math.atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
   _G.vec3 = v3
+  env.cameraPos = v3(0, 0, 0)
+  _G.core_camera = opts.camera or { getPosition = function() return env.cameraPos end }
   _G.quatFromDir = function(dir, up)
     local q = { dir = dir, up = up, x = 0, y = 0, z = 0, w = 1 }
     function q:setFromDir(d, u) self.dir, self.up = d, u end

@@ -1527,8 +1527,10 @@ test("a short refuel from searching back to tracking follows the car", function(
   samePos(f.spot, s, 1e-9)
   c = c + 0.05
   status(c, "refuelling")
-  assertEq(f.leaving ~= nil, true)
+  assertNear(horiz(f.leaving, s), 600, 1e-6)
+  local before = dist3(f.pos, f.leaving)
   c = flyTo(c, c + 4.95)
+  assertEq(dist3(f.pos, f.leaving) < before - 50, true)
   c = c + 0.05
   status(c, "tracking")
   assertEq(state.flight, f)
@@ -2158,8 +2160,13 @@ test("a refuel that starts while the target is missing flies away and drops the 
   heli.set(state, { phase = "refuelling" }, c)
   heli.lightTick(state, nil, false, c)
   local left = c
-  assertEq(f.leaving ~= nil, true)
+  assertNear(horiz(f.leaving, a), 600, 1e-6)
+  assertNear(f.leaving.z - a.z, 150, 1e-6)
   assertEq(state.leftAt, left)
+  local distanceAtDeparture = dist3(f.pos, f.leaving)
+  c = flyTo(c, left + 5)
+  assertEq(state.flight, f)
+  assertEq(dist3(f.pos, f.leaving) < distanceAtDeparture - 50, true)
   local dropped
   while c < left + 12 - 1e-9 do
     c = c + 0.05
