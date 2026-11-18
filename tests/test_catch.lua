@@ -195,3 +195,20 @@ test("at the real 0.25 s tick the movement history holds the 4 s window and no m
   assertEq(peak, 17)
   assertEq(#t.history, 17)
 end)
+
+test("a runner rocking slowly with a cop nearby is caught even while drifting", function()
+  local w = 5 / 3.6 / 1.5
+  for _, drift in ipairs({ 0, 0.25 }) do
+    local t = catch.new(cfg)
+    local caught = false
+    for i = 0, 56 do
+      local now = i * 0.25
+      local x = 1.5 * math.sin(w * now) + drift * now
+      local vx = 1.5 * w * math.cos(w * now) + drift
+      local _
+      _, caught = t:update(now, car(x, vx), { car(5) })
+      if caught then break end
+    end
+    assertEq(caught, true, "drift " .. drift)
+  end
+end)

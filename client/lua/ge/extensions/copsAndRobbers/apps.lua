@@ -46,7 +46,7 @@ end
 
 local function placementEnv(name)
   local api = layoutsApi()
-  if not api or not api.getCurrentLayout or not api.addApp or not api.removeApp
+  if not api or not api.getCurrentLayout or not api.saveLayout
     or not api.setCurrentLayout or not api.getAvailableLayouts then
     return nil
   end
@@ -108,13 +108,16 @@ function M.open(name)
   if placed then tickApp(name) end
 end
 
-function M.close(name)
+function M.close(name, dismissed)
   local def = M.APPS[name]
   if not def or def.sticky then return end
   local state = states[name]
   if not state.active and not M.isOpen(name) then return end
   local env = placementEnv(name)
-  if env then pcall(placement.leave, state, env) end
+  if env then
+    local current = not dismissed and env.api.getCurrentLayout()
+    pcall(placement.leave, state, env, current and current.filename)
+  end
   state.active = false
 end
 
@@ -147,15 +150,14 @@ function M.layoutChanged(clock)
 end
 
 function M.leave()
+  if not loadedAt then return end
   loadedAt = nil
   placed = false
   for _, name in ipairs(ORDER) do
     local state = states[name]
-    if state.active then
-      local env = placementEnv(name)
-      if env then pcall(placement.leave, state, env) end
-      state.active = false
-    end
+    local env = placementEnv(name)
+    if env then pcall(placement.leave, state, env) end
+    state.active = false
   end
   group.createdCopy, group.hidMod = {}, {}
 end

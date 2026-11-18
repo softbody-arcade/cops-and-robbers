@@ -22,8 +22,13 @@ local startX, startY, startZ, dirX, dirY, dirZ = {}, {}, {}, {}, {}, {}
 local normX, normY, normZ, planeDist, between = {}, {}, {}, {}, {}
 local verts, edgeDist, rungDist, rungSide = {}, {}, {}, {}
 
-function M.strength(weather, bright)
-  return (M.STRENGTH[weather] or M.DEFAULT_STRENGTH) * math.max(0, math.min(1, bright))
+function M.strength(weather, bright, from, progress)
+  local density = M.STRENGTH[weather] or M.DEFAULT_STRENGTH
+  if from and progress then
+    local previous = M.STRENGTH[from] or M.DEFAULT_STRENGTH
+    density = previous + (density - previous) * progress
+  end
+  return density * math.max(0, math.min(1, bright))
 end
 
 local function basis(wx, wy, wz)

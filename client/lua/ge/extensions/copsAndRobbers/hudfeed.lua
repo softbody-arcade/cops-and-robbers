@@ -194,7 +194,7 @@ local function push(clock, info)
   visibleSent = true
   if helpOpen and apps.dismissed("howto") then
     helpOpen = false
-    apps.close("howto")
+    apps.close("howto", true)
   end
   if not info.active and clock - appsCheckedAt >= APPS_CHECK_INTERVAL then
     appsCheckedAt = clock
