@@ -396,9 +396,10 @@ local function fakeLayouts()
     getAvailableLayouts = function()
       return { { filename = name, apps = L.disk[name].apps }, { filename = other, apps = L.disk[other].apps } }
     end,
-    addApp = function(file, app, placement)
-      table.insert(L.disk[file].apps, { appName = app, placement = placement })
-      L.added[#L.added + 1] = placement
+    saveLayout = function(layout)
+      L.disk[layout.filename].apps = layout.apps
+      local last = layout.apps[#layout.apps]
+      if last then L.added[#L.added + 1] = last.placement end
       return true
     end,
     removeApp = function(file, idx0) table.remove(L.disk[file].apps, idx0 + 1); return true end,
@@ -1586,7 +1587,7 @@ end)
 
 local function withLeftoverHowTo()
   local L = fakeLayouts()
-  table.insert(L.disk[L.name].apps, { appName = "copsAndRobbersHowToPlay" })
+  table.insert(L.disk[L.name].apps, { appName = "copsAndRobbersHowToPlay", settings = { cnrAutoPlaced = true } })
   local env = bootClient({ layouts = L, files = { [HELP_FILE] = { seen = true } } })
   join(env)
   env.tick(4, 0.5)
