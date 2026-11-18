@@ -14,7 +14,7 @@ local panel = require("cnr.panel")
 local sky = require("cnr.sky")
 local traffic = require("cnr.traffic")
 
-local VERSION = "2.14.3"
+local VERSION = "2.14.4"
 local PREFIX = "[CnR] "
 local dataDir = pluginDir .. "data/"
 local stationsDir = dataDir .. "stations/"
