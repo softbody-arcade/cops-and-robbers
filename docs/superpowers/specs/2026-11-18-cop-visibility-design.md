@@ -2,7 +2,7 @@
 
 A cop driving through an intersection can look down a side street and spot a runner 290 metres away. Looking straight ahead, the same runner is too far to acquire. A building between the cars blocks both views. At night, switching off the runner’s lamps or leaving a pool of streetlight can help the runner disappear. The existing SPOTTED/HIDDEN indicator, live positions and last-seen updates carry those outcomes.
 
-![A cop looking ahead, then looking into the same side street. The runner is only within range in the second view.](cop-visibility.svg)
+![Two maps show a cop looking ahead, then down a side street toward a runner 290 m away. Turning the view brings the runner into range. In both maps the mirrors cover 200 m directly behind the car.](cop-visibility.svg)
 
 ## Why
 
@@ -33,10 +33,10 @@ Practice has a separate gap. Its AI cops can drive after the runner, but the cur
 ## User decisions
 
 - Human cops spot furthest where they look with an attached driving camera. Practice AI uses its car heading. Both check sight from their own car.
-- Keep the default at 400 m ahead, 200 m to the side and 100 m behind in clear daylight. The host can scale the range or turn ground sight off.
+- In clear daylight, looking at the runner gives 400 m by default. A cop looking ahead can spot a runner 200 m directly behind the car through its mirrors. Turning the camera to look straight back gives 400 m there. The 100 m minimum still applies directly opposite the gaze outside the mirrors’ coverage. The host can scale the range or turn ground sight off.
 - Practice AI keeps chasing the assigned runner while the runner is **HIDDEN**.
 
-The curve between those three distances, night and weather multipliers and range gained from lights are starting values for the first playtest. The examples below use those values.
+The shape and width of the mirror coverage, the gaze curve between the agreed distances, the night and weather multipliers and the range gained from lights are starting values for the first playtest. The examples below use those values.
 
 ## What happens in a chase
 
@@ -57,11 +57,24 @@ If the helicopter were tracking at 6.5 s, the runner would still see **HIDDEN** 
 
 ## Direction and distance
 
-The host’s **Sight range** sets how far a cop can trigger a shared spotting report in clear daylight. A player can still see a car 500 m away on an open road. The 400 m default limits when a cop can share that sighting with the team. A 200 m setting gives 200/100/50 m. Off (0) disables cop sight throughout, including Practice. Looking into a mirror or directly turning the camera behind the car are different actions. Turning an attached camera backwards gives full forward-looking range in that direction. The 100 m rear range is an allowance for awareness around the car.
+The host’s **Sight range** sets how far a cop can trigger a shared spotting report in clear daylight. A player can still see a car 500 m away on an open road. The 400 m default limits when a cop can share that sighting with the team. At a 200 m setting, a cop looking straight ahead gets 200 m ahead, 100 m to either side and 100 m directly behind the car. Looking due left at a runner there gives 200 m there. A runner directly opposite on the right gets 50 m. Off (0) disables ground sight, including Practice.
 
 There is a reason to reward looking. While viewing pursuit footage, drivers narrowed their visual search during nighttime pursuits. In a separate simulator study, drivers intentionally following another vehicle spent more time looking at it, scanned a narrower area and were less aware of pedestrians. Our inference is that pointing the view down a street should improve the chance of recognizing the runner there. The camera approximates attention. The metre values and curve are gameplay tuning. [Pursuit footage study](https://pubmed.ncbi.nlm.nih.gov/14570510/) · [Intentional car-following study](https://doi.org/10.1068/p5105)
 
-Use the horizontal angle θ from the cop’s look direction to the runner. Given the normalized XY dot product c = cos θ, the clear-day range is **R × 2^(c − 1)**. This rounds off the boundary between front, side and rear. At 45° the default gives about 327 m. The range check uses the existing 3D eye-to-target-centre distance (inclusive). An overpass still adds vertical separation. A zero horizontal separation or unusable heading gives the shortest angular range. Treat invalid positions as a missed observation.
+A cop facing north can spot a runner 180 m due south while watching the road ahead. The same runner at 260 m needs a deliberate look back. If the cop turns the camera west, the mirrors still cover the road to the south. The street due east is directly opposite the gaze and has only 100 m of range. A wall behind the cop blocks a mirror sighting just as it blocks a direct look.
+
+Two horizontal angles determine how much of the host range R applies. The gaze angle θ measures how far the runner is from the direction the cop looks. The mirror angle β measures how far the runner is to either side of the assigned car’s rear axis. Human and Practice cops use the same calculation.
+
+```text
+gaze              = 2^(cos θ − 1)
+u                 = clamp(1 − β / 30°, 0, 1)
+mirror floor      = 0.25 + 0.25 × u² × (3 − 2u)
+directional range = R × max(gaze, mirror floor)
+```
+
+The gaze gives about 327 m at 45° from the look direction. The proposed mirror floor gives 200 m directly behind the car, 150 m at 15° off the rear axis and 100 m at 30° or farther. Beyond that taper, the gaze alone determines range. Turning the camera can improve the gaze range while the mirror floor stays fixed to the car. Looking directly at the runner gives the full 400 m anywhere.
+
+The rear axis points directly opposite the assigned car’s horizontal forward vector. Use that axis for the mirror and the horizontal car-to-runner displacement for both angles. If the car heading is unusable, omit the mirror contribution. A usable camera gaze still counts. With an unusable gaze use its quarter-range minimum. With zero or unusable horizontal displacement, both angles are unavailable and the range is R/4. The final check uses the existing inclusive 3D eye-to-target-centre distance, so an overpass still adds vertical separation. Invalid world positions give a missed observation.
 
 ### Whose eyes count
 
@@ -100,7 +113,7 @@ fog factor         = 1 − 0.60 × clamp((rawFog − 0.0004) / 0.0146, 0, 1)
 effective range    = directional range × lighting factor × fog factor × precipitation factor
 ```
 
-| Runner, weather and lighting | Looking at runner | To the side | Behind |
+| Runner, weather and lighting | Looking at runner | Looking forward, runner beside or directly behind car | Opposite sideways gaze, outside mirror coverage |
 |---|---:|---:|---:|
 | Clear day | 400 m | 200 m | 100 m |
 | Cloudy day (raw 0.001) | 390 m | 195 m | 98 m |
@@ -194,11 +207,11 @@ A repeated registration of the same live instance preserves its sight. Deletion 
 
 ## First-playtest calls
 
-Start with the continuous directional curve, the 60-minute twilight transition and the multipliers in the weather and lighting table. The driving studies inform the choice to reward looking. The exact acquisition distances are gameplay tuning. Judge the curve with the 290 m side street and judge lamp strength on the transition from a lit patch to a dark road. The defaults give the builder fixed values to test and the player a concrete baseline to judge.
+Start with the continuous directional curve, the 60-minute twilight transition and the multipliers in the weather and lighting table. The driving studies inform the choice to reward looking. The exact acquisition distances are gameplay tuning. Try the 290 m side street for the gaze curve and a runner following on a straight for the mirror coverage. Judge lamp strength as the runner leaves a lit patch for a dark road. The defaults give the builder fixed values to test and the player a concrete baseline to judge.
 
 ## Automated acceptance
 
-- Use fixed positions for a runner just inside, on and beyond the directional boundary. Cover left/right symmetry, looking backwards, an overpass, lost camera heading and Off. Capture the car-to-car rays while moving the camera beyond a wall. A missing registered runner, even with a visible spare, must give a missed observation.
+- Use fixed positions for a runner just inside, on and beyond the directional boundary. Pin mirror floors on both sides at 0°, 15° and 30° off the rear axis. Compare looking ahead and straight back, and pin the 100 m baseline opposite a sideways gaze. Cover an overpass, missing car heading with a valid camera gaze, zero XY separation and Off. Capture the car-to-car rays while moving the camera beyond a wall. A missing registered runner, even with a visible spare, must give a missed observation.
 - Reproduce the environmental table and the changing-weather example from known inputs. Test dawn and dusk across the clock wrap, conservative fallbacks on missing signals, a manual lamp change and a replacement runner reusing a game ID. Check that worsening weather shortens or preserves the range, including at night.
 - Build scene fixtures for the two authored lamps. Check spot direction, extent, disabled or zero-intensity fixtures, a blocked ray, overlapping lights, work per frame and maximum candidates per sample.
 - Replay the two-cop timeline and a missing keepalive. Cover human reports, two independent Practice slots, wrong issuer, duplicate registration, delayed old-instance reports, AI-only observation and Practice with sight Off. Check a cop still chases the assigned runner through loss, reacquisition and a seat change. Run the complete Lua suite and existing leaderboard fixtures.
@@ -210,6 +223,7 @@ The code and authored map fields identify what to read. The following observatio
 | Setup and action | Observable pass condition | What the game check settles |
 |---|---|---|
 | One player, clear-day Practice as cop. Hold the car heading with the AI runner 200–400 m down an open side street and rotate the attached view. Then leave the car behind a wall and look over it. | The individual cop acquires looking into the street, loses on looking away and cannot acquire over the wall. Read the tagged sample if another cop holds team sight. | Which installed camera modes supply the intended bearing and how the boundary feels to the player. |
+| One player, clear-day Practice as cop. With the car pointing up an open straight and the runner about 260 m directly behind it, turn the attached view from forward to straight back. | The cop’s logged range rises from about 200 to 400 m, with acquisition on the deliberate look back. The logged rear angle stays near zero. | Whether the rear sighting feels like a glance in the mirrors followed by a deliberate look. |
 | One player, night Practice as runner. Cross a working lamp's pool onto a dark stretch and toggle low beam. Compare per-cop distance, bearing and range in the tagged samples. | At comparable bearing, range drops outside the visible pool and increases with lamps on. | Whether the map emitter's live geometry matches the patch of road the player sees. |
 | Two clients, clear night on an unlit straight. Park the runner about 170 m ahead of a cop looking at them. Disable automatic headlights and toggle the runner's lamps. | After electrical replication the cop reads each switch change. The runner becomes SPOTTED with lamps on and HIDDEN after loss and grace with lamps off, when no other cop has sight. | Delivery of a remote manual change to the observing cop's GE bridge. |
 
