@@ -316,9 +316,10 @@ test("a refused car is a warning notice", function()
   env.cleanup()
 end)
 
-test("edit in real pid-vid format with round car is allowed", function()
+test("edit in real pid-vid format with the registered round car is allowed", function()
   local env = boot()
   env.startRound()
+  env.call("cnr_myVehicle", 1, '{"vid":0}')
   assertEq(env.call("onVehicleEdited", 1, 0, '1-0:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc","parts":{"a":"b"}},"pro":"0"}'), 0)
   assertEq(env.call("onVehicleEdited", 1, 0, '1-0:{"jbm":"etk800","vcf":{"parts":{}}}'), 1)
   env.cleanup()
@@ -378,13 +379,11 @@ test("spawn in real roles:name:pid-vid format is parsed", function()
   env.cleanup()
 end)
 
-test("client reports its vehicle, extras are removed", function()
+test("registering a round car leaves owner-classified traffic and parked cars intact", function()
   local env = boot({ vehicles = { [1] = { [0] = "x", [1] = "y", [2] = "z" }, [2] = { [0] = "x" } } })
   env.startRound()
   env.call("cnr_myVehicle", 1, '{"vid":1}')
-  assertEq(#env.removed, 2)
-  assertEq(env.removed[1] == "1-0" or env.removed[2] == "1-0", true)
-  assertEq(env.removed[1] == "1-2" or env.removed[2] == "1-2", true)
+  assertEq(#env.removed, 0)
   env.cleanup()
 end)
 
@@ -418,10 +417,10 @@ test("/cnr test runner: AI vehicles are tracked as cops", function()
   env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
   assertEq(env.lastSent("cnr_roundSetup").data:find('"role":"runner"', 1, true) ~= nil, true)
   assertEq(env.lastSent("cnr_roundSetup").data:find('"hex":"#d83a2c"', 1, true) ~= nil, true)
+  env.call("cnr_myVehicle", 1, '{"vid":0}')
   assertEq(env.lastSent("cnr_setupAI").pid, 1)
   assertEq(env.call("onVehicleSpawn", 1, 1, 'USER:Reinder:1-1:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc"}}'), 0)
   env.vehicles[1][1] = "y"
-  env.call("cnr_myVehicle", 1, '{"vid":0}')
   assertEq(#env.removed, 0)
   env.call("cnr_aiVehicles", 1, '{"ai":[{"id":-10,"vid":1}]}')
   local raw = MP.GetPositionRaw
@@ -481,7 +480,11 @@ test("test round events reach only the issuer", function()
   for _ = 1, 50 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
   env.panel(1, "stop")
   for _, m in ipairs(env.sent) do
-    if not (m.ev == "cnr_lobby" and m.pid == -1) then assertEq(m.pid, 1, m.ev) end
+    if m.ev == "cnr_parkBystanderCars" then
+      assertEq(m.pid, 2)
+    elseif m.ev ~= "cnr_lobby" or m.pid ~= -1 then
+      assertEq(m.pid, 1, m.ev)
+    end
   end
   env.cleanup()
 end)
@@ -2484,11 +2487,16 @@ test("no traffic go-ahead by default, when disabled, or without room", function(
   end
 end)
 
-test("the go-ahead comes after the clean-up", function()
+test("a driver who owns only traffic can spawn one validated round car alongside it", function()
   local env = trafficBoot({ vehicles = { [1] = { [0] = "x", [1] = "y", [2] = "z" }, [2] = { [0] = "x" } } })
   env.startRound()
-  env.call("cnr_myVehicle", 1, '{"vid":0}')
-  assertEq(#env.removed, 2)
+  env.call("cnr_color", 1, '{"hex":"#00ff00"}')
+  assertEq(env.call("onVehicleSpawn", 1, 3, spawnOf(1, 3, "etk800")), 1)
+  assertEq(env.call("onVehicleSpawn", 1, 3, spawnOf(1, 3, "pickup", "vehicles/pickup/base.pc")), 0)
+  env.vehicles[1][3] = "round car"
+  assertEq(env.call("onVehicleSpawn", 1, 4, spawnOf(1, 4, "pickup", "vehicles/pickup/base.pc")), 1)
+  env.call("cnr_myVehicle", 1, '{"vid":3}')
+  assertEq(#env.removed, 0)
   assertEq(env.lastSent("cnr_trafficStart").pid, 1)
   env.cleanup()
 end)
@@ -2509,6 +2517,50 @@ test("traffic spawns pass up to the count, the next is refused", function()
     env.vehicles[2][vid] = "t"
   end
   assertEq(env.call("onVehicleSpawn", 2, 6, spawnOf(2, 6, "etk800")), 1)
+  env.cleanup()
+end)
+
+test("owners can edit their pre-existing traffic before round registration without losing it", function()
+  for _, mode in ipairs({ "normal", "practice", "watch" }) do
+    local env = trafficBoot({ vehicles = { [1] = { [0] = "traffic", [2] = "personal" } } })
+    if mode == "normal" then
+      env.startRound()
+    else
+      if mode == "watch" then env.call("cnr_sitOut", 1, '{"on":true}') end
+      env.panel(1, "test runner")
+      env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+    end
+    assertEq(env.call("onVehicleEdited", 1, 0, '1-0:{"jbm":"etk800","vcf":{}}'), 0, mode)
+    if mode ~= "watch" then
+      env.call("cnr_myVehicle", 1, '{"vid":2}')
+      assertEq(env.call("onVehicleEdited", 1, 2, '1-2:{"jbm":"etk800","vcf":{}}'), 1, mode)
+    end
+    env.cleanup()
+  end
+end)
+
+test("with round traffic off, retained traffic can be edited and never takes over round-car tracking", function()
+  local env = trafficBoot({ config = '{"trafficPerPlayer":0}' })
+  env.startRound()
+  placed(env, 2)
+  env.vehicles[2][1] = "parked traffic"
+  local edit = '2-1:{"jbm":"etk800","vcf":{}}'
+  assertEq(env.call("onVehicleEdited", 2, 1, edit), 0)
+  assertEq(env.call("onVehicleEdited", 2, 0, edit), 1)
+  env.call("onVehicleDeleted", 2, 0)
+  env.vehicles[2][0] = nil
+  local queried = {}
+  local raw = MP.GetPositionRaw
+  MP.GetPositionRaw = function(pid, vid)
+    queried[pid .. "-" .. tostring(vid)] = true
+    return raw(pid, vid)
+  end
+  env.clock = env.clock + 0.25
+  env.call("cnr_tick")
+  assertEq(queried["2-1"], nil)
+  assertEq(env.call("onVehicleSpawn", 2, 9, spawnOf(2, 9, "pickup", "vehicles/pickup/base.pc")), 0)
+  env.vehicles[2][9] = "round car"
+  assertEq(env.call("onVehicleSpawn", 2, 10, spawnOf(2, 10, "pickup", "vehicles/pickup/base.pc")), 1)
   env.cleanup()
 end)
 
@@ -2619,6 +2671,32 @@ test("with the round car gone, traffic resets are ignored and a round car can be
   env.cleanup()
 end)
 
+test("above the configured traffic allowance one validated replacement is broadcast after deletion or a new car setup", function()
+  for _, reroll in ipairs({ false, true }) do
+    local env = trafficBoot({ config = '{"trafficPerPlayer":1}', maxCars = 10 })
+    env.startRound()
+    env.call("cnr_myVehicle", 2, '{"vid":0}')
+    env.vehicles[2] = { [0] = "round car", [1] = "traffic", [2] = "parked traffic" }
+    if reroll then
+      env.panel(1, "reroll")
+      assertEq(env.call("onVehicleSpawn", 2, 3, spawnOf(2, 3, "etk800")), 1)
+      env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+    else
+      env.call("onVehicleDeleted", 2, 0)
+      env.vehicles[2][0] = nil
+      assertEq(env.lastSent("cnr_roundCars").data:find('"2-0"', 1, true), nil)
+    end
+    assertEq(env.call("onVehicleSpawn", 2, 3, spawnOf(2, 3, "etk800")), 1)
+    assertEq(env.call("onVehicleSpawn", 2, 3, spawnOf(2, 3, "pickup", "vehicles/pickup/sport.pc")), 1)
+    assertEq(env.call("onVehicleSpawn", 2, 3, spawnOf(2, 3, "pickup", "vehicles/pickup/base.pc")), 0)
+    env.vehicles[2][3] = "replacement"
+    assertEq(env.lastSent("cnr_roundCars").data:find('"2-3"', 1, true) ~= nil, true)
+    assertEq(env.call("onVehicleSpawn", 2, 4, spawnOf(2, 4, "pickup", "vehicles/pickup/base.pc")), 1)
+    assertEq(env.call("onVehicleSpawn", 2, 4, spawnOf(2, 4, "etk800")), 1)
+    env.cleanup()
+  end
+end)
+
 test("a New car re-pick lets no extra car past the cap", function()
   local env = trafficBoot()
   env.startRound()
@@ -2683,6 +2761,86 @@ end)
 test("How to play gets the effective traffic", function()
   local env = trafficBoot({ maxCars = 4 })
   assertEq(env.lastSent("cnr_rules").data:find('"trafficPerPlayer":3', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("practice reserves AI slots until the server sees the owner's late spare removed", function()
+  for _, watch in ipairs({ false, true }) do
+    local env = trafficBoot({ maxCars = 4, vehicles = { [1] = { [0] = "car", [1] = "spare", [2] = "late spare" } } })
+    if watch then env.call("cnr_sitOut", 1, '{"on":true}') end
+    env.panel(1, "test runner")
+    env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+    assertEq(env.lastSent("cnr_setupAI"), nil)
+    if not watch then env.call("cnr_myVehicle", 1, '{"vid":0}') end
+    env.clock = 0.25
+    env.call("cnr_tick")
+    assertEq(env.lastSent("cnr_setupAI"), nil)
+    assertEq(env.lastSent("cnr_trafficStart"), nil)
+    env.vehicles[1][2] = nil
+    if watch then env.vehicles[1][0] = nil else env.vehicles[1][1] = nil end
+    env.clock = 0.5
+    env.call("cnr_tick")
+    assertEq(#decodeJson(env.lastSent("cnr_setupAI").data).ai, watch and 3 or 2)
+    if not watch then assertEq(env.lastSent("cnr_trafficStart").pid, 1) end
+    env.sent = {}
+    env.call("cnr_tick")
+    assertEq(env.lastSent("cnr_setupAI"), nil)
+    env.cleanup()
+  end
+end)
+
+test("a practice reroll supersedes pending AI and waits for the new human car even when space opens", function()
+  local env = trafficBoot({ maxCars = 3, vehicles = { [1] = { [0] = "car", [1] = "late spare" } } })
+  env.panel(1, "test runner")
+  env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  env.call("cnr_myVehicle", 1, '{"vid":0}')
+  env.panel(1, "reroll")
+  env.vehicles[1][1] = nil
+  env.call("cnr_tick")
+  assertEq(env.lastSent("cnr_setupAI"), nil)
+  env.call("cnr_vehiclePicked", 1, '{"model":"etk800","config":"vehicles/etk800/base.pc"}')
+  assertEq(env.lastSent("cnr_setupAI"), nil)
+  env.call("cnr_myVehicle", 1, '{"vid":0}')
+  assertEq(decodeJson(env.lastSent("cnr_setupAI").data).model, "etk800")
+  env.cleanup()
+end)
+
+test("practice releases bystanders if the round car never registers and a later practice can start", function()
+  for _, maxCars in ipairs({1, 4}) do
+    local env = trafficBoot({maxCars = maxCars})
+    local pick = '{"model":"pickup","config":"vehicles/pickup/base.pc"}'
+    env.panel(1, "test runner")
+    env.call("cnr_vehiclePicked", 1, pick)
+    env.clock = 16
+    env.call("cnr_tick")
+    local ended = env.lastSent("cnr_roundEnd")
+    assert(ended and ended.pid == 1, "practice did not end after the placement timeout")
+    assertEq(env.noticeHas("round car", "warn"), true)
+    assertEq(decodeJson(sentTo(env, "cnr_parkBystanderCars", 2)).on, false)
+    env.call("cnr_myVehicle", 1, '{"vid":0}')
+    assertEq(env.lastSent("cnr_setupAI"), nil)
+    env.panel(1, "test runner")
+    env.call("cnr_vehiclePicked", 1, pick)
+    env.clock = env.clock + 14
+    env.call("cnr_tick")
+    env.call("cnr_myVehicle", 1, '{"vid":0}')
+    assertEq(#decodeJson(env.lastSent("cnr_setupAI").data).ai, 2)
+    env.cleanup()
+  end
+end)
+
+test("practice with no room for all AI ends and releases bystanders without deleting retained traffic", function()
+  local env = trafficBoot({ maxCars = 3, vehicles = { [1] = { [0] = "round car", [1] = "parked traffic" } } })
+  env.panel(1, "test runner")
+  env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  env.call("cnr_myVehicle", 1, '{"vid":0}')
+  env.clock = 16
+  env.call("cnr_tick")
+  assertEq(env.lastSent("cnr_setupAI"), nil)
+  assertEq(env.lastSent("cnr_roundEnd").pid, 1)
+  assertEq(env.noticeHas("vehicle slots", "warn"), true)
+  assertEq(decodeJson(env.lastSent("cnr_parkBystanderCars").data).on, false)
+  assertEq(#env.removed, 0)
   env.cleanup()
 end)
 
@@ -2783,6 +2941,7 @@ end
 test("a refused car is logged at most once per 10 s per player", function()
   local env = boot()
   env.startRound()
+  env.call("cnr_myVehicle", 2, '{"vid":0}')
   for _ = 1, 3 do assertEq(env.call("onVehicleSpawn", 2, 7, spawnOf(2, 7, "etk800")), 1) end
   assertEq(logCount(env, "Bob spawned etk800 (vid 7): refused"), 1)
   for _ = 1, 39 do step(env) end
@@ -2805,6 +2964,44 @@ local function threePlayers(opts)
   env.names = { "Reinder", "Bob", "Kim" }
   return env
 end
+
+test("practice parks only bystanders, including late joiners, and releases them when the issuer leaves", function()
+  local env = boot()
+  env.panel(1, "test cop")
+  assertEq(env.lastSent("cnr_parkBystanderCars"), nil)
+  env.call("cnr_vehiclePicked", 1, PICK)
+  assertEq(sentTo(env, "cnr_parkBystanderCars", 1), nil)
+  assertEq(decodeJson(sentTo(env, "cnr_parkBystanderCars", 2)).on, true)
+  env.names = { "Reinder", "Bob", "Kim" }
+  env.call("onPlayerJoin", 3)
+  assertEq(decodeJson(sentTo(env, "cnr_parkBystanderCars", 3)).on, true)
+  assertEq(sentTo(env, "cnr_spectate", 3), nil)
+  assertEq(env.call("onVehicleSpawn", 3, 0, spawnOf(3, 0, "etk800")), 0)
+  env.sent = {}
+  env.panel(2, "reroll")
+  assertEq(env.lastSent("cnr_pickVehicle").pid, 1)
+  env.call("cnr_vehiclePicked", 1, PICK)
+  assertEq(env.lastSent("cnr_parkBystanderCars"), nil)
+  env.call("onPlayerDisconnect", 2)
+  env.call("onPlayerDisconnect", 1)
+  assertEq(decodeJson(sentTo(env, "cnr_parkBystanderCars", 3)).on, false)
+  assertEq(sentTo(env, "cnr_parkBystanderCars", 1), nil)
+  assertEq(sentTo(env, "cnr_parkBystanderCars", 2), nil)
+  env.cleanup()
+end)
+
+test("a practice bystander still loading gets the parking request on join", function()
+  local env = boot()
+  env.loading = { [2] = true }
+  env.panel(1, "test cop")
+  env.call("cnr_vehiclePicked", 1, PICK)
+  assertEq(sentTo(env, "cnr_parkBystanderCars", 2), nil)
+  env.loading[2] = nil
+  env.call("onPlayerJoin", 2)
+  local parking = sentTo(env, "cnr_parkBystanderCars", 2)
+  assert(parking and decodeJson(parking).on, "joined with personal cars still on the map")
+  env.cleanup()
+end)
 
 test("Sit out is answered, stored per player and cleared on disconnect", function()
   local env = threePlayers()
@@ -3159,7 +3356,11 @@ test("practice while sitting out runs the AI alone, the issuer spectates and not
     for _ = 1, 90 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
     assertEq(env.caught(), true, cmd)
     for _, m in ipairs(env.sent) do
-      if not (m.ev == "cnr_lobby" and m.pid == -1) then assertEq(m.pid, 1, m.ev) end
+      if m.ev == "cnr_parkBystanderCars" then
+        assertEq(m.pid, 2)
+      elseif m.ev ~= "cnr_lobby" or m.pid ~= -1 then
+        assertEq(m.pid, 1, m.ev)
+      end
     end
     assertEq(io.open(env.dir .. "data/leaderboard.json"), nil)
     assertEq(env.call("onVehicleSpawn", 1, 4, string.format(AI_SPAWN, 4)), 0)
@@ -3206,6 +3407,7 @@ test("someone else sitting out leaves practice as it was", function()
   env.call("cnr_vehiclePicked", 1, PICK)
   assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 1)).role, "runner")
   assertEq(sentTo(env, "cnr_spectate", 1), nil); assertEq(sentTo(env, "cnr_spectate", 2), nil)
+  env.call("cnr_myVehicle", 1, '{"vid":0}')
   assertEq(decodeJson(sentTo(env, "cnr_setupAI", 1)).aiOnly, nil)
   env.cleanup()
 end)
@@ -3324,9 +3526,12 @@ test("the runner and both cop slots use identical West Coast poses across normal
             local slot = d.role == "runner" and 1 or d.copIndex + 1
             spawn.safeTeleport = function(veh, pos, rot) veh.pos = pos; store(slot, pos, rot) end
             client.fire(ev.ev, d)
+            client.tick(1)
+            env.call("cnr_myVehicle", pid, encode(client.lastSent("cnr_myVehicle")))
           elseif ev.ev == "cnr_spectate" or ev.ev == "cnr_setupAI" then
             client.fire(ev.ev, d)
             if ev.ev == "cnr_setupAI" then
+              client.tick(1)
               for i, a in ipairs(d.ai) do
                 local spawned = client.spawned[#client.spawned - #d.ai + i].opt
                 store(a.role == "runner" and 1 or a.index + 1, spawned.pos, spawned.rot)
@@ -3434,7 +3639,7 @@ test("a cop joining during the initial pick extends the starting grid around its
   env.cleanup()
 end)
 
-test("an evolving practice places the human cop and both AIs as soon as its grid arrives", function()
+test("an evolving practice places the human cop on the grid and dispatches AI on its acknowledgement", function()
   local env = boot()
   evolving(env); newBuild(env)
   env.call("cnr_startGridReady", 1, "{}")
@@ -3445,6 +3650,7 @@ test("an evolving practice places the human cop and both AIs as soon as its grid
   for i = 1, 3 do places[i] = { pos = { x = 10 * i, y = 0, z = 0 }, dir = { x = 1, y = 0, z = 0 } } end
   env.call("cnr_startGrid", 1, encode({ id = decodeJson(request.data).id, slots = places }))
   local human = decodeJson(sentTo(env, "cnr_roundSetup", 1))
+  env.call("cnr_myVehicle", 1, '{"vid":0}')
   local ai = decodeJson(sentTo(env, "cnr_setupAI", 1)).ai
   assertEq(human.phase, "ready"); assertEq(human.startPose.pos.x, 20)
   assertEq(ai[1].role, "runner"); assertEq(ai[1].startPose.pos.x, 10)

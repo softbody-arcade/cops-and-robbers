@@ -2387,7 +2387,7 @@ test("an AI car that can't spawn gets a notice", function()
   env.fire("cnr_roundSetup", { role = "runner", runnerId = 1, model = "pickup", config = "vehicles/pickup/base.pc", phase = "prep" })
   core_vehicles.spawnNewVehicle = function() return nil end
   env.fire("cnr_setupAI", { model = "pickup", config = "vehicles/pickup/base.pc", runnerId = 1, ai = { { id = -10, role = "cop", name = "AI cop 1", index = 1 } } })
-  env.tick(0.2)
+  env.tick(1)
   assertEq(noticeShown(env, "Could not spawn AI cop 1, is MaxCars high enough?"), true)
 end)
 
@@ -4021,7 +4021,7 @@ test("practice as a runner: AI cops spawned mid-throttle are hidden on the next 
   d.role, d.runnerId, d.inPlace = "runner", 1, true
   withMinimap({ 100, 201, 202 }, function(draw)
     env.fire("cnr_roundSetup", d)
-    env.tick(0.1)
+    env.tick(0.6)
     assertEq(draw(), "100,201,202")
     env.fire("cnr_setupAI", { model = "pickup", config = "vehicles/pickup/base.pc", runnerId = 1, ai = {
       { id = -10, role = "cop", index = 1, name = "AI cop 1" },
@@ -4224,6 +4224,7 @@ local function roundCars(env)
   env.mpVehicles["2-5"] = { gameVehicleID = 250 }
   env.addObject(201, vec3(0, 0, 0)); env.addObject(202, vec3(50, 0, 0)); env.addObject(250, vec3(90, 0, 0))
   MPVehicleGE.getVehicleByGameID = function(id)
+    if id == 100 then return {serverVehicleString = "1-0"} end
     for key, v in pairs(env.mpVehicles) do
       if v.gameVehicleID == id then return { serverVehicleString = key, ownerName = v.ownerName } end
     end
@@ -4253,33 +4254,51 @@ test("a sitting-out player's car is parked on spectate and comes back where it s
   end)
 end)
 
-local function parkedTrailer(delayedSpawn)
+local function parkedTrailer(delayedSpawn, tag)
+  tag = tag or "tow_hitch"
   local env = bootClient()
-  env.addObject(90, vec3(0, -4, 0)).model = "cargotrailer"
+  env.veh.pos = vec3(14.6, 11, 5.2)
+  function env.veh:getDirectionVector() return vec3(0.8, 0, 0.6) end
+  function env.veh:getDirectionVectorUp() return vec3(-0.6, 0, 0.8) end
+  local parked = env.addObject(90, vec3(13, 8.6, 2.2))
+  parked.model = "cargotrailer"
+  function parked:getDirectionVector() return vec3(0, 0.8, 0.6) end
+  function parked:getDirectionVectorUp() return vec3(0, -0.6, 0.8) end
   env.addObject(150, vec3(8, -4, 0)).model = "cargotrailer"
   env.addObject(180, vec3(0, 4, 0))
   env.ownCars = { [90] = true, [150] = true }
   core_vehicles.attachedCouplers = { {90, 100, 11, 22}, {100, 180, 22, 11}, {100, 100, 22, 30} }
-  core_vehicles.vehsCouplerTags = { [100] = { [22] = "tow_hitch" } }
+  core_vehicles.vehsCouplerTags = { [100] = { [22] = tag } }
   local ball, socket = vec3(0, 2, 0), vec3(0, -3, 0)
   core_vehicles.vehsCouplerOffset = { [90] = { [11] = socket }, [100] = { [22] = ball } }
-  core_vehicles.couplerTagsOptions = { tow_hitch = "autoCouple" }
+  core_vehicles.couplerTagsOptions = { tow_hitch = "autoCouple", fifthwheel_v2 = true }
   local remove = env.veh.delete
   function env.veh:delete()
     core_vehicles.attachedCouplers, core_vehicles.vehsCouplerOffset = {}, {}
     remove(self)
   end
   core_vehicles.vehsCouplerCache = {}
+  local placements = {}
   local spawnCar = core_vehicles.spawnNewVehicle
   core_vehicles.spawnNewVehicle = function(model, options)
     local car = spawnCar(model, options)
-    if not delayedSpawn then core_vehicles.vehsCouplerCache[car.id] = {} end
+    local cache = {}
+    if not delayedSpawn then core_vehicles.vehsCouplerCache[car.id] = cache end
+    if #env.spawned == 1 then
+      cache[22] = { cid = 22, couplerTag = tag }
+      function car:getNodePosition(node) assertEq(node, 22); return vec3(-1.6, 0, -1.2) end
+    elseif #env.spawned == 2 then
+      cache[11] = { cid = 11, tag = tag }
+      car.pos = car.pos + vec3(4, -5, 1)
+      function car:getNodePosition(node) assertEq(node, 11); return vec3(0, 2.4, 1.8) end
+    end
+    function car:setClusterPosRelRot(cluster, x, y, z, rx, ry, rz, rw)
+      assertEq(cluster, -1)
+      assertEq(rx, 0); assertEq(ry, 0); assertEq(rz, 0); assertEq(rw, 1)
+      self.pos = vec3(x, y, z)
+      placements[#placements + 1] = self.id
+    end
     return car
-  end
-  local placements = {}
-  spawn.placeTrailer = function(tow, towOffset, trailer, trailerOffset, tag)
-    assertEq(towOffset, ball); assertEq(trailerOffset, socket)
-    placements[#placements + 1] = {tow, trailer, tag}
   end
   spectate(env)
   env.fire("cnr_roundEnd", { reason = "cancelled" })
@@ -4299,8 +4318,67 @@ test("sitting out restores the saved hitch once both new vehicles are owned", fu
   assertEq(#placements, 0)
   MPVehicleGE.isOwn = function() return true end
   env.tick(1)
-  assertEq(#placements, 1); assertEq(placements[1][1], tow); assertEq(placements[1][2], trailer)
+  assertEq(#placements, 1); assertEq(placements[1], trailer)
   assertEq(env.objects[180] ~= nil, true)
+end)
+
+test("only the hitched vehicles bypass automatic ground and clearance placement", function()
+  local env = parkedTrailer()
+  assertEq(env.spawned[1].opt.safeSpawn, false)
+  assertEq(env.spawned[2].opt.safeSpawn, false)
+  assertEq(env.spawned[3].opt.safeSpawn ~= false, true)
+end)
+
+test("restoring an angled rig preserves each saved pose and closes the live hitch gap", function()
+  for _, tag in ipairs({"tow_hitch", "fifthwheel_v2"}) do
+    local env, placements = parkedTrailer(false, tag)
+    local tow, trailer = env.spawned[1], env.spawned[2]
+    MPVehicleGE.isOwn = function() return true end
+    env.tick(1)
+    assertNear(tow.opt.rot.dir:distance(vec3(0.8, 0, 0.6)), 0, 1e-6)
+    assertNear(tow.opt.rot.up:distance(vec3(-0.6, 0, 0.8)), 0, 1e-6)
+    assertNear(trailer.opt.rot.dir:distance(vec3(0, 0.8, 0.6)), 0, 1e-6)
+    assertNear(trailer.opt.rot.up:distance(vec3(0, -0.6, 0.8)), 0, 1e-6)
+    assertNear(tow.veh.pos:distance(vec3(14.6, 11, 5.2)), 0, 1e-6)
+    assertNear(trailer.veh.pos:distance(vec3(13, 8.6, 2.2)), 0, 1e-6)
+    assertEq(#placements, 1); assertEq(placements[1], trailer.veh.id)
+    assertNear(env.spawned[3].veh.pos:distance(vec3(8, -4, 0)), 0, 1e-6)
+  end
+end)
+
+test("a restored trailer already within hitch lock distance stays in its footprint", function()
+  local env, placements = parkedTrailer()
+  local trailer = env.spawned[2].veh
+  trailer.pos = vec3(13.001, 8.6, 2.2)
+  MPVehicleGE.isOwn = function() return true end
+  env.tick(1)
+  assertEq(#placements, 0)
+  assertEq(trailer.pos.x, 13.001)
+  assert(table.concat(env.spawned[1].veh.commands):find("attachExternalCoupler", 1, true))
+end)
+
+test("a restored config without the saved coupler cancels the request before placement", function()
+  for _, i in ipairs({1, 2}) do
+    local env, placements, warnings = parkedTrailer()
+    local car = env.spawned[i].veh
+    core_vehicles.vehsCouplerCache[car.id][i == 1 and 22 or 11] = nil
+    MPVehicleGE.isOwn = function() return true end
+    env.tick(12, 1)
+    assertEq(#placements, 0); assertEq(#warnings, 1)
+    assert(warnings[1]:find("coupler node", 1, true))
+    assert(not table.concat(env.spawned[1].veh.commands):find("attachExternalCoupler", 1, true))
+  end
+end)
+
+test("a different socket at the restored trailer's saved CID leaves the rig in place", function()
+  local env, placements, warnings = parkedTrailer()
+  local socket = core_vehicles.vehsCouplerCache[env.spawned[2].veh.id][11]
+  socket.tag = "door_latch"
+  MPVehicleGE.isOwn = function() return true end
+  env.tick(12, 1)
+  assertEq(#placements, 0)
+  assertEq(#warnings, 1)
+  assert(not table.concat(env.spawned[1].veh.commands):find("attachExternalCoupler", 1, true))
 end)
 
 test("a trailer which latched during spawn is left in place", function()
@@ -4358,7 +4436,7 @@ test("a trailer placement error ends the request without interrupting the update
   local env, _, warnings = parkedTrailer()
   MPVehicleGE.isOwn = function() return true end
   local calls = 0
-  spawn.placeTrailer = function() calls = calls + 1; error("placement failed") end
+  env.spawned[2].veh.setClusterPosRelRot = function() calls = calls + 1; error("placement failed") end
   env.tick(12, 1)
   assertEq(calls, 1); assertEq(#warnings, 1)
   assert(warnings[1]:find("placement failed", 1, true))
@@ -4431,9 +4509,9 @@ test("deferred initial spawn callbacks still allow the saved hitch", function()
   MPVehicleGE.isOwn = function() return true end
   env.tick(1)
   assertEq(#placements, 0)
-  for _, spawnResult in ipairs(env.spawned) do
+  for i, spawnResult in ipairs(env.spawned) do
     local id = spawnResult.veh.id
-    core_vehicles.vehsCouplerCache[id] = {}
+    core_vehicles.vehsCouplerCache[id] = i == 1 and { [22] = { couplerTag = "tow_hitch" } } or { [11] = { tag = "tow_hitch" } }
     env.M.onVehicleSpawned(id)
   end
   env.tick(1)
@@ -4482,7 +4560,7 @@ test("trailer restoration targets only its saved partner and stops on timeout, r
     end
     MPVehicleGE.isOwn = function() return true end
     env.tick(1.5)
-    assertEq(#placements, 1); assertEq(placements[1][3], nil)
+    assertEq(#placements, 1)
     assert(attempts > 0)
     if stop == "timeout" then env.tick(10, 1)
     elseif stop == "remove" then trailer:delete()
@@ -5174,8 +5252,10 @@ test("New car while watching an AI car goes to free camera first, not to some ot
     watchPractice(env)
     env.player = env.spawned[2].veh
     cam.free = false
-    watchPractice(env)
+    spectate(env)
     assertEq(cam.free, true)
+    for _, old in ipairs(env.spawned) do assertEq(env.objects[old.veh.id], nil, "old AI still uses a slot") end
+    env.fire("cnr_setupAI", aiOnlySetup())
     env.player = env.objects[250]
     cam.free = false
     watchPractice(env)
@@ -5186,6 +5266,7 @@ test("New car while watching an AI car goes to free camera first, not to some ot
     local d = copy(SETUP); d.role, d.runnerId, d.inPlace = "runner", 1, true
     env.fire("cnr_roundSetup", d)
     env.fire("cnr_setupAI", { model = "pickup", config = "vehicles/pickup/base.pc", runnerId = 1, ai = { { id = -10, role = "cop", index = 1, name = "AI cop 1" } } })
+    env.tick(0.6)
     env.player = env.spawned[1].veh
     env.fire("cnr_setupAI", { model = "pickup", config = "vehicles/pickup/base.pc", runnerId = 1, ai = { { id = -10, role = "cop", index = 1, name = "AI cop 1" } } })
     assertEq(cam.free, false)
@@ -5317,6 +5398,248 @@ test("a fresh personal spawn keeps its own vehicle ID when focus moves to a prac
   assertEq(other.pos.x, 800)
 end)
 
+local function addSpareCars(env)
+  env.ownCars = { [120] = true, [121] = true, [124] = true, [125] = true }
+  env.addObject(120, vec3(0, -4, 0)).model = "cargotrailer"
+  env.addObject(121, vec3(9, 8, 0)).model = "fullsize"
+  env.addObject(122, vec3(3, 0, 0))
+  env.addObject(123, vec3(5, 0, 0))
+  env.addObject(124, vec3(7, 0, 0)).vehicleGroup = "autoParking"
+  env.addObject(125, vec3(9, 0, 0)).vehicleGroup = "autoTraffic"
+  env.gameTraffic[122] = { isAi = true }
+  core_vehicles.attachedCouplers = { {100, 120, 22, 11} }
+end
+
+test("driving removes attached and loose personal cars and keeps the round cars and traffic", function()
+  for _, practice in ipairs({false, true}) do
+    local env = bootClient()
+    addSpareCars(env)
+    local d = copy(SETUP)
+    d.practice, d.startPose = practice, false
+    env.fire("cnr_roundSetup", d)
+    if practice then
+      env.fire("cnr_setupAI", { model = d.model, config = d.config, ai = { { id = -1, role = "runner", name = "AI runner" } } })
+    end
+    env.tick(1)
+    if practice then env.ownCars[env.spawned[1].veh.id] = true; env.tick(1) end
+    assertEq(env.objects[120], nil, "hitched trailer")
+    assertEq(env.objects[121], nil, "loose car")
+    for _, id in ipairs({100, 122, 123, 124, 125}) do assert(env.objects[id], "lost car " .. id) end
+    if practice then assert(env.objects[env.spawned[1].veh.id], "lost AI runner") end
+    env.fire("cnr_roundSetup", d)
+    env.tick(1)
+    env.fire("cnr_roundEnd", {reason = "cancelled"})
+    assertEq(#env.spawned, practice and 1 or 0, "spare cars came back")
+    assert(env.objects[100])
+  end
+end)
+
+test("practice with three full slots places both AI cars after freeing the trailer and spare", function()
+  local env = bootClient()
+  env.ownCars = { [120] = true, [121] = true }
+  env.addObject(120, vec3(0, -4, 0)).model = "cargotrailer"
+  env.addObject(121, vec3(5, 8, 0)).model = "fullsize"
+  core_vehicles.attachedCouplers = { {100, 120, 22, 11} }
+  local spawnCar = core_vehicles.spawnNewVehicle
+  core_vehicles.spawnNewVehicle = function(model, options)
+    local count = 0
+    for _ in pairs(MPVehicleGE.getOwnMap()) do count = count + 1 end
+    if count >= 3 then return nil end
+    local car = spawnCar(model, options)
+    env.ownCars[car.id] = true
+    return car
+  end
+  local d = copy(SETUP)
+  d.practice, d.startPose = true, false
+  env.fire("cnr_roundSetup", d)
+  local aiSetup = {model = "pickup", ai = {
+    {id = -1, role = "runner", name = "AI runner"}, {id = -2, role = "cop", name = "AI cop"}
+  }}
+  env.fire("cnr_setupAI", aiSetup)
+  env.fire("cnr_setupAI", aiSetup)
+  env.fire("cnr_paint", {color = {r = 0, g = 1, b = 0}})
+  env.tick(2)
+  assertEq(#env.spawned, 2)
+  for _, car in ipairs(env.spawned) do assert(env.objects[car.veh.id]) end
+  assertEq(env.objects[120], nil); assertEq(env.objects[121], nil)
+  env.fire("cnr_roundEnd", {reason = "cancelled"})
+  env.fire("cnr_roundSetup", d)
+  env.fire("cnr_setupAI", aiSetup)
+  env.fire("cnr_roundEnd", {reason = "cancelled"})
+  env.tick(2)
+  assertEq(#env.spawned, 2, "cancelled setup spawned AI")
+end)
+
+test("practice AI delivered after GO joins the current release phase", function()
+  for _, watching in ipairs({false, true}) do
+    for _, running in ipairs({false, true}) do
+      local env = bootClient()
+      if watching then
+        spectate(env)
+      else
+        local d = copy(SETUP)
+        d.practice, d.startPose = true, false
+        env.fire("cnr_roundSetup", d)
+        env.tick(1)
+      end
+      env.fire("cnr_runnerGo", {headStartSeconds = 5})
+      if running then env.fire("cnr_release", {}) end
+      env.fire("cnr_setupAI", {model = "pickup", aiOnly = watching, ai = {
+        {id = -10, role = "runner", name = "AI runner"}, {id = -11, role = "cop", name = "AI cop"}
+      }})
+      env.tick(1)
+      local runner, cop = env.spawned[1].veh, env.spawned[2].veh
+      local runnerCommands, copCommands = table.concat(runner.commands, "\n"), table.concat(cop.commands, "\n")
+      assert(runnerCommands:find('ai.setMode("flee")', 1, true), "runner should flee")
+      assertEq(copCommands:find('ai.setMode("chase")', 1, true) ~= nil, running)
+      assertEq(copCommands:find('controller.setFreeze(1)', 1, true) ~= nil, not running)
+    end
+  end
+end)
+
+test("extra cars are removed after round placement and their own BeamMP registration", function()
+  local env = bootClient()
+  addSpareCars(env)
+  env.ownCars[121] = nil
+  local acknowledged = false
+  local send = TriggerServerEvent
+  TriggerServerEvent = function(event, data)
+    if event == "cnr_myVehicle" then assertEq(env.objects[120], nil, "extra still uses a slot at placement") end
+    return send(event, data)
+  end
+  MPVehicleGE.getVehicleByGameID = function(id)
+    if id ~= 100 or acknowledged then return {serverVehicleString = "1-" .. id} end
+  end
+  env.fire("cnr_roundSetup", copy(SETUP))
+  env.tick(1)
+  assert(env.objects[120], "removed before placement")
+  acknowledged = true
+  env.tick(1)
+  assertEq(env.objects[120], nil)
+  assert(env.objects[121])
+  env.ownCars[121] = true
+  env.tick(2)
+  assertEq(env.objects[121], nil)
+end)
+
+test("deleting the round car suspends cleanup until a replacement is placed", function()
+  local env = bootClient()
+  startCop(env)
+  env.veh:delete()
+  env.M.onVehicleDestroyed(100)
+  local replacement = env.addObject(140, vec3(3, 4, 0))
+  local spare = env.addObject(141, vec3(5, 8, 0))
+  env.ownCars = {[140] = true, [141] = true}
+  env.tick(2)
+  assertEq(env.objects[140], replacement); assertEq(env.objects[141], spare)
+  env.fire("cnr_roundCars", {keys = {"1-7"}})
+  env.tick(2)
+  assertEq(env.objects[140], replacement); assertEq(env.objects[141], spare)
+  env.mpVehicles["1-7"] = {gameVehicleID = 140}
+  MPVehicleGE.isOwn = function(id) return env.ownCars[id] end
+  env.tick(2)
+  assertEq(env.objects[140], replacement); assertEq(env.objects[141], nil)
+end)
+
+test("repainting or rebuilding while focused on an owned traffic car keeps the player's placed car", function()
+  for _, event in ipairs({"cnr_paint", "cnr_rebuild"}) do
+    local env = bootClient()
+    startCop(env)
+    env.player = env.addObject(130, vec3(30, 40, 0))
+    env.gameTraffic[130] = {isAi = true}
+    core_vehicles.replaceVehicle = function() return getPlayerVehicle(0) end
+    env.fire(event, {color = {r = 0, g = 1, b = 0}, config = {parts = {}}, rebuild = 1})
+    env.tick(1)
+    assertEq(env.lastSent("cnr_myVehicle").vid, 100)
+    assert(env.objects[100]); assert(env.objects[130])
+  end
+end)
+
+test("failed replacement keeps the personal rig", function()
+  local env = bootClient()
+  addSpareCars(env)
+  core_vehicles.replaceVehicle = function() return nil end
+  env.fire("cnr_roundSetup", copy(SETUP))
+  env.tick(2)
+  assert(env.objects[100]); assert(env.objects[120]); assert(env.objects[121])
+  assertEq(env.lastSent("cnr_myVehicle"), nil)
+end)
+
+test("practice bystanders park and restore their cars once, including late ownership", function()
+  withCamera(function(cam)
+    local env = bootClient()
+    addSpareCars(env)
+    core_vehicles.attachedCouplers = {}
+    env.ownCars[121] = nil
+    env.fire("cnr_parkBystanderCars", {on = true})
+    assertEq(env.objects[100], nil); assertEq(env.objects[120], nil)
+    assert(env.objects[121]); assert(cam.free)
+    env.fire("cnr_parkBystanderCars", {on = true})
+    env.ownCars[121] = true
+    env.tick(2)
+    assertEq(env.objects[121], nil)
+    for _, id in ipairs({122, 123, 124, 125}) do assert(env.objects[id], "lost car " .. id) end
+    env.fire("cnr_parkBystanderCars", {on = false})
+    env.fire("cnr_parkBystanderCars", {on = false})
+    env.tick(2)
+    assertEq(#env.spawned, 3)
+    assertEq(env.spawned[1].model, "pickup"); assertEq(env.spawned[1].opt.autoEnterVehicle, true)
+    assertEq(env.spawned[2].model, "cargotrailer"); assertEq(env.spawned[3].model, "fullsize")
+    assertEq(env.spawned[3].opt.pos.x, 9)
+  end)
+end)
+
+test("all spectator parking waits for the whole rig and leaves owned practice AI on the map", function()
+  for _, mode in ipairs({"sit out", "watch", "bystander"}) do
+    local env = bootClient()
+    local trailer = env.addObject(120, vec3(0, -4, 0))
+    trailer.model = "cargotrailer"
+    function trailer:getDirectionVectorUp() return vec3(0, 0, 1) end
+    env.veh.getDirectionVectorUp = trailer.getDirectionVectorUp
+    core_vehicles.attachedCouplers = { {100, 120, 22, 11} }
+    core_vehicles.vehsCouplerTags = { [100] = { [22] = "tow_hitch" } }
+    core_vehicles.couplerTagsOptions = { tow_hitch = "autoCouple" }
+    core_vehicles.vehsCouplerOffset = { [100] = { [22] = vec3(0, -2, 0) }, [120] = { [11] = vec3(0, 2, 0) } }
+    local getVehicle = MPVehicleGE.getVehicleByGameID
+    MPVehicleGE.getVehicleByGameID = function(id)
+      if id ~= 120 or env.ownCars then return getVehicle(id) end
+    end
+    if mode == "watch" then
+      watchPractice(env)
+    elseif mode == "sit out" then
+      spectate(env)
+    else
+      env.fire("cnr_parkBystanderCars", {on = true})
+    end
+    assert(env.objects[100]); assert(env.objects[120])
+    env.ownCars = {[120] = true}
+    local aiCount = #env.spawned
+    for _, car in ipairs(env.spawned) do env.ownCars[car.veh.id] = true end
+    env.tick(2)
+    for _, car in ipairs(env.spawned) do assert(env.objects[car.veh.id], "parked a practice AI car") end
+    assertEq(env.objects[100], nil); assertEq(env.objects[120], nil)
+    local towId, trailerId = env.nextId + 1, env.nextId + 2
+    core_vehicles.vehsCouplerCache = {
+      [towId] = { [22] = {cid = 22, couplerTag = "tow_hitch"} },
+      [trailerId] = { [11] = {cid = 11, tag = "tow_hitch"} },
+    }
+    if mode == "bystander" then
+      env.fire("cnr_parkBystanderCars", {on = false})
+    else
+      env.fire("cnr_roundEnd", {reason = "cancelled"})
+    end
+    assertEq(#env.spawned, aiCount + 2)
+    local tow, restored = env.spawned[aiCount + 1], env.spawned[aiCount + 2]
+    assertEq(tow.model, "pickup"); assertEq(restored.model, "cargotrailer")
+    tow.veh.getNodePosition = function() return vec3(0, -2, 0) end
+    restored.veh.getNodePosition = function() return vec3(0, 2, 0) end
+    MPVehicleGE.isOwn = function(id) return id == towId or id == trailerId end
+    env.tick(1)
+    local commands = table.concat(tow.veh.commands, "\n")
+    assert(commands:find("attachExternalCoupler(c.cid, " .. trailerId .. ", 11", 1, true))
+  end
+end)
+
 test("the starting grid follows a two-way heading and the configured cop distance", function()
   for _, sign in ipairs({ -1, 1 }) do
     local client = bootClient()
@@ -5351,17 +5674,19 @@ test("without roads the runner uses the starting camera and both cop slots retai
 end)
 
 test("a player seated in locally owned traffic gets a separate round car", function()
-  local env = bootClient()
-  env.objects[100] = nil
-  local car = env.addObject(450, vec3(800, 900, 0))
-  env.gameTraffic[450] = { isAi = true }
-  env.player = car
-  local d = copy(SETUP)
-  d.startPose = { pos = { x = 18, y = 40, z = 2 }, dir = { x = 0, y = -1, z = 0 } }
-  env.fire("cnr_roundSetup", d)
-  assertEq(#env.replaced, 0)
-  assertEq(#env.spawned, 1)
-  assertEq(car.pos.x, 800)
+  for _, grid in ipairs({false, true}) do
+    local env = bootClient()
+    env.objects[100] = nil
+    local car = env.addObject(450, vec3(800, 900, 0))
+    env.gameTraffic[450] = { isAi = true }
+    env.player = car
+    local d = copy(SETUP)
+    if grid then d.startPose = { pos = { x = 18, y = 40, z = 2 }, dir = { x = 0, y = -1, z = 0 } } end
+    env.fire("cnr_roundSetup", d)
+    assertEq(#env.replaced, 0)
+    assertEq(#env.spawned, 1)
+    assertEq(car.pos.x, 800)
+  end
 end)
 
 test("round result, leave, mission end and unload release the lightning scene", function()
