@@ -114,7 +114,7 @@ Then do the checks for whatever actually updated.
   - `core_camera.getPosition()` gives the camera position, for the winding and the fade near the camera, and for the rotor sound's muffle.
   - The vehicle's `getVelocity()` gives the runner's velocity for the helicopter's flight; without it we use position deltas.
   - `castRayStatic(origin, dir, maxDist)` returns the distance to the first static hit. We cast it:
-    - every 0.2 s for flight clearance (`heliFlight.lua`), down from 2500 m above nominal flight altitude at the aircraft and just ahead, and horizontally ahead to find approaching walls or slopes and sample their tops. A new flight or a car teleport starts a fresh scan.
+    - every 0.2 s for flight clearance (`heliFlight.lua`), down from 2500 m above nominal altitude at the aircraft, just ahead of its nose and another 1.5 seconds along its path. A horizontal ray at the aircraft's clearance-adjusted height finds obstacles between samples, including rooftop structures. On a hit, a fifth ray samples the obstacle's top. A new flight or a car teleport starts a fresh scan.
     - from the light to the lit spot every 0.25 s, so a bridge deck or tunnel roof ends the beam
     - for cover, from the helicopter to three points on the car up to 400 m away (`copsAndRobbers/shelter.lua` `inSight`), every 0.25 s
     - while the helicopter searches, straight down from 100 m above the sweep point (200 m long) every 0.25 s, so the lit spot lies on the ground

@@ -208,15 +208,17 @@ local function scanClearance(f, z)
   if speed < 0.1 then return floor, floor end
   local dx, dy = f.vel.x / speed, f.vel.y / speed
   local near = NOSE_MARGIN + speed * (SCAN_INTERVAL + M.MAX_STEP)
+  local flightZ = math.max(z + (f.lift or 0), floor)
   floor = math.max(floor, floorAt(p.x + dx * near, p.y + dy * near, z))
   local reach = near + speed * LOOK_AHEAD
-  local hit = castRayStatic(vec3(p.x, p.y, z - CLEARANCE), vec3(dx, dy, 0), reach)
+  local ahead = floorAt(p.x + dx * reach, p.y + dy * reach, z)
+  local hit = castRayStatic(vec3(p.x, p.y, flightZ), vec3(dx, dy, 0), reach)
   if type(hit) == "number" and hit >= 0 and hit < reach then
-    local ahead = floorAt(p.x + dx * (hit + 0.25), p.y + dy * (hit + 0.25), z)
-    if hit <= near then floor = math.max(floor, ahead) end
-    return floor, math.max(floor, ahead)
+    local top = floorAt(p.x + dx * (hit + 0.25), p.y + dy * (hit + 0.25), z)
+    if hit <= near then floor = math.max(floor, top) end
+    ahead = math.max(ahead, top)
   end
-  return floor, floor
+  return floor, math.max(floor, ahead)
 end
 
 function M.clearance(f, clock, dt)
