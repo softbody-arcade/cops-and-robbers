@@ -112,7 +112,7 @@ local lastLobbyError
 
 local function send(pid, event, payload)
   if type(pid) ~= "number" or (pid < 0 and pid ~= -1) then return end
-  MP.TriggerClientEvent(pid, event, Util.JsonEncode(payload or {}))
+  return MP.TriggerClientEvent(pid, event, Util.JsonEncode(payload or {}))
 end
 local function notify(pid, msg, tone)
   send(pid, "cnr_notice", { msg = msg, tone = tone or "info" })
@@ -489,17 +489,9 @@ local function applyEffects(effects)
       send(e.pid, "cnr_planStart", { id = e.id, count = e.count, anchor = e.anchor,
         copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters })
     elseif e.kind == "setup" then
-      if e.role == "runner" and not current.test then
-        local key = playerKey(e.pid)
-        lastRunnerKey = key
-        plannedRunnerKey = nil
-        currentRunnerKey = key
-      end
       local anchor = e.startPose ~= nil and current.startGrid[1]
       local runnerCar = not anchor and carFor(current.runnerId)
-      placing(e.pid)
-      log(string.format("setup sent to %s: %s, %s", MP.GetPlayerName(e.pid) or tostring(e.pid), e.role, tostring(e.phase)))
-      send(e.pid, "cnr_roundSetup", {
+      local delivered, reason = send(e.pid, "cnr_roundSetup", {
         startPose = e.startPose,
         runnerId = current.runnerId, runnerName = current:runnerName(), role = e.role, copIndex = e.copIndex,
         model = current.vehicle.model, config = current.vehicle.config,
@@ -513,6 +505,20 @@ local function applyEffects(effects)
         evolving = current.evolving or nil, rebuild = current.rebuildId, practice = current.test or nil,
         sky = sky.payload(current.sky, cfg, current.countdownStartedAt and math.max(0, now() - current.countdownStartedAt) or nil),
       })
+      if delivered == false then
+        log(string.format("setup failed for %s: %s", MP.GetPlayerName(e.pid) or tostring(e.pid), tostring(reason)))
+        applyEffects(current:setupFailed(now(), e.pid))
+        if not current:isActive() then return end
+      else
+        placing(e.pid)
+        log(string.format("setup sent to %s: %s, %s", MP.GetPlayerName(e.pid) or tostring(e.pid), e.role, tostring(e.phase)))
+        if e.role == "runner" and not current.test then
+          local key = playerKey(e.pid)
+          lastRunnerKey = key
+          plannedRunnerKey = nil
+          currentRunnerKey = key
+        end
+      end
     elseif e.kind == "spectate" then
       log(string.format("%s spectates (%s)", MP.GetPlayerName(e.pid) or tostring(e.pid), tostring(e.phase)))
       send(e.pid, "cnr_spectate", {

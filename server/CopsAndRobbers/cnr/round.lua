@@ -644,6 +644,23 @@ function Round:coverReport(now, pid, covered)
   self.runnerCovered = covered == true
 end
 
+function Round:removeCop(pid)
+  self.copSight[pid] = nil
+  self.players[pid] = nil
+  self.resetTrackers[pid] = nil
+  self.crashDetectors[pid] = nil
+  self.penalties[pid] = nil
+  self.lastState[pid] = nil
+end
+
+function Round:setupFailed(now, pid)
+  if pid == self.runnerId or self.test then
+    return self:cancel(now, "Round cancelled because the setup could not reach " .. self.players[pid])
+  end
+  self:removeCop(pid)
+  return {}
+end
+
 function Round:playerLeft(now, pid)
   self.sittingOut[pid] = nil
   self.returnedCopSight[pid] = nil
@@ -659,12 +676,7 @@ function Round:playerLeft(now, pid)
   end
   local name = self.players[pid]
   if self.vehicle then self.departedCopSight[name] = self.copSight[pid] or 0 end
-  self.copSight[pid] = nil
-  self.players[pid] = nil
-  self.resetTrackers[pid] = nil
-  self.crashDetectors[pid] = nil
-  self.penalties[pid] = nil
-  self.lastState[pid] = nil
+  self:removeCop(pid)
   if self.state == "applying" and self.setupDone and self:allReady() then return self:markApplied() end
   return {}
 end
@@ -710,7 +722,7 @@ function Round:stop(now, issuerId)
   return self:cancel(now, "Round cancelled")
 end
 
-for _, name in ipairs({ "start", "vehiclePicked", "go", "tick", "playerJoined", "playerLeft", "vehicleReset", "stop", "endCalled", "reroll", "apply", "setupReceived", "vehicleReady" }) do
+for _, name in ipairs({ "start", "vehiclePicked", "go", "tick", "playerJoined", "playerLeft", "vehicleReset", "stop", "endCalled", "reroll", "apply", "setupFailed", "setupReceived", "vehicleReady" }) do
   local method = Round[name]
   Round[name] = function(self, ...)
     local issuer = self.test and self.issuerId

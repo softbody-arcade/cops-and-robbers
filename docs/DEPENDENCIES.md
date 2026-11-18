@@ -41,7 +41,7 @@ Then do the checks for whatever actually updated.
 
 **What we use:**
 - **Functions:**
-  - `MP.RegisterEvent`, `MP.TriggerClientEvent`. The mod sends no chat messages
+  - `MP.RegisterEvent`, `MP.TriggerClientEvent`. The mod sends no chat messages. A targeted event returns a success flag and a reason. A player already listed by `MP.GetPlayers` can still be loading. If BeamMP rejects their round setup, a cop spectates when they finish joining and an unreachable runner cancels the round. [BeamMP Server 3.9.3 event delivery](https://github.com/BeamMP/BeamMP-Server/blob/v3.9.3/src/LuaAPI.cpp#L132-L159)
   - `MP.GetPlayers` (pid → name), `MP.GetPlayerName`, `MP.GetPlayerIdentifiers` (expects `beammp` = account id), `MP.GetPlayerVehicles`
   - `MP.GetPositionRaw` (expects `{pos={x,y,z}, vel={...}}` plus an error string), `MP.RemoveVehicle`
   - Our own client→server events are registered with `MP.RegisterEvent` too, among them `cnr_sitOut` (`{ on = boolean }`; anything else is ignored)

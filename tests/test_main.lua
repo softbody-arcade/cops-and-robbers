@@ -120,7 +120,11 @@ local function boot(opts)
       end, Start = function() start = env.clock end }
     end,
     SendChatMessage = function(pid, msg) env.chats[#env.chats + 1] = { pid, msg } end,
-    TriggerClientEvent = function(pid, ev, data) env.sent[#env.sent + 1] = { pid = pid, ev = ev, data = data } end,
+    TriggerClientEvent = function(pid, ev, data)
+      if env.loading and env.loading[pid] then return false, "Player hasn't joined yet" end
+      env.sent[#env.sent + 1] = { pid = pid, ev = ev, data = data }
+      return true, ""
+    end,
     GetPlayers = function()
       local t = {}
       for pid, name in pairs(env.names or { "Reinder", "Bob" }) do t[pid] = name end
@@ -2038,6 +2042,42 @@ test("a player already included in the initial pick stays a cop when the join ca
   env.call("onPlayerJoin", 3)
   assertEq(sentTo(env, "cnr_spectate", 3), nil)
   assertEq(env.call("onVehicleSpawn", 3, 0, 'USER:Kim:3-0:{"jbm":"pickup"}'), 0)
+  env.cleanup()
+end)
+
+test("a cop still loading at the initial pick joins as a spectator and earns no round credit", function()
+  local env = boot()
+  env.names = { "Reinder", "Bob", "Kim" }
+  env.loading = { [3] = true }
+  env.startRound()
+  assertEq(sentTo(env, "cnr_roundSetup", 3), nil)
+  assertEq(env.call("onVehicleSpawn", 3, 0, 'USER:Kim:3-0:{"jbm":"pickup"}'), 1)
+  env.loading[3] = nil
+  env.call("onPlayerJoin", 3)
+  assertEq(decodeJson(sentTo(env, "cnr_spectate", 3)).phase, "prep")
+  env.panel(2, "reroll")
+  env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  assertEq(sentTo(env, "cnr_roundSetup", 3), nil)
+  env.go()
+  env.positions[2] = 900
+  for _ = 1, 44 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.panel(1, "end")
+  local run = decodeJson(readFileAt(env.dir .. "data/leaderboard.json")).runs[1]
+  assertEq(table.concat(run.copNames, ","), "Bob")
+  env.cleanup()
+end)
+
+test("an unreachable runner cancels prep without sending more car setups", function()
+  local env = boot()
+  env.names = { "Reinder", "Bob", "Kim" }
+  env.loading = { [1] = true }
+  env.sent = {}
+  env.startRound()
+  assertEq(decodeJson(env.lastSent("cnr_roundEnd").data).reason, "cancelled")
+  assertEq(countSent(env, "cnr_roundSetup"), 0)
+  env.loading[1] = nil
+  env.call("onPlayerJoin", 1)
+  assertEq(decodeJson(sentTo(env, "cnr_lobby", 1)).active, false)
   env.cleanup()
 end)
 
