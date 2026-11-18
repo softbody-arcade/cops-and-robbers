@@ -116,7 +116,6 @@ local function placeVehicle(model, config, pos, rot, color, initialGrid, persona
   nextCarCleanup = nil
   local opt = vehicles.options(config, color)
   local veh
-  if not initialGrid then personal = ownVehicle() end
   if personal then
     veh = core_vehicles.replaceVehicle(model, opt)
     if initialGrid and veh and pos then teleport(veh, pos, rot) end
@@ -297,14 +296,11 @@ local function onRoundSetup(data)
   inputs.lockEditing(mayChange and "paint" or "all")
   checkBinding(true)
 
-  local personal
-  if d.startPose ~= nil then
-    if d.practice then ai.remove() end
-    personal = personalCarId and getObjectByID(personalCarId) or spectator.personalCar()
-    local seated = getPlayerVehicle(0)
-    if not personal and seated and seated:getJBeamFilename() == "unicycle" then personal = ownVehicle() end
-    if personal and personal ~= seated then be:enterVehicle(0, personal) end
-  end
+  if d.practice then ai.remove() end
+  local personal = personalCarId and getObjectByID(personalCarId) or spectator.personalCar()
+  local seated = getPlayerVehicle(0)
+  if not personal and seated and seated:getJBeamFilename() == "unicycle" then personal = ownVehicle() end
+  if personal and personal ~= seated then be:enterVehicle(0, personal) end
   local pos, rot = setupPosition(d)
   placeVehicle(d.model, roundConfig, pos, rot, d.color, d.startPose ~= nil, personal)
 
@@ -428,7 +424,7 @@ local function onPaint(data)
     local now = vehicles.currentSetup()
     if now then config = { format = 2, model = roundModel, parts = now.parts, vars = now.vars } end
   end
-  placeVehicle(roundModel, config, veh:getPosition(), game.uprightRotation(veh), d.color)
+  placeVehicle(roundModel, config, veh:getPosition(), game.uprightRotation(veh), d.color, false, veh)
 end
 
 local function labelledChanges(setup)
@@ -490,7 +486,7 @@ local function onRebuild(data)
   hudfeed.applying(true)
   roundConfig = role == "cop" and vehicles.copConfig(roundModel, d.config) or d.config
   local veh = ownVehicle()
-  placeVehicle(roundModel, roundConfig, veh and veh:getPosition(), veh and game.uprightRotation(veh), roundColor)
+  placeVehicle(roundModel, roundConfig, veh and veh:getPosition(), veh and game.uprightRotation(veh), roundColor, false, veh)
   ai.rebuild(roundModel, d.config)
   hidingBuiltAt = -math.huge
   local missing = {}
@@ -794,7 +790,8 @@ local function updatePendingPlacement()
     if restore then veh:queueLuaCommand(restore) end
     modesHoldUntil = clock + MODES_SETTLE
     if frozen then veh:queueLuaCommand("controller.setFreeze(1)") end
-    nextCarCleanup = clock
+    spectator.removeExtras(personalCarId, ai.objects())
+    nextCarCleanup = clock + 1
     sendServer("cnr_myVehicle", { vid = vid, rebuild = p.rebuild })
     lightsPlaced = true
   elseif clock >= p.deadline then

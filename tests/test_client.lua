@@ -5075,6 +5075,11 @@ test("extra cars are removed after round placement and their own BeamMP registra
   addSpareCars(env)
   env.ownCars[121] = nil
   local acknowledged = false
+  local send = TriggerServerEvent
+  TriggerServerEvent = function(event, data)
+    if event == "cnr_myVehicle" then assertEq(env.objects[120], nil, "extra still uses a slot at placement") end
+    return send(event, data)
+  end
   MPVehicleGE.getVehicleByGameID = function(id)
     if id ~= 100 or acknowledged then return {serverVehicleString = "1-" .. id} end
   end
@@ -5158,17 +5163,19 @@ test("without roads the runner uses the starting camera and both cop slots retai
 end)
 
 test("a player seated in locally owned traffic gets a separate round car", function()
-  local env = bootClient()
-  env.objects[100] = nil
-  local car = env.addObject(450, vec3(800, 900, 0))
-  env.gameTraffic[450] = { isAi = true }
-  env.player = car
-  local d = copy(SETUP)
-  d.startPose = { pos = { x = 18, y = 40, z = 2 }, dir = { x = 0, y = -1, z = 0 } }
-  env.fire("cnr_roundSetup", d)
-  assertEq(#env.replaced, 0)
-  assertEq(#env.spawned, 1)
-  assertEq(car.pos.x, 800)
+  for _, grid in ipairs({false, true}) do
+    local env = bootClient()
+    env.objects[100] = nil
+    local car = env.addObject(450, vec3(800, 900, 0))
+    env.gameTraffic[450] = { isAi = true }
+    env.player = car
+    local d = copy(SETUP)
+    if grid then d.startPose = { pos = { x = 18, y = 40, z = 2 }, dir = { x = 0, y = -1, z = 0 } } end
+    env.fire("cnr_roundSetup", d)
+    assertEq(#env.replaced, 0)
+    assertEq(#env.spawned, 1)
+    assertEq(car.pos.x, 800)
+  end
 end)
 
 test("round result, leave, mission end and unload release the lightning scene", function()
