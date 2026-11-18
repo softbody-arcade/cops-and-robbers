@@ -1,3 +1,4 @@
+local lightningScene = require("copsAndRobbers/lightningScene")
 local rain = require("copsAndRobbers/rain")
 local strikes = require("copsAndRobbers/strikes")
 
@@ -5,11 +6,8 @@ local M = {}
 local LIGHT_NAME = "cnr_lightning_flash"
 local SOUND_SLOTS = 3
 local BOLT_RANGE = 4000
-local SHADOW_RANGE = 1000
-local CHANNEL_MIDPOINT_HEIGHT = 450
 local LIGHT_DISTANCE = 300
-local MAIN_WIDTH, BRANCH_WIDTH, BRANCH_FADE = 4, 2, 45
-local lineInstance
+local serial = 0
 
 function M.new()
   return {visuals = {}, pending = {}, playing = {}, logged = {}}
@@ -24,9 +22,10 @@ function M.hasVisualTail(s)
 end
 
 function M.hide(s)
+  for _, visual in ipairs(s.visuals) do lightningScene.remove(visual.scene) end
   remove(s.light)
   s.light, s.enabled = nil, nil
-  if M.hasVisualTail(s) then s.visuals = {} end
+  s.visuals = {}
 end
 
 function M.clear(s)
@@ -45,6 +44,7 @@ end
 local function create(s, class, name, configure, arrival)
   local obj
   local ok, err = pcall(function()
+    assert(not scenetree.findObject(name), name .. " is already in use")
     obj = createObject(class)
     if class == "SFXEmitter" then obj = assert(Sim.upcast(obj)) end
     configure(obj, arrival)
@@ -96,6 +96,7 @@ local function lightFields(obj)
   obj:setField("radius", 0, "1500")
   obj:setField("color", 0, "0.75 0.82 1 1")
   obj:setField("castShadows", 0, "0")
+  obj:setField("isEnabled", 0, "0")
 end
 
 local function updateLight(s, cam, winner, strength)
@@ -145,60 +146,57 @@ local function capture(s, event, ref, cam, visible, now)
   local last = event.pulses[#event.pulses]
   local endsAt = event.at + last.start + last.length
   if visible and now < endsAt then
-    local shadowPos
-    if distance < SHADOW_RANGE then
-      local aimZ = dz + CHANNEL_MIDPOINT_HEIGHT
-      local length = math.sqrt(dx * dx + dy * dy + aimZ * aimZ)
-      if length > 0 then
-        local scale = LIGHT_DISTANCE / length
-        shadowPos = vec3(cam.x + dx * scale, cam.y + dy * scale, cam.z + aimZ * scale)
-      else
-        shadowPos = vec3(cam.x, cam.y, cam.z + LIGHT_DISTANCE)
-      end
-    end
+    serial = serial + 1
     s.visuals[#s.visuals + 1] = {
-      event = event, endsAt = endsAt, landing = landing, strength = strikes.strength(distance), bolt = distance <= BOLT_RANGE,
-      shadowPos = shadowPos,
+      event = event, endsAt = endsAt, landing = landing, distance = distance, serial = serial,
+      strength = strikes.strength(distance), bolt = distance <= BOLT_RANGE,
     }
   end
 end
 
-local function drawChannel(points, p, width, packed)
-  for i = 2, #points do
-    local a, b = points[i - 1], points[i]
-    lineInstance(a.x + p.x, a.y + p.y, a.z + p.z, b.x + p.x, b.y + p.y, b.z + p.z, width, packed)
+local function pulseAt(visual, now)
+  local elapsed = now - visual.event.at
+  for i, pulse in ipairs(visual.event.pulses) do
+    if elapsed >= pulse.start and elapsed < pulse.start + pulse.length then return i, pulse.level end
   end
 end
 
-local function drawBolt(visual, pulseIndex)
-  lineInstance = lineInstance or require("utils/debugDraw").LineInstance_MinArg
-  visual.shape = visual.shape or strikes.bolt(visual.event.shapeSeed)
-  drawChannel(visual.shape.main, visual.landing, MAIN_WIDTH, color(235, 240, 255, 255))
-  local packed = color(235, 240, 255, 255 - (pulseIndex - 1) * BRANCH_FADE)
-  for _, branch in ipairs(visual.shape.branches) do drawChannel(branch, visual.landing, BRANCH_WIDTH, packed) end
+local function renderBolt(visual, cam, pulseIndex, pulseLevel)
+  if pulseIndex and not visual.scene then
+    local shapeSeed = visual.event.shapeSeed
+    local shape = strikes.bolt(shapeSeed)
+    local midpoint = shape.main[math.floor(#shape.main / 2) + 1]
+    local landing = visual.landing
+    visual.shadowPos = vec3(landing.x + midpoint.x, landing.y + midpoint.y, landing.z + midpoint.z)
+    visual.strength = strikes.strength(0)
+    visual.scene = lightningScene.create(shape, landing, visual.distance, visual.serial, shapeSeed)
+  end
+  if visual.scene then lightningScene.render(visual.scene, cam, pulseIndex, pulseLevel) end
 end
 
 local function render(s, now, cam)
+  cam = cam or getCamera()
+  if not cam or rain.covered(cam) ~= false then M.hide(s); return end
   local strongest = 0
   local winner
   for i = #s.visuals, 1, -1 do
     local visual = s.visuals[i]
     if now >= visual.endsAt then
+      lightningScene.remove(visual.scene)
       table.remove(s.visuals, i)
     else
-      local elapsed = now - visual.event.at
-      for j, pulse in ipairs(visual.event.pulses) do
-        if elapsed >= pulse.start and elapsed < pulse.start + pulse.length then
-          cam = cam or getCamera()
-          if not cam or rain.covered(cam) ~= false then M.hide(s); return end
-          local strength = visual.strength * pulse.level
-          if strength > strongest then strongest, winner = strength, visual end
-          if visual.bolt then
-            local ok, err = pcall(drawBolt, visual, j)
-            if not ok then visual.bolt = false; report(s, "bolt", err) end
-          end
-          break
+      local pulseIndex, pulseLevel = pulseAt(visual, now)
+      if visual.bolt then
+        local ok, err = pcall(renderBolt, visual, cam, pulseIndex, pulseLevel)
+        if not ok then
+          lightningScene.remove(visual.scene)
+          visual.scene, visual.bolt = nil, false
+          report(s, "bolt", err)
         end
+      end
+      if pulseLevel then
+        local strength = visual.strength * pulseLevel
+        if strength > strongest then strongest, winner = strength, visual end
       end
     end
   end
