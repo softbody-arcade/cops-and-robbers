@@ -7,22 +7,6 @@ Priorities run from `!!!!` (highest) through `!!!` (high), `!!` (normal), and `!
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
-- [ ] !!! `fix/trailers-current` — integrating both trailer fixes with current round placement and rejoin behavior.
-  - Sitting out with a truck and trailer parked at an angle straightens the trailer on return, which can move it into a building. Restore both vehicles in their parked positions, still hitched.
-  - Choosing Play can leave a personal trailer or spare car on the map. In normal and practice rounds, remove active players’ spare vehicles after successful placement so only round vehicles and traffic remain. Active players keep their round cars afterward. Players sitting out get their parked vehicles back.
-- [ ] ! `fix/ui-app-placement` — reviewed and integrated for the grouped playtest.
-  - How to play, Panel and Leaderboard forget their size and position when closed and reopened. The shared close action removes the layout entry and reopening uses the app defaults (`apps.lua`, `placement.lua`). Decide whether to remember each app’s placement per HUD layout.
-- [ ] ! `fix/ui-panel-tabs` — reviewed and integrated for the grouped playtest.
-  - Panel tabs forget their state when you switch tabs, because the game only renders the open tab: the Settings "more" fold, the Car tab's choice and the Map tab's stations. Decide which to keep in Panel `app.vue`
-- [ ] ! `fix/ui-hud-sizing` — reviewed and integrated for the grouped playtest.
-  - `useFit` (`fit.js`) only shrinks text and never grows it in a large app. Decide whether it should
-  - HUD styles repeated across components: `.title`, `.tone-*` and `.mono` (HudCenter, HudResult, HudChase) and the root container (Hud, Announcements and How to play `app.vue`). Move them into the shared kit; needs a visual check in game. (`.hud-btn` and `.swatch` are already shared: `.cnr-btn`, `.cnr-swatch` in `CnrRoot.vue`)
-
-- [ ] ! `fix/weather-housekeeping` — fixing locked sky restoration and the remaining weather review items.
-  - `drop` during a restore blend freezes the sky half-way for a player whose environment was locked. It's reachable only from `onClientEndMission`, where the level unloads anyway (`sky.lua`)
-  - A random sky integration test sometimes generated a valid empty schedule and failed at `tests/test_main.lua:946`. Use repeatable setup and reroll inputs.
-  - Weather polish left from the 2.11.0 reviews, all can-wait: `sky.forecast` allocates every frame; `stepCurve` builds 3 tables per step; `windAt` calls `wind.at` twice when the weather doesn't change; the 1 s scan grid is redundant once a weather fits; the round clock expression is repeated in `round.lua`
-
 - [ ] ! Directional cop sight and weather visibility (design). Spec and plan now, implementation deferred.
   - Give cops a longer sight range in the direction they are looking, with a shorter range to the sides and rear. Decide whether to use the cop’s camera direction or the heading of their car.
   - Cop sight that follows visibility: the sight range is worked out from what the game knows (fog thickness, how dark it is, street lights near the runner, whether the runner's lights are on, rain). Comes after night and weather rounds
@@ -30,11 +14,15 @@ One entry per piece of work that has started: what it is, its branch (or "design
 ## In-game checks
 Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to decide what needs a player. Record deferred checks here with the action, expected observation and open question. Remove a check once verified and record failures under Issues.
 
-Run these together on 2.14.7 (`9f9c656`) or later. The two solo checks fit in the same Practice round.
+Run these together on the locally staged 2.14.8 (`364b545`) or later.
 
+- [ ] !!! Park a hitched truck and trailer at an angle beside a landmark. Sit out, watch an AI Practice round, then end it. Both should return at their original angles and the trailer should follow when you pull away.
+- [ ] !!! With Play selected, bring the hitched rig and a spare car into driving Practice with traffic enabled. After placement, the rig and spare should be gone, AI and round traffic should remain, and you should keep the round car at the end.
 - [ ] !!! Two players, night thunderstorm. From nearby viewpoints, compare a bolt’s landmark and flash timing. Have the cop disconnect and rejoin during the chase. They should see SPECTATING, and the runner should see no new car queued for them. Compare another bolt after the reconnect.
 - [ ] !! Solo Practice as cop, West Coast USA. Select Clear weather, Sunset, Fast day length, helicopter arrival at release and refuel off. Hold the throttle during prep and the runner’s head start. The cop car should stay in its slot until release, then drive away without a second teleport.
 - [ ] ! Continue the solo round through downtown and toward a hillside. The helicopter should clear roofs and slopes smoothly, then settle back to its usual height. Keep it airborne through dusk and watch the searchlight, glare and enabled beam brighten together over about one second.
+
+- [ ] ! In the BeamNG layout editor, enlarge the HUD and move and resize How to play. Save, close and reopen How to play. It should return to the saved rectangle. During the solo round, check that the HUD and announcements stay readable, with no clipped text or invisible area swallowing clicks.
 
 ## Ideas
 - [ ] !! Include the helicopter in the spectator camera cycle while it is airborne, so spectators can use Tab or Ctrl+Tab to switch between the helicopter and the round cars.
