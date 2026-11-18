@@ -7,7 +7,7 @@ export const GROUPS = [
   { title: "Round", items: [
     { key: "headStartSeconds", label: "Head start", unit: "s", step: 1, min: 0, common: true,
       help: "Cops stay frozen this long after the runner goes" },
-    { key: "roundTimeLimitSeconds", label: "Time limit", unit: "s", step: 60, min: 0, common: true, offAtZero: true, duration: true,
+    { key: "roundTimeLimitSeconds", label: "Time limit", unit: "s", step: 300, min: 0, common: true, offAtZero: true, duration: true,
       help: "The runner escapes after this long in the chase; off means no limit" },
     { key: "runnerCountdownSeconds", label: "Runner countdown", unit: "s", step: 1, min: 0,
       help: "Countdown after GO before the runner may drive" },
