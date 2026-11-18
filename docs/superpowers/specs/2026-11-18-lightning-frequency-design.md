@@ -1,6 +1,6 @@
 # Host-configurable lightning frequency
 
-The host sets the minimum and maximum time between lightning strikes under **Host panel → Settings → Sky**. Show the two controls among the common settings when Weather is Thunderstorm or Random, or Weather changes is enabled. Label them **Minimum strike interval** and **Maximum strike interval**, in seconds.
+The host sets the minimum and maximum time between lightning strikes under **Host panel → Settings → More settings → Sky**. Show the two controls only in the expanded settings when Weather is Thunderstorm or Random, or Weather changes is enabled. Label them **Minimum strike interval** and **Maximum strike interval**, in seconds.
 
 Use whole seconds starting at 1, with defaults of 10 and 40. Follow the existing settings editor and persistence rules for paired timing values, including applying a batch that lowers both. Ensure the maximum is at least the minimum. Existing configurations and sky payloads use the defaults.
 
