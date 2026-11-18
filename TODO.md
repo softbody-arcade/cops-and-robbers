@@ -7,7 +7,7 @@ Priorities run from `!!!!` (highest) through `!!!` (high), `!!` (normal), and `!
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
-- [ ] ! Directional cop sight and weather visibility (design). Spec and plan now, implementation deferred.
+- [ ] ! Directional cop sight and weather visibility. The [design](docs/superpowers/specs/2026-11-18-cop-visibility-design.md), [diagram](docs/superpowers/specs/cop-visibility.svg) and [implementation plan](docs/superpowers/plans/2026-11-18-cop-visibility.md) passed review. Implementation is queued for the next session.
   - Give cops a longer sight range in the direction they are looking, with a shorter range to the sides and rear. Decide whether to use the cop’s camera direction or the heading of their car.
   - Cop sight that follows visibility: the sight range is worked out from what the game knows (fog thickness, how dark it is, street lights near the runner, whether the runner's lights are on, rain). Comes after night and weather rounds
 
