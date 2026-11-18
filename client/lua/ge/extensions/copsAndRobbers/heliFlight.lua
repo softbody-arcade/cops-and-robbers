@@ -205,29 +205,45 @@ local function scanClearance(f, z)
   local p = f.pos
   local floor = floorAt(p.x, p.y, z)
   local speed = horizontalSpeed(f.vel)
-  if speed < 0.1 then return floor, floor end
+  if speed < 0.1 then return floor, floor, CLIMB_RATE end
   local dx, dy = f.vel.x / speed, f.vel.y / speed
   local near = NOSE_MARGIN + speed * (SCAN_INTERVAL + M.MAX_STEP)
   local flightZ = math.max(z + (f.lift or 0), floor)
   floor = math.max(floor, floorAt(p.x + dx * near, p.y + dy * near, z))
   local reach = near + speed * LOOK_AHEAD
+  local distance = reach
   local ahead = floorAt(p.x + dx * reach, p.y + dy * reach, z)
   local hit = castRayStatic(vec3(p.x, p.y, flightZ), vec3(dx, dy, 0), reach)
   if type(hit) == "number" and hit >= 0 and hit < reach then
     local top = floorAt(p.x + dx * (hit + 0.25), p.y + dy * (hit + 0.25), z)
     if hit <= near then floor = math.max(floor, top) end
-    ahead = math.max(ahead, top)
+    if top >= ahead then ahead, distance = top, hit + 0.25 end
   end
-  return floor, math.max(floor, ahead)
+  if f.obstacleZ then
+    local x, y = f.obstacleX - p.x, f.obstacleY - p.y
+    local along, across = x * dx + y * dy, x * dy - y * dx
+    local higher = f.obstacleZ > ahead or (f.obstacleZ == ahead and along <= distance)
+    if higher and along >= 0 and along <= reach and math.abs(across) <= NOSE_MARGIN then
+      ahead, distance = f.obstacleZ, along
+    else
+      f.obstacleZ = nil
+    end
+  end
+  if not f.obstacleZ and ahead > z then
+    f.obstacleX, f.obstacleY, f.obstacleZ = p.x + dx * distance, p.y + dy * distance, ahead
+  end
+  local seconds = math.max(SCAN_INTERVAL, (distance - near) / speed - SCAN_INTERVAL)
+  local climbRate = math.max(CLIMB_RATE, (ahead - flightZ) / seconds)
+  return floor, math.max(floor, ahead), climbRate
 end
 
 function M.clearance(f, clock, dt)
   local z = f.nominalZ or f.pos.z
   if castRayStatic and (not f.scanAt or clock < f.scanAt or clock - f.scanAt >= SCAN_INTERVAL) then
     f.scanAt = clock
-    local ok, floor, ahead = pcall(scanClearance, f, z)
+    local ok, floor, ahead, climbRate = pcall(scanClearance, f, z)
     if ok then
-      f.floor, f.ahead = floor, ahead
+      f.floor, f.ahead, f.climbRate = floor, ahead, climbRate
     elseif not f.scanLogged then
       f.scanLogged = true
       log("E", "cnr_heli", "helicopter clearance scan failed: " .. tostring(floor))
@@ -237,7 +253,7 @@ function M.clearance(f, clock, dt)
   local lift = f.lift or 0
   local step = math.max(0, math.min(dt, M.MAX_STEP))
   local desired = math.max(0, f.ahead - z)
-  local climb = math.min(desired, lift + step * CLIMB_RATE)
+  local climb = math.min(desired, lift + step * f.climbRate)
   lift = math.max(f.floor - z, lift - step * DESCENT_RATE, climb)
   f.lift = lift
   f.nominalZ = lift > 0 and z or nil
@@ -251,7 +267,7 @@ function M.step(f, carPos, carVel, dt)
   local z = f.nominalZ or f.pos.z
   local jx, jy, jz = M.jumpOf(f.lastCar, carPos)
   if jx then
-    f.scanAt, f.floor, f.ahead, f.lift = nil, nil, nil, nil
+    f.scanAt, f.floor, f.ahead, f.lift, f.obstacleZ = nil, nil, nil, nil, nil
     z = z + jz
     f.pos = vec3(f.pos.x + jx, f.pos.y + jy, f.pos.z + jz)
     if f.leaving then

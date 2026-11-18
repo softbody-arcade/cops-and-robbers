@@ -2135,6 +2135,37 @@ local function flyOverSurface(cast, duration, check)
   end)
 end
 
+test("a visible roof keeps the helicopter climbing smoothly until it crosses", function()
+  local function crossing(start)
+    local finish = start + 30
+    local function cast(p, dir, len)
+      if dir.z == -1 then
+        local roof = p.x >= start and p.x <= finish and 145 or 0
+        return math.min(len, p.z - roof)
+      end
+      if dir.x > 0 and p.z < 145 and p.x < start then
+        return math.min(len, (start - p.x) / dir.x)
+      end
+      return len
+    end
+    local previousZ, crossed
+    flyOverSurface(cast, 8, function(p)
+      if previousZ and p.x <= finish then
+        assertEq(p.z >= previousZ - 1e-6, true, "descended before clearing roof at x=" .. p.x)
+        assertEq(p.z - previousZ <= 0.75, true, "late roof climb of " .. (p.z - previousZ))
+      end
+      if p.x >= start and p.x <= finish then
+        assertEq(p.z >= 165, true)
+        crossed = true
+      end
+      previousZ = p.z
+    end)
+    assertEq(crossed, true)
+    assertNear(previousZ, 100, 0.01)
+  end
+  for start = 100, 108 do crossing(start) end
+end)
+
 test("the aircraft clears a narrow rooftop structure between its ground samples", function()
   local frames = 0
   local function cast(p, dir, len)
