@@ -1278,6 +1278,23 @@ test("a live tracking tick builds at most one sorted cop list", function()
   assertEq(calls <= 1, true, "copPids calls: " .. calls)
 end)
 
+test("the escape tick shares the sorted cop list with the run record", function()
+  local r = chasing({helicopter=false, roundTimeLimitSeconds=1})
+  local copPids, calls = r.copPids, 0
+  function r:copPids()
+    calls = calls + 1
+    return copPids(self)
+  end
+  r:sightReport(12, 2, true)
+  local fx = r:tick(12, farCars(), {})
+  assertEq(find(fx, "roundEnd").reason, "escaped")
+  local run = find(fx, "record").run
+  assertEq(table.concat(run.copIds, ","), "2,3")
+  assertEq(run.copSight[1], 1)
+  assertEq(run.copSight[2], 0)
+  assertEq(calls <= 1, true, "copPids calls: " .. calls)
+end)
+
 test("the helicopter starts at release with the round's weather", function()
   local function released(weather)
     local r = round.new((config.merge(nil)))

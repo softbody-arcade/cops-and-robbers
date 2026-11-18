@@ -3447,9 +3447,16 @@ test("a watched practice refuses the issuer's own spawns and model changes, but 
   assertEq(env.call("onVehicleEdited", 1, 2, string.format(AI_SPAWN, 2)), 0)
   assertEq(env.call("onVehicleSpawn", 2, 7, '2:Bob:2-7:{"jbm":"etk800","vcf":{}}'), 0)
   env.panel(1, "reroll")
-  env.call("cnr_vehiclePicked", 1, PICK)
-  for vid = 8, 10 do assertEq(env.call("onVehicleSpawn", 1, vid, string.format(AI_SPAWN, vid)), 0, vid) end
-  assertEq(env.call("onVehicleSpawn", 1, 11, string.format(AI_SPAWN, 11)), 1)
+  env.call("cnr_vehiclePicked", 1, '{"model":"etk800","config":"vehicles/etk800/base.pc"}')
+  env.sent = {}
+  assertEq(env.call("onVehicleEdited", 1, 2, string.format(AI_SPAWN, 2)), 1)
+  assertEq(#env.sent, 1)
+  local warning = env.sent[1]
+  assertEq(warning.ev, "cnr_notice"); assertEq(warning.pid, 1)
+  local notice = decodeJson(warning.data)
+  assertEq(notice.msg, "Only the round car is allowed"); assertEq(notice.tone, "warn")
+  for vid = 8, 10 do assertEq(env.call("onVehicleSpawn", 1, vid, spawnOf(1, vid, "etk800")), 0, vid) end
+  assertEq(env.call("onVehicleSpawn", 1, 11, spawnOf(1, 11, "etk800")), 1)
   env.panel(1, "stop")
   assertEq(env.call("onVehicleSpawn", 1, 12, 'USER:Reinder:1-12:{"jbm":"etk800","vcf":{}}'), 0)
   env.cleanup()

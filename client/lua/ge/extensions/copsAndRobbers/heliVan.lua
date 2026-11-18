@@ -40,8 +40,8 @@ end
 local function sweepIn(dir, ext, keep)
   local pattern = "^" .. M.PREFIX .. "[%d_]+%." .. ext .. "$"
   for _, path in ipairs(FS:findFiles(dir .. "/", M.PREFIX .. "*." .. ext, 0, true, false) or {}) do
-    local name = path:match("([^/]+)$")
-    if name and name ~= keep and name:find(pattern) then FS:removeFile(path) end
+    local parent, name = path:match("^(.*)/([^/]+)$")
+    if parent == dir and name ~= keep and name:find(pattern) then FS:removeFile(path) end
   end
 end
 

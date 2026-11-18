@@ -163,7 +163,7 @@ function Round:note(now, kind, name, seconds, cause)
   self.timeline[#self.timeline + 1] = { t = t, kind = kind, name = name, seconds = seconds, cause = cause }
 end
 
-function Round:finish(now, reason)
+function Round:finish(now, reason, copPids)
   local fx = {}
   local survived = self.releasedAt and (now - self.releasedAt) or 0
   local catchers = reason == "caught" and self.catchers or {}
@@ -188,7 +188,7 @@ function Round:finish(now, reason)
       helicopter = self.heli and helicopter.flew(self.heli) or nil,
     } }
     local run = fx[#fx].run
-    for _, pid in ipairs(self:copPids()) do
+    for _, pid in ipairs(copPids or self:copPids()) do
       if not M.isAI(pid) then
         run.copIds[#run.copIds + 1] = pid
         run.copSight[#run.copSight + 1] = self.copSight[pid] or 0
@@ -395,6 +395,7 @@ function Round:tick(now, cars, stations, traffic)
 
   local runnerCar = cars[self.runnerId]
   local progress, caught = 0, false
+  local copPids
   if self.state == "running" then
     for _, pid in ipairs(sortedPids(self.players)) do
       if pid ~= self.runnerId then
@@ -430,9 +431,9 @@ function Round:tick(now, cars, stations, traffic)
       fx[#fx + 1] = { kind = "heli", phase = s.phase, seconds = s.seconds, reason = s.reason, seed = s.seed, guided = s.guided }
     end
     if not caught then
-      local pids = self:copPids()
-      local nearest = runnerCar and self:nearestCop(cars, runnerCar, pids)
-      local seeing = self:sightTick(now, cars, runnerCar, pids, fx)
+      copPids = self:copPids()
+      local nearest = runnerCar and self:nearestCop(cars, runnerCar, copPids)
+      local seeing = self:sightTick(now, cars, runnerCar, copPids, fx)
       self:trackTick(now, cars, runnerCar, seeing, nearest, fx)
       if nearest and now - self.nearestAt >= NEAREST_COP_SECONDS - 1e-9 then
         self.nearestAt = now
@@ -480,7 +481,7 @@ function Round:tick(now, cars, stations, traffic)
   if caught then
     for _, e in ipairs(self:finish(now, "caught")) do fx[#fx + 1] = e end
   elseif self.state == "running" and limit > 0 and now - self.releasedAt >= limit - 1e-9 then
-    for _, e in ipairs(self:finish(now, "escaped")) do fx[#fx + 1] = e end
+    for _, e in ipairs(self:finish(now, "escaped", copPids)) do fx[#fx + 1] = e end
   else
     local shown = self.cfg.sightMaxMeters <= 0 or self.lastTrackedCar ~= nil
     if shown ~= self.shown then

@@ -96,7 +96,8 @@ local function load(opts)
         local relative = path:sub(#dir + 1)
         local _, levels = relative:gsub("/", "")
         local name = relative:match("([^/]+)$")
-        if path:sub(1, #dir) == dir and (depth == -1 or levels <= depth) and name:find("^pigeon_heli_.*%." .. ext .. "$") then
+        if path:sub(1, #dir) == dir and (opts.includeNested or depth == -1 or levels <= depth)
+          and name:find("^pigeon_heli_.*%." .. ext .. "$") then
           out[#out + 1] = path
         end
       end
@@ -202,7 +203,7 @@ test("an unchanged copy is not rewritten on a later session and older copies and
     "/temp/temp/cnr/sub/pigeon_heli_5.cdae", "/temp/temp/cnr/pigeon_heli_9.dae" }
   for _, f in ipairs(gone) do files[f] = "old" end
   for _, f in ipairs(kept) do files[f] = "keep" end
-  load({ keepFiles = true })
+  load({ keepFiles = true, includeNested = true })
   local s = van.new()
   assertEq(van.prepare(s), path)
   assertEq(#written, 0)
