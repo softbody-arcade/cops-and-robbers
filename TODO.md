@@ -7,10 +7,6 @@ Priorities run from `!!!!` (highest) through `!!!` (high), `!!` (normal), and `!
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
-- [ ] !!! Trailer hitch restoration. The restored hitch held on `7ff57c8` and shipped in 2.14.3. Both follow-ups are deferred to a later release.
-  - `fix/restore-trailer-hitch`: restoring a turned truck and trailer straightens the trailer, which can move it into a building. Preserve their parked angle and footprint.
-  - `fix/active-round-trailer`: normal and practice rounds should contain only the round vehicles and traffic. Remove active players’ spare cars and trailers after successful placement, keep their round cars at the end, and preserve Sit out restoration.
-
 ## In-game checks
 Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to decide what needs a player. Record deferred checks here with the action, expected observation and open question. Remove a check once verified and record failures under Issues.
 
@@ -36,6 +32,8 @@ Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to 
 - [ ] ! Workflow request. Make it easy to see which subagents are currently working when the session list also contains completed agents.
 
 ## Issues
+- [ ] !!! Sitting out with a truck and trailer parked at an angle straightens the trailer on return, which can move it into a building. Restore both vehicles in their parked positions, still hitched. Deferred fix on `fix/restore-trailer-hitch`.
+- [ ] !!! Choosing Play can leave a personal trailer or spare car on the map. In normal and practice rounds, remove active players’ spare vehicles after successful placement so only round vehicles and traffic remain. Active players keep their round cars afterward. Players sitting out get their parked vehicles back. Deferred fix on `fix/active-round-trailer`.
 - [ ] ! The game's Vehicle Radar app shows hidden cars nearby (about 30 m, up to about 54 m ahead with its offset slider): it walks `be:getObject(i)` directly (`vehicleRadarApp.lua:187`), so the hiding can't filter it. The user accepted this (2026-11-17); fix only if an easy way turns up
 - [ ] ! Trees sometimes hide the runner from the helicopter's line of sight; the user thinks that's fair with thermals for now (2026-11-17). Revisit if it feels unfair
 - [ ] ! The helicopter's position ignores terrain and buildings (100 m up and 60 m to the side since 2.10.0): if the light or its line of sight is blocked too often downtown or in mountains, fly higher (80-100 m) or keep a floor above the ground under the target point (2.9.1 final review)
