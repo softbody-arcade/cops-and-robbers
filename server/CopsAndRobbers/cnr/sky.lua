@@ -58,6 +58,7 @@ function M.pick(cfg, random, geo, year)
     windSeed = random(1, 2147483646),
   }
   s.weatherSeed = random(1, 2147483646)
+  s.lightningSeed = random(1, 2147483646)
   local plan = weather.build(s, cfg)
   s.changes, s.temps, s.gameStart, s.releaseAt = plan.changes, plan.temps, plan.gameStart, plan.releaseAt
   return s
@@ -77,6 +78,7 @@ function M.payload(s, cfg, clockSeconds)
     day = s.day,
     windDir = s.windDir,
     windSeed = s.windSeed,
+    lightningSeed = s.lightningSeed,
     clockSeconds = clockSeconds,
     daySeconds = M.DAY_SECONDS[cfg.dayLength],
     changes = s.changes,

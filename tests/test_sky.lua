@@ -26,6 +26,38 @@ test("pick rolls a weather seed and a schedule", function()
   assertEq(draws, 0)
 end)
 
+test("strike seed belongs to the picked sky", function()
+  local c = cfg({ timeOfDay = "noon", weather = "clear" })
+  local rolls = {
+    { 1, 365, 184 },
+    { 0, 359, 42 },
+    { 1, 2147483646, 123 },
+    { 1, 2147483646, 456 },
+    { 1, 2147483646, 789 },
+  }
+  local draws = 0
+  local function random(min, max)
+    draws = draws + 1
+    local roll = rolls[draws]
+    assertEq(roll ~= nil, true)
+    assertEq(min, roll[1]); assertEq(max, roll[2])
+    return roll[3]
+  end
+
+  local s = sky.pick(c, random, false, 2026)
+  assertEq(s.windSeed, 123); assertEq(s.weatherSeed, 456)
+  assertEq(s.lightningSeed, 789)
+  assertEq(draws, #rolls)
+  assertEq(sky.payload(s, c, nil).lightningSeed, 789)
+  assertEq(sky.payload(s, c, 123.5).lightningSeed, 789)
+  assertEq(sky.record(s, c, 123.5).lightningSeed, nil)
+
+  draws = 0
+  local earth = sky.pick(c, random, true, 2026)
+  assertEq(draws, 0)
+  assertEq(sky.payload(earth, c, nil), nil)
+end)
+
 test("payload carries the schedule", function()
   local changes = { { at = 100, to = "cloudy", forecastFrom = 50 } }
   local temps = { { t = -0.2, hour = 6, c = 3 }, { t = 0.1, hour = 14, c = 9 } }
