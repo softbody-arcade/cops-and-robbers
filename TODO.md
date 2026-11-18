@@ -7,17 +7,14 @@ Priorities run from `!!!!` (highest) through `!!!` (high), `!!` (normal), and `!
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
-- [ ] ! Helicopter fixes on `playtest/heli-fixes` at `07b17e3`. Independently reviewed and staged locally with 1,632 tests passing. Awaiting the solo visual check below before merging.
-  - The helicopter anticipates terrain and roofs. Its body, sight, light and sound share the corrected position. The searchlight fades in over one second at dusk.
-  - Search and rotor updates reuse temporary vectors and camera samples. Regressions cover refuel and target loss, tunnels and road search, rotor muffling and emitter reuse. Flight and forecasts share the same grounding-weather rules.
-
 ## In-game checks
 Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to decide what needs a player. Record deferred checks here with the action, expected observation and open question. Remove a check once verified and record failures under Issues.
 
-- [ ] !!! Multiplayer retest on live 2.14.5 (`82ae368`). Start a night thunderstorm with a runner and a cop. From nearby viewpoints, compare a bolt against the same landmark and check that both screens flash together. Have the cop disconnect and rejoin during the chase. They should see SPECTATING, and the runner should see no new car queued for them. Compare another bolt’s landmark and timing.
-- [ ] !! Deferred solo check for 2.14.3. In Practice as cop, hold the throttle during prep and the runner’s head start. The car should stay in its slot until release, then drive away without a second teleport. This checks the in-game freeze and release.
-- [ ] ! Helicopter visuals on local `07b17e3`. In solo Practice on West Coast USA, use Clear weather, Sunset, Fast day length, arrival at release and refuel off. Drive downtown and toward a hillside. Watch for the helicopter to clear roofs and slopes smoothly and settle back to its usual height. Keep it airborne through dusk and check that the searchlight, glare and enabled beam brighten together over about one second.
+Run these together on 2.14.7 (`9f9c656`) or later. The two solo checks fit in the same Practice round.
 
+- [ ] !!! Two players, night thunderstorm. From nearby viewpoints, compare a bolt’s landmark and flash timing. Have the cop disconnect and rejoin during the chase. They should see SPECTATING, and the runner should see no new car queued for them. Compare another bolt after the reconnect.
+- [ ] !! Solo Practice as cop, West Coast USA. Select Clear weather, Sunset, Fast day length, helicopter arrival at release and refuel off. Hold the throttle during prep and the runner’s head start. The cop car should stay in its slot until release, then drive away without a second teleport.
+- [ ] ! Continue the solo round through downtown and toward a hillside. The helicopter should clear roofs and slopes smoothly, then settle back to its usual height. Keep it airborne through dusk and watch the searchlight, glare and enabled beam brighten together over about one second.
 
 ## Ideas
 - [ ] !! Include the helicopter in the spectator camera cycle while it is airborne, so spectators can use Tab or Ctrl+Tab to switch between the helicopter and the round cars.
