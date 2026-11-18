@@ -190,6 +190,16 @@ function M.updateHitches(dt)
   if not pending then restoring = nil end
 end
 
+function M.forgetVehicle(id)
+  if not restoring then return end
+  for _, car in ipairs(restoring) do
+    if car.id == id then
+      car.id = nil
+      return
+    end
+  end
+end
+
 function M.drop()
   parked, restoring = nil, nil
 end

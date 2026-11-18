@@ -4099,6 +4099,49 @@ test("a pending hitch is forgotten on leave or when a restored vehicle disappear
   end
 end)
 
+test("replacing either end in place cancels the pending hitch before the reused ID can be used", function()
+  for _, index in ipairs({1, 2}) do
+    for _, placed in ipairs({false, true}) do
+      local env, placements, warnings = parkedTrailer()
+      MPVehicleGE.isOwn = function() return true end
+      if placed then env.tick(0.3) end
+      local id = env.spawned[index].veh.id
+      env.M.onBeforeVehicleReplaced(id)
+      env.addObject(id, vec3(10, 20, 0)).model = "etk800"
+      env.tick(12, 1)
+      assertEq(#placements, placed and 1 or 0)
+      local tow = env.objects[env.spawned[1].veh.id]
+      for _, cmd in ipairs(tow.commands) do assert(not cmd:find("attachExternalCoupler", 1, true)) end
+      assertEq(#warnings, 0)
+    end
+  end
+end)
+
+test("destroying a trailer cancels retries even if its ID returns before the next update", function()
+  local env, placements, warnings = parkedTrailer()
+  MPVehicleGE.isOwn = function() return true end
+  local tow, trailer = env.spawned[1].veh, env.spawned[2].veh
+  local attempts = 0
+  function tow:queueLuaCommand(cmd)
+    if cmd:find("attachExternalCoupler", 1, true) then attempts = attempts + 1 end
+  end
+  env.tick(1)
+  assertEq(attempts, 1)
+  env.M.onVehicleDestroyed(trailer.id)
+  trailer:delete()
+  env.addObject(trailer.id, vec3(10, 20, 0))
+  env.tick(12, 1)
+  assertEq(#placements, 1); assertEq(attempts, 1); assertEq(#warnings, 0)
+end)
+
+test("replacing an unrelated vehicle keeps the pending hitch", function()
+  local env, placements = parkedTrailer()
+  MPVehicleGE.isOwn = function() return true end
+  env.M.onBeforeVehicleReplaced(env.spawned[3].veh.id)
+  env.tick(1)
+  assertEq(#placements, 1)
+end)
+
 test("an unavailable vehicle command queue ends the hitch request once", function()
   local env, _, warnings = parkedTrailer()
   MPVehicleGE.isOwn = function() return true end
