@@ -50,6 +50,28 @@ test("strike seed belongs to the picked sky", function()
   assertEq(sky.record(s, c, 123.5).lightningSeed, nil)
 end)
 
+test("lightning timing is shared by the original round and late joiners after a host edit", function()
+  local c = cfg({ lightningMinSeconds = 5, lightningMaxSeconds = 7 })
+  local s = sky.pick(c, rng(0.5, 1))
+  local start = sky.payload(s, c, nil)
+  assertEq(start.lightningMinSeconds, 5)
+  assertEq(start.lightningMaxSeconds, 7)
+  c.lightningMinSeconds, c.lightningMaxSeconds = 2, 3
+  local join = sky.payload(s, c, 123.5)
+  assertEq(join.lightningMinSeconds, 5)
+  assertEq(join.lightningMaxSeconds, 7)
+  local nextSky = sky.payload(sky.pick(c, rng(0.5, 1)), c, nil)
+  assertEq(nextSky.lightningMinSeconds, 2)
+  assertEq(nextSky.lightningMaxSeconds, 3)
+end)
+
+test("an older sky sends the default strike intervals regardless of current settings", function()
+  local c = cfg({ lightningMinSeconds = 5, lightningMaxSeconds = 5 })
+  local p = sky.payload({ weather = "thunderstorm", lightningSeed = 1 }, c, 12)
+  assertEq(p.lightningMinSeconds, 10)
+  assertEq(p.lightningMaxSeconds, 40)
+end)
+
 test("payload carries the schedule", function()
   local changes = { { at = 100, to = "cloudy", forecastFrom = 50 } }
   local temps = { { t = -0.2, hour = 6, c = 3 }, { t = 0.1, hour = 14, c = 9 } }

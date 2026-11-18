@@ -41,6 +41,8 @@ M.DEFAULTS = {
   weatherChanges = true,
   weatherChangeMinMinutes = 3,
   weatherChangeMaxMinutes = 8,
+  lightningMinSeconds = 10,
+  lightningMaxSeconds = 40,
   trafficPerPlayer = 5,
   trafficRunnerOnly = false,
 }
@@ -52,10 +54,14 @@ M.CHOICES = {
   dayLength = { off = true, fast = true, moderate = true, slow = true, realtime = true },
 }
 
+M.TIMING_RANGES = {
+  weatherChangeMinMinutes = "weatherChangeMaxMinutes",
+  lightningMinSeconds = "lightningMaxSeconds",
+}
+
 local strictlyPositive = {
   catchHoldSeconds = true, catchRadiusMeters = true, crashSpeedLossKmh = true,
   catchMaxSpeedKmh = true, stillMaxSpeedKmh = true, sightLiveIntervalSeconds = true, helicopterUpSeconds = true,
-  weatherChangeMinMinutes = true, weatherChangeMaxMinutes = true,
 }
 
 local function copyList(t)
@@ -78,7 +84,11 @@ end
 local RETIRED_KEYS = { clockSpeed = true, lastSeenIntervalSeconds = true }
 local RETIRED_VALUES = { timeOfDay = "map", weather = "map" }
 local MAXIMA = { assistMinSightPercent = 100, nightChancePercent = 100, badWeatherChancePercent = 100, trafficPerPlayer = 20 }
-local WHOLE = { trafficPerPlayer = true, weatherChangeMinMinutes = true, weatherChangeMaxMinutes = true }
+local WHOLE = { trafficPerPlayer = true }
+for minKey, maxKey in pairs(M.TIMING_RANGES) do
+  WHOLE[minKey], WHOLE[maxKey] = true, true
+  strictlyPositive[minKey], strictlyPositive[maxKey] = true, true
+end
 
 local function validNumber(key, v)
   if type(v) ~= "number" or v ~= v or v == math.huge or v == -math.huge then return false end
@@ -135,9 +145,11 @@ function M.merge(raw)
     warnings[#warnings + 1] = string.format("copSpawnMaxMeters (%s) is below copSpawnMinMeters, using %s", tostring(cfg.copSpawnMaxMeters), tostring(cfg.copSpawnMinMeters))
     cfg.copSpawnMaxMeters = cfg.copSpawnMinMeters
   end
-  if cfg.weatherChangeMaxMinutes < cfg.weatherChangeMinMinutes then
-    warnings[#warnings + 1] = string.format("weatherChangeMaxMinutes (%s) is below weatherChangeMinMinutes, using %s", tostring(cfg.weatherChangeMaxMinutes), tostring(cfg.weatherChangeMinMinutes))
-    cfg.weatherChangeMaxMinutes = cfg.weatherChangeMinMinutes
+  for minKey, maxKey in pairs(M.TIMING_RANGES) do
+    if cfg[maxKey] < cfg[minKey] then
+      warnings[#warnings + 1] = string.format("%s (%s) is below %s, using %s", maxKey, tostring(cfg[maxKey]), minKey, tostring(cfg[minKey]))
+      cfg[maxKey] = cfg[minKey]
+    end
   end
   return cfg, warnings
 end
@@ -169,12 +181,15 @@ function M.setValue(raw, key, text)
     if not RETIRED_KEYS[k] and RETIRED_VALUES[k] ~= v then updated[k] = v end
   end
   updated[key] = value
-  if key == "weatherChangeMinMinutes" or key == "weatherChangeMaxMinutes" then
-    local minV = tonumber(updated.weatherChangeMinMinutes)
-    if minV == nil then minV = M.DEFAULTS.weatherChangeMinMinutes end
-    local maxV = tonumber(updated.weatherChangeMaxMinutes)
-    if maxV == nil then maxV = M.DEFAULTS.weatherChangeMaxMinutes end
-    if maxV < minV then updated.weatherChangeMaxMinutes = minV end
+  for minKey, maxKey in pairs(M.TIMING_RANGES) do
+    if key == minKey or key == maxKey then
+      if not validNumber(key, value) then return nil, invalid end
+      local minV = updated[minKey]
+      local maxV = updated[maxKey]
+      if not validNumber(minKey, minV) then minV = M.DEFAULTS[minKey] end
+      if not validNumber(maxKey, maxV) then maxV = M.DEFAULTS[maxKey] end
+      if maxV < minV then updated[maxKey] = minV end
+    end
   end
   local _, warnings = M.merge(updated)
   for _, w in ipairs(warnings) do

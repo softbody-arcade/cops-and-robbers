@@ -80,6 +80,8 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 - **Map:** gas stations of this map, Add station here and Remove nearest.
 - **Settings:** the common settings first, the rest under More settings, each with a one-line explanation. Changes save by themselves; a value that differs from the default is orange and has its own reset. Settings are locked during a round. "Reload config.json" picks up hand edits.
 
+For a five-second lightning test, choose **Night** and **Thunderstorm** in the Sky settings. Under **More settings → Sky**, turn **Weather changes** off and set **Minimum strike interval** and **Maximum strike interval** to **5 s**. Turn **Lightning flashes** on in your player settings, then start a round and press **GO**. The first strike comes five seconds after the runner countdown starts, with another every five seconds. Watch the flashes outdoors. Thunder takes longer to arrive from distant strikes.
+
 ## Leaderboard
 
 "Cops and Robbers Leaderboard" has the look of the game's multiplayer scoreboard and four tabs: **Runners** (best survival times), **Cops** (catches, assists, fastest catch), **Players** (stats per player) and **Rounds** (every recorded round, newest first, with a timeline of what happened and each cop's share of sight). Filter by map, car mode and traffic. It refreshes after every round. The leaderboard started fresh in 1.7.0; the old file is kept as `data/leaderboard-1.6.json`.
@@ -123,6 +125,8 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `dayLength` | moderate | How long a full day lasts during the chase: `off` (stopped), `fast` (15 min), `moderate` (30 min), `slow` (2 h) or `realtime` (24 h) |
 | `weather` | random | `clear`, `cloudy`, `rain`, `storm`, `thunderstorm`, `fog`, `snow` or `random` |
 | `badWeatherChancePercent` | 25 | Chance of picking the bad-weather group (rain, storm, thunderstorm, fog or snow) for a random start or at a planned slot with both calm and bad options |
+| `lightningMinSeconds` | 10 | Shortest wait between strikes in a full thunderstorm, in whole seconds (at least 1) |
+| `lightningMaxSeconds` | 40 | Longest wait between strikes. Set both intervals to the same value for a fixed cadence |
 | `weatherDriving` | true | Weather changes grip and adds wind |
 | `weatherChanges` | true | Planned slots during the chase can keep the current weather or pick an eligible change based on the current weather, temperature and time of day |
 | `weatherChangeMinMinutes` | 3 | Shortest wait before the next planned slot, in whole minutes (at least 1). The wait starts at cop release, the previous slot or a forced change |
