@@ -1,6 +1,6 @@
 # Native lightning in multiplayer rounds
 
-Use the opaque bolt and soft upper glow approved in West Coast USA freeroam on 2026-11-18. The reference was a 3.5 km bolt at seed 47 with emissive factor 12, cloud cover 3 and a 450 m cloud base. In daylight and at night, the upper channel disappeared into dense cloud while the lower fork stayed bright. The player also confirmed the fade in motion.
+Use the opaque bolt and soft upper glow approved in West Coast USA freeroam on 2026-11-18. The reference was a bolt placed 3.5 km ahead horizontally at seed 47 with emissive factor 12, cloud cover 3 and a 450 m cloud base. In daylight and at night, the upper channel disappeared into dense cloud while the lower fork stayed bright. The player also confirmed the fade in motion.
 
 ## Bolt and lighting
 
