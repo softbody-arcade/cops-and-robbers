@@ -9,7 +9,6 @@ local FREEZE_REASSERT = 0.5
 local LIGHTS_ON = "electrics.set_lightbar_signal(1)"
 local HEADLIGHTS_ON = "electrics.setLightsState(1)"
 local HEADLIGHTS_OFF = "electrics.setLightsState(0)"
-local REPLACE_MIN, REPLACE_MAX = 80, 200
 local FLEE_CHECK = 1
 local HOLD_INPUTS = "if input and input.setAllowedInputSource then for _, t in ipairs({ 'steering', 'throttle', 'brake', 'parkingbrake', 'clutch' }) do input.setAllowedInputSource(t, 'ai', true) input.setAllowedInputSource(t, 'local', false) end end"
 
@@ -103,7 +102,7 @@ local function spawnCar(model, config, a, pos, rot)
   return veh
 end
 
-function M.setup(d, center, heading, clock)
+function M.setup(d, center, heading)
   M.remove()
   aiOnly = d.aiOnly == true
   if not center then
@@ -127,11 +126,7 @@ function M.setup(d, center, heading, clock)
     end
     local veh = spawnCar(d.model, d.config, a, pos, rot)
     if veh then
-      local car = { id = a.id, role = a.role, name = a.name, color = a.color, gameId = veh:getID(), frozen = true, reported = false }
-      if a.startPose and not pos then
-        car.startPose, car.poseDeadline = a.startPose, clock + startGrid.timeout
-      end
-      cars[a.id] = car
+      cars[a.id] = { id = a.id, role = a.role, name = a.name, color = a.color, gameId = veh:getID(), frozen = true, reported = false }
     end
   end
 end
@@ -192,15 +187,7 @@ function M.tick(clock)
   for _, car in pairs(cars) do
     local obj = car.gameId and getObjectByID(car.gameId)
     if obj then
-      if car.startPose then
-        local pos, rot = startGrid.pose(car.startPose)
-        if pos and car.frozen then spawn.safeTeleport(obj, pos, rot) end
-        if pos or not car.frozen or clock >= car.poseDeadline then
-          if not pos then notify("Starting position unavailable on BeamNG.Earth", "warn") end
-          car.startPose = nil
-        end
-      end
-      if not car.startPose and not car.reported then
+      if not car.reported then
         local vid = game.serverVid(obj)
         if vid then
           car.reported = true
@@ -257,24 +244,6 @@ function M.objects()
     if obj then list[#list + 1] = { id = car.id, obj = obj } end
   end
   return list
-end
-
-function M.relocate(center, heading)
-  local ids, index = {}, 0
-  if not center then return ids end
-  for id, car in pairs(cars) do
-    local obj = car.gameId and getObjectByID(car.gameId)
-    if obj then
-      index = index + 1
-      local pos, rot = roads.findCopSpot(center, REPLACE_MIN, REPLACE_MAX, index, heading)
-      if pos then
-        spawn.safeTeleport(obj, pos, rot)
-        if car.frozen then obj:queueLuaCommand("controller.setFreeze(1)") end
-        ids[#ids + 1] = id
-      end
-    end
-  end
-  return ids
 end
 
 return M

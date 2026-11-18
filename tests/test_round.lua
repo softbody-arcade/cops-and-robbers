@@ -410,17 +410,6 @@ test("an illegal reset also gets the reset status again", function()
   assertEq(s.resetAllowed, false); assertEq(s.resetHint, "Stop to reset")
 end)
 
-test("a relocation by the map gets the reset status again", function()
-  local r = running()
-  local far = function() return {[1]=car(0), [2]=car(300), [3]=car(1500)} end
-  assertEq(find(r:tick(11.25, far(), {}), "state", 3).resetAllowed, true)
-  assertEq(find(r:tick(11.5, far(), {}), "state", 3), nil)
-  r:relocated(11.6, 3)
-  local s = find(r:tick(11.75, far(), {}), "state", 3)
-  assertEq(s ~= nil, true)
-  assertEq(s.resetAllowed, true)
-end)
-
 test("cop crash gives a penalty and freezes", function()
   local r = running()
   r:tick(11.25, {[1]=kmh(0, 80), [2]=kmh(200, 120), [3]=kmh(500, 0)}, {})
@@ -878,21 +867,6 @@ test("setup placement is not a teleport", function()
   assertEq(find(fx, "broadcast"), nil)
 end)
 
-test("relocation by the map is not a reset or teleport", function()
-  local r = running()
-  r:tick(11.25, {[1]=kmh(0, 50), [2]=kmh(10, 50), [3]=kmh(500, 0)}, {})
-  r:relocated(11.3, 2)
-  assertEq(find(r:vehicleReset(11.35, 2), "broadcast"), nil)
-  local fx = r:tick(11.5, {[1]=kmh(0, 50), [2]=kmh(900, 50), [3]=kmh(500, 0)}, {})
-  assertEq(find(fx, "broadcast"), nil)
-  assertEq(find(fx, "penalty"), nil)
-end)
-
-test("relocation of an unknown player is ignored", function()
-  local r = running()
-  assertEq(#r:relocated(12, 42), 0)
-end)
-
 test("catch progress reported at 1% precision", function()
   local r = running()
   local fx = r:tick(12.5, stillCars(), {})
@@ -926,19 +900,16 @@ end
 
 local function farCars() return {[1]=kmh(0, 50), [2]=kmh(300, 50), [3]=kmh(900, 50)} end
 
-test("sight pings carry the exact runner position the round used, geo included", function()
+test("sight pings carry the exact runner position the round used", function()
   local r = chasing()
-  local function cars()
-    local c = farCars()
-    c[1].geo = { lat = 52, lon = 5, h = 0 }
-    return c
-  end
+  local cars = farCars()
+  cars[1].pos = { x = 52, y = 5, z = 70 }
   r:sightReport(12, 2, true)
-  assertEq(find(r:tick(12, cars(), {}), "live").geo.lat, 52)
+  assertEq(find(r:tick(12, cars, {}), "live").pos, cars[1].pos)
   r:sightReport(12.5, 2, false)
   local lost
-  for t = 13, 16 do lost = lost or find(r:tick(t, cars(), {}), "lastSeen") end
-  assertEq(lost.geo.lat, 52)
+  for t = 13, 16 do lost = lost or find(r:tick(t, cars, {}), "lastSeen") end
+  assertEq(lost.pos, cars[1].pos)
 end)
 
 test("a cop's sight sends live updates and no last seen while it holds", function()
@@ -1215,7 +1186,7 @@ test("a refuel while runner telemetry is missing pings the last tracked fix only
   local cars = farCars()
   assertEq(find(r:tick(40, cars, {}), "live").pos.x, 0)
   cars = farCars()
-  cars[1].pos.x, cars[1].geo = 17, { lat = 52, lon = 5, h = 12 }
+  cars[1].pos.x = 17
   assertEq(find(r:tick(40.25, cars, {}), "live"), nil)
   local absent = farCars()
   absent[1] = nil
@@ -1225,7 +1196,7 @@ test("a refuel while runner telemetry is missing pings the last tracked fix only
   assertEq(find(fx, "runnerShown").shown, false)
   assertEq(count(fx, "lastSeen"), 1)
   local lost = find(fx, "lastSeen")
-  assertEq(lost.pos.x, 17); assertEq(lost.geo.lat, 52)
+  assertEq(lost.pos.x, 17)
   cars = farCars()
   cars[1].pos.x = 100
   fx = r:tick(42, cars, {})

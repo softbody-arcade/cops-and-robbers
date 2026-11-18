@@ -4,7 +4,7 @@
       <span class="p-grow">{{ mapLabel }} · <span class="p-mono">{{ count }}</span> {{ count === 1 ? "gas station" : "gas stations" }}</span>
     </div>
     <div class="p-sub">
-      Players may reset while standing still at a gas station.<template v-if="state.geo"> On BeamNG.Earth, stations are also found by themselves.</template>
+      Players may reset while standing still at a gas station.
     </div>
     <div class="p-buttons p-gap">
       <BngButton class="p-btn" :accent="ACCENTS.main" :icon="icons.mapPoint" @click="emit('station', 'add')">Add station here</BngButton>

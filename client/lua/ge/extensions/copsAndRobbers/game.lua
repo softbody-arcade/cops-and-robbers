@@ -1,5 +1,7 @@
 local M = {}
 
+local COMPASS = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" }
+
 function M.sendServer(event, payload)
   if TriggerServerEvent then TriggerServerEvent(event, jsonEncode(payload or {})) end
 end
@@ -23,6 +25,15 @@ function M.uprightRotation(veh)
   return quatFromDir(dir:normalized(), vec3(0, 0, 1))
 end
 
+function M.compass(from, to)
+  local angle = math.deg(math.atan2(to.x - from.x, to.y - from.y)) % 360
+  return COMPASS[math.floor((angle + 22.5) / 45) % 8 + 1]
+end
+
+function M.clearRoute()
+  if core_groundMarkers then pcall(core_groundMarkers.setPath, nil) end
+end
+
 function M.carName(model)
   local ok, m = pcall(core_vehicles.getModel, model)
   local info = ok and type(m) == "table" and m.model
@@ -39,17 +50,11 @@ function M.mapTitle(id)
     local ok, t = pcall(core_levels.getLevelTitle, id)
     if ok and type(t) == "string" and t ~= "" then title = t end
   end
-  local pretty
-  if id == "beamng_earth" then
-    pretty = "BeamNG.Earth"
-  else
-    local words = {}
-    for word in tostring(id):gmatch("[^_]+") do
-      words[#words + 1] = (word == "usa" or word == "uk") and word:upper() or (word:sub(1, 1):upper() .. word:sub(2))
-    end
-    pretty = table.concat(words, " ")
+  local words = {}
+  for word in tostring(id):gmatch("[^_]+") do
+    words[#words + 1] = (word == "usa" or word == "uk") and word:upper() or (word:sub(1, 1):upper() .. word:sub(2))
   end
-  return { id = id, title = title, pretty = pretty }
+  return { id = id, title = title, pretty = table.concat(words, " ") }
 end
 
 return M

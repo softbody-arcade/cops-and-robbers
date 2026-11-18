@@ -6,7 +6,6 @@ local startGrid = require("copsAndRobbers/startGrid")
 local roads = require("copsAndRobbers/roads")
 local vehicles = require("copsAndRobbers/vehicles")
 local ai = require("copsAndRobbers/ai")
-local geo = require("copsAndRobbers/geo")
 local hudfeed = require("copsAndRobbers/hudfeed")
 local apps = require("copsAndRobbers/apps")
 local sight = require("copsAndRobbers/sight")
@@ -28,10 +27,9 @@ local spectator = require("copsAndRobbers/spectator")
 local CLIENT_VERSION = "2.12.0"
 local LIGHTS_OFF = "electrics.set_lightbar_signal(0)"
 local SETUP_DELAY = 0.5
-local PLACEMENT_TIMEOUT = startGrid.timeout
+local PLACEMENT_TIMEOUT = 5
 local FREEZE_REASSERT = 0.5
 local POSE_JUMP = 30
-local GEO_SEND_INTERVAL = 0.25
 local SIGHT_CHECK_INTERVAL = 0.25
 local CHANGE_CHECK_INTERVAL = 1
 local BASELINE_DELAY = 1.5
@@ -58,10 +56,7 @@ local timerEnd, timerLabel
 local roundModel, roundConfig, roundColor
 local penaltyActive = false
 local statusActive = false
-local geoMode = false
-local lastGeoSent = 0
 local chaseStart
-local lastStatusAt = 0
 local infoParts
 local infoSeenAt
 local pendingPlacement
@@ -143,7 +138,6 @@ end
 local function startStatus()
   statusActive = true
   chaseStart = clock
-  lastStatusAt = 0
   infoParts, infoTag, infoSeenAt = nil, nil, nil
 end
 
@@ -168,7 +162,7 @@ local function onPlanStart(data)
     end
   end
   local slots = startGrid.plan(d, pos, dir)
-  if slots then sendServer("cnr_startGrid", { id = d.id, slots = slots }) end
+  sendServer("cnr_startGrid", { id = d.id, slots = slots })
 end
 
 local function onSetupAI(data)
@@ -185,7 +179,7 @@ local function onSetupAI(data)
     end
   end
   inputs.lockSpawns(false)
-  local ok, err = pcall(ai.setup, d, center, heading, clock)
+  local ok, err = pcall(ai.setup, d, center, heading)
   inputs.lockSpawns(watchingAI)
   hidingBuiltAt = -math.huge
   if not ok then error(err, 0) end
@@ -202,7 +196,7 @@ local function onPickVehicle(data)
 end
 
 local function setupPosition(d)
-  local resume = d.resumeGeo and geo.toGame(d.resumeGeo) or (d.resumePos and vec3(d.resumePos.x, d.resumePos.y, d.resumePos.z))
+  local resume = d.resumePos and vec3(d.resumePos.x, d.resumePos.y, d.resumePos.z)
   if resume then
     local pos, rot = roads.nearestRoad(resume)
     if not pos then return resume, nil end
@@ -226,9 +220,9 @@ local function setupPosition(d)
     return pos, rot
   end
   if role ~= "cop" then return nil end
-  local runner = d.runnerGeo and geo.toGame(d.runnerGeo) or (d.runnerPos and vec3(d.runnerPos.x, d.runnerPos.y, d.runnerPos.z))
+  local runner = d.runnerPos and vec3(d.runnerPos.x, d.runnerPos.y, d.runnerPos.z)
   local center = runner or (own and own:getPosition())
-  local runnerCar = runner and not d.geo and runnerObject()
+  local runnerCar = runner and runnerObject()
   local pos, rot
   if center then
     pos, rot = roads.findCopSpot(center, d.copSpawnMin or 50, d.copSpawnMax or 150, math.max(d.copIndex or 1, 1), runnerCar and runnerCar:getDirectionVector())
@@ -315,7 +309,6 @@ local function onRoundSetup(data)
   end
   local pos, rot = setupPosition(d)
   placeVehicle(d.model, roundConfig, pos, rot, d.color, d.startPose ~= nil, personal)
-  if pendingPlacement and d.startPose and not pos then pendingPlacement.startPose = d.startPose end
 
   local phase = d.phase or "running"
   applySetupSky(d.sky, phase)
@@ -514,42 +507,31 @@ local function onLastSeen(data)
   local never, always = prefs.route == "never", prefs.route == "always"
   infoTag = d.live and "LIVE" or nil
   infoSeenAt = nil
-  if never then
-    if routeDrawn then
-      geo.clearRoute()
-      routeDrawn = false
-    end
+  if never and routeDrawn then
+    game.clearRoute()
+    routeDrawn = false
   end
   local inSight = d.live and d.route == false
   if inSight and not always then
     if not never then
-      geo.clearRoute()
+      game.clearRoute()
       routeDrawn = false
     end
     infoTag, infoParts, infoSeenAt = "IN SIGHT", nil, nil
     return
   end
   if inSight then infoTag = "IN SIGHT" end
-  local target = d.geo and geo.toGame(d.geo) or (d.pos and vec3(d.pos.x, d.pos.y, d.pos.z))
-  if not target then return end
-  if not never then
-    if geoMode and d.geo and geo.setGpsTarget(d.geo) then
-      routeDrawn = true
-      local info = geo.gpsInfo()
-      infoParts = info or infoParts
-      infoSeenAt = not d.live and info and clock or nil
-      return
-    end
-    if core_groundMarkers then
-      pcall(core_groundMarkers.setPath, target)
-      routeDrawn = true
-    end
+  if not d.pos then return end
+  local target = vec3(d.pos.x, d.pos.y, d.pos.z)
+  if not never and core_groundMarkers then
+    pcall(core_groundMarkers.setPath, target)
+    routeDrawn = true
   end
   local veh = ownVehicle()
   if veh then
     local here = veh:getPosition()
     local meters = math.floor(here:distance(target) + 0.5)
-    infoParts = { before = d.live and "Runner" or "Runner seen", meters = meters, after = geo.compass(here, target) }
+    infoParts = { before = d.live and "Runner" or "Runner seen", meters = meters, after = game.compass(here, target) }
     infoSeenAt = not d.live and clock or nil
   end
 end
@@ -575,13 +557,10 @@ end
 
 local function onMode(data)
   local d = jsonDecode(data) or {}
-  geoMode = d.geo == true
   if d.startGrid then sendServer("cnr_startGridReady", {}) end
   hudfeed.sitOut(false)
-  geo.resetPlaces()
   guihooks.trigger("CnRPanel", {})
   guihooks.trigger("CnRBoard", {})
-  hudfeed.warning("earth", geoMode and not geo.api() and "Cops and Robbers needs a newer BeamNG.Earth (API v1) on this map" or nil)
   local outdated = d.version and d.version ~= CLIENT_VERSION
   hudfeed.warning("version", outdated and string.format("Your copy is %s, the server runs %s: rejoin to update", CLIENT_VERSION, d.version) or nil)
   hudfeed.connect(true)
@@ -665,7 +644,7 @@ local function endRound(leaving)
   runnerId = nil
   evolving = false
   buildBaselineAt, buildBaseline, lastChangeKey, lastChanges = nil, nil, "", {}
-  geo.clearRoute()
+  game.clearRoute()
   routeDrawn = false
   penaltyActive = false
   timerEnd = nil
@@ -754,13 +733,12 @@ local function onStationList(data)
   local list = type(d.stations) == "table" and d.stations or {}
   local points = {}
   for _, s in ipairs(list) do
-    if type(s) == "table" then
-      local p = d.geo and geo.toGame(s) or (tonumber(s.x) and tonumber(s.y) and { x = s.x, y = s.y, z = tonumber(s.z) or 0 })
-      if p then points[#points + 1] = p end
+    if type(s) == "table" and tonumber(s.x) and tonumber(s.y) then
+      points[#points + 1] = { x = tonumber(s.x), y = tonumber(s.y), z = tonumber(s.z) or 0 }
     end
   end
   local own = ownVehicle()
-  local near = own and nearby.nearest(points, own:getPosition(), 3, d.geo == true) or {}
+  local near = own and nearby.nearest(points, own:getPosition(), 3) or {}
   local result = {}
   for i, n in ipairs(near) do result[i] = { meters = n.meters } end
   guihooks.trigger("CnRStations", {
@@ -792,16 +770,6 @@ local function updatePendingPlacement()
   if not p or clock < p.at then return end
   local veh
   if p.gameId then veh = getObjectByID(p.gameId) else veh = ownVehicle() end
-  if veh and p.startPose then
-    p.pos, p.rot = startGrid.pose(p.startPose)
-    if p.pos then
-      p.startPose = nil
-    elseif clock < p.deadline then
-      return
-    else
-      hudfeed.event("Starting position unavailable on BeamNG.Earth", clock, "warn")
-    end
-  end
   local vid = veh and game.serverVid(veh)
   if veh and vid then
     pendingPlacement = nil
@@ -880,24 +848,6 @@ local function updateLightSync()
   for _, obj in ipairs(traffic.objects()) do obj:queueLuaCommand(cmd) end
 end
 
-local function updateGeo()
-  if not geoMode then return end
-  if clock - lastGeoSent >= GEO_SEND_INTERVAL then
-    lastGeoSent = clock
-    geo.sendGeo(ai.objects(), spectating)
-  end
-  geo.lookupStations(clock)
-end
-
-local function updateGpsInfo()
-  if not statusActive or clock - lastStatusAt < 1 then return end
-  lastStatusAt = clock
-  if geo.hasTarget() then
-    local info = geo.gpsInfo()
-    if info then infoParts = info end
-  end
-end
-
 runnerObject = function()
   local aiRunner = ai.runnerObject()
   if aiRunner then return aiRunner end
@@ -954,10 +904,9 @@ local function updateHiding(obj)
   if not keys then
     hiding.set(nil)
   else
-    local minimap = not geoMode
     local t = hidingTarget
-    if not t or t.minimap ~= minimap or not sameSet(t.keys, keys) or not sameSet(t.vids, vids) then
-      hidingTarget = { vids = vids, keys = keys, minimap = minimap }
+    if not t or not sameSet(t.keys, keys) or not sameSet(t.vids, vids) then
+      hidingTarget = { vids = vids, keys = keys }
     end
     hiding.set(hidingTarget)
   end
@@ -1052,7 +1001,6 @@ local function onUpdate(dtReal)
   updateLightsAndPatch()
   updateOwnLights()
   updateLightSync()
-  updateGeo()
   if spectating then
     local watched = getPlayerVehicle(0)
     watchedId = watched and watched:getID() or nil
@@ -1069,7 +1017,6 @@ local function onUpdate(dtReal)
   updateBuild()
   updateModes()
   if active or spectating then inputs.enforceEditLock() end
-  updateGpsInfo()
   hudfeed.update(clock, {
     active = active, role = role, chaseStart = statusActive and chaseStart or nil,
     resetAllowed = resetAllowed, resetHint = lastHint, penalty = penaltyActive, infoParts = infoParts, infoSeenAt = infoSeenAt, infoTag = infoTag,
@@ -1099,10 +1046,6 @@ end
 local function onVehicleResetted(gameVid)
   if not active or clock < suppressResetUntil then return end
   local veh = ownVehicle()
-  if geoMode then
-    if veh and veh:getID() == gameVid then sendServer("cnr_relocated", {}) end
-    return
-  end
   if not lastPose or not veh or veh:getID() ~= gameVid then return end
   teleport(veh, lastPose.pos, lastPose.rot)
 end
@@ -1129,20 +1072,6 @@ requestReset = function(kind)
     end
   end
   teleport(veh, pos, rot)
-end
-
-local function onBeamNGEarthRebased(info)
-  if not active then return end
-  suppressResetUntil = clock + 3
-  lastPose = nil
-  local purpose = type(info) == "table" and info.purpose or "rebase"
-  if purpose ~= "teleport" then
-    sendServer("cnr_relocated", {})
-    return
-  end
-  local own = ownVehicle()
-  local ids = ai.relocate(own and own:getPosition(), own and own:getDirectionVector())
-  if #ids > 0 then sendServer("cnr_relocated", { ids = ids }) end
 end
 
 local function leaveServer()
@@ -1319,7 +1248,6 @@ function M.panel(msg)
 end
 
 M.requestReset = requestReset
-M.onBeamNGEarthRebased = onBeamNGEarthRebased
 M.onExtensionLoaded = onExtensionLoaded
 M.onExtensionUnloaded = function()
   hiding.unload()

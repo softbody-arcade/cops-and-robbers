@@ -8,7 +8,6 @@
       </div>
       <template v-else>
         <div class="p-sec">{{ group.title }}</div>
-        <div v-if="group.note" class="p-why">{{ group.note }}</div>
         <div v-for="item in group.items" :key="item.key" class="set" :class="{ list: item.kind === 'list' }">
           <span class="set-name">{{ item.label }}</span>
           <span class="set-control">
@@ -81,19 +80,15 @@ const moreOpen = ref(false)
 const locked = computed(() => !(props.state.can && props.state.can.settings === true))
 
 const groups = computed(() => settingGroups(props.state.settings || {}))
-const earth = computed(() => props.state.geo === true)
 const open = item => !item.when || item.when(props.store.valueOf)
 const live = item => liveItem(item, props.store.valueOf)
 const common = computed(() =>
   groups.value
-    .map(g => g.noEarth && earth.value
-      ? { id: `c-${g.title}`, title: g.title, items: [], note: "Not available on BeamNG.Earth yet" }
-      : { id: `c-${g.title}`, title: g.title, items: g.items.filter(i => i.common && open(i)).map(live) })
-    .filter(g => g.items.length || g.note)
+    .map(g => ({ id: `c-${g.title}`, title: g.title, items: g.items.filter(i => i.common && open(i)).map(live) }))
+    .filter(g => g.items.length)
 )
 const more = computed(() =>
   groups.value
-    .filter(g => !(g.noEarth && earth.value))
     .map(g => ({ id: `m-${g.title}`, title: g.title, items: g.items.filter(i => !i.common && open(i)).map(live) }))
     .filter(g => g.items.length)
 )

@@ -240,10 +240,18 @@ test("auto off drops Next round in from the result card", function()
   assertEq(env.hud().result.nextIn, nil)
 end)
 
+test("the client advertises grid readiness when the server offers the starting grid", function()
+  local env = bootClient()
+  env.fire("cnr_mode", { version = CNR_VERSION })
+  assertEq(env.lastSent("cnr_startGridReady"), nil)
+  env.fire("cnr_mode", { version = CNR_VERSION, startGrid = true })
+  assertEq(type(env.lastSent("cnr_startGridReady")), "table")
+end)
+
 test("a server mode message resets the panel so it resubscribes", function()
   local env = bootClient()
   env.triggers = {}
-  env.fire("cnr_mode", { geo = false, version = "1.6.0" })
+  env.fire("cnr_mode", { version = CNR_VERSION })
   local p = env.lastTrigger("CnRPanel")
   assertEq(p ~= nil and p.phase, nil)
   assertEq(p ~= nil, true)
@@ -358,7 +366,7 @@ end)
 
 local function fakeLayouts()
   local name = "/settings/ui_apps/layouts/beammp.uilayout.json"
-  local other = "/settings/ui_apps/layouts/earth.uilayout.json"
+  local other = "/settings/ui_apps/layouts/alternate.uilayout.json"
   local L = { disk = { [name] = { apps = {} }, [other] = { apps = {} } }, added = {}, current = name }
   L.api = {
     getCurrentLayout = function() return { filename = L.current, apps = L.disk[L.current].apps, userFileExists = true } end,
@@ -624,19 +632,38 @@ local function targetPaths(env)
   return n
 end
 
-local function earthStub(env)
-  env.gpsSet = 0
-  _G.beamngEarth_api = {
-    version = function() return 1 end,
-    has = function() return true end,
-    gpsSet = function() env.gpsSet = env.gpsSet + 1 return true end,
-    gpsClear = function() end,
-    toGame = function(lat, lon, h) return lon, lat, h end,
-    toGeo = function(x, y, z) return y, x, z end,
-    places = function() return {} end,
-    gps = function() return {} end,
-  }
-end
+test("last-seen XYZ points show all eight compass directions", function()
+  local env = bootClient()
+  trackPaths(env)
+  copInChase(env)
+  env.veh.pos = vec3(0, 0, 0)
+  for _, point in ipairs({
+    { 0, 100, "N" }, { 100, 100, "NE" }, { 100, 0, "E" }, { 100, -100, "SE" },
+    { 0, -100, "S" }, { -100, -100, "SW" }, { -100, 0, "W" }, { -100, 100, "NW" },
+  }) do
+    env.fire("cnr_lastSeen", { pos = { x = point[1], y = point[2], z = 10 } })
+    env.tick(0.2)
+    assertEq(env.hud().status.info.after, point[3])
+    local target = env.paths[#env.paths]
+    assertEq(target.x, point[1]); assertEq(target.y, point[2]); assertEq(target.z, 10)
+  end
+end)
+
+test("ending or leaving a round clears the last-seen route", function()
+  for _, leave in ipairs({ false, true }) do
+    local env = bootClient()
+    trackPaths(env)
+    copInChase(env)
+    env.fire("cnr_lastSeen", { pos = { x = 0, y = 640, z = 0 } })
+    assertEq(targetPaths(env), 1)
+    if leave then
+      env.M.onBeamMPServerLeave()
+    else
+      env.fire("cnr_roundEnd", { reason = "cancelled" })
+    end
+    assertEq(env.paths[#env.paths], false)
+  end
+end)
 
 test("out of sight clears the route when you see the runner, as today", function()
   local env = bootClient()
@@ -714,38 +741,6 @@ test("Never shows IN SIGHT on a live update in sight and draws nothing", functio
   env.tick(0.2)
   assertEq(env.hud().status.tag, "IN SIGHT"); assertEq(env.hud().status.info, nil)
   assertEq(targetPaths(env), 0)
-end)
-
-test("Never on BeamNG.Earth sets no GPS destination and shows the straight distance", function()
-  local env = bootClient({ files = { ["settings/cnr_settings.json"] = { route = "never" } } })
-  earthStub(env)
-  env.fire("cnr_mode", { geo = true })
-  copInChase(env)
-  env.veh.pos = vec3(0, 0, 0)
-  env.fire("cnr_lastSeen", { geo = { lat = 640, lon = 0, h = 0 } })
-  env.tick(0.2)
-  local gpsSet = env.gpsSet
-  local i = env.hud().status.info
-  _G.beamngEarth_api = nil
-  assertEq(gpsSet, 0)
-  assertEq(i.dist, "640 m")
-end)
-
-test("Always keeps the Earth GPS destination while in sight", function()
-  local env = bootClient({ files = { ["settings/cnr_settings.json"] = { route = "always" } } })
-  earthStub(env)
-  env.fire("cnr_mode", { geo = true })
-  copInChase(env)
-  env.veh.pos = vec3(0, 0, 0)
-  env.fire("cnr_lastSeen", { live = true, route = true, geo = { lat = 640, lon = 0, h = 0 } })
-  local before = env.gpsSet
-  env.fire("cnr_lastSeen", { live = true, route = false, geo = { lat = 100, lon = 0, h = 0 } })
-  local after = env.gpsSet
-  env.tick(0.2)
-  local tag = env.hud().status.tag
-  _G.beamngEarth_api = nil
-  assertEq(after, before + 1)
-  assertEq(tag, "IN SIGHT")
 end)
 
 test("a last-seen ping past 1 km shows in km", function()
@@ -899,7 +894,7 @@ end)
 
 test("the host sees why a vehicle pick timed out", function()
   local env = bootClient()
-  env.fire("cnr_mode", { geo = false, version = CNR_VERSION })
+  env.fire("cnr_mode", { version = CNR_VERSION })
   env.fire("cnr_notice", { msg = "Vehicle pick timed out" })
   env.fire("cnr_roundEnd", { reason = "cancelled", message = "Vehicle pick timed out" })
   env.tick(0.2)
@@ -947,7 +942,7 @@ end)
 test("binding a reset key clears the lobby line within a few seconds", function()
   local env = bootClient()
   local hudfeed = package.loaded["copsAndRobbers/hudfeed"]
-  env.fire("cnr_mode", { geo = false, version = CNR_VERSION })
+  env.fire("cnr_mode", { version = CNR_VERSION })
   core_input_bindings.bindings = {}
   env.fire("cnr_roundSetup", copy(SETUP))
   env.fire("cnr_roundEnd", { reason = "cancelled" })
@@ -960,16 +955,12 @@ test("binding a reset key clears the lobby line within a few seconds", function(
   assertEq(env.hud().mode, "lobby"); assertEq(#env.hud().lobby.warnings, 0)
 end)
 
-test("version mismatch and a missing BeamNG.Earth are standing warnings", function()
+test("a version mismatch shows a standing warning until the versions match", function()
   local env = bootClient()
   local hudfeed = package.loaded["copsAndRobbers/hudfeed"]
-  env.fire("cnr_mode", { geo = false, version = "9.9.9" })
+  env.fire("cnr_mode", { version = "9.9.9" })
   assertEq(hudfeed.warnings()[1], "Your copy is " .. CNR_VERSION .. ", the server runs 9.9.9: rejoin to update")
-  env.fire("cnr_mode", { geo = true, version = CNR_VERSION })
-  local w = hudfeed.warnings()
-  assertEq(#w, 1)
-  assertEq(w[1], "Cops and Robbers needs a newer BeamNG.Earth (API v1) on this map")
-  env.fire("cnr_mode", { geo = false, version = CNR_VERSION })
+  env.fire("cnr_mode", { version = CNR_VERSION })
   assertEq(#hudfeed.warnings(), 0)
   assertEq(#env.toasts, 0)
 end)
@@ -1470,7 +1461,7 @@ local RULES = {
 }
 
 local function join(env)
-  env.fire("cnr_mode", { geo = false, version = CNR_VERSION })
+  env.fire("cnr_mode", { version = CNR_VERSION })
   env.fire("cnr_myColor", { hex = "#ff8800" })
   env.fire("cnr_rules", copy(RULES))
   env.fire("cnr_lobby", { online = 3, active = false })
@@ -1523,17 +1514,17 @@ end)
 
 test("first join opens How to play and Got it remembers", function()
   local env = bootClient()
-  env.fire("cnr_mode", { geo = false, version = CNR_VERSION })
+  env.fire("cnr_mode", { version = CNR_VERSION })
   env.tick(0.2)
   assertEq(env.hud().help.open, true)
   env.M.ui({ action = "help", open = false })
   assertEq(env.written[HELP_FILE].seen, true)
   assertEq(env.hud().help.open, false)
-  env.fire("cnr_mode", { geo = false, version = CNR_VERSION })
+  env.fire("cnr_mode", { version = CNR_VERSION })
   env.tick(0.2)
   assertEq(env.hud().help.open, false)
   local again = bootClient({ files = { [HELP_FILE] = { seen = true } } })
-  again.fire("cnr_mode", { geo = false, version = CNR_VERSION })
+  again.fire("cnr_mode", { version = CNR_VERSION })
   again.tick(0.2)
   assertEq(again.hud().help.open, false)
   again.M.ui({ action = "help", open = true })
@@ -1654,7 +1645,7 @@ end)
 
 test("a mid-round joiner sees the round, not the lobby", function()
   local env = bootClient({ files = { [HELP_FILE] = { seen = true } } })
-  env.fire("cnr_mode", { geo = false, version = CNR_VERSION })
+  env.fire("cnr_mode", { version = CNR_VERSION })
   env.fire("cnr_myColor", { hex = "#ff8800" })
   env.fire("cnr_rules", copy(RULES))
   env.fire("cnr_lobby", { online = 4, active = true })
@@ -1782,11 +1773,12 @@ end)
 
 test("board names maps", function()
   local env = bootClient()
-  env.fire("cnr_boardState", { map = "west_coast_usa", maps = { "beamng_earth", "gridmap_v2" }, filter = "east_coast_usa", runners = {}, rounds = { { id = 1, map = "utah" } } })
+  env.fire("cnr_boardState", { map = "west_coast_usa", maps = { "coastal_route_uk", "gridmap_v2" }, filter = "east_coast_usa", runners = {}, rounds = { { id = 1, map = "utah" } } })
   local n = env.lastTrigger("CnRBoard").mapNames
   assertEq(n.west_coast_usa.pretty, "West Coast USA")
   assertEq(n.west_coast_usa.title, nil)
-  assertEq(n.beamng_earth.pretty, "BeamNG.Earth")
+  assertEq(n.coastal_route_uk.id, "coastal_route_uk")
+  assertEq(n.coastal_route_uk.pretty, "Coastal Route UK")
   assertEq(n.gridmap_v2.pretty, "Gridmap V2")
   assertEq(n.east_coast_usa.pretty, "East Coast USA")
   assertEq(n.utah.pretty, "Utah")
@@ -1843,7 +1835,7 @@ end)
 test("station list gives the nearest three and whether one can be removed", function()
   local env = bootClient()
   env.veh.pos = vec3(0, 0, 0)
-  env.fire("cnr_stationList", { geo = false, stations = { { x = 400, y = 0, z = 0 }, { x = 30, y = 0, z = 0 }, { x = 100, y = 0, z = 0 }, { x = 200, y = 0, z = 0 } } })
+  env.fire("cnr_stationList", { stations = { { x = 400, y = 0, z = 0 }, { x = 30, y = 0, z = 0 }, { x = 100, y = 0, z = 0 }, { x = 200, y = 0, z = 0 } } })
   local s = env.lastTrigger("CnRStations")
   assertEq(s.count, 4); assertEq(#s.nearest, 3)
   assertEq(s.nearest[1].meters, 30); assertEq(s.nearest[3].meters, 200)
@@ -1855,33 +1847,6 @@ test("station list gives the nearest three and whether one can be removed", func
   assertEq(s.count, 0); assertEq(#s.nearest, 0); assertEq(s.canRemove, false)
   env.fire("cnr_stationList", {})
   assertEq(env.lastTrigger("CnRStations").count, 0)
-end)
-
-test("station list with geo points converts them to game space", function()
-  local env = bootClient()
-  _G.beamngEarth_api = { version = function() return 1 end, toGame = function(lat, lon, h) return lon, lat, h end }
-  env.veh.pos = vec3(0, 0, 0)
-  env.fire("cnr_stationList", { geo = true, stations = { { lat = 20, lon = 0, name = "A" }, { lat = 0, lon = 40 }, { lat = "x" } } })
-  _G.beamngEarth_api = nil
-  local s = env.lastTrigger("CnRStations")
-  assertEq(s.count, 3); assertEq(#s.nearest, 2)
-  assertEq(s.nearest[1].meters, 20); assertEq(s.nearest[2].meters, 40)
-  assertEq(s.canRemove, true)
-end)
-
-test("geo station distances ignore height and skip points that don't convert", function()
-  local env = bootClient()
-  _G.beamngEarth_api = {
-    version = function() return 1 end,
-    toGame = function(lat, lon, h) if lat == 99 then return nil end return lon, lat, h end,
-  }
-  env.veh.pos = vec3(0, 0, 300)
-  env.fire("cnr_stationList", { geo = true, stations = { { lat = 0, lon = 10 }, { lat = 99, lon = 0 } } })
-  _G.beamngEarth_api = nil
-  local s = env.lastTrigger("CnRStations")
-  assertEq(s.count, 2); assertEq(#s.nearest, 1)
-  assertEq(s.nearest[1].meters, 10)
-  assertEq(s.canRemove, true)
 end)
 
 test("station list without a car of your own has nothing nearby", function()
@@ -2549,7 +2514,7 @@ end)
 
 test("a setting from the card is saved and shown", function()
   local env = bootClient()
-  env.fire("cnr_mode", {})
+  env.fire("cnr_mode", { version = CNR_VERSION })
   env.M.ui({ action = "setting", key = "siren", value = true })
   env.tick(0.2)
   local saved = env.written["settings/cnr_settings.json"]
@@ -2562,7 +2527,7 @@ end)
 
 test("saved settings load on start", function()
   local env = bootClient({ files = { ["settings/cnr_settings.json"] = { headlights = true } } })
-  env.fire("cnr_mode", {})
+  env.fire("cnr_mode", { version = CNR_VERSION })
   env.tick(0.2)
   assertEq(env.hud().settings.headlights, true)
   assertEq(env.hud().settings.siren, false)
@@ -2570,7 +2535,7 @@ end)
 
 test("the host's siren rule reaches the card", function()
   local env = bootClient()
-  env.fire("cnr_mode", {})
+  env.fire("cnr_mode", { version = CNR_VERSION })
   env.fire("cnr_rules", { sirensAllowed = false })
   env.tick(0.2)
   assertEq(env.hud().settings.sirensAllowed, false)
@@ -2578,7 +2543,7 @@ end)
 
 test("Hide on the lobby card is saved and a round shows in full", function()
   local env = bootClient()
-  env.fire("cnr_mode", {})
+  env.fire("cnr_mode", { version = CNR_VERSION })
   env.M.ui({ action = "setting", key = "hudHidden", value = true })
   env.tick(0.2)
   assertEq(env.written["settings/cnr_settings.json"].hudHidden, true)
@@ -2591,14 +2556,14 @@ test("Hide on the lobby card is saved and a round shows in full", function()
   env.tick(11)
   assertEq(env.hud().mode, "lobby"); assertEq(env.hud().lobby.hudHidden, true)
   env.M.onClientEndMission()
-  env.fire("cnr_mode", {})
+  env.fire("cnr_mode", { version = CNR_VERSION })
   env.tick(0.2)
   assertEq(env.hud().lobby.hudHidden, true)
 end)
 
 test("a hidden HUD stays hidden after a restart", function()
   local env = bootClient({ files = { ["settings/cnr_settings.json"] = { hudHidden = true } } })
-  env.fire("cnr_mode", {})
+  env.fire("cnr_mode", { version = CNR_VERSION })
   env.tick(0.2)
   assertEq(env.hud().lobby.hudHidden, true)
 end)
@@ -2735,7 +2700,7 @@ end)
 
 test("a non-boolean setting value is ignored", function()
   local env = bootClient()
-  env.fire("cnr_mode", {})
+  env.fire("cnr_mode", { version = CNR_VERSION })
   env.M.ui({ action = "setting", key = "siren", value = "yes" })
   env.tick(0.2)
   assertEq(env.written["settings/cnr_settings.json"], nil)
@@ -2833,48 +2798,6 @@ test("a runner only ever gets the light bar off command", function()
   env.fire("cnr_release", {})
   env.tick(3)
   for _, c in ipairs(lightbarCommands(env.veh)) do assertEq(c, SIREN0) end
-end)
-
-test("geo.gpsInfo reports the road distance with a compass direction", function()
-  local env = bootClient()
-  local geo = require("copsAndRobbers/geo")
-  _G.beamngEarth_api = {
-    version = function() return 1 end,
-    has = function() return true end,
-    gpsSet = function() return true end,
-    gpsClear = function() end,
-    toGame = function(lat, lon, h) return lon, lat, h end,
-    gps = function() return { remaining = 750 } end,
-  }
-  env.veh.pos = vec3(0, 0, 0)
-  assertEq(geo.setGpsTarget({ lat = 100, lon = 0, h = 0 }), true)
-  local info = geo.gpsInfo()
-  geo.clearRoute()
-  _G.beamngEarth_api = nil
-  assertEq(info.before, "Runner"); assertEq(info.meters, 750); assertEq(info.after, "by road N")
-end)
-
-test("geo.gpsInfo falls back to the straight line while the route is planning", function()
-  local env = bootClient()
-  local geo = require("copsAndRobbers/geo")
-  local planning = true
-  _G.beamngEarth_api = {
-    version = function() return 1 end,
-    has = function() return true end,
-    gpsSet = function() return true end,
-    gpsClear = function() end,
-    toGame = function(lat, lon, h) return lon, lat, h end,
-    gps = function() return planning and { planning = true, remaining = 5 } or {} end,
-  }
-  env.veh.pos = vec3(0, 0, 0)
-  assertEq(geo.setGpsTarget({ lat = 0, lon = 100, h = 0 }), true)
-  local planned = geo.gpsInfo()
-  planning = false
-  local noRemaining = geo.gpsInfo()
-  geo.clearRoute()
-  _G.beamngEarth_api = nil
-  assertEq(planned.meters, 100); assertEq(planned.after, "E")
-  assertEq(noRemaining.meters, 100); assertEq(noRemaining.after, "E")
 end)
 
 local function syncCommands(veh)
@@ -3730,27 +3653,24 @@ test("a runner never sees the cops' name tags or minimap markers, from setup to 
   end)
 end)
 
-test("a rejoining cop gets the hidden runner from setup; Earth keeps its minimap marker", function()
-  for _, earth in ipairs({ false, true }) do
-    withMinimap({ 100, 300 }, function(draw)
-      local env = bootClient()
-      env.fire("cnr_mode", { geo = earth })
-      local d = copy(SETUP)
-      d.phase, d.runnerShown, d.resumePos = "running", false, { x = 40, y = 0, z = 0 }
-      env.fire("cnr_roundSetup", d)
-      env.addObject(300, vec3(0, 0, 0))
-      env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
-      env.fire("cnr_roundCars", { keys = { "1-0", "2-0" } })
-      env.tick(1.2)
-      assertEq(env.mpVehicles["2-0"].hideNametag, true)
-      assertEq(draw(), earth and "100,300" or "100")
-      env.fire("cnr_runnerShown", { shown = true })
-      env.tick(0.2)
-      assertEq(env.mpVehicles["2-0"].hideNametag, nil)
-      assertEq(draw(), "100,300")
-      env.M.onExtensionUnloaded()
-    end)
-  end
+test("a rejoining cop gets the hidden runner from setup", function()
+  withMinimap({ 100, 300 }, function(draw)
+    local env = bootClient()
+    local d = copy(SETUP)
+    d.phase, d.runnerShown, d.resumePos = "running", false, { x = 40, y = 0, z = 0 }
+    env.fire("cnr_roundSetup", d)
+    env.addObject(300, vec3(0, 0, 0))
+    env.mpVehicles["2-0"] = { gameVehicleID = 300, isSpawned = true }
+    env.fire("cnr_roundCars", { keys = { "1-0", "2-0" } })
+    env.tick(1.2)
+    assertEq(env.mpVehicles["2-0"].hideNametag, true)
+    assertEq(draw(), "100")
+    env.fire("cnr_runnerShown", { shown = true })
+    env.tick(0.2)
+    assertEq(env.mpVehicles["2-0"].hideNametag, nil)
+    assertEq(draw(), "100,300")
+    env.M.onExtensionUnloaded()
+  end)
 end)
 
 test("leaving the server shows the cops to a runner again", function()
@@ -3794,17 +3714,6 @@ test("the runner's cop sets are rebuilt at most once a second, not every frame",
   env.tick(2)
   traffic.roundCarOwners = real
   assertEq(calls >= 1 and calls <= 2, true, "rebuilds in 20 frames: " .. calls)
-end)
-
-test("on BeamNG.Earth a runner's cops lose the name tag but stay on the minimap", function()
-  withMinimap({ 100, 300, 400 }, function(draw)
-    local env = bootClient()
-    env.fire("cnr_mode", { geo = true })
-    runnerWithCops(env)
-    assertEq(env.mpVehicles["3-0"].hideNametag, true)
-    assertEq(draw(), "100,300,400")
-    env.M.onExtensionUnloaded()
-  end)
 end)
 
 test("practice as a runner: the AI cops are skipped on the minimap", function()
@@ -3854,6 +3763,36 @@ local function spyCopSpots()
   return calls
 end
 
+test("a cop uses the runner's XYZ for placement and falls back to the cop's car", function()
+  for _, available in ipairs({ true, false }) do
+    local env = bootClient()
+    local d = copy(SETUP)
+    d.runnerPos = available and { x = 6, y = 8, z = 12 } or nil
+    env.veh.pos = vec3(2, 4, 5)
+    local calls = spyCopSpots()
+    env.fire("cnr_roundSetup", d)
+    env.tick(1)
+    local center = calls[1].center
+    assertEq(center.x, available and 6 or 2)
+    assertEq(center.y, available and 8 or 4)
+    assertEq(center.z, available and 12 or 5)
+    assertEq(env.lastSent("cnr_myVehicle").vid, 100)
+  end
+end)
+
+test("a rejoining cop uses the saved XYZ when there is no road nearby", function()
+  local env = bootClient()
+  local d = copy(SETUP)
+  d.phase, d.resumePos = "running", { x = 900, y = 9, z = 15 }
+  local roads = package.loaded["copsAndRobbers/roads"]
+  roads.nearestRoad = function() return nil end
+  env.fire("cnr_roundSetup", d)
+  env.tick(1)
+  assertEq(env.teleported, 1)
+  assertEq(env.veh.pos.x, 900); assertEq(env.veh.pos.y, 9); assertEq(env.veh.pos.z, 15)
+  assertEq(env.lastSent("cnr_myVehicle").vid, 100)
+end)
+
 test("a cop's start spot is searched along the runner car's heading", function()
   local env = bootClient()
   local runnerCar = env.addObject(300, vec3(0, 0, 0))
@@ -3874,7 +3813,7 @@ test("a cop's start spot has no heading without the runner's car", function()
   assertEq(calls[1].heading, nil)
 end)
 
-test("practice AI cars start along the player's heading, also after an Earth teleport", function()
+test("practice AI cars start along the player's heading", function()
   local env = bootClient()
   function env.veh:getDirectionVector() return vec3(-1, 0, 0) end
   local calls = spyCopSpots()
@@ -3883,9 +3822,6 @@ test("practice AI cars start along the player's heading, also after an Earth tel
   env.tick(1)
   assertEq(#calls, 1)
   assertEq(calls[1].heading.x, -1)
-  env.M.onBeamNGEarthRebased({ purpose = "teleport" })
-  assertEq(#calls, 2)
-  assertEq(calls[2].heading.x, -1)
 end)
 
 local EXPLODE = "fire.explodeVehicle()"
@@ -3961,7 +3897,7 @@ end)
 
 test("Sit out on the card goes to the server and the answer flips the button", function()
   local env = bootClient()
-  env.fire("cnr_mode", {})
+  env.fire("cnr_mode", { version = CNR_VERSION })
   env.M.ui({ action = "sitOut", on = true })
   assertEq(env.lastSent("cnr_sitOut").on, true)
   env.tick(0.2)
@@ -3974,19 +3910,19 @@ test("Sit out on the card goes to the server and the answer flips the button", f
   assertEq(#env.sent, n)
   env.M.ui({ action = "sitOut", on = false })
   assertEq(env.lastSent("cnr_sitOut").on, false)
-  env.fire("cnr_mode", {})
+  env.fire("cnr_mode", { version = CNR_VERSION })
   env.tick(0.2)
   assertEq(env.hud().lobby.sitOut, false)
 end)
 
 test("leaving the server forgets Sit out", function()
   local env = bootClient()
-  env.fire("cnr_mode", {})
+  env.fire("cnr_mode", { version = CNR_VERSION })
   env.fire("cnr_sitOut", { on = true })
   env.M.onBeamMPServerLeave()
   env.fire("cnr_lobby", { online = 2 })
   env.M.ui({ action = "hello" })
-  env.fire("cnr_mode", {})
+  env.fire("cnr_mode", { version = CNR_VERSION })
   env.tick(0.2)
   assertEq(env.hud().lobby.sitOut, false)
 end)
@@ -4030,7 +3966,7 @@ end
 test("a sitting-out player's car is parked on spectate and comes back where it stood at the round end", function()
   withCamera(function(cam)
     local env = bootClient()
-    env.fire("cnr_mode", {})
+    env.fire("cnr_mode", { version = CNR_VERSION })
     env.veh.pos = vec3(10, 20, 0)
     env.veh.model = "etk800"
     spectate(env)
@@ -4097,7 +4033,7 @@ test("a map change, leaving or unloading drops the parked car and leaves nothing
   for _, leave in ipairs({ "onClientEndMission", "onBeamMPServerLeave", "onExtensionUnloaded" }) do
     withCamera(function()
       local env = bootClient()
-      env.fire("cnr_mode", {})
+      env.fire("cnr_mode", { version = CNR_VERSION })
       spectate(env, { phase = "running", chaseElapsed = 5, heli = { phase = "arriving", seconds = 60 },
         sky = { weather = "storm", driving = true, windDir = 0, windSeed = 7 } })
       env.tick(0.2)
@@ -4108,7 +4044,7 @@ test("a map change, leaving or unloading drops the parked car and leaves nothing
       if leave ~= "onExtensionUnloaded" then
         env.fire("cnr_roundEnd", { reason = "cancelled" })
         assertEq(#env.spawned, 0, leave)
-        env.fire("cnr_mode", {})
+        env.fire("cnr_mode", { version = CNR_VERSION })
         env.tick(0.2)
         assertEq(env.hud().mode, "lobby", leave); assertEq(env.hud().spectate, nil, leave)
       end
@@ -4194,7 +4130,7 @@ end)
 test("spectating shows the countdowns, the chase clock, the helicopter and who is watched", function()
   withCamera(function(cam)
     local env = bootClient()
-    env.fire("cnr_mode", {})
+    env.fire("cnr_mode", { version = CNR_VERSION })
     env.fire("cnr_rules", { roundTimeLimitSeconds = 600 })
     roundCars(env)
     spectate(env, { phase = "countdown", countdownRemaining = 2 })
@@ -4230,7 +4166,7 @@ end)
 test("a mid-chase spectator starts the clock where the chase is", function()
   withCamera(function()
     local env = bootClient()
-    env.fire("cnr_mode", {})
+    env.fire("cnr_mode", { version = CNR_VERSION })
     spectate(env, { phase = "running", chaseElapsed = 30, heli = { phase = "searching", seconds = 50 } })
     env.tick(0.2)
     assertEq(env.hud().spectate.time, "0:30"); assertEq(env.hud().spectate.heli.text, "HELICOPTER SEARCHING")
@@ -4243,7 +4179,7 @@ end)
 test("a spectator sees the result card, a cancelled round too", function()
   withCamera(function()
     local env = bootClient()
-    env.fire("cnr_mode", {})
+    env.fire("cnr_mode", { version = CNR_VERSION })
     spectate(env)
     env.fire("cnr_roundEnd", { reason = "caught", runnerName = "Bob", survivedSeconds = 90, runnerId = 2, catchers = { "Kim" } })
     env.tick(0.2)
@@ -4272,7 +4208,7 @@ end)
 test("a spectator sees the forecast under the chase clock and the weather notices, and the beam follows the weather", function()
   withCamera(function()
     local env = bootClient()
-    env.fire("cnr_mode", {})
+    env.fire("cnr_mode", { version = CNR_VERSION })
     env.fire("cnr_rules", { helicopter = true })
     spectate(env, { phase = "countdown", countdownRemaining = 1,
       sky = { time = "noon", weather = "rain", windDir = 0, windSeed = 1, clockSeconds = 0, changes = { { at = 400, to = "storm", forecastFrom = 330 } } } })
@@ -4286,7 +4222,7 @@ test("a spectator sees the forecast under the chase clock and the weather notice
     local joiner = bootClient()
     local traffic = package.loaded["copsAndRobbers/traffic"]
     local past = countEvents(joiner, "Weather: rain coming")
-    joiner.fire("cnr_mode", {})
+    joiner.fire("cnr_mode", { version = CNR_VERSION })
     joiner.fire("cnr_rules", { helicopter = true })
     spectate(joiner, { phase = "running", chaseElapsed = 30,
       sky = { time = "noon", weather = "cloudy", windDir = 0, windSeed = 1, clockSeconds = 100,
@@ -4307,7 +4243,7 @@ end)
 test("a round setup ends spectating", function()
   withCamera(function()
     local env = bootClient()
-    env.fire("cnr_mode", {})
+    env.fire("cnr_mode", { version = CNR_VERSION })
     spectate(env)
     env.objects[100] = env.veh
     startCop(env)
@@ -4376,7 +4312,7 @@ end)
 test("a car that can't be put back says so once", function()
   withCamera(function()
     local env = bootClient()
-    env.fire("cnr_mode", {})
+    env.fire("cnr_mode", { version = CNR_VERSION })
     env.addObject(150, vec3(30, 40, 0))
     env.ownCars = { [150] = true }
     local warnings = 0
@@ -4559,7 +4495,7 @@ test("Tab goes through the AI cars and the card names the one watched", function
   withCamera(function()
     local env = bootClient()
     MPVehicleGE.isOwn = function() return true end
-    env.fire("cnr_mode", {})
+    env.fire("cnr_mode", { version = CNR_VERSION })
     env.mpPlayers[1] = { name = "Reinder" }
     env.addObject(250, vec3(90, 0, 0))
     watchPractice(env)
@@ -4624,7 +4560,7 @@ end)
 
 test("the panel knows you sit out, so it can offer watching the AI practise", function()
   local env = bootClient()
-  env.fire("cnr_mode", {})
+  env.fire("cnr_mode", { version = CNR_VERSION })
   env.fire("cnr_panelState", { phase = "idle" })
   assertEq(env.lastTrigger("CnRPanel").sitOut, nil)
   env.fire("cnr_sitOut", { on = true })
@@ -4764,28 +4700,10 @@ test("a failed watched AI setup restores the spawn lock", function()
   end)
 end)
 
-test("Earth reports an entered AI car only under its AI id", function()
-  withCamera(function()
-    local env = bootClient()
-    earthStub(env)
-    env.fire("cnr_mode", { geo = true })
-    MPVehicleGE.isOwn = function() return true end
-    watchPractice(env)
-    env.player = env.spawned[1].veh
-    env.tick(1)
-    local cars = env.lastSent("cnr_geo").cars
-    _G.beamngEarth_api = nil
-    assertEq(#cars, 3)
-    local ids = {}
-    for _, car in ipairs(cars) do ids[car.id] = true end
-    for _, id in ipairs({ -10, -11, -12 }) do assertEq(ids[id], true) end
-  end)
-end)
-
 test("while you watch AI practice the game can't spawn, replace, clone or remove a car", function()
   withCamera(function()
     local env = bootClient()
-    env.fire("cnr_mode", {})
+    env.fire("cnr_mode", { version = CNR_VERSION })
     local own = {}
     core_vehicles.cloneCurrent = function() own.clone = (own.clone or 0) + 1 return true end
     core_vehicles.spawnDefault = function() own.default = (own.default or 0) + 1 return true end
@@ -4845,41 +4763,6 @@ test("practice where you drive, and spectating a real round, leave the game's sp
   end)
 end)
 
-test("the Earth starting pose survives a different origin and orientation on the receiving cop", function()
-  local env = bootClient()
-  local rebasing = false
-  local saved = _G.beamngEarth_api
-  local ok, err = pcall(function()
-    _G.beamngEarth_api = {
-      version = function() return 1 end,
-      rebasing = function() return rebasing end,
-      toGeo = function(x, y, z) return 50 + y / 10000, 5 + x / 10000, 12 + z end,
-      toGame = function(lat, lon, h) return (lat - 50) * 10000 + 100, (5 - lon) * 10000 - 200, h - 40 end,
-    }
-    env.fire("cnr_planStart", { geo = true, id = 3, count = 3, copSpawnMin = 50, copSpawnMax = 150 })
-    local slots = env.lastSent("cnr_startGrid").slots
-    local d = copy(SETUP)
-    d.startPose = slots[2]
-    local faced
-    spawn.safeTeleport = function(veh, pos, rot) veh.pos, faced = pos, rot.dir end
-    rebasing = true
-    env.fire("cnr_roundSetup", d)
-    assertEq(faced, nil, "wait for a stable Earth origin")
-    env.tick(0.6)
-    assertEq(env.lastSent("cnr_myVehicle"), nil)
-    rebasing = false
-    env.tick(0.1)
-    assertNear(env.veh.pos.x, 100 + (d.startPose.geo.lat - 50) * 10000, 1e-5)
-    assertNear(env.veh.pos.y, -200, 1e-5)
-    assertNear(env.veh.pos.z, -28, 1e-5)
-    assertNear(faced.x, -1, 1e-6)
-    assertNear(faced.y, 0, 1e-6)
-    assertEq(env.lastSent("cnr_myVehicle").vid, 100)
-  end)
-  _G.beamngEarth_api = saved
-  if not ok then error(err, 0) end
-end)
-
 test("the starting anchor uses your parked car when watching a remote car", function()
   local env = bootClient()
   env.player = env.addObject(320, vec3(100, 300, 0))
@@ -4906,26 +4789,6 @@ test("a fresh personal spawn keeps its own vehicle ID when focus moves to a prac
   env.tick(0.6)
   assertEq(env.lastSent("cnr_myVehicle").vid, mine:getID())
   assertEq(other.pos.x, 800)
-end)
-
-test("an AI runner also waits out an Earth rebase before reporting its placement", function()
-  local env = bootClient()
-  local saved = _G.beamngEarth_api
-  local rebasing = true
-  local ok, err = pcall(function()
-    _G.beamngEarth_api = { version = function() return 1 end, rebasing = function() return rebasing end,
-      toGame = function(lat, lon, h) return lon * 100, lat * 100, h end }
-    local pose = { geo = { lat = 1, lon = 4, h = 3 }, toward = { lat = 1.01, lon = 4, h = 3 } }
-    env.fire("cnr_setupAI", { model = "pickup", config = SETUP.config, ai = { { id = -10, role = "runner", startPose = pose } } })
-    env.tick(0.6)
-    assertEq(env.lastSent("cnr_aiVehicles"), nil)
-    rebasing = false
-    env.tick(0.1)
-    assertNear(env.spawned[1].veh.pos.x, 400, 0.001)
-    assertEq(env.lastSent("cnr_aiVehicles").ai[1].vid, env.spawned[1].veh:getID())
-  end)
-  _G.beamngEarth_api = saved
-  if not ok then error(err, 0) end
 end)
 
 test("the starting grid follows a two-way heading and the configured cop distance", function()
@@ -5142,10 +5005,7 @@ test("light, emitter and pending thunder are discarded when their round or seed 
       d.sky = thunderSky()
       env.fire("cnr_roundSetup", d)
     end,
-    earth = function(env)
-      env.fire("cnr_mode", {geo = true})
-      chaseWith(env, nil)
-    end,
+    missingSky = function(env) chaseWith(env, nil) end,
   }
   for name, exit in pairs(exits) do
     withThunder(function(env, events, lines)

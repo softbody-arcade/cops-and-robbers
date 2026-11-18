@@ -183,7 +183,6 @@ function bootClient(opts)
   _G.AddEventHandler = function(ev, fn) env.handlers[ev] = fn end
   _G.getCurrentLevelIdentifier = function() return "west_coast_usa" end
   _G.ui_appLayouts = opts.layouts and opts.layouts.api or nil
-  _G.beamngEarth_api = nil
   _G.freeroam_facilities, _G.freeroam_gasStations, _G.freeroam_bigMapMode = nil, nil, nil
   _G.core_groundMarkers = nil
   _G.resetGameplay = function() end

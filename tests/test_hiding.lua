@@ -51,7 +51,7 @@ end
 
 test("a hidden runner has no name tag and no minimap marker", function()
   run(function()
-    hiding.set({ vids = { [2] = true }, keys = { ["2-0"] = true }, minimap = true })
+    hiding.set({ vids = { [2] = true }, keys = { ["2-0"] = true } })
     hiding.tick(0)
     assertEq(vehicles["2-0"].hideNametag, true)
     ui_apps_minimap_vehicles.drawOtherVehicles()
@@ -63,7 +63,7 @@ end)
 test("an error in the draw still restores the iterator and does not escape", function()
   run(function()
     ui_apps_minimap_vehicles.drawOtherVehicles = function() error("boom") end
-    hiding.set({ vids = { [2] = true }, minimap = true })
+    hiding.set({ vids = { [2] = true } })
     hiding.tick(0)
     ui_apps_minimap_vehicles.drawOtherVehicles()
     assertEq(activeVehiclesIterator, iterator)
@@ -77,14 +77,14 @@ test("a draw error is logged once per load", function()
     local ok, err = pcall(function()
       local function failing() error("boom") end
       ui_apps_minimap_vehicles.drawOtherVehicles = failing
-      hiding.set({ vids = { [2] = true }, minimap = true })
+      hiding.set({ vids = { [2] = true } })
       hiding.tick(0)
       ui_apps_minimap_vehicles.drawOtherVehicles()
       ui_apps_minimap_vehicles.drawOtherVehicles()
       hiding.unload()
       package.loaded["copsAndRobbers/hiding"] = nil
       hiding = require("copsAndRobbers/hiding")
-      hiding.set({ vids = { [2] = true }, minimap = true })
+      hiding.set({ vids = { [2] = true } })
       hiding.tick(0)
       assert(ui_apps_minimap_vehicles.drawOtherVehicles ~= failing)
       ui_apps_minimap_vehicles.drawOtherVehicles()
@@ -102,12 +102,12 @@ test("a draw error is logged again after unload without reloading the module", f
     _G.log = function(level, tag, msg) logs[#logs + 1] = msg end
     local ok, err = pcall(function()
       ui_apps_minimap_vehicles.drawOtherVehicles = function() error("boom") end
-      hiding.set({ vids = { [2] = true }, minimap = true })
+      hiding.set({ vids = { [2] = true } })
       hiding.tick(0)
       ui_apps_minimap_vehicles.drawOtherVehicles()
       hiding.unload()
       ui_apps_minimap_vehicles.drawOtherVehicles = function() error("boom") end
-      hiding.set({ vids = { [2] = true }, minimap = true })
+      hiding.set({ vids = { [2] = true } })
       hiding.tick(10)
       ui_apps_minimap_vehicles.drawOtherVehicles()
     end)
@@ -132,16 +132,16 @@ test("an empty minimap set delegates with the original iterator, arguments and r
       draw()
       return arg
     end
-    hiding.set({ vids = {}, minimap = true })
+    hiding.set({ vids = {} })
     hiding.tick(0)
     assertEq(ui_apps_minimap_vehicles.drawOtherVehicles("pass"), "pass")
     assertEq(ids(), "1,2,3")
   end)
 end)
 
-test("without minimap hiding the name tag is hidden and the draw is untouched", function()
+test("a tag-only target leaves the minimap untouched", function()
   run(function()
-    hiding.set({ vids = { [2] = true }, keys = { ["2-0"] = true }, minimap = false })
+    hiding.set({ keys = { ["2-0"] = true } })
     hiding.tick(0)
     assertEq(vehicles["2-0"].hideNametag, true)
     ui_apps_minimap_vehicles.drawOtherVehicles()
@@ -151,7 +151,7 @@ end)
 
 test("clear shows the name tag again", function()
   run(function()
-    hiding.set({ keys = { ["2-0"] = true }, minimap = false })
+    hiding.set({ keys = { ["2-0"] = true } })
     hiding.tick(0)
     hiding.clear()
     assertEq(vehicles["2-0"].hideNametag, nil)
@@ -186,7 +186,7 @@ test("the minimap is wrapped lazily and again after a reload", function()
   run(function()
     local original = ui_apps_minimap_vehicles
     ui_apps_minimap_vehicles = nil
-    hiding.set({ vids = { [2] = true }, minimap = true })
+    hiding.set({ vids = { [2] = true } })
     hiding.tick(0)
     ui_apps_minimap_vehicles = original
     assertEq(original.drawOtherVehicles, draw)
@@ -224,7 +224,7 @@ test("an older wrapped table coming back never makes the wrapper call itself", f
     end }
     local extB = { drawOtherVehicles = draw }
     ui_apps_minimap_vehicles = extA
-    hiding.set({ vids = { [2] = true }, minimap = true })
+    hiding.set({ vids = { [2] = true } })
     hiding.tick(0)
     ui_apps_minimap_vehicles = extB
     hiding.tick(1)
@@ -244,7 +244,7 @@ end)
 
 test("after unload a leftover wrapper is a pure pass-through", function()
   run(function()
-    hiding.set({ vids = { [2] = true }, minimap = true })
+    hiding.set({ vids = { [2] = true } })
     hiding.tick(0)
     local wrapper = ui_apps_minimap_vehicles.drawOtherVehicles
     hiding.unload()
@@ -293,7 +293,7 @@ end)
 
 test("the wrapper skips several vids", function()
   run(function()
-    hiding.set({ vids = { [1] = true, [3] = true }, minimap = true })
+    hiding.set({ vids = { [1] = true, [3] = true } })
     hiding.tick(0)
     ui_apps_minimap_vehicles.drawOtherVehicles()
     assertEq(ids(), "2")
@@ -326,7 +326,7 @@ test("an older minimap table coming back draws with its own original, and unload
     local drawA, drawB = namedDraw("A", calls), namedDraw("B", calls)
     local extA, extB = { drawOtherVehicles = drawA }, { drawOtherVehicles = drawB }
     ui_apps_minimap_vehicles = extA
-    hiding.set({ vids = { [2] = true }, minimap = true })
+    hiding.set({ vids = { [2] = true } })
     hiding.tick(0)
     ui_apps_minimap_vehicles = extB
     hiding.tick(1)
@@ -347,7 +347,7 @@ test("after the minimap reloads, the old table gets its original back and its ol
     local drawA, drawB = namedDraw("A", calls), namedDraw("B", calls)
     local extA, extB = { drawOtherVehicles = drawA }, { drawOtherVehicles = drawB }
     ui_apps_minimap_vehicles = extA
-    hiding.set({ vids = { [2] = true }, minimap = true })
+    hiding.set({ vids = { [2] = true } })
     hiding.tick(0)
     local oldWrapper = extA.drawOtherVehicles
     ui_apps_minimap_vehicles = extB

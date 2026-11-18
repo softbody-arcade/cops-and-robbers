@@ -43,8 +43,7 @@ function M.date(weather, random)
   end
 end
 
-function M.pick(cfg, random, geo, year)
-  if geo then return {} end
+function M.pick(cfg, random, year)
   local time = pickTime(cfg, random)
   local kind = pickWeather(cfg, random)
   local month, day = M.date(kind, random)

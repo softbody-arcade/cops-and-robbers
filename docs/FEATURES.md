@@ -1,6 +1,6 @@
 # Cops and Robbers 2.12.0: features
 
-A BeamMP server plugin with a client mod that BeamMP downloads automatically. The mod enforces the group's cops-and-robbers rules. It is one mod for every map, and it switches to geo mode on BeamNG.Earth by itself.
+A BeamMP server plugin with a client mod that BeamMP downloads automatically. The mod enforces the group's cops-and-robbers rules. It uses BeamMP vehicle positions in the level's 3D coordinates.
 
 ## Round flow
 
@@ -92,11 +92,11 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 
 - **Emergency lights:** cops drive with their emergency lights on (a runner in a police car has the light bar and siren forced off and their keys locked during a round), with no siren unless the cop turns it on in Settings (and the host allows Cop sirens). When the round car has none, the mod walks the car's actual part tree and fills every empty slot that accepts an emergency light: a light bar first, otherwise a beacon (Burnside, I-Series roof beacon, midtruck beacons). Lights are recognised by their wiring (light bar or beacon signals), so white off-road light bars on fog or high beam are never used, and parts for slots the car doesn't have are never picked. Checked against every stock vehicle config.
 - **Line of sight:** each cop's game checks 4 times a second whether it can see the runner: rays from eye height to the runner's car, blocked by terrain and buildings (not by other cars), up to `sightMaxMeters` (400 m), mirrors included.
-  - While any cop sees the runner, every cop gets the runner's position live (every second, every 3 s on BeamNG.Earth): "Runner 640 m NE · live".
+  - While any cop sees the runner, every cop gets the runner's position live every second by default. The chase line reads "Runner 640 m NE · live".
   - A cop who sees the runner and is within their own speed × 5 s (at least 50 m) gets no route and reads "IN SIGHT". This is the Out of sight default: a cop's Route to the runner setting can keep the route while in sight (Always) or turn it off (Never).
-  - When the runner stops being spotted (no cop has sight and the helicopter isn't tracking, after a 1.5 s grace), one "last seen" ping goes out at that spot: a route line on the road and minimap with "Runner seen 640 m NE · 12 s ago" (the age counts up, in minutes after the first minute), or on BeamNG.Earth a destination in its own GPS ("Runner last seen"). There are no other pings.
-  - The client log notes each change ("runner in sight (120 m)"), handy to check what blocks sight on BeamNG.Earth.
-- **Runner:** sees "SPOTTED" or "HIDDEN" plus "Nearest cop 1.2 km", which updates every 30 s and with every live update. The runner never sees the cops on the minimap or by name tag for the whole round (a cop car that turns up mid-round is hidden within a second; the minimap part is skipped on BeamNG.Earth); cops still see each other.
+  - The runner stops being spotted after 1.5 s with neither cop sight nor helicopter tracking. A single last-seen ping puts a route on the road and minimap. The chase line shows "Runner seen 640 m NE · 12 s ago" and counts the age in minutes after the first minute.
+  - The client log notes each change ("runner in sight (120 m)"), handy to check what blocks sight.
+- **Runner:** sees "SPOTTED" or "HIDDEN" plus "Nearest cop 1.2 km", which updates every 30 s and with every live update. The runner never sees the cops on the minimap or by name tag for the whole round (a cop car that turns up mid-round is hidden within a second); cops still see each other.
 - **Cop placement:** cops start a short drive from the runner (by road, following one-way roads), facing toward the runner, and spread out so they do not overlap. No cop starts ahead of the runner (within 45° either side of their heading) while a spot behind or beside them exists. The search widens until it covers at least 2 km by road. On a divided road with a narrow median (up to 5 m), the runner counts as being on the carriageway its car points along, even when the other one is a little closer. A runner on a piece of road that isn't connected to the rest gets cops placed by straight-line distance, still at least the minimum start distance away and never on a gated road or a private road behind one. If no road is found at all, the cop gets a notice and starts where they are.
 - **Runner placement.** The runner starts on the road nearest their car. In practice, the host's car supplies the starting point even when the host drives a cop or watches. With no personal car, the game uses the camera. On a one-way road the runner faces with traffic. On a two-way road the runner faces the direction closest to their original heading. If there is no road, the runner starts at the original spot.
 - **Starting positions.** The runner's game, or the practice host's game, chooses the runner's spot and one spot for each cop. Human and AI cars use the same positions and headings. In practice as cop, you take the first cop spot and your AI partner takes the second. **New car** keeps the starting positions.
@@ -147,7 +147,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
   - **Aviation lights:** steady red on the left, green on the right and white at the tail, and a red beacon on the roof and underneath that flashes 0.15 s every second. They are glowing dots, not light sources: bright with a glow that grows a little with distance at night, small and faint by day. No white strobes.
   - **Made on your game:** the first time a round with the helicopter is set up, your game copies its own Pigeon model into `temp/cnr/` in the user folder, without the unused parts and with the livery, and reuses it afterwards. Nothing from the game ships in the mod. Without a Pigeon (or if the copy can't be written) the helicopter flies as before without a body, and the log says why once. If a game update changes the Pigeon, it flies with what it could trim and the log warns.
   - **Setting:** Helicopter model in the player settings, on by default. Off removes the van and its lights on your game.
-- **Hiding:** from the runner's release (the head start) on, the runner's name tag and minimap marker show on the cops' games only while the runner is spotted (a cop has sight, or the helicopter is tracking). Prep and the countdown show the runner as before. With the sight range Off the runner is never hidden. On BeamNG.Earth the minimap is not hidden (the name tag still is).
+- **Hiding:** from the runner's release (the head start) on, the runner's name tag and minimap marker show on the cops' games only while the runner is spotted (a cop has sight, or the helicopter is tracking). Prep and the countdown show the runner as before. With the sight range Off the runner is never hidden.
 - **Runs** record whether the helicopter flew (`helicopter`; it counts if it was ever up, also after a grounding); the leaderboard has no filter for it.
 
 ## Players
@@ -158,7 +158,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Per-player color:** the colour picker in the Settings card has a hex field, "No colour" and Done. The colour is applied to every round car. Set during prep, it repaints straight away; otherwise it applies from the next round. It is saved on the server per player.
 - **How to play:** a five-tab card (Basics, Runner, Cop, Resets, Rules) that opens by itself the first time a player joins (remembered on their own PC in `settings/`) and from the How to play buttons. Every number in it comes from the server's current settings, so it matches the round; settings that are off read "no time limit" or "sight is off". With traffic on, Basics says how many traffic cars each player has and the crash line says driving into traffic counts. It hides itself during a round.
 - **Identity:** players are recognised by their BeamMP account for the leaderboard, colors and who runs next. Guests are recognised by name, which changes every session.
-- **Warnings:** a yellow line on the lobby card (or above its tab while the HUD is hidden) for a standing problem: no reset or recover button bound, an outdated copy of the mod, or a BeamNG.Earth that is too old. It stays until fixed: bind a reset button and the line goes within a couple of seconds. Without a reset binding, a round also starts with a warning notice.
+- **Warnings:** a yellow line on the lobby card (or above its tab while the HUD is hidden) for a standing problem: a missing reset or recover binding or an outdated copy of the mod. It stays until fixed: bind a reset button and the line goes within a couple of seconds. Without a reset binding, a round also starts with a warning notice.
 
 ## Leaderboards (saved permanently)
 
@@ -191,7 +191,6 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Lights.** Traffic headlights follow the weather and switch on in rain, storms, thunderstorms, fog and snow. At night traffic follows the game's own rule (lights on from sunset, and in tunnels), which also thins traffic out at night. Traffic standing still before GO is lit at night too.
 - **Weather:** traffic slows down on wet roads and snow by itself, and gusts push it like any car.
 - **Crashes:** see Crash penalty. Traffic never helps catch the runner.
-- **Not on BeamNG.Earth yet:** BeamNG.Earth manages any traffic that runs, so traffic stays off there and the panel says so.
 
 ## Night and weather
 
@@ -210,7 +209,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Blends:** at round start, on New sky and at round end the sky blends over up to 3 s (clouds, fog and time of day). Every change blends from where the sky is. Pressing GO right after New sky lands the sky at once and the clock starts. A rejoin after GO gets the sky at once, and leaving the server ends everything at once.
 - **Rain and snow.** Both fade in and out with the blend. Storms and thunderstorms have the same rainfall. Ordinary rain has a quarter fewer drops and lighter mist.
 - **Rain sound.** The game's own rain loop fades with the rain. It plays louder in storms and thunderstorms and at half volume under a roof.
-- **Weather changes.** With Weather changes on (`weatherChanges`, on by default), planned slots can change the weather during a chase on regular maps. The server makes the schedule when it picks the sky, including with New sky, and each game follows it, including after a rejoin. The schedule runs from cop release to the round time limit, up to 3 hours after release.
+- **Weather changes.** With Weather changes on (`weatherChanges`, on by default), planned slots can change the weather during a chase. The server makes the schedule when it picks the sky, including with New sky, and each game follows it, including after a rejoin. The schedule runs from cop release to the round time limit, up to 3 hours after release.
   - **Slot timing.** At cop release, after each planned slot and after each forced change, the server draws a new wait for the next planned slot between `weatherChangeMinMinutes` (3) and `weatherChangeMaxMinutes` (8) minutes. A forced change can replace a pending slot, so the gap between two planned slots can exceed the maximum wait. Stays can extend the time between actual weather changes. The panel keeps the longest wait at or above the shortest and shows both settings while Weather changes is on.
   - **Eligible changes.** Clear can turn cloudy or foggy. Fog requires 12 °C or colder from 18:00 until 09:00. Cloudy can clear, turn to rain from 2 °C up, snow at 1 °C or below, or fog in foggy conditions. Rain can turn cloudy, turn to a storm when the higher of the two surrounding temperature points reaches 15 °C, or turn to snow at 1 °C or below. Both cloudy and rain can turn to a thunderstorm when that higher point is 20 °C or above. A storm can ease to rain, and a thunderstorm can ease to rain or turn cloudy. Snow can turn cloudy or to rain from 2 °C up. Fog can turn cloudy or clear.
   - **The roll.** Each slot can keep the current weather. If both the calm group (clear and cloudy) and the bad group (rain, storm, thunderstorm, fog and snow) have eligible options, `badWeatherChancePercent` (25% by default) decides the chance of picking the bad group. If only one group has eligible options, the roll uses it. The roll then picks within the group, with equal weights for a stay and each eligible change except a thunderstorm from cloudy, which gets half weight. A stay adds no weather change, notice or forecast.
@@ -221,7 +220,6 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
   - **Lights.** Traffic and practice AI headlights follow the current weather, switching on in rain, storms, thunderstorms, fog and snow and off again when it clears in daylight. Your own auto headlights follow the same weather.
   - **Records** keep the worst weather of the round as `weather` and the starting weather as `weatherStart`. From lowest to highest the ranks are clear, cloudy, rain, fog and snow (tied), then storm and thunderstorm (tied). The label and filters use `weather`.
 - **Lightning and thunder.** After the host presses GO, each game uses the round's lightning seed and clock to generate the same strike times and offsets around the runner. If the runner's car is unavailable, the camera is the reference point. Strikes average one every 25 seconds in a full thunderstorm and thin out during the blend in or out. Nearby strikes show a bolt as the landscape flashes. Thunder follows after the distance from the listener's camera to the strike divided by 343 m/s, with quieter, more distant recordings for farther strikes. Under cover or with **Lightning flashes** off, the flash and bolt are hidden and thunder still plays. Strikes are purely atmospheric and occur with Weather affects driving on or off.
-- **Not on BeamNG.Earth:** the server sends no sky there, and the panel says so.
 
 ## Test rounds against AI (only you see them)
 
@@ -233,28 +231,19 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 
 - All rules apply, including crash penalties for the AI.
 - Leaving the server, or another player starting a round, ends the test round.
-- On BeamNG.Earth, the AI cars are placed near you again after you teleport.
 - In evolving mode, Apply rebuilds the AI cops in place with the new build too.
-- The AI needs `MaxCars` of 3 or more. On BeamNG.Earth it also needs BeamNG.Earth traffic turned on (for the road graph).
+- The AI needs `MaxCars` of 3 or more.
 
 ## Gas stations
 
-- **Normal maps:** stations are detected from the map data (10 on West Coast USA, 12 on Italy) and saved per map.
-- **BeamNG.Earth:** while players drive, real gas stations within 3 km are looked up through BeamNG.Earth's places API. The server merges them (duplicates within 50 m are dropped) into a list that keeps growing.
+- Stations are detected from the map's gas station facilities (for example, 10 on West Coast USA and 12 on Italy). The server stores each station's 3D position and radius per map.
 - The Map tab of the host panel shows the stations of this map, with Add station here and Remove nearest.
-
-## BeamNG.Earth (geo mode)
-
-- Every player has their own coordinate origin there, so positions travel between the games and the server as latitude/longitude, through BeamNG.Earth's mod API (`toGeo` and `toGame`). The server calculates all distances in one shared frame.
-- **Moves by BeamNG.Earth itself** (rebase, resync, setting the car down) do not count as resets or teleports. Teleporting yourself during a round does.
-- **Needs:** BeamNG.Earth with mod API v1. Road resets for cops, cop placement and the AI also need BeamNG.Earth traffic turned on.
-- **No round traffic yet:** BeamNG.Earth moves, hides and rebuilds any traffic that runs (after a teleport, a region change, or cars standing still), so the mod's traffic stays off there for now.
 
 ## HUD (UI apps)
 
-- **Two apps, both placed automatically:** "Cops and Robbers Announcements" (upper middle: role title, countdowns, GO flashes, APPLYING CHANGES, the result) and "Cops and Robbers HUD" (bottom centre: everything else). They are added to the current UI layout on join, including BeamNG.Earth's MP layout after it switches. Players can move and resize them but not remove them, and both are removed again when leaving the server. A stock layout copy that only existed because of them is reset to the original on leave.
+- **Two apps, both placed automatically:** "Cops and Robbers Announcements" (upper middle: role title, countdowns, GO flashes, APPLYING CHANGES, the result) and "Cops and Robbers HUD" (bottom centre: everything else). They are added to the current UI layout on join. Players can move and resize them but not remove them, and both are removed again when leaving the server. A stock layout copy that only existed because of them is reset to the original on leave.
 - **Click-through:** both apps let clicks through to the game and other apps everywhere except their own buttons and cards.
-- **UI scale:** all apps follow the game's UI scale, and their content scales down to fit a small box.
+- **UI scale:** all apps follow the game's UI scale. Opening Your settings gives the card the full HUD area. A wider HUD shows two columns, and a narrow HUD scrolls with Close and Done in reach.
 - **Lobby card** (between rounds): "Cops and Robbers", the number online, "Waiting for the host to start a round" or "Practice round: Bob", and the buttons Settings, How to play, Leaderboard, Host panel and Hide (Leaderboard and Host panel open and close those apps and show when they are open). Standing problems show as a yellow line.
 - **Hide:** for players just driving between rounds. It folds the lobby card into a small "Cops and Robbers" tab with an up arrow at the same place, and clicking the tab brings the card back. Notices and the yellow warning lines still show above the tab, an open Leaderboard or Host panel stays open, and Settings opens only from the full card. The choice is saved with the personal settings (`hudHidden` in `settings/cnr_settings.json`), so it lasts over a restart and a rejoin. Prep, the chase and the result (also of your own practice round) always show in full, and the lobby after them goes back to your choice.
 - **Prep:** the role in the centre ("YOU'RE THE RUNNER" in red, "YOU'RE A COP" in blue, with "Bob is the runner" for cops) and the car's name, no rule text. At the bottom "Waiting for the host to press GO" with Settings, How to play and Host panel buttons.
@@ -278,9 +267,9 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
   - **After a round:** the result line ("Bob caught after 8:41"), and with automatic rounds on, "Next round in 12 s with Kim" with **Start now** and **Stop automatic rounds**.
   - A reply line shows the server's answer to every click, in yellow when it refuses ("Stop the round first", "Only the runner can apply the change", "Not available from the panel"). Nothing goes to chat.
 - **Car tab:** a Random car / Evolving build switch. In evolving mode a summary (car, build step, last change and who made it), New build (choose a car, or random; a second click when a build exists) and Reset build (a second click). For both modes: Include mod cars and the excluded cars. Locked during a round.
-- **Map tab:** "West Coast USA · 10 gas stations", **Add station here**, **Remove nearest** (disabled with "No station within 50 m to remove") and the nearest stations with their distance (flat distance on BeamNG.Earth, updated every 2 s while the tab is open). Works on BeamNG.Earth, where stations are also discovered automatically.
+- **Map tab:** "West Coast USA · 10 gas stations", **Add station here**, **Remove nearest** (disabled with "No station within 50 m to remove") and the nearest stations with their 3D distance, updated every 2 s while the tab is open.
 - **Settings tab:**
-  - Every setting has a one-line explanation. The common ones come first (Head start, Time limit, the Sky choices, Traffic and, while traffic is on, Traffic for the runner only, Hold time, Catch distance, Reset wait, Crash penalty); the rest are under More settings, grouped into Round, Sky, Catching, Resets, Crashes, Cops and Cars. Traffic reads "5 per player", or "5 for the runner" with Traffic for the runner only on, and has a line under it with what it costs ("5 each · 30 cars with 6 players", or "5 cars in all with 6 players" for the runner only) or how `MaxCars` caps it. On BeamNG.Earth the Sky and Traffic groups say "Not available on BeamNG.Earth yet" instead. A setting the panel doesn't know yet appears under "Other".
+  - Every setting has a one-line explanation. The common ones come first (Head start, Time limit, the Sky choices, Traffic and, while traffic is on, Traffic for the runner only, Hold time, Catch distance, Reset wait, Crash penalty); the rest are under More settings, grouped into Round, Sky, Catching, Resets, Crashes, Cops and Cars. Traffic reads "5 per player", or "5 for the runner" with Traffic for the runner only on, and has a line under it with what it costs ("5 each · 30 cars with 6 players", or "5 cars in all with 6 players" for the runner only) or how `MaxCars` caps it. A setting the panel doesn't know yet appears under "Other".
   - Numbers have −/+ steppers, on/off settings have switches, and excluded cars is a comma-separated text field.
   - Changes save automatically 0.5 s after the last click. A value that differs from the default is orange with its own small reset. A refused value snaps back with the reason in yellow, and the reply line confirms each save in green ("Saved: Head start 8 s").
   - "Reset to default" needs a second click within 3 s. Settings are locked during a round ("Stop the round first").
@@ -313,7 +302,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | `helicopterUpSeconds` | 120 | How long it flies before it refuels (more than 0) |
 | `helicopterRefuelSeconds` | 90 | How long it is away refuelling (0 = stays up) |
 | `sightMaxMeters` | 400 | How far cops can see the runner (0 = sight off) |
-| `sightLiveIntervalSeconds` | 1 | Live runner position for all cops while one sees the runner (at least 3 s on BeamNG.Earth) |
+| `sightLiveIntervalSeconds` | 1 | Live runner position for all cops while one sees the runner |
 | `sightNoRouteSeconds` | 5 | A cop who sees the runner within their speed × this many seconds gets no route (with the default Out of sight route setting) |
 | `sightNoRouteMinMeters` | 50 | ...and always within this distance |
 | `carMode` | random | `random` (a random car each round) or `evolving` (the shared build) |
@@ -330,12 +319,12 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 | `dayLength` | moderate | How long a full day lasts during the chase: `off` (stopped), `fast` (15 min), `moderate` (30 min), `slow` (2 h) or `realtime` (24 h) |
 | `weather` | random | `clear`, `cloudy`, `rain`, `storm`, `thunderstorm`, `fog`, `snow` or `random` |
 | `badWeatherChancePercent` | 25 | Chance of picking the bad-weather group (rain, storm, thunderstorm, fog or snow) for a random start or at a planned slot with both calm and bad options |
-| `weatherDriving` | true | Weather changes grip and adds wind (not on BeamNG.Earth) |
-| `weatherChanges` | true | Planned slots during the chase can keep the current weather or pick an eligible change based on the current weather, temperature and time of day. Available on regular maps |
+| `weatherDriving` | true | Weather changes grip and adds wind |
+| `weatherChanges` | true | Planned slots during the chase can keep the current weather or pick an eligible change based on the current weather, temperature and time of day |
 | `weatherChangeMinMinutes` | 3 | Shortest wait before the next planned slot, in whole minutes (at least 1). The wait starts at cop release, the previous slot or a forced change |
 | `weatherChangeMaxMinutes` | 8 | Longest wait drawn from the same starting point (at least the minimum). A forced change restarts the wait, and stays can extend the time between actual changes |
 | `sirensAllowed` | true | Cops may use a siren (each cop turns it on in their settings) |
-| `trafficPerPlayer` | 5 | AI traffic cars around each player during a round (0 = off, at most 20; normal maps only) |
+| `trafficPerPlayer` | 5 | AI traffic cars around each player during a round (0 = off, at most 20) |
 | `trafficRunnerOnly` | false | Only the runner's game spawns traffic, with the same count |
 
 ## Host and robustness
