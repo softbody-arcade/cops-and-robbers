@@ -83,6 +83,7 @@ local function saveHitches(byId)
         }
         for _, id in ipairs({a, b}) do
           local veh = getObjectByID(id)
+          byId[id].safeSpawn = false
           byId[id].rot = quatFromDir(veh:getDirectionVector(), veh:getDirectionVectorUp())
         end
       end
@@ -116,7 +117,9 @@ function M.restore()
   if not list or #list == 0 or not core_vehicles then return true end
   local allBack = true
   for i, car in ipairs(list) do
-    local ok, veh = pcall(core_vehicles.spawnNewVehicle, car.model, { config = car.config, pos = car.pos, rot = car.rot, autoEnterVehicle = i == 1 })
+    local ok, veh = pcall(core_vehicles.spawnNewVehicle, car.model, {
+      config = car.config, pos = car.pos, rot = car.rot, safeSpawn = car.safeSpawn, autoEnterVehicle = i == 1
+    })
     if ok and veh then
       car.id = veh:getID()
       car.couplerCache = core_vehicles.vehsCouplerCache and core_vehicles.vehsCouplerCache[car.id]

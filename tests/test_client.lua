@@ -4053,6 +4053,13 @@ test("sitting out restores the saved hitch once both new vehicles are owned", fu
   assertEq(env.objects[180] ~= nil, true)
 end)
 
+test("only the hitched vehicles bypass automatic ground and clearance placement", function()
+  local env = parkedTrailer()
+  assertEq(env.spawned[1].opt.safeSpawn, false)
+  assertEq(env.spawned[2].opt.safeSpawn, false)
+  assertEq(env.spawned[3].opt.safeSpawn ~= false, true)
+end)
+
 test("restoring an angled rig preserves each saved pose and closes the live hitch gap", function()
   for _, tag in ipairs({"tow_hitch", "fifthwheel_v2"}) do
     local env, placements = parkedTrailer(false, tag)
