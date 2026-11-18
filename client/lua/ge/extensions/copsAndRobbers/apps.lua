@@ -150,15 +150,14 @@ function M.layoutChanged(clock)
 end
 
 function M.leave()
+  if not loadedAt then return end
   loadedAt = nil
   placed = false
   for _, name in ipairs(ORDER) do
     local state = states[name]
-    if state.active then
-      local env = placementEnv(name)
-      if env then pcall(placement.leave, state, env) end
-      state.active = false
-    end
+    local env = placementEnv(name)
+    if env then pcall(placement.leave, state, env) end
+    state.active = false
   end
   group.createdCopy, group.hidMod = {}, {}
 end

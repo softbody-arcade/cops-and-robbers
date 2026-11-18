@@ -535,6 +535,24 @@ test("leaving the server removes the HUD apps, How to play and the apps it opene
   assertEq(has(L, "copsAndRobbersPanel"), true)
 end)
 
+test("disconnect cleans optional apps left by a crashed session even when never reopened", function()
+  local L = fakeLayouts()
+  local board = "copsAndRobbersLeaderboard"
+  local manual = { appName = board, placement = { top = "7em" } }
+  L.disk[L.other].apps = {
+    { appName = board, settings = { cnrAutoPlaced = true } },
+    manual,
+    { appName = "copsAndRobbersPanel", settings = { cnrAutoPlaced = true } },
+    { appName = "copsAndRobbersHowToPlay", settings = { cnrAutoPlaced = true } },
+  }
+  local env = bootClient({ layouts = L })
+  env.tick(4, 0.5)
+  env.M.onBeamMPServerLeave()
+  assertEq(#L.disk[L.other].apps, 1)
+  assertEq(L.disk[L.other].apps[1].appName, board)
+  assertEq(L.disk[L.other].apps[1].placement.top, "7em")
+end)
+
 test("a layout switch is picked up right away, not after the slow check", function()
   local L = fakeLayouts()
   local env = bootClient({ layouts = L })
