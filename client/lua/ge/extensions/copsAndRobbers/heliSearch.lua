@@ -369,6 +369,7 @@ function M.tick(state, target, phase, last, clock, opts)
   local carVel = carVelocity(state, target, car, dt, clock)
   fly(state, phase, last, car, carVel, dt, clock, state.random or math.random)
   local f = state.flight
+  if f then flight.clearance(f, clock, dt) end
   if f and not f.leaving then retarget(state, f, phase, last, car, target, carVel, dt, clock, opts) end
   if state.leftAt and clock - state.leftAt >= flight.DEPART_SECONDS then M.drop(state) end
   state.wasGuided = state.guided
@@ -378,7 +379,7 @@ function M.roadAim(state, clock)
   local s, f = state.search, state.flight
   if not (f and s and (s.run or s.returning)) then return nil end
   local p = f.pos
-  local from = vec3(p.x, p.y, p.z - flight.HELI_HEIGHT)
+  local from = vec3(p.x, p.y, (f.nominalZ or p.z) - flight.HELI_HEIGHT)
   local t = clock - (state.sweepAt or clock)
   if s.returning then return roadSearch.approachAim(from, s.origin, t) end
   return roadSearch.aimPoint(s.run, t, from)

@@ -3623,7 +3623,7 @@ test("practice as a cop: the practising cop's game reports cover for the AI runn
     assertEq(env.lastSent("cnr_cover"), nil)
     local fromAbove = 0
     _G.castRayStatic = function(origin, dir, len)
-      if dir.z == 1 then return len + 100 end
+      if dir.z >= 0 or dir.z == -1 then return len + 100 end
       if origin.z > 40 then fromAbove = fromAbove + 1 end
       return 1
     end
