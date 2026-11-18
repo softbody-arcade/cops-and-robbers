@@ -1994,7 +1994,7 @@ test("stations list", function()
   env.call("cnr_panel", 1, '{"action":"station","op":"add"}')
   env.call("cnr_panel", 1, '{"action":"stations"}')
   local d = decodeJson(sentTo(env, "cnr_stationList", 1))
-  for key in pairs(d) do assertEq(key, "stations") end
+  assertEq(d.map, "west_coast_usa")
   assertEq(#d.stations, 1)
   assertEq(d.stations[1].x, 0)
   assertEq(d.stations[1].y ~= nil and d.stations[1].z ~= nil, true)

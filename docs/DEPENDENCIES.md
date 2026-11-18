@@ -311,6 +311,7 @@ Then do the checks for whatever actually updated.
 - **`BngColorPicker`:** the model is `{hue, saturation, luminosity}`, all 0..1; `view="compact_luminosity"` works (the `luminosity` view shows only the saturation slider in simple-menu mode).
 - **Game internals the leaderboard and panel rely on** (not documented API, so check them after an update):
   - `BngTabs` reads each tab's `tab-heading` from the vnode props. Its `change` event carries the active tab's `heading`; the Leaderboard keys its filters off that (`onTab`), so after an update check the payload still has `heading`, or the filters never hide on the player and round detail views.
+  - Only the active tab mounts. The panel keeps its expanded settings, chosen config and station distances in the parent. Returning to Car checks the chosen config against the current filters. Returning to Map refreshes distances before enabling Remove nearest.
   - The `#after-tab-list` slot of `BngTabs` renders between the tab list and the content (the leaderboard's filter row).
   - The CSS variable `--bng-tabs-content-overflow` controls the tab content's overflow.
   - `BngDropdown`'s `#display` slot shows the selected value (real map names, build names).
