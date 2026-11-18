@@ -1,0 +1,24 @@
+{
+  "cnrLightningBoltRod": {
+    "name": "cnrLightningBoltRod",
+    "mapTo": "cnrLightningBoltRod",
+    "class": "Material",
+    "version": 1.5,
+    "castShadows": false,
+    "translucent": false,
+    "Stages": [
+      {
+        "baseColorFactor": [0, 0, 0, 1],
+        "metallicFactor": 1,
+        "roughnessFactor": 1,
+        "emissive": true,
+        "emissiveFactor": [0.83, 0.88, 1],
+        "emissiveIgnoreExposure": true,
+        "emissiveIntensityNits": 12
+      },
+      {},
+      {},
+      {}
+    ]
+  }
+}

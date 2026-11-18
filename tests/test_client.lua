@@ -4863,21 +4863,37 @@ local function thunderSky(clock)
 end
 
 local function withThunder(fn)
-  local previousScene = package.loaded["copsAndRobbers/lightning"]
+  local previousLightning = package.loaded["copsAndRobbers/lightning"]
+  local previousScene = package.loaded["copsAndRobbers/lightningScene"]
   local previousStrikes = package.loaded["copsAndRobbers/strikes"]
   local env = bootClient({files = {["settings/cnr_settings.json"] = {sound = false}}})
   local oldCamera, oldColor, oldDraw = core_camera, color, package.loaded["utils/debugDraw"]
-  local lines = 0
+  local loadMaterials = loadJsonMaterialsFile
+  local triangles = 0
   _G.core_camera = {getPosition = function() return vec3(0, 0, 0) end}
   _G.color = function() return 0 end
-  package.loaded["utils/debugDraw"] = {LineInstance_MinArg = function() lines = lines + 1 end}
+  _G.loadJsonMaterialsFile = function(path)
+    if path == "/art/shapes/cnrLightning/main.materials.json" then env.sky.objects.cnrLightningBoltRod = {} end
+    return loadMaterials(path)
+  end
+  package.loaded["utils/debugDraw"] = {drawTriSolid = function() triangles = triangles + 1 end}
   local strikes = require("copsAndRobbers/strikes")
   local events = strikes.between(strikes.new(55), thunderSky(), 0, 100)
-  local ok, err = pcall(fn, env, events, function() return lines end)
+  local ok, err = pcall(fn, env, events, function() return triangles end)
   _G.core_camera, _G.color, package.loaded["utils/debugDraw"] = oldCamera, oldColor, oldDraw
-  package.loaded["copsAndRobbers/lightning"] = previousScene
+  _G.loadJsonMaterialsFile = loadMaterials
+  package.loaded["copsAndRobbers/lightning"] = previousLightning
+  package.loaded["copsAndRobbers/lightningScene"] = previousScene
   package.loaded["copsAndRobbers/strikes"] = previousStrikes
   assert(ok, err)
+end
+
+local function boltRods(env)
+  local count = 0
+  for name in pairs(env.sky.objects) do
+    if name:match("^cnr_lightning_bolt_") then count = count + 1 end
+  end
+  return count
 end
 
 local function thunderPlays(env)
@@ -4956,14 +4972,16 @@ test("a fixed five-second storm flashes five seconds after the countdown starts"
 end)
 
 test("turning lightning off cancels the current flash and preserves its thunder", function()
-  withThunder(function(env, events, lines)
+  withThunder(function(env, events, glow)
     chaseWith(env, thunderSky(0))
     env.M.onUpdate(events[1].at)
     assertEq(env.sky.objects.cnr_lightning_flash ~= nil, true)
-    local drawn = lines()
+    local drawn = glow()
     assertEq(drawn > 0, true)
+    assert(boltRods(env) > 0)
     env.M.ui({action = "setting", key = "lightning", value = false})
     assertEq(env.sky.objects.cnr_lightning_flash, nil)
+    assertEq(boltRods(env), 0)
     assertEq(env.written["settings/cnr_settings.json"].lightning, false)
     assertEq(env.hud().settings.lightning, false)
     assertEq(env.hud().settings.sound, false)
@@ -4971,7 +4989,7 @@ test("turning lightning off cancels the current flash and preserves its thunder"
     local nextPulse = events[1].pulses[2].start + 0.01
     env.M.onUpdate(nextPulse)
     assertEq(env.sky.objects.cnr_lightning_flash, nil)
-    assertEq(lines(), drawn)
+    assertEq(glow(), drawn)
     env.M.ui({action = "setting", key = "lightning", value = false})
     env.M.onUpdate(events[1].range / 343 + 0.01 - nextPulse)
     assertEq(thunderPlays(env), 1)
@@ -4983,10 +5001,10 @@ test("turning lightning off cancels the current flash and preserves its thunder"
     local pulse = events[2].pulses[2].start + 0.01
     env.M.onUpdate(pulse)
     assertEq(env.sky.objects.cnr_lightning_flash, nil)
-    assertEq(lines(), drawn)
+    assertEq(glow(), drawn)
     env.M.onUpdate(events[3].at - events[2].at - pulse + 0.001)
     assertEq(env.sky.objects.cnr_lightning_flash ~= nil, true)
-    assertEq(lines() > drawn, true)
+    assertEq(glow() > drawn, true)
   end)
 end)
 
@@ -5031,26 +5049,28 @@ test("light, emitter and pending thunder are discarded when their round or seed 
     missingSky = function(env) chaseWith(env, nil) end,
   }
   for name, exit in pairs(exits) do
-    withThunder(function(env, events, lines)
+    withThunder(function(env, events, glow)
       chaseWith(env, thunderSky(0))
       env.M.onUpdate(events[1].at)
       env.M.onUpdate(events[2].at - events[1].at + 0.001)
       assertEq(env.sky.objects.cnr_lightning_flash ~= nil, true, name)
       assertEq(env.sky.objects.cnr_thunder_1 ~= nil, true, name)
-      local drawn = lines()
+      assert(boltRods(env) > 0, name)
+      local drawn = glow()
       exit(env)
       env.M.onUpdate(0.01)
       assertEq(env.sky.objects.cnr_lightning_flash, nil, name)
       assertEq(env.sky.objects.cnr_thunder_1, nil, name)
+      assertEq(boltRods(env), 0, name)
       env.M.onUpdate(30)
       assertEq(thunderPlays(env), 1, name)
-      assertEq(lines(), drawn, name)
+      assertEq(glow(), drawn, name)
     end)
   end
 end)
 
 local function withBridge(fn)
-  withThunder(function(env, _, lines)
+  withThunder(function(env, _, glow)
     local camera, cast = core_camera, castRayStatic
     local pos, rays = vec3(0, 0, 0), 0
     _G.core_camera = {getPosition = function() return pos end}
@@ -5068,7 +5088,7 @@ local function withBridge(fn)
       chaseWith(env, sky)
       env.M.onUpdate(0.01)
       assertEq(rays, 1)
-      fn(env, pos, function() return rays end, lines)
+      fn(env, pos, function() return rays end, glow)
     end)
     _G.core_camera, _G.castRayStatic = camera, cast
     assert(ok, err)
@@ -5076,32 +5096,32 @@ local function withBridge(fn)
 end
 
 test("the first flash checks the moved camera under a bridge before rain's next poll", function()
-  withBridge(function(env, pos, rays, lines)
+  withBridge(function(env, pos, rays, glow)
     pos.x = 7
     env.M.onUpdate(0.13)
     assertEq(env.sky.objects.cnr_lightning_flash, nil)
-    assertEq(lines(), 0)
+    assertEq(glow(), 0)
     assertEq(rays(), 4)
     env.M.onUpdate(6)
     assertEq(thunderPlays(env), 1)
   end)
 end)
 
-test("a moving camera in a dark gap checks the roof when the return pulse starts", function()
-  withBridge(function(env, pos, rays, lines)
+test("entering a roofed area in a dark gap removes the scene before the return pulse", function()
+  withBridge(function(env, pos, rays, glow)
     env.M.onUpdate(0.13)
-    local light = assert(env.sky.objects.cnr_lightning_flash)
-    local drawn = lines()
+    assert(env.sky.objects.cnr_lightning_flash)
+    local drawn = glow()
     assert(drawn > 0)
     assertEq(rays(), 1)
     pos.x = 7
     env.M.onUpdate(0.07)
-    assertEq(light.fields.isEnabled, "0")
-    assertEq(rays(), 1)
+    assertEq(env.sky.objects.cnr_lightning_flash, nil)
+    assertEq(boltRods(env), 0)
+    assertEq(rays(), 4)
     env.M.onUpdate(0.048)
     assertEq(env.sky.objects.cnr_lightning_flash, nil)
-    assertEq(lines(), drawn)
-    assertEq(rays(), 4)
+    assertEq(glow(), drawn)
     env.M.onUpdate(6)
     assertEq(thunderPlays(env), 1)
   end)
@@ -5109,13 +5129,13 @@ end)
 
 test("unavailable or failing roof rays at the moved camera suppress the flash and preserve thunder", function()
   for _, failure in ipairs({"missing", "thrown"}) do
-    withBridge(function(env, pos, _, lines)
+    withBridge(function(env, pos, _, glow)
       pos.x = 7
       if failure == "missing" then _G.castRayStatic = nil
       else _G.castRayStatic = function() error("ray unavailable") end end
       env.M.onUpdate(0.13)
       assertEq(env.sky.objects.cnr_lightning_flash, nil, failure)
-      assertEq(lines(), 0)
+      assertEq(glow(), 0)
       env.M.onUpdate(6)
       assertEq(thunderPlays(env), 1)
     end)
@@ -5123,16 +5143,17 @@ test("unavailable or failing roof rays at the moved camera suppress the flash an
 end)
 
 test("a moving camera on a rain poll and an open pulse shares the one roof sample", function()
-  withBridge(function(env, pos, rays, lines)
+  withBridge(function(env, pos, rays, glow)
     pos.y = 7
     env.M.onUpdate(0.25)
     assertEq(rays(), 2)
     assertEq(env.sky.objects.cnr_lightning_flash.fields.isEnabled, "1")
-    assert(lines() > 0)
+    assert(glow() > 0)
+    local strikeY = env.sky.objects.cnr_lightning_flash.pos.y
     pos.y = 8
     env.M.onUpdate(0.01)
     assertEq(rays(), 3)
-    assertEq(env.sky.objects.cnr_lightning_flash.pos.y, 8)
+    assertEq(env.sky.objects.cnr_lightning_flash.pos.y, strikeY)
     env.M.onUpdate(0.01)
     assertEq(rays(), 3)
   end)
