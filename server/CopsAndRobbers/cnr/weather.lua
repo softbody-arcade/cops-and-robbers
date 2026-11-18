@@ -1,4 +1,5 @@
 local climate = require("cnr.climate")
+local GROUNDS = require("cnr.groundingWeather")
 
 local M = {}
 
@@ -16,7 +17,6 @@ local LOW_AT = 0.75
 local LIFT_AT = 0.875
 local DUSK_AT = 0.25
 
-local GROUNDS = { storm = true, fog = true, snow = true, thunderstorm = true }
 local BAD = {}
 for _, kind in ipairs(M.BAD) do BAD[kind] = true end
 local NEXT = {

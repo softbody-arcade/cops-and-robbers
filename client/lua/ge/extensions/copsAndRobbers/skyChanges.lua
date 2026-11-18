@@ -4,7 +4,7 @@ local M = {}
 M.CHANGE_SECONDS = schedule.CHANGE_SECONDS
 M.DRY_SECONDS = 180
 M.WINDOW_SECONDS = 120
-M.GROUNDED = { storm = true, thunderstorm = true, fog = true, snow = true }
+M.GROUNDED = require("copsAndRobbers/groundingWeather")
 
 local WET = { rain = true, storm = true, thunderstorm = true, snow = true }
 local CLEARING_FROM = { rain = true, thunderstorm = true, snow = true, fog = true }
