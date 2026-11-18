@@ -210,10 +210,16 @@ local function pointAt(route, s)
   end
 end
 
+function M.withinWaitRadius(heliPos, start)
+  if not heliPos or not isNumber(heliPos.x) or not isNumber(heliPos.y) then return false end
+  local dx, dy = heliPos.x - start.x, heliPos.y - start.y
+  return dx * dx + dy * dy <= M.WAIT_RADIUS ^ 2
+end
+
 function M.step(run, heliPos, dt)
   local route = run.routes[run.index]
   if route == nil then return nil end
-  if run.s >= route.length and run.moved then
+  if run.s >= route.length then
     run.index = run.index + 1
     route = run.routes[run.index]
     if route == nil then return nil end
@@ -222,35 +228,16 @@ function M.step(run, heliPos, dt)
   end
   if run.waiting then
     local start = route.points[1]
-    local near = false
-    if heliPos ~= nil and isNumber(heliPos.x) and isNumber(heliPos.y) then
-      local dx, dy = heliPos.x - start.x, heliPos.y - start.y
-      near = math.sqrt(dx * dx + dy * dy) <= M.WAIT_RADIUS
-    end
-    if not near then return vec3(start.x, start.y, start.z), vec3(0, 0, 0) end
+    if not M.withinWaitRadius(heliPos, start) then return vec3(start.x, start.y, start.z), vec3(0, 0, 0) end
     run.waiting = false
   end
-  run.moved = true
   run.s = math.min(route.length, run.s + M.SEARCH_SPEED * dt)
   local x, y, z, ux, uy, uz = pointAt(route, run.s)
   local sp = M.SEARCH_SPEED
   return vec3(x, y, z), vec3(ux * sp, uy * sp, uz * sp)
 end
 
-function M.aimPoint(run, t, from)
-  local route = run.routes[run.index] or run.routes[#run.routes]
-  if route == nil then return nil end
-  local x, y, z, ux, uy
-  if run.waiting and from ~= nil then
-    local start = route.points[1]
-    ux, uy = start.x - from.x, start.y - from.y
-    local d = math.sqrt(ux * ux + uy * uy)
-    local k = d > 0 and math.min(d, M.AIM_AHEAD) / d or 0
-    x, y, z = from.x + ux * k, from.y + uy * k, from.z
-  else
-    local s = run.routes[run.index] and run.s or route.length
-    x, y, z, ux, uy = pointAt(route, math.min(route.length, s + M.AIM_AHEAD))
-  end
+local function sweepAcross(x, y, z, ux, uy, t)
   local side = M.AIM_SIDE * math.sin(2 * math.pi * t / M.AIM_PERIOD)
   local len = math.sqrt(ux * ux + uy * uy)
   if len > 0 then
@@ -258,6 +245,22 @@ function M.aimPoint(run, t, from)
     y = y + ux / len * side
   end
   return x, y, z
+end
+
+function M.approachAim(from, start, t)
+  local dx, dy = start.x - from.x, start.y - from.y
+  local d = math.sqrt(dx * dx + dy * dy)
+  local k = d > 0 and math.min(d, M.AIM_AHEAD) / d or 0
+  return sweepAcross(from.x + dx * k, from.y + dy * k, from.z, dx, dy, t)
+end
+
+function M.aimPoint(run, t, from)
+  local route = run.routes[run.index] or run.routes[#run.routes]
+  if route == nil then return nil end
+  if run.waiting and from ~= nil then return M.approachAim(from, route.points[1], t) end
+  local s = run.routes[run.index] and run.s or route.length
+  local x, y, z, ux, uy = pointAt(route, math.min(route.length, s + M.AIM_AHEAD))
+  return sweepAcross(x, y, z, ux, uy, t)
 end
 
 function M.shift(run, jx, jy, jz)
