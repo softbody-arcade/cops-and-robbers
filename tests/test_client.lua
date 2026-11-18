@@ -506,6 +506,116 @@ test("toggle opens and closes the leaderboard", function()
   assertEq(has(L, "copsAndRobbersHud"), true)
 end)
 
+local function layoutEntry(L, file, app)
+  for _, entry in ipairs(L.disk[file].apps) do
+    if entry.appName == app then return entry end
+  end
+end
+
+test("How to play, Host panel and Leaderboard reopen at their edited positions and sizes", function()
+  local L = fakeLayouts()
+  local env = bootClient({ layouts = L })
+  env.tick(4, 0.5)
+  local cases = {
+    { app = "copsAndRobbersHowToPlay", open = { action = "help", open = true }, close = { action = "help", open = false }, width = "34em" },
+    { app = "copsAndRobbersPanel", toggle = { action = "toggleApp", name = "panel" }, width = "39em" },
+    { app = "copsAndRobbersLeaderboard", toggle = { action = "toggleApp", name = "board" }, width = "48em" },
+  }
+  for _, c in ipairs(cases) do
+    env.M.ui(c.open or c.toggle)
+    local entry = layoutEntry(L, L.name, c.app)
+    entry.placement = { right = "8em", bottom = "3em", width = c.width, height = "27em", ["min-width"] = "20em" }
+    entry.settings = { cnrAutoPlaced = true, hideInCockpit = true }
+    env.M.ui(c.close or c.toggle)
+    assertEq(has(L, c.app), false)
+  end
+  for _, c in ipairs(cases) do
+    env.M.ui(c.open or c.toggle)
+    assertPlacement(L, c.app, { right = "8em", bottom = "3em", width = c.width, height = "27em", ["min-width"] = "20em" })
+    local settings = layoutEntry(L, L.name, c.app).settings
+    assertEq(settings.cnrAutoPlaced, true)
+    assertEq(settings.hideInCockpit, nil)
+  end
+end)
+
+test("closing a board remembers each layout, then leaving with it open saves the newest edit for a fresh session", function()
+  local L = fakeLayouts()
+  local env = bootClient({ layouts = L })
+  local board, toggle = "copsAndRobbersLeaderboard", { action = "toggleApp", name = "board" }
+  env.tick(4, 0.5)
+  env.M.ui(toggle)
+  local first = { left = "7em", top = "50%", width = "28em", height = "20em" }
+  layoutEntry(L, L.name, board).placement = first
+  L.current = L.other
+  env.M.onGameStateUpdate({})
+  env.tick(1, 0.25)
+  local other = layoutEntry(L, L.other, board)
+  assertEq(other.placement.left, "1em")
+  other.placement = { right = 12, bottom = "28px", width = "50%", height = "24rem", margin = "auto" }
+  env.M.ui(toggle)
+  assertEq(layoutEntry(L, L.name, board), nil)
+  assertEq(layoutEntry(L, L.other, board), nil)
+  L.current = L.name
+  env.M.ui(toggle)
+  assertPlacement(L, board, first)
+  layoutEntry(L, L.name, board).placement.width = "51em"
+  env.M.onBeamMPServerLeave()
+  assertEq(layoutEntry(L, L.name, board), nil)
+  local again = bootClient({ layouts = L, files = env.written })
+  again.tick(4, 0.5)
+  again.M.ui(toggle)
+  assertEq(layoutEntry(L, L.name, board).placement.width, "51em")
+  L.current = L.other
+  again.M.onGameStateUpdate({})
+  again.tick(1, 0.25)
+  local restored = layoutEntry(L, L.other, board).placement
+  assertEq(restored.right, 12)
+  assertEq(restored.bottom, "28px")
+  assertEq(restored.width, "50%")
+  assertEq(restored.height, "24rem")
+  assertEq(restored.margin, "auto")
+end)
+
+test("existing manual panels keep their own placement until explicitly closed", function()
+  local L = fakeLayouts()
+  local panel = "copsAndRobbersPanel"
+  L.disk[L.name].apps = { { appName = panel, placement = { left = "12em", width = "45em" }, settings = { hideInCockpit = true } } }
+  L.disk[L.other].apps = { { appName = panel, placement = { right = "15em" } } }
+  local files = { ["settings/cnr_app_placements.json"] = { panel = { [L.name] = { left = "3em" } } } }
+  local env = bootClient({ layouts = L, files = files })
+  env.tick(4, 0.5)
+  local original = layoutEntry(L, L.name, panel)
+  assertEq(original.placement.left, "12em")
+  assertEq(original.settings.cnrAutoPlaced, nil)
+  assertEq(original.settings.hideInCockpit, true)
+  local toggle = { action = "toggleApp", name = "panel" }
+  env.M.ui(toggle)
+  assertEq(layoutEntry(L, L.name, panel), nil)
+  env.M.ui(toggle)
+  assertPlacement(L, panel, { left = "12em", width = "45em" })
+  env.M.onBeamMPServerLeave()
+  assertEq(layoutEntry(L, L.name, panel), nil)
+  assertEq(layoutEntry(L, L.other, panel).placement.right, "15em")
+end)
+
+test("unusable saved placements and manual entries without geometry use app defaults on reopen", function()
+  local L = fakeLayouts()
+  local files = { ["settings/cnr_app_placements.json"] = { howto = { [L.name] = { width = {} } }, board = false } }
+  local env = bootClient({ layouts = L, files = files })
+  env.tick(4, 0.5)
+  env.M.ui({ action = "help", open = true })
+  assertPlacement(L, "copsAndRobbersHowToPlay", HOWTO_PLACEMENT)
+  local toggle = { action = "toggleApp", name = "board" }
+  env.M.ui(toggle)
+  local board = "copsAndRobbersLeaderboard"
+  layoutEntry(L, L.name, board).placement = { width = "80em", height = "60em" }
+  env.M.ui(toggle)
+  table.insert(L.disk[L.name].apps, { appName = board })
+  env.M.ui(toggle)
+  env.M.ui(toggle)
+  assertPlacement(L, board, { left = "1em", top = "6em", width = "25em", height = "32em" })
+end)
+
 test("isOpen sees an app the player added", function()
   local L = fakeLayouts()
   local env = bootClient({ layouts = L })

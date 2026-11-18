@@ -1,11 +1,5 @@
 local M = {}
 
-local function copy(t)
-  local c = {}
-  for k, v in pairs(t or {}) do c[k] = v end
-  return c
-end
-
 local function deepCopy(t)
   if type(t) ~= "table" then return t end
   local c = {}
@@ -33,6 +27,14 @@ local function same(a, b)
   return true
 end
 
+local function usablePlacement(value)
+  if type(value) ~= "table" then return nil end
+  for _, key in ipairs({ "left", "right", "top", "bottom", "width", "height" }) do
+    local v = value[key]
+    if type(v) == "number" or (type(v) == "string" and v ~= "") then return value end
+  end
+end
+
 function M.group()
   return { createdCopy = {}, hidMod = {} }
 end
@@ -51,6 +53,8 @@ function M.leave(state, env, closeLayout)
   state.active = false
   state.placed, state.optedOut = {}, {}
   local api = env.api
+  local saved = env.savedPlacements
+  local changed = false
   for _, layout in ipairs(api.getAvailableLayouts() or {}) do
     local name = layout.filename
     local fresh = env.readLayout(name) or deepCopy(layout)
@@ -58,6 +62,14 @@ function M.leave(state, env, closeLayout)
     for i = #(fresh.apps or {}), 1, -1 do
       local app = fresh.apps[i]
       if app.appName == state.appName and (name == closeLayout or (type(app.settings) == "table" and app.settings.cnrAutoPlaced == true)) then
+        if saved then
+          local geometry = usablePlacement(app.placement)
+          if same(geometry, state.placement) then geometry = nil end
+          if not same(saved[name], geometry) then
+            saved[name] = deepCopy(geometry)
+            changed = true
+          end
+        end
         table.remove(fresh.apps, i)
         removed = true
       end
@@ -79,6 +91,7 @@ function M.leave(state, env, closeLayout)
       group.hidMod[name] = nil
     end
   end
+  if changed then env.savePlacements() end
   local current = api.getCurrentLayout()
   if type(current) == "table" and current.filename then api.setCurrentLayout(current.filename) end
 end
@@ -110,7 +123,8 @@ function M.tick(state, env)
   local modApps = not makesCopy and env.fromMod and env.fromMod(name) and deepCopy(fresh.apps or {})
   local updated = deepCopy(fresh)
   updated.apps = updated.apps or {}
-  updated.apps[#updated.apps + 1] = { appName = state.appName, placement = copy(state.placement), settings = { cnrAutoPlaced = true } }
+  local remembered = env.savedPlacements and usablePlacement(env.savedPlacements[name])
+  updated.apps[#updated.apps + 1] = { appName = state.appName, placement = deepCopy(remembered or state.placement), settings = { cnrAutoPlaced = true } }
   api.saveLayout(updated)
   local written = env.readLayout(name)
   if written and appIndex(written, state.appName) then
