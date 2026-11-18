@@ -9,7 +9,7 @@ One entry per piece of work that has started: what it is, its branch (or "design
 
 - [ ] !!! Trailer hitch restoration. The restored hitch held in the solo pull-away test on `7ff57c8`. Two follow-ups from that playtest:
   - `fix/restore-trailer-hitch`: restoring a turned truck and trailer straightens the trailer, which can move it into a building. Preserve their parked angle and footprint.
-  - `fix/active-round-trailer`: when Play replaces the truck successfully, delete its attached trailer and keep the round car at the end. Sit out still restores the rig.
+  - `fix/active-round-trailer`: normal and practice rounds should contain only the round vehicles and traffic. Remove active players’ spare cars and trailers after successful placement, keep their round cars at the end, and preserve Sit out restoration.
 - [ ] !! Five fixes on `fix/double-priority` passed review at `aace26b` and are on local in build `7ff57c8`.
   - **In game, round-car placement.** Check the car holds its assigned spot during prep and releases at the correct time. Delayed BeamMP registration through GO is covered by automation.
   - **Verified by automation, slow rocking.** Catch tests cover rocking with and without drift and a straight crawl.
