@@ -7,6 +7,7 @@ local OFFSET = {
   cloudy = { 2, -3 },
   rain = { 2, -5 },
   storm = { 1, -7 },
+  thunderstorm = { 2, -6 },
   fog = { 0, -6 },
 }
 

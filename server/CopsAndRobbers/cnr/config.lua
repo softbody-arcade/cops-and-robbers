@@ -48,7 +48,7 @@ M.DEFAULTS = {
 M.CHOICES = {
   carMode = { random = true, evolving = true },
   timeOfDay = { sunrise = true, morning = true, noon = true, afternoon = true, sunset = true, night = true, random = true },
-  weather = { clear = true, cloudy = true, rain = true, storm = true, fog = true, snow = true, random = true },
+  weather = { clear = true, cloudy = true, rain = true, storm = true, fog = true, snow = true, thunderstorm = true, random = true },
   dayLength = { off = true, fast = true, moderate = true, slow = true, realtime = true },
 }
 

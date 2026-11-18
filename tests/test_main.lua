@@ -1071,7 +1071,8 @@ test("New sky picks a date that fits the new weather", function()
   local env = boot({ config = '{"weather":"random","timeOfDay":"noon","badWeatherChancePercent":100}' })
   env.startRound()
   local fits = { snow = { [12] = true, [1] = true }, fog = { [10] = true, [11] = true },
-    rain = { [3] = true, [4] = true, [10] = true, [11] = true }, storm = { [3] = true, [4] = true, [10] = true, [11] = true } }
+    rain = { [3] = true, [4] = true, [10] = true, [11] = true }, storm = { [3] = true, [4] = true, [10] = true, [11] = true },
+    thunderstorm = { [5] = true, [6] = true, [7] = true, [8] = true, [9] = true } }
   math.randomseed(3)
   for _ = 1, 8 do
     env.sent = {}
@@ -1083,10 +1084,13 @@ test("New sky picks a date that fits the new weather", function()
   env.cleanup()
 end)
 
-test("the setup and New sky payloads carry the schedule", function()
+test("the setup and New sky payloads carry the schedule and strike seed", function()
   local env = boot({ config = '{"weather":"random"}' })
   env.startRound()
   local function check(s)
+    assertEq(type(s.lightningSeed), "number")
+    assertEq(s.lightningSeed % 1, 0)
+    assertEq(s.lightningSeed >= 1 and s.lightningSeed <= 2147483646, true)
     assertEq(type(s.changes), "table")
     assertEq(#s.temps >= 2, true)
     assertEq(type(s.gameStart), "number"); assertEq(type(s.releaseAt), "number")

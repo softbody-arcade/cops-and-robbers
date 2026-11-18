@@ -3,11 +3,14 @@ local M = {}
 M.CHANGE_SECONDS = 60
 M.DRY_SECONDS = 180
 M.WINDOW_SECONDS = 120
-M.GROUNDED = { storm = true, fog = true, snow = true }
+M.GROUNDED = { storm = true, thunderstorm = true, fog = true, snow = true }
 
-local WET = { rain = true, storm = true, snow = true }
-local CLEARING_FROM = { rain = true, snow = true, fog = true }
-local WORDS = { clear = "clear skies", cloudy = "clouds", rain = "rain", storm = "a storm", fog = "fog", snow = "snow" }
+local WET = { rain = true, storm = true, thunderstorm = true, snow = true }
+local CLEARING_FROM = { rain = true, thunderstorm = true, snow = true, fog = true }
+local WORDS = {
+  clear = "clear skies", cloudy = "clouds", rain = "rain", storm = "a storm",
+  thunderstorm = "a thunderstorm", fog = "fog", snow = "snow",
+}
 local KINDS = { "dry", "rain", "storm", "snow" }
 
 local function changesOf(p)
@@ -36,11 +39,13 @@ end
 
 function M.notice(from, to)
   if to == "fog" then return "Weather: fog rolling in" end
+  if to == "thunderstorm" then return "Weather: a thunderstorm is coming" end
   if from == "clear" and to == "cloudy" then return "Weather: clouds coming in" end
   if from == "cloudy" and to == "rain" then return "Weather: rain coming" end
   if from == "cloudy" and to == "snow" then return "Weather: snow coming" end
   if from == "rain" and to == "storm" then return "Weather: the rain is getting heavier" end
   if from == "storm" and to == "rain" then return "Weather: the storm is easing" end
+  if from == "thunderstorm" and to == "rain" then return "Weather: the thunderstorm is easing" end
   if from == "rain" and to == "snow" then return "Weather: the rain is turning to snow" end
   if from == "snow" and to == "rain" then return "Weather: the snow is turning to rain" end
   return "Weather: clearing up"
@@ -69,7 +74,7 @@ function M.forecast(p, t, heliOn)
       break
     end
   end
-  if not ch then return nil end
+  if not ch or (ch.afterStay and t < ch.forecastFrom) then return nil end
   local word = wordFor(from, ch.to)
   local text
   if t >= ch.forecastFrom then
@@ -90,11 +95,12 @@ end
 
 function M.prepForecast(p)
   local ch = changesOf(p)[1]
-  if not ch then return nil end
+  if not ch or ch.afterStay then return nil end
   return "Forecast: " .. wordFor(p.weather, ch.to) .. " " .. span(ch.forecastFrom, p.releaseAt or 0, " after release")
 end
 
 local function kindOf(w)
+  if w == "thunderstorm" then return "storm" end
   if WET[w] then return w end
   return "dry"
 end

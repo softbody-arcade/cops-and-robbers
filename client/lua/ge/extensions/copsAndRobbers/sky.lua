@@ -23,6 +23,7 @@ M.WEATHER = {
     precipitation = { dataBlock = "Snow_menu", numDrops = 5000, dropSize = 0.2, minSpeed = 0.1, maxSpeed = 0.3 },
   },
 }
+M.WEATHER.thunderstorm = M.WEATHER.storm
 
 M.BLEND_SECONDS = 3
 M.STEP_SECONDS = 0.5
@@ -35,12 +36,14 @@ local MONTHS = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", 
 local DAYS_IN_MONTH = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
 
 local saved, wasLocked, round, clockStart, target
+local stormSpans, frameLo, frameHi, frameCovered, frameStorm
 local lockTimer, lockAfter, restoring
 local roundTime, started, sinceWind = 0, false, 0
 local sinceStep, wrote, curveIndex, rainIndex, seenIndex, windOn, failed = 0, nil, nil, 0, 0, false, {}
 
 local function forget()
   wind.reset()
+  stormSpans, frameLo = nil, nil
   saved, wasLocked, round, clockStart, target = nil, false, nil, nil, nil
   roundTime, started, sinceWind = 0, false, 0
   sinceStep, wrote, curveIndex, rainIndex, seenIndex, windOn, failed = 0, nil, nil, 0, 0, false, {}
@@ -171,9 +174,53 @@ local function failGrip(err)
   pcall(surfaces.restore)
 end
 
-function M.apply(p)
+local function thunderstormSpans(p)
+  local seed = p.lightningSeed
+  if type(seed) ~= "number" or seed < 1 or seed > 2147483646 or seed ~= math.floor(seed) then return end
+  local spans = {}
+  local changes = p.changes or {}
+  local from = p.weather
+  if from == "thunderstorm" then
+    spans[#spans + 1] = {0, changes[1] and changes[1].at or math.huge}
+  end
+  for i, change in ipairs(changes) do
+    local finish = changes[i + 1] and changes[i + 1].at or math.huge
+    if change.to == "thunderstorm" then
+      spans[#spans + 1] = {change.at, finish}
+    elseif from == "thunderstorm" then
+      spans[#spans + 1] = {change.at, math.min(change.at + skyChanges.CHANGE_SECONDS, finish)}
+    end
+    from = change.to
+  end
+  return spans
+end
+
+local function intersectsStorm(lo, hi)
+  if hi > lo then
+    for _, span in ipairs(stormSpans) do
+      if hi >= span[1] and lo < span[2] and span[1] < span[2] then return true end
+    end
+  end
+  return false
+end
+
+local function runningDay(state, start, daySeconds, at)
+  if start and daySeconds and daySeconds > 0 then
+    state.time = (start + at / daySeconds) % 1
+    state.play, state.dayLength = true, daySeconds
+    return state
+  end
+end
+
+function M.apply(p, prep)
+  frameLo = nil
+  if prep then started = false end
+  if not setsSomething(p) then
+    if round then M.restore(true) end
+    return
+  end
   local env = core_environment
-  if not env or not setsSomething(p) then return end
+  if not env then return end
   if not saved then
     if restoring then
       saved, wasLocked = restoring.state, restoring.wasLocked
@@ -185,11 +232,12 @@ function M.apply(p)
     end
   end
   local newRound = round == nil
-  local at = tonumber(p.clockSeconds) or 0
+  local at = started and roundTime or tonumber(p.clockSeconds) or 0
   local state, curveNow = roundState(env, p, at)
   local from, to, progress, index = skyChanges.at(p, at)
   round, clockStart, target = p, state.time, state
-  if not started then roundTime = at end
+  stormSpans, roundTime = thunderstormSpans(p), at
+  if started then runningDay(state, clockStart, p.daySeconds, at) end
   wrote, curveIndex = { state.cloudCover, state.fogDensity, state.windSpeed }, curveNow
   rainIndex, seenIndex, sinceStep = index, index, 0
   env.enableChanges(true)
@@ -225,20 +273,17 @@ end
 function M.startClock(clockSeconds)
   local env = core_environment
   if not env or not round then return end
-  roundTime, started = clockSeconds or 0, true
-  local daySeconds = round.daySeconds or 0
+  if not started then roundTime = clockSeconds or 0 end
+  started = true
   local landing = lockTimer ~= nil
   if landing then
     env.enableChanges(true)
     env.setState(target)
   end
-  if daySeconds > 0 and clockStart then
+  local day = runningDay({}, clockStart, round.daySeconds, roundTime)
+  if day then
     env.enableChanges(true)
-    env.setState({
-      time = (clockStart + roundTime / daySeconds) % 1,
-      play = true,
-      dayLength = daySeconds,
-    })
+    env.setState(day)
     env.enableChanges(false)
   elseif landing then
     env.enableChanges(false)
@@ -319,14 +364,26 @@ local function pushWind(dt)
   be:setGroundWind(vec3(x, y, z))
 end
 
-function M.update(dt)
-  if rain.active() then
-    local ok, err = pcall(rain.update, dt)
-    if not ok then
-      rain.clear()
-      log("E", "cnr_sky", tostring(err))
+function M.lightningFrame()
+  if frameLo then return round, frameLo, frameHi, frameCovered, frameStorm end
+end
+
+function M.update(dt, hasVisualTail)
+  frameLo = nil
+  if core_environment and started then
+    local lo = roundTime
+    roundTime = roundTime + dt
+    if stormSpans then
+      frameLo, frameHi = lo, roundTime
+      frameStorm = intersectsStorm(lo, roundTime)
     end
   end
+  local ok, err = pcall(rain.update, dt, frameLo ~= nil and (frameStorm or hasVisualTail))
+  if not ok then
+    rain.clear()
+    log("E", "cnr_sky", tostring(err))
+  end
+  frameCovered = rain.covered()
   if not core_environment then return nil end
   if lockTimer then
     lockTimer = lockTimer - dt
@@ -338,7 +395,6 @@ function M.update(dt)
   if not round then return nil end
   local change
   if started then
-    roundTime = roundTime + dt
     change = newChange()
     sinceStep = sinceStep + dt
     if sinceStep >= M.STEP_SECONDS - EPSILON and not lockTimer and (round.changes or round.temps) then
@@ -361,6 +417,7 @@ function M.forecast(heliOn)
 end
 
 function M.restore(immediate)
+  started, frameLo = false, nil
   local env = core_environment
   if immediate then rain.clear() end
   if env and immediate and not saved and restoring then
@@ -404,7 +461,7 @@ function M.drop()
   forget()
 end
 
-M.BAD_WEATHER = { rain = true, storm = true, fog = true, snow = true }
+M.BAD_WEATHER = { rain = true, storm = true, thunderstorm = true, fog = true, snow = true }
 
 function M.isBadWeather(key)
   return M.BAD_WEATHER[key] == true

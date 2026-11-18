@@ -10,6 +10,7 @@ test("labels join the time and the weather", function()
   local sky = load()
   assertEq(sky.label(RAIN_NIGHT), "Night · Rain")
   assertEq(sky.label({ weather = "snow" }), "Snow")
+  assertEq(sky.label({ weather = "thunderstorm" }), "Thunderstorm")
   assertEq(sky.label({ daySeconds = 1800 }), nil)
 end)
 
@@ -150,6 +151,23 @@ test("a round sky is applied and locked", function()
   assertEq(fake.models.ASPHALT.cdata.staticFrictionCoefficient, 0.92)
   sky.update(4)
   assertEq(fake.locked, true)
+end)
+
+test("a thunderstorm has the same sky and rain as a gale", function()
+  local sky, fake = load()
+  assertEq(sky.isBadWeather("thunderstorm"), true)
+  local gale = sky.WEATHER.storm
+  local thunderstorm = sky.WEATHER.thunderstorm
+  assertEq(thunderstorm ~= nil, true)
+  for _, field in ipairs({ "cloudCover", "fogDensity", "windSpeed" }) do
+    assertEq(thunderstorm[field], gale[field], field)
+  end
+  for field, value in pairs(gale.precipitation) do
+    assertEq(thunderstorm.precipitation[field], value, field)
+  end
+  sky.apply({ weather = "thunderstorm" })
+  sky.update(0.1)
+  assertEq(fake.objects.cnr_precipitation:getField("dataBlock"), "rain_medium")
 end)
 
 test("a part on the map's own comes from the map's start values", function()
@@ -1080,4 +1098,59 @@ test("the prep label adds the first change's forecast to the sky label", functio
   p.changes = {}
   assertEq(sky.prepLabel(p), "Noon · Clear")
   assertEq(sky.prepLabel(nil), nil)
+end)
+
+test("only seeded GO frames publish a strike interval, including short superseded blends", function()
+  local sky = load()
+  local changes = {{at = 10, to = "thunderstorm"}, {at = 20, to = "rain"}, {at = 30, to = "clear"}, {at = 100, to = "thunderstorm"}}
+  local p = {weather = "clear", lightningSeed = 1, changes = changes}
+  sky.apply(p)
+  sky.update(1)
+  assertEq(sky.lightningFrame(), nil)
+  sky.startClock(0)
+  for _, row in ipairs({{9, false}, {10, true}, {25, true}, {30, true}, {99, false}, {101, true}, {1000, true}}) do
+    local t = row[1]
+    local _, _, prev = sky.lightningFrame()
+    sky.update(t - (prev or 0))
+    local frame, lo, hi, _, intersects = sky.lightningFrame()
+    assertEq(frame, p); assertEq(lo, prev or 0); assertEq(hi, t); assertEq(intersects, row[2])
+  end
+  sky.restore(true)
+  assertEq(sky.lightningFrame(), nil)
+  sky.apply({weather = "thunderstorm"})
+  sky.startClock(0)
+  sky.update(1, true)
+  assertEq(sky.lightningFrame(), nil)
+end)
+
+test("GO frames and applied weather keep the joined clock on reapply", function()
+  local sky, fake = started({clockSeconds = 613.4, lightningSeed = 55})
+  sky.update(0.1)
+  local _, lo, hi = sky.lightningFrame()
+  assertNear(lo, 613.4, 1e-9)
+  assertNear(hi, 613.5, 1e-9)
+  sky.apply(changing({clockSeconds = 0, lightningSeed = 55}))
+  assertEq(sky.lightningFrame(), nil)
+  assertEq(fake.state.cloudCover, sky.WEATHER.rain.cloudCover)
+  assertEq(fake.state.play, true)
+  assertNear(fake.state.time, (1 - sky.START_LEAD + 613.5 / 1800) % 1, 1e-8)
+  sky.update(0.1)
+  _, lo, hi = sky.lightningFrame()
+  assertNear(lo, 613.5, 1e-9)
+  assertNear(hi, 613.6, 1e-9)
+  sky.drop()
+  assertEq(sky.lightningFrame(), nil)
+end)
+
+test("restore invalidates a started frame when the engine environment has gone away", function()
+  local sky = started({weather = "thunderstorm", lightningSeed = 55})
+  sky.update(0.1)
+  assert(sky.lightningFrame())
+  local env = core_environment
+  _G.core_environment = nil
+  sky.restore()
+  _G.core_environment = env
+  assertEq(sky.lightningFrame(), nil)
+  sky.update(0.1)
+  assertEq(sky.lightningFrame(), nil)
 end)

@@ -1,6 +1,6 @@
 local M = {}
 
-M.GROUNDED = { storm = true, fog = true, snow = true }
+M.GROUNDED = { storm = true, fog = true, snow = true, thunderstorm = true }
 M.LOSE_SECONDS = 2
 
 function M.new(cfg, grounded, now, random)

@@ -50,9 +50,9 @@ Switch "Evolving car" on in the panel. Instead of a random car each round, every
 
 - **Lobby card** (between rounds): who is online, a line saying whether a round is waiting, buttons for Settings, How to play, Leaderboard, Host panel, Sit out and Hide, and a yellow line for a standing problem (no reset button bound, an outdated copy, BeamNG.Earth too old).
 - **Sit out:** keeps you out of rounds until you press it again (it then reads Play). You're never the runner, and when a round is set up your car leaves the map and comes back where it stood when the round ends. It lasts until you leave the server. Pressed during a round, it counts from the next one. Start only refuses when everyone sits out. Practice still works: with Sit out on, the panel's **Practice: watch the AI** runs an AI runner against two AI cops and you spectate them.
-- **Spectating:** a player who sits out, or who joins while a round is running, watches instead of playing. The card shows "SPECTATING · Bob" (or "free camera"), the round clock and the helicopter, with Sit out (or Play), How to play, Leaderboard and Host panel. The game's own switch-car keys (Tab and Ctrl+Tab by default) go through the players' cars, the runner's too, and free camera (Shift+C by default) works. Spectators don't drive, can't spawn a car and count for nothing in the round. After the round they're back in the lobby and play the next one unless they sit out.
+- **Spectating:** a player who sits out, or who joins while a round is running, watches instead of playing. The card shows "SPECTATING · Bob" (or "free camera"), the round clock and the helicopter, with Sit out (or Play), How to play, Leaderboard, Host panel and Settings. The game's own switch-car keys (Tab and Ctrl+Tab by default) go through the players' cars, the runner's too, and free camera (Shift+C by default) works. Spectators don't drive, can't spawn a car and count for nothing in the round. After the round they're back in the lobby and play the next one unless they sit out.
 - **Hide:** folds the lobby card into a small "Cops and Robbers" tab at the same place; click the tab to bring the card back. The yellow warning lines still show above the tab. Your choice is saved in your own game. Your rounds always show the full HUD, and the lobby after them goes back to your choice.
-- **Player settings:** the Settings button opens a card with your car colour, five switches and a choice: **Auto headlights** (on by default; low beam at night and in rain, storm, fog and snow, and off again at sunrise in clear weather; the mod only acts when something changes, so your own light key still works), **Siren** (off by default; as a cop, the light bar runs with siren once cops are released; the host can turn Cop sirens off for everyone), **Searchlight beam** (on by default; off removes the helicopter's beam in the air, which helps the frame rate; the light and its glare stay), **Helicopter sound** (on by default; the police helicopter's rotor, heard from far off, day and night; off fades it out on your game) and **Helicopter model** (on by default; the helicopter's body, a flying Ibishu Pigeon van in its Bird Response livery with aviation lights, made once from your own game's Pigeon; off removes it on your game). The choice is **Route to the runner** (as a cop: Always, Out of sight or Never; Out of sight by default). They are saved in your own game and apply on every server. Distances and speeds on the chase line and in How to play follow the game's unit setting (metric or imperial); the Host panel stays metric.
+- **Player settings.** The Settings button is available in the lobby, during prep, while chasing and while spectating. It opens a card with your car colour, six switches and a choice. **Auto headlights** (on by default) switches your low beam on at night and in rain, storms, thunderstorms, fog and snow. The lights go off again at sunrise in clear weather. The mod only acts when the conditions change, so your own light key still works. **Siren** (off by default) adds sound to a cop's light bar after release if the host allows Cop sirens. Turning off **Searchlight beam** (on by default) hides the beam in the air to help the frame rate while keeping its light and glare. Turning off **Helicopter sound** (on by default) fades out the rotor on your game. Turning off **Helicopter model** (on by default) hides the helicopter's body and aviation lights. The body is a flying Ibishu Pigeon van in its Bird Response livery, made once from your own game's Pigeon. Turning off **Lightning flashes** (on by default) hides flashes and bolts while thunder still plays. Cops can set **Route to the runner** to Always, Out of sight (default) or Never. These settings are saved in your own game and apply on every server. The chase line and How to play follow your game's distance and speed units. The Host panel uses metric units.
 - **Colour:** a colour picker with a hex field, "No colour" and Done. The colour is used for every round car, repaints at once in prep and otherwise applies from the next round.
 - **Prep:** the centre shows your role ("YOU'RE THE RUNNER" or "YOU'RE A COP", and for cops the runner's name). The bottom shows "Waiting for the host to press GO" with the Settings, How to play and Host panel buttons. In evolving mode it shows the runner's queued change instead, with Apply change for the runner.
 - **Countdowns:** "RUNNER STARTS IN", "COPS RELEASED IN" and "CRASH PENALTY", then "GO!" or "PENALTY OVER".
@@ -93,7 +93,7 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `copSpawnMinMeters` / `copSpawnMaxMeters` | 50 / 150 | Cop start distance from the runner, by road |
 | `crashSpeedLossKmh` | 50 | Speed lost within 0.5 s that counts as a crash (~2.8 G) |
 | `crashPenaltySeconds` | 10 | Freeze for the cop at fault, within `copResetMinDistanceMeters` of the runner |
-| `helicopter` | true | Police helicopter that searches for the runner and tracks them while it sees them; grounded in storm, fog and snow until the weather clears |
+| `helicopter` | true | Police helicopter that searches for the runner and tracks them while it sees them. Grounded in storms, thunderstorms, fog and snow until the weather clears |
 | `helicopterArrivalSeconds` | 60 | It arrives this long after the cops are released (0 = at release) |
 | `helicopterUpSeconds` | 120 | How long it flies before it refuels (more than 0) |
 | `helicopterRefuelSeconds` | 90 | How long it is away refuelling (0 = stays up) |
@@ -114,12 +114,12 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `timeOfDay` | random | `sunrise`, `morning`, `noon`, `afternoon`, `sunset`, `night` or `random` |
 | `nightChancePercent` | 25 | Chance of night when Time of day is random |
 | `dayLength` | moderate | How long a full day lasts during the chase: `off` (stopped), `fast` (15 min), `moderate` (30 min), `slow` (2 h) or `realtime` (24 h) |
-| `weather` | random | `clear`, `cloudy`, `rain`, `storm`, `fog`, `snow` or `random` |
-| `badWeatherChancePercent` | 25 | Chance of rain, storm, fog or snow when Weather is random |
+| `weather` | random | `clear`, `cloudy`, `rain`, `storm`, `thunderstorm`, `fog`, `snow` or `random` |
+| `badWeatherChancePercent` | 25 | Chance of picking the bad-weather group (rain, storm, thunderstorm, fog or snow) for a random start or at a planned slot with both calm and bad options |
 | `weatherDriving` | true | Weather changes grip and adds wind (not on BeamNG.Earth) |
-| `weatherChanges` | true | The weather changes during the chase, only into a weather that fits the temperature and time of day (not on BeamNG.Earth) |
-| `weatherChangeMinMinutes` | 3 | The least time between two weather changes, in whole minutes (at least 1) |
-| `weatherChangeMaxMinutes` | 8 | The most time between two weather changes (never below the minimum) |
+| `weatherChanges` | true | Planned slots during the chase can keep the current weather or pick an eligible change based on the current weather, temperature and time of day. Available on regular maps |
+| `weatherChangeMinMinutes` | 3 | Shortest wait before the next planned slot, in whole minutes (at least 1). The wait starts at cop release, the previous slot or a forced change |
+| `weatherChangeMaxMinutes` | 8 | Longest wait drawn from the same starting point (at least the minimum). A forced change restarts the wait, and stays can extend the time between actual changes |
 | `trafficPerPlayer` | 5 | AI traffic cars around each player during a round (0 = off, at most 20; normal maps only, not on BeamNG.Earth yet) |
 | `trafficRunnerOnly` | false | Only the runner's game spawns traffic (the same `trafficPerPlayer` count); cops spawn none. Fewer AI cars for better performance |
 
@@ -130,8 +130,7 @@ off). With `trafficRunnerOnly` (panel: Traffic for the runner only) only the run
 better performance; practice rounds keep their traffic either way, except a practice you only watch (Sit out on), which has none. They spawn in prep, stand still until GO, and are removed when the round ends. There are no police or emergency
 vehicles among them, and they have no name tags, so every car with lights is a cop and every name tag is a player. A
 cop who drives into a traffic car gets the crash penalty ("crash penalty 10s (traffic)"), as with any crash only within
-`copResetMinDistanceMeters` of the runner; one who gets hit by traffic doesn't. While it rains, storms, fogs or snows traffic drives with its headlights on (it follows the weather as it changes); at night it follows the game's own
-lights. Traffic is off on BeamNG.Earth for now.
+`copResetMinDistanceMeters` of the runner; one who gets hit by traffic doesn't. Traffic headlights follow the weather and switch on in rain, storms, thunderstorms, fog and snow. At night they follow the game's own lights. Traffic is off on BeamNG.Earth for now.
 
 Every player's game simulates everyone's traffic. If that gets heavy, BeamMP's "Simplify remote vehicles" option makes
 other players' cars, traffic included, lighter to run.
@@ -152,6 +151,12 @@ looked up and remembered by the server as they drive. Players need a BeamNG.Eart
 
 The helicopter's rotor sound is "Helicopter Rotor Loop" by qubodup, https://freesound.org/people/qubodup/sounds/187681/, CC0
 (shipped as a mono OGG in `client/art/sound/cnr/heli_rotor.ogg`, made louder by +6 dB with a limiter).
+
+The thunder clips use three CC0 originals. To recreate the shipped clips, use [tools/thunder/cut.sh](tools/thunder/cut.sh).
+
+- [sfx_thunder blast.wav by bajko](https://freesound.org/people/bajko/sounds/399656/)
+- [Distant Thunder Clap_Gentle.wav by mikala_oidua](https://freesound.org/people/mikala_oidua/sounds/347562/)
+- [230405 Thunder DRY rolling distant low rumbles, roof, EM272s, Toronto 7am by TRP](https://freesound.org/people/TRP/sounds/717845/)
 
 ## Development
 

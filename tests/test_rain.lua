@@ -286,3 +286,56 @@ test("a new round's rain during the last round's fade starts without the roof", 
     assertNear(fake.objects.cnr_rain_sound.volume, tonumber(obj:getField("numDrops")) / RAIN.numDrops, 0.01)
   end)
 end)
+
+test("lightning shares the first roof check with rain and waits for the roof to open", function()
+  withRoof(3, function(roof)
+    load()
+    local cast, rays = castRayStatic, 0
+    _G.castRayStatic = function(...) rays = rays + 1; return cast(...) end
+    rain.target(RAIN, 0)
+    rain.update(0.01, true)
+    assertEq(rain.covered(), true); assertEq(rays, 3)
+    assertEq(fake.objects.cnr_rain_sound.volume, 1)
+    rain.update(0.24, true)
+    assertEq(rays, 3)
+    rain.update(0.01, true)
+    assertEq(rays, 6); assertEq(fake.objects.cnr_rain_sound.volume, 0.5)
+    roof.height = nil
+    rain.update(0.25, true)
+    assertEq(rain.covered(), true)
+    rain.update(0.25, true)
+    assertEq(rain.covered(), false); assertEq(fake.objects.cnr_rain_sound.volume, 1)
+    rain.target(nil, 0)
+    rain.target(nil, 1)
+    assertEq(rain.covered(), false)
+    rain.resetRoof()
+    assertEq(rain.covered(), nil)
+    rain.update(0.01, true)
+    assertEq(rain.covered(), false)
+    rain.update(1, false)
+    assertEq(rain.covered(), nil)
+    assertEq(rays, 9)
+    rain.clear()
+    assertEq(rain.covered(), nil)
+  end)
+end)
+
+test("unavailable camera or ray invalidates an earlier clear roof reading", function()
+  withRoof(nil, function()
+    load()
+    local camera, cast = core_camera, castRayStatic
+    for _, failure in ipairs({"camera", "ray", "thrown"}) do
+      _G.core_camera, _G.castRayStatic = camera, cast
+      rain.update(0.25, true)
+      assertEq(rain.covered(), false)
+      if failure == "camera" then _G.core_camera = nil
+      elseif failure == "ray" then _G.castRayStatic = nil
+      else _G.castRayStatic = function() error("ray failed") end end
+      rain.update(0.25, true)
+      assertEq(rain.covered(), nil)
+    end
+    _G.core_camera, _G.castRayStatic = camera, function() return nil end
+    rain.update(0.25, true)
+    assertEq(rain.covered(), false)
+  end)
+end)

@@ -45,6 +45,29 @@ test("storm gusts never pass the peak or turn more than 30 degrees", function()
   end
 end)
 
+test("a thunderstorm has lighter steady wind and gusts with wider turns than a gale", function()
+  local x, y = wind.at("thunderstorm", 4242, 0, 0)
+  assertNear(speed(x, y), 10, 1e-6)
+  local spec = wind.WEATHER.thunderstorm
+  assertEq(spec.peak, 24)
+  assertEq(spec.every[1], 4)
+  assertEq(spec.every[2], 12)
+  assertEq(spec.length[1], 1)
+  assertEq(spec.length[2], 4)
+  assertEq(spec.turn, 45)
+  local strongest, widest = 0, 0
+  for i = 0, 6000 do
+    local t = i * 0.1
+    x, y = wind.at("thunderstorm", 4242, 0, t)
+    local s, a = speed(x, y), math.abs(math.deg(math.atan(x, y)))
+    assertEq(s <= 24 + 1e-6, true, "peak at " .. t)
+    assertEq(a <= 45 + 1e-6, true, "turn at " .. t)
+    strongest, widest = math.max(strongest, s), math.max(widest, a)
+  end
+  assertEq(strongest > 17, true)
+  assertEq(widest > 30, true)
+end)
+
 test("rain and snow gusts stay realistic: about 1.5 times the steady wind, turning up to 15 degrees", function()
   for _, w in ipairs({ { "rain", 5, 8 }, { "snow", 4, 6 } }) do
     local turned, strongest = false, 0

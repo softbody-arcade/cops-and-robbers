@@ -6,7 +6,6 @@ M.DAY_SECONDS = weather.DAY_SECONDS
 
 local DAY = { "sunrise", "morning", "noon", "afternoon", "sunset" }
 local CALM = { "clear", "cloudy" }
-local BAD = { "rain", "storm", "fog", "snow" }
 local DAYS_IN_MONTH = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
 local SPRING_AUTUMN = { 3, 4, 10, 11 }
 local WHOLE_YEAR = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 }
@@ -15,6 +14,7 @@ local WINDOWS = {
   fog = { 10, 11 },
   rain = SPRING_AUTUMN,
   storm = SPRING_AUTUMN,
+  thunderstorm = { 5, 6, 7, 8, 9 },
   clear = WHOLE_YEAR,
   cloudy = WHOLE_YEAR,
 }
@@ -28,7 +28,7 @@ end
 local function pickWeather(cfg, random)
   if cfg.weather ~= "random" then return cfg.weather end
   local list = CALM
-  if random() * 100 < cfg.badWeatherChancePercent then list = BAD end
+  if random() * 100 < cfg.badWeatherChancePercent then list = weather.BAD end
   return list[random(#list)]
 end
 
@@ -58,6 +58,7 @@ function M.pick(cfg, random, geo, year)
     windSeed = random(1, 2147483646),
   }
   s.weatherSeed = random(1, 2147483646)
+  s.lightningSeed = random(1, 2147483646)
   local plan = weather.build(s, cfg)
   s.changes, s.temps, s.gameStart, s.releaseAt = plan.changes, plan.temps, plan.gameStart, plan.releaseAt
   return s
@@ -77,6 +78,7 @@ function M.payload(s, cfg, clockSeconds)
     day = s.day,
     windDir = s.windDir,
     windSeed = s.windSeed,
+    lightningSeed = s.lightningSeed,
     clockSeconds = clockSeconds,
     daySeconds = M.DAY_SECONDS[cfg.dayLength],
     changes = s.changes,
@@ -88,7 +90,7 @@ function M.payload(s, cfg, clockSeconds)
   return p
 end
 
-local RANK = { clear = 0, cloudy = 1, rain = 2, fog = 3, snow = 3, storm = 4 }
+local RANK = { clear = 0, cloudy = 1, rain = 2, fog = 3, snow = 3, storm = 4, thunderstorm = 4 }
 
 local function worst(s, clock)
   local w = s.weather

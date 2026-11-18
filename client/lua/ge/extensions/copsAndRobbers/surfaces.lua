@@ -164,6 +164,7 @@ function M.blend(weights)
 end
 
 function M.apply(weather)
+  if weather == "thunderstorm" then weather = "storm" end
   if not M.RULES[weather] then
     M.restore()
     return

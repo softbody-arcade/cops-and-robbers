@@ -16,6 +16,7 @@ local nearby = require("copsAndRobbers/nearby")
 local sky = require("copsAndRobbers/sky")
 local heli = require("copsAndRobbers/heli")
 local heliSound = require("copsAndRobbers/heliSound")
+local lightning = require("copsAndRobbers/lightning")
 local heliVan = require("copsAndRobbers/heliVan")
 local shelter = require("copsAndRobbers/shelter")
 local traffic = require("copsAndRobbers/traffic")
@@ -250,6 +251,7 @@ end
 
 local heliState = heli.new()
 local soundState = heliSound.new()
+local lightningState = lightning.new()
 local vanState = heliVan.new()
 
 local function setHeli(h)
@@ -261,6 +263,12 @@ local function setHeli(h)
   local seconds = tonumber(h.seconds)
   hudfeed.heli({ phase = h.phase, reason = h.reason, endsAt = seconds and clock + seconds or nil })
   if prefs.model ~= false then heliVan.prepare(vanState) end
+end
+
+local function applySetupSky(p, phase)
+  local running = phase == "countdown" or phase == "headstart" or phase == "running"
+  sky.apply(p, not running)
+  if running then sky.startClock(p and p.clockSeconds or 0) end
 end
 
 local function onRoundSetup(data)
@@ -309,15 +317,12 @@ local function onRoundSetup(data)
   placeVehicle(d.model, roundConfig, pos, rot, d.color, d.startPose ~= nil, personal)
   if pendingPlacement and d.startPose and not pos then pendingPlacement.startPose = d.startPose end
 
-  sky.apply(d.sky)
-  local skyLabel = sky.prepLabel(d.sky)
   local phase = d.phase or "running"
+  applySetupSky(d.sky, phase)
+  local skyLabel = sky.prepLabel(d.sky)
   runnerOut = phase == "headstart" or phase == "running"
   lightsState = ownLights.new(prefs.headlights)
   lightsPlaced = false
-  if phase == "countdown" or phase == "headstart" or phase == "running" then
-    sky.startClock(d.sky and d.sky.clockSeconds or 0)
-  end
   traffic.setWeather(sky.weather())
   frozen = phase == "prep" or phase == "applying" or phase == "ready" or phase == "countdown" or (phase == "headstart" and role == "cop")
   if phase == "applying" then hudfeed.applying(true) end
@@ -353,12 +358,9 @@ local function onSpectate(data)
   inputs.lockEditing("all")
   traffic.removeOwn()
   spectator.park()
-  sky.apply(d.sky)
   local phase = d.phase or "running"
+  applySetupSky(d.sky, phase)
   runnerOut = phase == "headstart" or phase == "running"
-  if phase == "countdown" or phase == "headstart" or phase == "running" then
-    sky.startClock(d.sky and d.sky.clockSeconds or 0)
-  end
   traffic.setWeather(sky.weather())
   timerEnd = nil
   if phase == "countdown" then
@@ -642,6 +644,7 @@ local function endRound(leaving)
   hudfeed.clearRound()
   heli.clear(heliState)
   heliSound.clear(soundState)
+  lightning.clear(lightningState)
   heliVan.clear(vanState)
   lightsState = nil
   sky.restore(leaving)
@@ -1000,7 +1003,7 @@ end
 
 local coverFailed = false
 
-local function updateHeli(runnerObj)
+local function updateHeli(target)
   if runnerOut and castRayStatic then
     local car = role == "runner" and ownVehicle() or ai.runnerObject()
     if car then
@@ -1016,7 +1019,6 @@ local function updateHeli(runnerObj)
     end
   end
   if active or spectating then
-    local target = role == "runner" and ownVehicle() or runnerObj
     local opts = { weather = traffic.weather(), beam = prefs.beam ~= false, roads = roadData }
     if castRayStatic then opts.roofedAt = roofedAt end
     local wantsNight = heli.wantsNight(heliState)
@@ -1035,7 +1037,7 @@ end
 
 local function onUpdate(dtReal)
   clock = clock + (dtReal or 0)
-  local change = sky.update(dtReal or 0)
+  local change = sky.update(dtReal or 0, lightning.hasVisualTail(lightningState))
   if change then
     traffic.setWeather(change.to)
     hudfeed.event(change.notice, clock, "info")
@@ -1056,9 +1058,14 @@ local function onUpdate(dtReal)
     watchedId = watched and watched:getID() or nil
   end
   local runnerObj = (active and role == "cop" or spectating) and runnerObject() or nil
+  local target = role == "runner" and ownVehicle() or runnerObj
+  if active or spectating then
+    local p, lo, hi, covered, intersectsStorm = sky.lightningFrame()
+    lightning.tick(lightningState, p, lo, hi, target, prefs.lightning ~= false, covered, intersectsStorm)
+  end
   updateSight(runnerObj)
   updateHiding(runnerObj)
-  updateHeli(runnerObj)
+  updateHeli(target)
   updateBuild()
   updateModes()
   if active or spectating then inputs.enforceEditLock() end
@@ -1283,6 +1290,7 @@ function M.ui(msg)
     if playerSettings.set(prefs, msg.key, msg.value) then
       pcall(jsonWriteFile, playerSettings.FILE, prefs, true)
       hudfeed.settings(prefs)
+      if msg.key == "lightning" and not prefs.lightning then lightning.hide(lightningState) end
       if msg.key == "model" and prefs.model and heliState.phase then heliVan.prepare(vanState) end
     end
   elseif action == "toggleApp" then
