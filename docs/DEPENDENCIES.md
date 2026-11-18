@@ -1,12 +1,11 @@
 # Dependencies and compatibility checks
 
-The mod has no package dependencies. It does lean on three external systems: BeamMP (server and client), BeamNG.drive and BeamNG.Earth. This file lists what we use from each one, where in our code we use it, and what to check when that system updates.
+The mod uses the BeamMP server and client APIs and the BeamNG.drive engine. This file lists the APIs the mod uses and what to check after an update.
 
 Versions in use on 2026-11-15:
 - BeamNG.drive 0.40.5.0
 - BeamMP Server 3.9.3 (Lua 5.3.5)
 - BeamMP Launcher 2.8.1
-- BeamNG.Earth mod API v1
 
 Checked against: the game-engine facts in this file were last checked on 2026-11-16 against BeamNG.drive 0.40.5.0, the BeamMP client mod 4.23.1 and BeamMP Server 3.9.3.
 
@@ -30,7 +29,7 @@ Checked against: the game-engine facts in this file were last checked on 2026-11
    - Typing in Excluded cars doesn't move the car.
    - It folds into its bar on GO.
    - The leaderboard (lobby card button) opens, shows the Rounds tab, and hides during a round.
-6. Also play one round on BeamNG.Earth if that map is in use (see its section below).
+6. Open the Map tab on West Coast USA and another level such as Italy. Check that the stations and distances match the current level.
 
 Then do the checks for whatever actually updated.
 
@@ -157,7 +156,7 @@ Then do the checks for whatever actually updated.
   - Spectators: `switch_next_vehicle` and `switch_previous_vehicle` (Tab and Ctrl+Tab by default) stay open with the free camera actions, while `recover_vehicle`, `recover_vehicle_alt`, `recover_to_last_road` and `loadHome` join the locked group (they would rewind or move a watched car on the spectator's screen; the action filter rebuilds from the group on every `addAction`, so they are free again after the round). They run `core_input_vehicleSwitching.switchCycleVehicle`, which enters the next vehicle in the game's own order and then fires the GE hook `onVehicleCycleSwitchPerformedByUser(dir, player, vehId)`; when that isn't a round car we `be:enterVehicle(0, car)` the next round car instead, and `commands.setGameCamera()` from free cam. `commands.setFreeCamera()` before a sitting-out player's car is removed keeps the camera where it was. On update, check the hook still fires and the order still skips `unicycle` and `playerUsable = false` cars.
   - Spectators' cars come back with `core_vehicles.spawnNewVehicle(model, { config, pos, rot, autoEnterVehicle })` from `core_vehicle_manager.getVehicleData(id).config` with its `partsTree` flattened by `core_vehicle_partmgmt.partsTreeToPartsMap` (as the career inventory does).
   - We replace the globals `resetGameplay` and `spawn.teleportToLastRoad`, and `freeroam_bigMapMode.teleportToPoi`.
-- **Gas stations:** `freeroam_facilities.getFacilitiesByType("gasStation")` and `freeroam_gasStations.gasStationCenterRadius(f)`.
+- **Gas stations:** `freeroam_facilities.getFacilitiesByType("gasStation")` lists the level's facilities. `freeroam_gasStations.gasStationCenterRadius(f)` returns the 3D center and radius that the server saves per level.
 - **Evolving car mode:**
   - `core_vehicle_manager.getPlayerVehicleData().config` (a `partsTree` plus `vars` in 0.40) and `core_vehicle_partmgmt.partsTreeToPartsMap`, the same conversion the game's own "save config" uses.
   - `FS:getFileOriginInfo(pc).archivePath` (configs from `/mods/multiplayer/` count as server-provided).
@@ -203,7 +202,8 @@ Then do the checks for whatever actually updated.
   - `settings.getValue("uiUnitLength")` (metric or imperial, for the HUD chase line and How to play) and `core_environment.getLightState().isNight` for the night check.
   - On update, check: these still exist; in game, with Auto headlights on a night round the lights are on at placement, switching them off with the light key keeps them off, and Rain turns them on again; a cop with Siren on has no siren in prep or the head start and a siren from release; Siren on as a cop in an Ibishu Pigeon (or midtruck/ATV): lights stay on, no siren; with the game set to imperial the chase line and How to play show ft, mi and mph while the Host panel stays metric.
 - **Other:**
-  - `core_groundMarkers.setPath`, `guihooks.trigger`, `extensions.hook` / `load`. We no longer call `ui_message`.
+  - `core_groundMarkers.setPath(target)` draws the route to a 3D target. `core_groundMarkers.setPath(nil)` clears it.
+  - `guihooks.trigger` and `extensions.hook` / `load`.
   - `core_levels.getLevelTitle(id)` gives the map's real name for the panel and leaderboard (`game.lua`, `mapTitle`). If it goes missing we fall back to a prettified id.
   - `FS:fileExists`, `getCurrentLevelIdentifier`, `getObjectByID`, `getPlayerVehicle(0)`.
   - The hooks `onUpdate`, `onVehicleResetted`, `onClientEndMission`, `onExtensionLoaded` / `Unloaded` and `onWorldReadyState`.
@@ -310,27 +310,8 @@ Then do the checks for whatever actually updated.
 - **Layout files:** leaving the server removes all our apps from the layout file in `settings/ui_apps/layouts/`. A stock layout copy we created gets deleted again, and so does the disk copy of BeamMP's `beammp` layout (check that `settings/ui_apps/layouts/default/beammp.uilayout.json` is gone from the user folder after leaving).
 - **Placement format:** read the header comment of `placementResolve.js` again. If it changed, update the placements in `apps.lua` and the `css` in every `app.json`.
 
-## BeamNG.Earth (mod API)
-
-**Used in:** `copsAndRobbers/geo.lua` and the main file (geo mode is on when the map is `beamng_earth`). The server side is `cnr/geo.lua`, plus the geo paths in `main.lua`.
-
-**What we use from `beamngEarth_api`:**
-- `version() == 1`, `toGeo(x,y,z)` → `lat, lon, h`, and `toGame(lat, lon, h)` → `x, y, z`.
-- `rebasing()`, `has("gps" | "places")`.
-- `places(lat, lon, {radius, categories={"gas_station"}}, callback)`. The callback gets `{places={{lat, lon, name, open}}}`, and we skip places where `open == "permanently_closed"`.
-- `gpsSet(lat, lon, label)`, `gps()`, which returns `.remaining` (metres) and `.planning`, and `gpsClear()`.
-- The hook `onBeamNGEarthRebased(info)`, where `info.purpose` is `"teleport"` or something else.
-- We send no sky on `beamng_earth`: a change through `core_environment` flips the player's Earth sky to Manual and saves it in their Earth settings.
-- We run no round traffic on `beamng_earth`: its `navgraph.lua` manages any traffic that runs. `guard()` moves traffic cars that stood still 45 s, `onTeleport()` hides all traffic until the new road graph arrives (round setup moves cops far), and `checkRegion()` sets traffic up again with the player's own amount and police choice. Working around that would need BeamNG.Earth internals beyond its mod API.
-- Each player has their own floating origin. That's why positions travel as lat/lon, and why the server converts with WGS84 → ENU (`cnr/geo.lua`).
-
-**On update, check:**
-- On `beamng_earth`, there's no "needs a newer BeamNG.Earth (API v1)" toast. If it appears, `version()` changed. Read the mod's `docs/ADDONS.md` for the new contract.
-- **Distances:** cops see "Runner 2.4 km by road NE" after a last-seen ping (GPS), and the 1 km cop reset uses real distance.
-- **Gas stations:** the server log shows `N new gas stations on beamng_earth` while you drive, so `places` works.
-- **Teleports:** teleporting far away counts as a teleport for the runner (it's announced), and for a cop it moves the AI cars along with you. If not, the rebase hook changed.
-
 ## Development tools
 
 - **Lua:** stock `lua` (5.3 or newer) for `make test`, `luajit` for compile checks (the game runs LuaJIT, so client code stays Lua 5.1 compatible), `make vuecheck` (Node, with the game's UI sources) for the Vue apps, and `python3` for `tools/lights/export.py`.
-- **Build:** `zip` for `make package`.
+- **Build and install:** GNU Make, Bash, `zip` and `rsync` build the package and install it locally.
+- **Live deployment:** `make deploy` uses a host-provided executable. [Deployment interface](../README.md#host-configured-deployment)

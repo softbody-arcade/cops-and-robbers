@@ -15,9 +15,16 @@ make package
   least 1 + traffic per player (3 + traffic per player for practice rounds). With less room the mod spawns fewer traffic
   cars and the panel says so.
 
-Players install nothing; BeamMP downloads the client mod on join. Every reset button works during a round and
-follows the round's reset rules: Reset vehicle and Recover repair in place; Load home and Recover to last road
-repair in place for the runner and move cops to the nearest road.
+Start or restart BeamMP after copying the files. Check the server log for `Cops and Robbers <version> loaded` and
+check for Lua errors. BeamMP downloads the client mod when players join. During rounds, Reset vehicle and Recover
+repair in place. Load home and Recover to last road repair the runner in place and move cops to the nearest road.
+
+### Upgrade an existing server
+
+Overlay the packaged client ZIP and server plugin files. Keep the server's existing `config.json` and `data/`
+inside `Resources/Server/CopsAndRobbers/`. For a local upgrade with `make install-local`, copy the installed
+`config.json` to `server/CopsAndRobbers/config.json` in a disposable checkout before running the target, so the
+package includes the local settings.
 
 ## The apps
 
@@ -48,7 +55,7 @@ Switch "Evolving car" on in the panel. Instead of a random car each round, every
 
 ## HUD
 
-- **Lobby card** (between rounds): who is online, a line saying whether a round is waiting, buttons for Settings, How to play, Leaderboard, Host panel, Sit out and Hide, and a yellow line for a standing problem (no reset button bound, an outdated copy, BeamNG.Earth too old).
+- **Lobby card** (between rounds): who is online, a line saying whether a round is waiting, buttons for Settings, How to play, Leaderboard, Host panel, Sit out and Hide, and a yellow line for a standing problem (a missing reset binding or outdated client mod).
 - **Sit out:** keeps you out of rounds until you press it again (it then reads Play). You're never the runner, and when a round is set up your car leaves the map and comes back where it stood when the round ends. It lasts until you leave the server. Pressed during a round, it counts from the next one. Start only refuses when everyone sits out. Practice still works: with Sit out on, the panel's **Practice: watch the AI** runs an AI runner against two AI cops and you spectate them.
 - **Spectating:** a player who sits out, or who joins while a round is running, watches instead of playing. The card shows "SPECTATING · Bob" (or "free camera"), the round clock and the helicopter, with Sit out (or Play), How to play, Leaderboard and Host panel. The game's own switch-car keys (Tab and Ctrl+Tab by default) go through the players' cars, the runner's too, and free camera (Shift+C by default) works. Spectators don't drive, can't spawn a car and count for nothing in the round. After the round they're back in the lobby and play the next one unless they sit out.
 - **Hide:** folds the lobby card into a small "Cops and Robbers" tab at the same place; click the tab to bring the card back. The yellow warning lines still show above the tab. Your choice is saved in your own game. Your rounds always show the full HUD, and the lobby after them goes back to your choice.
@@ -98,7 +105,7 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `helicopterUpSeconds` | 120 | How long it flies before it refuels (more than 0) |
 | `helicopterRefuelSeconds` | 90 | How long it is away refuelling (0 = stays up) |
 | `sightMaxMeters` | 400 | How far cops can see the runner (0 = sight off) |
-| `sightLiveIntervalSeconds` | 1 | Live runner position for all cops while one sees the runner (at least 3 s on BeamNG.Earth) |
+| `sightLiveIntervalSeconds` | 1 | Live runner position for all cops while one sees the runner |
 | `sightNoRouteSeconds` | 5 | A cop who sees the runner within their speed × this many seconds gets no route (with the default Out of sight route setting) |
 | `sightNoRouteMinMeters` | 50 | ...and always within this distance |
 | `carMode` | random | `random` (a random car each round) or `evolving` (the shared build) |
@@ -116,11 +123,11 @@ A five-tab card (Basics, Runner, Cop, Resets, Rules) that reads its numbers from
 | `dayLength` | moderate | How long a full day lasts during the chase: `off` (stopped), `fast` (15 min), `moderate` (30 min), `slow` (2 h) or `realtime` (24 h) |
 | `weather` | random | `clear`, `cloudy`, `rain`, `storm`, `fog`, `snow` or `random` |
 | `badWeatherChancePercent` | 25 | Chance of rain, storm, fog or snow when Weather is random |
-| `weatherDriving` | true | Weather changes grip and adds wind (not on BeamNG.Earth) |
-| `weatherChanges` | true | The weather changes during the chase, only into a weather that fits the temperature and time of day (not on BeamNG.Earth) |
+| `weatherDriving` | true | Weather changes grip and adds wind |
+| `weatherChanges` | true | The weather changes during the chase, only into a weather that fits the temperature and time of day |
 | `weatherChangeMinMinutes` | 3 | The least time between two weather changes, in whole minutes (at least 1) |
 | `weatherChangeMaxMinutes` | 8 | The most time between two weather changes (never below the minimum) |
-| `trafficPerPlayer` | 5 | AI traffic cars around each player during a round (0 = off, at most 20; normal maps only, not on BeamNG.Earth yet) |
+| `trafficPerPlayer` | 5 | AI traffic cars around each player during a round (0 = off, at most 20) |
 | `trafficRunnerOnly` | false | Only the runner's game spawns traffic (the same `trafficPerPlayer` count); cops spawn none. Fewer AI cars for better performance |
 
 ## Traffic
@@ -131,7 +138,7 @@ better performance; practice rounds keep their traffic either way, except a prac
 vehicles among them, and they have no name tags, so every car with lights is a cop and every name tag is a player. A
 cop who drives into a traffic car gets the crash penalty ("crash penalty 10s (traffic)"), as with any crash only within
 `copResetMinDistanceMeters` of the runner; one who gets hit by traffic doesn't. While it rains, storms, fogs or snows traffic drives with its headlights on (it follows the weather as it changes); at night it follows the game's own
-lights. Traffic is off on BeamNG.Earth for now.
+lights.
 
 Every player's game simulates everyone's traffic. If that gets heavy, BeamMP's "Simplify remote vehicles" option makes
 other players' cars, traffic included, lighter to run.
@@ -142,12 +149,6 @@ Players are recognised by their BeamMP account (leaderboard, colors, who runs ne
 changes every session. Cops get a light bar with lights on (no siren unless the cop turns it on in Settings and the host allows Cop sirens): when the round car has none, the light bar
 parts of a police config of the same model are added for cops.
 
-## BeamNG.Earth
-
-On `beamng_earth` the mod switches to geo mode automatically: positions are exchanged as latitude/longitude through
-BeamNG.Earth's mod API (each player has their own coordinate origin there), and real gas stations near players are
-looked up and remembered by the server as they drive. Players need a BeamNG.Earth version with API v1.
-
 ## Credits
 
 The helicopter's rotor sound is "Helicopter Rotor Loop" by qubodup, https://freesound.org/people/qubodup/sounds/187681/, CC0
@@ -155,12 +156,13 @@ The helicopter's rotor sound is "Helicopter Rotor Loop" by qubodup, https://free
 
 ## Development
 
-See `docs/DEPENDENCIES.md` for everything the mod depends on and what to check when BeamMP, BeamNG or BeamNG.Earth updates.
+See the compatibility checks for BeamMP and BeamNG.drive updates. [Dependencies](docs/DEPENDENCIES.md)
 
 App preview images are drawn from `tools/previews/*.svg`: `rsvg-convert -w 1000 -h 560 -o client/ui/modules/apps/<App>/app.png tools/previews/<name>.svg`.
 
 `make test` runs the rule, wiring and client tests with stock Lua (`tests/test_client.lua` loads the real GE
-extension against stubbed game functions). `make install-local` deploys to `.testserver/`, `make deploy` to the server.
+extension against stubbed game functions). `make install-local` installs to `.testserver/` by default. Set `TESTSERVER`
+to choose a different local BeamMP server directory.
 
 The version lives in four places (server `main.lua`, client `copsAndRobbers.lua`, `mod_info/.../info.json`, the
 `docs/FEATURES.md` heading); `tests/test_version.lua` checks they agree and the other tests read it from the server.
@@ -169,5 +171,23 @@ Feature branches never change it, so branches built side by side don't conflict:
 
 Client layout (`client/lua/ge/extensions/`): `copsAndRobbers.lua` holds round state, the server event handlers and the
 `onUpdate` steps; `copsAndRobbers/` has `game` (GE helpers), `inputs` (locks, reset hooks), `roads` (spawn spots),
-`vehicles` (car pick, cop lights), `lightbar` (emergency light planner), `ai` (practice cars), `geo` (BeamNG.Earth),
+`vehicles` (car pick, cop lights), `lightbar` (emergency light planner), `ai` (practice cars),
 `hud` (HUD model), `hudfeed` (HUD state and push), `apps` (opening and closing the apps) and `placement` (layout handling).
+
+## Host-configured deployment
+
+Set `CNR_DEPLOY_SCRIPT` to the path of a host-provided executable when running `make deploy`.
+
+```sh
+CNR_DEPLOY_SCRIPT=/path/to/deploy-cnr make deploy
+```
+
+The target builds the package and passes two absolute paths to the executable, in order.
+
+1. The packaged client ZIP, `dist/Client/CopsAndRobbers.zip`.
+2. The packaged server plugin directory, `dist/Server/CopsAndRobbers/`.
+
+The host's executable handles the destination, preserves installed `config.json` and `data/`, restarts the server
+and checks the server log for the expected `Cops and Robbers <version> loaded` line and any Lua errors.
+`make deploy` fails if the executable is missing or exits with an error. `make package` and `make install-local`
+work independently of the deployment hook.
