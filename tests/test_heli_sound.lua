@@ -111,6 +111,26 @@ test("the emitter is made with the file and fields, registered and played", func
   end
 end)
 
+test("a moving emitter reuses its position vector and fades at its last valid coordinates", function()
+  load()
+  local s, p = sound.new(), vec3(1, 2, 3)
+  sound.tick(s, p, 1, 0)
+  local obj = objects[NAME]
+  local build, allocations = vec3, 0
+  _G.vec3 = function(...) allocations = allocations + 1; return build(...) end
+  for i = 1, 20 do
+    p.x, p.y, p.z = i, -i, 2 * i
+    sound.tick(s, p, 1, i * STEP)
+  end
+  p.x, p.y, p.z = 1000, 2000, 3000
+  sound.tick(s, nil, 0, 21 * STEP)
+  _G.vec3 = build
+  assertEq(obj.pos.x, 20)
+  assertEq(obj.pos.y, -20)
+  assertEq(obj.pos.z, 40)
+  assertEq(allocations, 0)
+end)
+
 test("an emitter that doesn't register is deleted and logged", function()
   load()
   noRegister = true

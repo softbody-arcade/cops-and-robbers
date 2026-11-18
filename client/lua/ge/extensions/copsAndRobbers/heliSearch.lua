@@ -24,7 +24,7 @@ end
 function M.clear(state)
   state.flight, state.leftAt, state.lastClock, state.lastCar, state.carVel = nil, nil, nil, nil, nil
   state.flightRandom, state.lastKnown, state.wasGuided, state.sweepAt, state.retargetAt = nil, nil, nil, nil, nil
-  state.missingSince, state.tunnelLogged, state.flightFailed, state.jumpAt = nil, nil, nil, nil
+  state.missingSince, state.searchLogged, state.flightFailed, state.jumpAt = nil, nil, nil, nil
   state.lastKnownVel, state.roofCache, state.search = nil, nil, nil
   state.guidedCheckAt, state.guidedExit, state.guidedKey, state.guidedOn, state.guidedList = nil, nil, nil, nil, nil
 end
@@ -108,8 +108,8 @@ local function fly(state, phase, last, car, carVel, dt, clock, random)
 end
 
 local function failed(state, err)
-  if not state.tunnelLogged then
-    state.tunnelLogged = true
+  if not state.searchLogged then
+    state.searchLogged = true
     log("E", "cnr_heli", "helicopter search failed: " .. tostring(err))
   end
 end
@@ -287,7 +287,7 @@ local function guidedApply(state, f, car, carVel, target, clock, opts)
     state.sweepAt, state.retargetAt = clock, clock
     state.guidedOn = nil
   end
-  f.spot, f.spotVel = copy(car), copy(carVel)
+  f.spot, f.spotVel = state.lastCar, carVel
 end
 
 local function retarget(state, f, phase, last, car, target, carVel, dt, clock, opts)
@@ -298,7 +298,7 @@ local function retarget(state, f, phase, last, car, target, carVel, dt, clock, o
     end
     state.search = nil
     state.guidedCheckAt, state.guidedExit, state.guidedKey, state.guidedOn, state.guidedList = nil, nil, nil, nil, nil
-    state.lastKnown, state.lastKnownVel = copy(car), copy(carVel)
+    state.lastKnown, state.lastKnownVel = state.lastCar, carVel
     return
   end
   if phase ~= "searching" then return end
@@ -325,7 +325,7 @@ local function retarget(state, f, phase, last, car, target, carVel, dt, clock, o
   if guided then
     state.search = nil
     guidedApply(state, f, car, carVel, target, clock, opts)
-    state.lastKnown, state.lastKnownVel = copy(car), copy(carVel)
+    state.lastKnown, state.lastKnownVel = state.lastCar, carVel
     return
   end
   local s = state.search
@@ -345,7 +345,6 @@ end
 function M.tick(state, target, phase, last, clock, opts)
   if not target then
     state.missingSince = state.missingSince or clock
-    if flyingAway(phase) then state.lightPhase = phase end
     local f = state.flight
     local ref = f and (f.spot or f.lead or state.lastCar or f.pos)
     if flyingAway(phase) and ref and not f.leaving then
@@ -377,9 +376,11 @@ end
 function M.roadAim(state, clock)
   local s, f = state.search, state.flight
   if not (f and s and (s.run or s.returning)) then return nil end
-  local p = f.pos
-  local from = vec3(p.x, p.y, p.z - flight.HELI_HEIGHT)
   local t = clock - (state.sweepAt or clock)
+  local p = f.pos
+  local from = s.aimFrom or vec3(0, 0, 0)
+  from.x, from.y, from.z = p.x, p.y, p.z - flight.HELI_HEIGHT
+  s.aimFrom = from
   if s.returning then return roadSearch.approachAim(from, s.origin, t) end
   return roadSearch.aimPoint(s.run, t, from)
 end

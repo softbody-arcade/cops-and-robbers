@@ -3394,6 +3394,34 @@ test("a second round flies a new van using the first round's prepared copy", fun
   assertEq(again.moves > 1, true)
 end)
 
+test("night flight lights and beam share one fresh camera position on each moving frame", function()
+  local camera, oldColor, draw = core_camera, color, package.loaded["utils/debugDraw"]
+  local maxRadius, triangles, reads = 0, 0, 0
+  _G.color = function(r, g, b, a) return r + g + b + a end
+  package.loaded["utils/debugDraw"] = {
+    Sphere = function(_, _, _, radius) maxRadius = math.max(maxRadius, radius) end,
+    drawTriSolid = function() triangles = triangles + 1 end,
+  }
+  local ok, err = pcall(function()
+    local env = nightTracking("runner", 3, { gameFiles = pigeon() })
+    local light = env.sky.objects[HELI_LIGHT]
+    local pos = vec3(light.pos.x, light.pos.y, light.pos.z)
+    _G.core_camera = { getPosition = function() reads = reads + 1; return pos end }
+    maxRadius = 0
+    env.tick(0.05, 0.05)
+    assertEq(reads, 1)
+    assertNear(maxRadius, 0.25, 0.02)
+    pos = vec3(pos.x + 1000, pos.y, pos.z)
+    maxRadius, triangles = 0, 0
+    env.tick(0.05, 0.05)
+    assertEq(reads, 2)
+    assertNear(maxRadius, 1.2, 1e-9)
+    assertEq(triangles > 0, true)
+  end)
+  _G.core_camera, _G.color, package.loaded["utils/debugDraw"] = camera, oldColor, draw
+  if not ok then error(err, 0) end
+end)
+
 test("Helicopter model off removes the van and its lights at once, on brings them back", function()
   local saved = { color = _G.color, draw = package.loaded["utils/debugDraw"] }
   local spheres = 0
@@ -3637,6 +3665,36 @@ test("practice as a cop: the practising cop's game reports cover for the AI runn
     assertEq(env.lastSent("cnr_cover").covered, false)
   end)
   _G.castRayStatic = saved
+  if not ok then error(err, 0) end
+end)
+
+test("daytime rotor occlusion samples the moving camera only when a ray is due", function()
+  local env = bootClient()
+  local d = copy(SETUP)
+  d.phase, d.role, d.runnerId = "running", "runner", 1
+  d.sky = { time = "noon", windDir = 0, windSeed = 1 }
+  d.heli = { phase = "tracking", seconds = 100 }
+  env.fire("cnr_roundSetup", d)
+  local camera, cast = core_camera, castRayStatic
+  local x, reads, origins = 500, 0, {}
+  _G.core_camera = { getPosition = function() reads = reads + 1; return vec3(x, 0, 10) end }
+  _G.castRayStatic = function(p, dir, len)
+    if p.x == x then origins[#origins + 1] = p.x end
+    return len + 100
+  end
+  local ok, err = pcall(function()
+    for i = 1, 20 do
+      x = 500 + i
+      env.tick(0.05, 0.05)
+    end
+    assertEq(#origins >= 3 and #origins <= 4, true, tostring(#origins))
+    assertEq(reads, #origins)
+    env.M.ui({ action = "setting", key = "sound", value = false })
+    local n = reads
+    env.tick(1)
+    assertEq(reads, n)
+  end)
+  _G.core_camera, _G.castRayStatic = camera, cast
   if not ok then error(err, 0) end
 end)
 
