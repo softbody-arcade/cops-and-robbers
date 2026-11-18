@@ -167,7 +167,7 @@ The thunder clips use three CC0 originals. To recreate the shipped clips, use [t
 
 See the compatibility checks for BeamMP and BeamNG.drive updates. [Dependencies](docs/DEPENDENCIES.md)
 
-App preview images are drawn from `tools/previews/*.svg`: `rsvg-convert -w 1000 -h 560 -o client/ui/modules/apps/<App>/app.png tools/previews/<name>.svg`.
+Run `python3 tools/previews/generate.py` to rebuild the app picker thumbnails from the mod logo and the names in each app's `app.json`. The generator uses Pillow and the DejaVu Sans Bold font.
 
 `make test` runs the rule, wiring and client tests with stock Lua (`tests/test_client.lua` loads the real GE
 extension against stubbed game functions). `make install-local` installs to `.testserver/` by default. Set `TESTSERVER`
