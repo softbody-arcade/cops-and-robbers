@@ -6,7 +6,6 @@ M.DAY_SECONDS = weather.DAY_SECONDS
 
 local DAY = { "sunrise", "morning", "noon", "afternoon", "sunset" }
 local CALM = { "clear", "cloudy" }
-local BAD = { "rain", "storm", "fog", "snow", "thunderstorm" }
 local DAYS_IN_MONTH = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
 local SPRING_AUTUMN = { 3, 4, 10, 11 }
 local WHOLE_YEAR = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 }
@@ -29,7 +28,7 @@ end
 local function pickWeather(cfg, random)
   if cfg.weather ~= "random" then return cfg.weather end
   local list = CALM
-  if random() * 100 < cfg.badWeatherChancePercent then list = BAD end
+  if random() * 100 < cfg.badWeatherChancePercent then list = weather.BAD end
   return list[random(#list)]
 end
 

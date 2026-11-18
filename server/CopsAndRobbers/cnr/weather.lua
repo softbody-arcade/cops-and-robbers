@@ -9,6 +9,7 @@ M.LEAD_SECONDS = 75
 M.HORIZON_SECONDS = 10800
 M.CHANGE_SECONDS = 60
 M.WINDOW_SECONDS = 120
+M.BAD = { "rain", "storm", "fog", "snow", "thunderstorm" }
 
 local HIGH_AT = 2 / 24
 local LOW_AT = 0.75
@@ -16,6 +17,8 @@ local LIFT_AT = 0.875
 local DUSK_AT = 0.25
 
 local GROUNDS = { storm = true, fog = true, snow = true, thunderstorm = true }
+local BAD = {}
+for _, kind in ipairs(M.BAD) do BAD[kind] = true end
 local NEXT = {
   clear = { { "cloudy" }, { "fog", "foggy" } },
   cloudy = { { "clear" }, { "rain", "wet" }, { "snow", "cold" }, { "fog", "foggy" }, { "thunderstorm", "hot", 0.5 } },
@@ -160,15 +163,36 @@ local function stops(w, u, v, Tu, Tv, lift)
   return x
 end
 
-local function pick(random, list)
+local function pickUniform(random, list)
   return list[math.min(#list, math.floor(random() * #list) + 1)]
+end
+
+local function pick(random, list, badPercent)
+  local calm, bad = {}, {}
+  for _, option in ipairs(list) do
+    local group = BAD[option[1]] and bad or calm
+    group[#group + 1] = option
+  end
+
+  local group = calm
+  if #calm == 0 or (#bad > 0 and random() * 100 < badPercent) then group = bad end
+
+  local total = 0
+  for _, option in ipairs(group) do total = total + (option[3] or 1) end
+  local roll = random() * total
+  local cumulative = 0
+  for _, option in ipairs(group) do
+    cumulative = cumulative + (option[3] or 1)
+    if roll < cumulative then return option[1] end
+  end
+  return group[#group][1]
 end
 
 local function options(from, T, foggy, warm, hot)
   local ok = { wet = T >= 2, cold = T <= 1, foggy = foggy, warm = warm, hot = hot }
-  local list = {}
+  local list = { { from } }
   for _, o in ipairs(NEXT[from]) do
-    if not o[2] or ok[o[2]] then list[#list + 1] = o[1] end
+    if not o[2] or ok[o[2]] then list[#list + 1] = o end
   end
   return list
 end
@@ -178,6 +202,7 @@ local function schedule(c, cfg, random, releaseAt, endAt)
   local lo, hi = cfg.weatherChangeMinMinutes, cfg.weatherChangeMaxMinutes
   local changes = {}
   local cur, running, fitted, slot = c.start, nil, false, nil
+  local lastStayAt
   local nextFill = 3
 
   local function day(x) return ds and x / ds or 0 end
@@ -194,13 +219,18 @@ local function schedule(c, cfg, random, releaseAt, endAt)
 
   local function add(x, to, cross)
     local forecastFrom = x - M.WINDOW_SECONDS * random()
-    changes[#changes + 1] = { at = x, to = to, forecastFrom = forecastFrom, cross = cross }
+    local afterStay = lastStayAt and true
+    if afterStay then
+      forecastFrom = math.max(lastStayAt, forecastFrom)
+      lastStayAt = nil
+    end
+    changes[#changes + 1] = { at = x, to = to, forecastFrom = forecastFrom, cross = cross, afterStay = afterStay }
     slot = x + interval()
     cur, running, fitted = to, x + M.CHANGE_SECONDS, false
   end
 
   local function crossAt(x)
-    add(x, CROSS[cur] or pick(random, LIFT), true)
+    add(x, CROSS[cur] or pickUniform(random, LIFT), true)
     if nextFill > 3 and points[nextFill - 2].t * ds >= x - 1e-9 then
       points[nextFill - 1].c = M.fill(c, nextFill - 1, cur)
     end
@@ -210,7 +240,13 @@ local function schedule(c, cfg, random, releaseAt, endAt)
     local T = tempAt(x)
     local high = math.max(points[nextFill - 2].c, points[nextFill - 1].c)
     local warm, hot = high >= 15, high >= 20
-    add(x, pick(random, options(cur, T, fits("fog", T, todAt(x)), warm, hot)))
+    local to = pick(random, options(cur, T, fits("fog", T, todAt(x)), warm, hot), cfg.badWeatherChancePercent)
+    if to == cur then
+      lastStayAt = x
+      slot = x + interval()
+    else
+      add(x, to)
+    end
   end
 
   local function fitsAt(x)

@@ -1,5 +1,6 @@
 local weather = require("cnr.weather")
 local config = require("cnr.config")
+local sky = require("cnr.sky")
 
 local function cfg(o) return (config.merge(o)) end
 local function script(list, rest)
@@ -171,7 +172,7 @@ end
 local function fingerprint(r)
   local parts = {}
   for _, ch in ipairs(r.changes) do
-    parts[#parts + 1] = string.format("%s@%.9f/%.9f/%s", ch.to, ch.at, ch.forecastFrom, tostring(ch.cross))
+    parts[#parts + 1] = string.format("%s@%.9f/%.9f/%s/%s", ch.to, ch.at, ch.forecastFrom, tostring(ch.cross), tostring(ch.afterStay))
   end
   for _, p in ipairs(r.temps or {}) do
     parts[#parts + 1] = string.format("%d:%.9f:%.9f", p.hour, p.t, p.c)
@@ -209,14 +210,14 @@ test("Weather changes off fills every point with the start weather", function()
   end
 end)
 
-test("each slot change comes min to max after the change before it, the first after the release", function()
+test("each planned change is at least the minimum slot interval after release or the previous change", function()
   local n = 0
   eachCase(function(s, r)
     local before = r.releaseAt
     for _, ch in ipairs(r.changes) do
       if not ch.cross then
         local gap = ch.at - before
-        assertEq(gap >= 180 - 1e-9 and gap <= 480 + 1e-9, true, "gap " .. gap)
+        assertEq(gap >= 180 - 1e-9, true, "gap " .. gap)
         n = n + 1
       end
       before = ch.at
@@ -225,26 +226,37 @@ test("each slot change comes min to max after the change before it, the first af
   assertEq(n > 500, true)
 end)
 
-test("changes run up to the time limit, or 180 minutes without one", function()
+test("changes end before the time limit or the three-hour horizon", function()
   for seed = 1, 10 do
     local s = { time = TIMES[seed % #TIMES + 1], weather = WEATHERS[seed % #WEATHERS + 1], month = 4 }
     local r = weather.build(s, cfg({ roundTimeLimitSeconds = 600 }), weather.seeded(seed))
-    assertEq(#r.changes > 0, true)
     for _, ch in ipairs(r.changes) do assertEq(ch.at < r.releaseAt + 600, true) end
     r = weather.build(s, cfg(nil), weather.seeded(seed))
-    local last = r.changes[#r.changes]
-    assertEq(last.at < r.releaseAt + 10800, true)
-    assertEq(last.at + 480 > r.releaseAt + 10800, true)
+    for _, ch in ipairs(r.changes) do assertEq(ch.at < r.releaseAt + 10800, true) end
   end
 end)
 
-test("no count cap", function()
-  local r = weather.build({ time = "noon", weather = "clear", month = 7 }, cfg({ weatherChangeMinMinutes = 1, weatherChangeMaxMinutes = 1 }), weather.seeded(9))
-  assertEq(#r.changes, 179)
-  for i, ch in ipairs(r.changes) do
-    assertNear(ch.at, r.releaseAt + 60 * i, 1e-9)
-    assertEq(ch.cross, nil)
+test("fixed slots align with release even when some slots stay", function()
+  local s = { time = "noon", weather = "cloudy", month = 7, weatherSeed = 9 }
+  local r = weather.build(s, cfg({ dayLength = "off", weatherChangeMinMinutes = 3, weatherChangeMaxMinutes = 3 }))
+  local hasStay = false
+  for _, ch in ipairs(r.changes) do
+    assertEq((ch.at - r.releaseAt) % 180, 0)
+    if ch.afterStay then hasStay = true end
   end
+  assertEq(hasStay, true)
+end)
+
+test("one-minute slots without a stay reach slot 179 before the horizon", function()
+  local s = { time = "noon", weather = "clear", month = 7 }
+  local r = weather.build(s, cfg({ dayLength = "off", weatherChangeMinMinutes = 1, weatherChangeMaxMinutes = 1 }), script({}, 0.75))
+  for i, ch in ipairs(r.changes) do
+    assertEq(ch.at, r.releaseAt + 60 * i)
+    assertEq(ch.at < r.releaseAt + 10800, true)
+    assertEq(ch.cross, nil)
+    assertEq(ch.afterStay, nil)
+  end
+  assertEq(r.changes[#r.changes].at, r.releaseAt + 179 * 60)
 end)
 
 test("Day length Off: slots still come, crossings never", function()
@@ -276,6 +288,63 @@ test("each slot change goes to an allowed neighbour", function()
     end
   end)
   assertEq(n > 500, true)
+end)
+
+test("planned picks roll group then weight", function()
+  local cases = {
+    { "cloudy", 25, { 0.24999, 2 / 3 - 1e-9 }, "rain" },
+    { "cloudy", 25, { 0.24999, 2 / 3 }, "thunderstorm" },
+    { "cloudy", 25, { 0.25, 0.75 }, "clear" },
+    { "cloudy", 0, { 0, 0.75 }, "clear" },
+    { "cloudy", 100, { 0.99999, 0 }, "rain" },
+    { "rain", 25, { 0, 1 / 3 - 1e-9 } },
+    { "rain", 25, { 0, 1 / 3 }, "storm" },
+    { "rain", 25, { 0, 2 / 3 - 1e-9 }, "storm" },
+    { "rain", 25, { 0, 2 / 3 }, "thunderstorm" },
+    { "clear", 100, { 0.75 }, "cloudy" },
+    { "storm", 0, { 1 }, "rain" },
+    { "thunderstorm", 100, { 0, 1 }, "rain" },
+  }
+  for i, k in ipairs(cases) do
+    local s = { time = "noon", weather = k[1], month = 7 }
+    local c = cfg({ dayLength = "off", weatherChangeMinMinutes = 1, weatherChangeMaxMinutes = 1,
+      roundTimeLimitSeconds = 120, badWeatherChancePercent = k[2] })
+    local draws = { 0.5, 0 }
+    for _, value in ipairs(k[3]) do draws[#draws + 1] = value end
+    local r = weather.build(s, c, script(draws, 0))
+    assertEq(#r.changes, k[4] and 1 or 0, "case " .. i)
+    assertEq(r.changes[1] and r.changes[1].to, k[4], "case " .. i)
+  end
+end)
+
+test("stay consumes a slot, not a change", function()
+  local s = { time = "noon", weather = "cloudy", month = 7 }
+  local c = cfg({ dayLength = "off", weatherChangeMinMinutes = 3, weatherChangeMaxMinutes = 3,
+    roundTimeLimitSeconds = 400, badWeatherChancePercent = 25 })
+  local r = weather.build(s, c, script({ 0.5, 0, 0.9, 0, 0, 0.9, 0.75, 0.5, 0 }, 0))
+  local p = sky.payload({ weather = s.weather, changes = r.changes, releaseAt = r.releaseAt }, c)
+  assertEq(#r.changes, 1)
+  assertEq(p.changes, r.changes)
+  local ch = p.changes[1]
+  assertEq(ch.to, "clear")
+  assertEq(ch.at, r.releaseAt + 360)
+  assertEq(ch.afterStay, true)
+  assertEq(ch.forecastFrom, r.releaseAt + 300)
+  assertEq(#weather.build(s, c, script({ 0.5, 0, 0.9, 0, 0, 0.9, 0, 0 }, 0)).changes, 0)
+end)
+
+test("only the first forecast after a stay is clamped to its slot", function()
+  local s = { time = "noon", weather = "cloudy", month = 7 }
+  local c = cfg({ dayLength = "off", weatherChangeMinMinutes = 1, weatherChangeMaxMinutes = 1,
+    roundTimeLimitSeconds = 200, badWeatherChancePercent = 25 })
+  local r = weather.build(s, c, script({ 0.5, 0, 0.9, 0, 0, 0.9, 0.75, 1, 0, 0.75, 1, 0 }, 0))
+  assertEq(#r.changes, 2)
+  assertEq(r.changes[1].at, r.releaseAt + 120)
+  assertEq(r.changes[1].forecastFrom, r.releaseAt + 60)
+  assertEq(r.changes[1].afterStay, true)
+  assertEq(r.changes[2].at, r.releaseAt + 180)
+  assertEq(r.changes[2].forecastFrom, r.releaseAt + 60)
+  assertEq(r.changes[2].afterStay, nil)
 end)
 
 test("cloudy and rain can turn to a thunderstorm when the higher point reaches 20 C", function()
@@ -338,14 +407,16 @@ local function noSlots(o)
 end
 
 test("rain turns to snow at 1 C and back to rain at 2 C", function()
-  local r = weather.build({ time = "night", weather = "rain", month = 3 }, noSlots(), script({}, 0))
-  local ch = r.changes
-  assertEq(ch[1].to, "snow"); assertEq(ch[1].cross, true)
-  assertNear(weather.temperature(r.temps, 900, ch[1].at), 1, 0.05)
-  assertEq(ch[2].to, "rain"); assertEq(ch[2].cross, true)
-  assertNear(weather.temperature(r.temps, 900, ch[2].at), 2, 0.05)
-  assertEq(r.temps[4].c, 0)
-  assertEq(r.temps[5].c, 5)
+  for _, chance in ipairs({ 0, 100 }) do
+    local r = weather.build({ time = "night", weather = "rain", month = 3 }, noSlots({ badWeatherChancePercent = chance }), script({}, 0))
+    local ch = r.changes
+    assertEq(ch[1].to, "snow"); assertEq(ch[1].cross, true)
+    assertNear(weather.temperature(r.temps, 900, ch[1].at), 1, 0.05)
+    assertEq(ch[2].to, "rain"); assertEq(ch[2].cross, true)
+    assertNear(weather.temperature(r.temps, 900, ch[2].at), 2, 0.05)
+    assertEq(r.temps[4].c, 0)
+    assertEq(r.temps[5].c, 5)
+  end
 end)
 
 test("a storm that gets that cold becomes rain, then snow when the change ends", function()
@@ -374,6 +445,20 @@ test("fog lifts at 09:00", function()
   local ch = r.changes[1]
   assertNear(ch.at, (0.875 - (0.775 - 1 / 24)) * 900, 1e-6)
   assertEq(ch.to, "clear"); assertEq(ch.cross, true)
+end)
+
+test("a stay does not postpone a forced fog lift", function()
+  local s = { time = "sunrise", weather = "fog", month = 10 }
+  local c = cfg({ dayLength = "fast", weatherChangeMinMinutes = 1, weatherChangeMaxMinutes = 1,
+    roundTimeLimitSeconds = 150, badWeatherChancePercent = 100 })
+  local r = weather.build(s, c, script({}, 0.5))
+  assertEq(#r.changes, 1)
+  local ch = r.changes[1]
+  assertNear(ch.at, 127.5, 1e-6)
+  assertEq(ch.to, "clear")
+  assertEq(ch.cross, true)
+  assertEq(ch.afterStay, true)
+  assertEq(ch.forecastFrom, r.releaseAt + 60)
 end)
 
 test("fog lifts when it warms above 12 C", function()

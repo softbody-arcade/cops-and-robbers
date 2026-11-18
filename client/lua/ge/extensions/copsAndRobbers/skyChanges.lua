@@ -69,7 +69,7 @@ function M.forecast(p, t, heliOn)
       break
     end
   end
-  if not ch then return nil end
+  if not ch or (ch.afterStay and t < ch.forecastFrom) then return nil end
   local word = wordFor(from, ch.to)
   local text
   if t >= ch.forecastFrom then
@@ -90,7 +90,7 @@ end
 
 function M.prepForecast(p)
   local ch = changesOf(p)[1]
-  if not ch then return nil end
+  if not ch or ch.afterStay then return nil end
   return "Forecast: " .. wordFor(p.weather, ch.to) .. " " .. span(ch.forecastFrom, p.releaseAt or 0, " after release")
 end
 
