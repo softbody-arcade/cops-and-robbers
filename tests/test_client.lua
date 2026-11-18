@@ -55,6 +55,35 @@ test("a rejoining player reports the round car once BeamMP assigns its late serv
   assertEq(env.teleported, 1)
 end)
 
+test("prep freezes the local round car and GO releases it while BeamMP registration is pending", function()
+  local env = bootClient()
+  local setup = copy(SETUP)
+  setup.role = "runner"
+  MPVehicleGE.getVehicleByGameID = function() return nil end
+  env.fire("cnr_roundSetup", setup)
+  MPVehicleGE.isOwn = function() return false end
+  env.tick(1)
+  local function freezes(value)
+    local count = 0
+    for _, command in ipairs(env.veh.commands) do
+      if command == "controller.setFreeze(" .. value .. ")" then count = count + 1 end
+    end
+    return count
+  end
+  assertEq(freezes(1) > 0, true)
+  local initial = freezes(1)
+  env.tick(7)
+  assertEq(freezes(1) > initial, true)
+  initial = freezes(1)
+  env.fire("cnr_runnerGo", { headStartSeconds = 5 })
+  env.tick(1)
+  assertEq(freezes(0), 1); assertEq(freezes(1), initial)
+  MPVehicleGE.getVehicleByGameID = function() return { serverVehicleString = "1-3" } end
+  env.tick(1)
+  assertEq(env.lastSent("cnr_myVehicle").vid, 3)
+  assertEq(freezes(1), initial)
+end)
+
 test("helicopter events drive the status item", function()
   local env = bootClient()
   startCop(env)
