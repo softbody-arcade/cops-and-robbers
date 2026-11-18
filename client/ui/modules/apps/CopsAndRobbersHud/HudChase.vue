@@ -4,25 +4,25 @@
       <RoleChip class="chase-chip" :role="role" :label="role === 'runner' ? 'Runner' : 'Cop'" />
       <span v-if="status.releaseIn" class="item">
         <BngIcon :type="icons.strobeLights" />
-        <span>Cops released in <span class="mono">{{ status.releaseIn }}</span></span>
+        <span>Cops released in <span class="cnr-mono">{{ status.releaseIn }}</span></span>
       </span>
       <span v-else class="item">
         <BngIcon :type="icons.stopwatchArrows02" />
-        <span class="mono">{{ status.time }}</span>
-        <span v-if="status.limit" class="mono limit">/ {{ status.limit }}</span>
+        <span class="cnr-mono">{{ status.time }}</span>
+        <span v-if="status.limit" class="cnr-mono limit">/ {{ status.limit }}</span>
       </span>
-      <span v-if="status.tag" class="item" :class="'tone-' + tagTone">
+      <span v-if="status.tag" class="item" :class="'cnr-tone-' + tagTone">
         <BngIcon :type="status.tag === 'HIDDEN' ? icons.eyeSolidClosed : icons.eyeSolidOpened" />
         <span>{{ status.tag }}</span>
       </span>
       <span v-if="status.heli" class="item">
         <BngIcon :type="icons.radar" />
         <span>{{ status.heli.text }}</span>
-        <span v-if="status.heli.time" class="mono">{{ status.heli.time }}</span>
+        <span v-if="status.heli.time" class="cnr-mono">{{ status.heli.time }}</span>
       </span>
       <span v-if="status.info" class="item info">
         <BngIcon :type="role === 'runner' ? icons.carChase01 : icons.mapPoint" />
-        <span class="info-text"><span v-if="status.info.before">{{ status.info.before }}</span><span v-if="status.info.dist" class="mono">{{ status.info.before ? ' ' : '' }}{{ status.info.dist }}</span><span v-if="status.info.after">{{ status.info.before || status.info.dist ? ' ' : '' }}{{ status.info.after }}</span><span v-if="status.info.age">{{ ' · ' + status.info.age }}</span></span>
+        <span class="info-text"><span v-if="status.info.before">{{ status.info.before }}</span><span v-if="status.info.dist" class="cnr-mono">{{ status.info.before ? ' ' : '' }}{{ status.info.dist }}</span><span v-if="status.info.after">{{ status.info.before || status.info.dist ? ' ' : '' }}{{ status.info.after }}</span><span v-if="status.info.age">{{ ' · ' + status.info.age }}</span></span>
       </span>
     </div>
     <div v-if="status && status.forecast" class="chase-forecast">
@@ -32,10 +32,10 @@
       </span>
       <span v-if="status.forecast.heli" class="forecast-heli">{{ status.forecast.heli }}</span>
     </div>
-    <div v-if="bar && bar.visible" class="chase-catch" :class="'tone-' + barTone">
+    <div v-if="bar && bar.visible" class="chase-catch" :class="'cnr-tone-' + barTone">
       <div class="catch-label">
         <span>{{ bar.label }}</span>
-        <span class="mono">{{ percent }}%</span>
+        <span class="cnr-mono">{{ percent }}%</span>
       </div>
       <div class="catch-track"><div class="catch-fill" :style="{ width: percent + '%' }"></div></div>
     </div>
@@ -120,24 +120,8 @@ const percent = computed(() => Math.max(0, Math.min(100, Number(props.bar && pro
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.mono {
-  font-family: var(--fnt-mono);
-  font-variant-numeric: tabular-nums;
-}
 .limit {
   font-weight: 600;
-}
-.tone-warn {
-  color: var(--cnr-warn);
-}
-.tone-good {
-  color: var(--cnr-good);
-}
-.tone-cop {
-  color: var(--cnr-cop-text);
-}
-.tone-runner {
-  color: var(--cnr-runner-text);
 }
 .chase-catch {
   margin-top: 0.5rem;
@@ -158,10 +142,10 @@ const percent = computed(() => Math.max(0, Math.min(100, Number(props.bar && pro
   height: 100%;
   transition: width 0.1s linear;
 }
-.chase-catch.tone-runner .catch-fill {
+.chase-catch.cnr-tone-runner .catch-fill {
   background: var(--cnr-runner);
 }
-.chase-catch.tone-cop .catch-fill {
+.chase-catch.cnr-tone-cop .catch-fill {
   background: var(--cnr-cop);
 }
 .chase-reset {

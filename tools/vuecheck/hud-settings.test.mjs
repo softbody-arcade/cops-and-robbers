@@ -100,3 +100,65 @@ for (const [weather, weatherChanges, visible] of [
 }
 app.unmount()
 console.log("Host panel shows strike intervals under More settings when thunderstorms are possible")
+
+const fitModule = await loadUi(new URL("../copsAndRobbers/fit.js", apps))
+await fitModule.evaluate()
+let resize
+globalThis.ResizeObserver = class {
+  constructor(callback) { resize = callback }
+  observe() {}
+  disconnect() {}
+}
+let textChanged
+globalThis.MutationObserver = class {
+  constructor(callback) { this.callback = callback }
+  observe() { textChanged = this.callback }
+  disconnect() { textChanged = null }
+}
+globalThis.document = { documentElement: {} }
+let rootFontSize = 16
+globalThis.getComputedStyle = () => ({ fontSize: rootFontSize + "px" })
+
+const box = Vue.shallowRef(null)
+const content = Vue.shallowRef(null)
+let fit
+const fitApp = renderer.createApp({
+  setup() {
+    fit = fitModule.namespace.useFit(box, content)
+    return () => null
+  },
+})
+fitApp.mount(node("root"))
+box.value = { $el: { clientWidth: 640, clientHeight: 352 } }
+content.value = { offsetWidth: 240, scrollWidth: 240, offsetHeight: 100, scrollHeight: 100 }
+await Vue.nextTick()
+
+function currentScale() {
+  const transform = fit.value?.transform
+  return transform ? Number(transform.match(/^scale\((.+)\)$/)[1]) : 1
+}
+
+function scaleAt(width, height) {
+  Object.assign(box.value.$el, { clientWidth: width, clientHeight: height })
+  resize()
+  return currentScale()
+}
+
+assert.equal(scaleAt(640, 352), 1, "short announcement at default width")
+assert.equal(scaleAt(800, 440), 1.25, "enlarging the app enlarges the announcement")
+assert.equal(scaleAt(1920, 1080), 1.5, "growth stays bounded")
+assert.equal(scaleAt(960, 75), 0.75, "a short app still fits tall content")
+content.value.offsetWidth = 800
+content.value.scrollWidth = 900
+assert.equal(scaleAt(800, 440), 0.8, "centered content fits its 100px overflow on both sides")
+content.value.scrollWidth = 1200
+textChanged()
+assert.equal(currentScale(), 0.5, "live text can grow without resizing its layout box")
+content.value.offsetWidth = content.value.scrollWidth = 240
+rootFontSize = 20
+assert.equal(scaleAt(800, 440), 1, "the game UI scale determines the default width")
+content.value = null
+await Vue.nextTick()
+assert.equal(fit.value?.transform, undefined, "hidden content releases its scale")
+fitApp.unmount()
+console.log("Fitted UI scales with app width and stays within both dimensions")

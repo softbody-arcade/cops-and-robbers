@@ -1,5 +1,5 @@
 <template>
-  <CnrRoot ref="box" class="cnr-hud">
+  <CnrRoot ref="box" class="cnr-fit-box cnr-hud-text cnr-hud">
     <HudSettings
       v-if="settingsShown"
       v-model:draft="colorDraft"
@@ -9,7 +9,7 @@
       @setting="(key, value) => ui({ action: 'setting', key, value })"
       @close="closeSettings"
     />
-    <div v-else-if="hud.visible" ref="stack" class="hud-stack" :style="fit">
+    <div v-else-if="hud.visible" ref="stack" class="cnr-fit-content hud-stack" :style="fit">
       <HudNotices :notices="hud.notices" />
       <template v-if="mode === 'lobby' && hud.lobby">
         <HudTab v-if="hud.lobby.hudHidden" :warnings="hud.lobby.warnings" @show="setHidden(false)" />
@@ -111,27 +111,15 @@ function clearColor() {
 
 <style scoped>
 .cnr-hud {
-  display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  align-items: center;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  pointer-events: none;
-  font-family: var(--cnr-display);
-  text-shadow: var(--cnr-shadow-strong);
-  --bng-icon-color: currentColor;
 }
 .hud-stack {
-  flex: none;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.5rem;
-  box-sizing: border-box;
   width: 40rem;
-  max-width: 100%;
   transform-origin: bottom center;
 }
 .round-settings {

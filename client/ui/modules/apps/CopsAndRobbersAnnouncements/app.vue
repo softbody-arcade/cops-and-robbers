@@ -1,6 +1,6 @@
 <template>
-  <CnrRoot ref="box" class="cnr-announce">
-    <div ref="content" class="announce" :style="fit">
+  <CnrRoot ref="box" class="cnr-fit-box cnr-hud-text">
+    <div ref="content" class="cnr-fit-content announce" :style="fit">
       <template v-if="hud.visible">
         <HudResult v-if="mode === 'result'" :result="hud.result" />
         <HudCenter v-else-if="mode === 'round'" :center="hud.center" />
@@ -26,24 +26,8 @@ const mode = computed(() => hud.value.mode)
 </script>
 
 <style scoped>
-.cnr-announce {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  pointer-events: none;
-  font-family: var(--cnr-display);
-  text-shadow: var(--cnr-shadow-strong);
-  --bng-icon-color: currentColor;
-}
 .announce {
-  flex: none;
-  box-sizing: border-box;
-  max-width: 100%;
   padding: 0 0.5rem;
   overflow-wrap: anywhere;
-  transform-origin: center;
 }
 </style>

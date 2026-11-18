@@ -7,13 +7,13 @@
       </span>
       <span v-if="spectate.time" class="item">
         <BngIcon :type="icons.stopwatchArrows02" />
-        <span class="mono">{{ spectate.time }}</span>
-        <span v-if="spectate.limit" class="mono limit">/ {{ spectate.limit }}</span>
+        <span class="cnr-mono">{{ spectate.time }}</span>
+        <span v-if="spectate.limit" class="cnr-mono limit">/ {{ spectate.limit }}</span>
       </span>
       <span v-if="spectate.heli" class="item">
         <BngIcon :type="icons.radar" />
         <span>{{ spectate.heli.text }}</span>
-        <span v-if="spectate.heli.time" class="mono">{{ spectate.heli.time }}</span>
+        <span v-if="spectate.heli.time" class="cnr-mono">{{ spectate.heli.time }}</span>
       </span>
     </div>
     <div v-if="spectate.forecast" class="spectate-forecast">
@@ -93,10 +93,6 @@ const apps = computed(() => props.spectate.apps || {})
 }
 .watched {
   font-weight: 900;
-}
-.mono {
-  font-family: var(--fnt-mono);
-  font-variant-numeric: tabular-nums;
 }
 .limit {
   font-weight: 600;

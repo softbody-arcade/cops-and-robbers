@@ -8,7 +8,7 @@
         <input
           :value="draft"
           v-bng-text-input
-          class="hex"
+          class="hex cnr-mono"
           :class="{ bad: draft && !valid }"
           type="text"
           maxlength="7"
@@ -189,9 +189,7 @@ function done() {
   background: var(--cnr-row);
   box-shadow: inset 0 0 0 0.125rem var(--cnr-muted);
   color: var(--cnr-text);
-  font-family: var(--fnt-mono);
   font-size: 1rem;
-  font-variant-numeric: tabular-nums;
   text-transform: uppercase;
 }
 .hex:focus {
