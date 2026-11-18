@@ -22,6 +22,17 @@ test("rain makes dirt wet gravel, a storm makes it mud", function()
   assertEq(cd(fake, "GRAVEL").staticFrictionCoefficient, 0.62)
 end)
 
+test("a thunderstorm uses the same mud as a gale and restores the dirt", function()
+  local fake = fakeEnvironment(); local s = load()
+  s.apply("thunderstorm")
+  assertEq(cd(fake, "DIRT").defaultDepth, 0.15)
+  local writes = #fake.modelSets
+  s.apply("storm")
+  assertEq(#fake.modelSets, writes)
+  s.restore()
+  assertEq(cd(fake, "DIRT").defaultDepth, 0)
+end)
+
 test("grass and rumble strips are scaled, not replaced", function()
   local fake = fakeEnvironment(); local s = load()
   s.apply("storm")

@@ -3,6 +3,7 @@ local M = {}
 M.WEATHER = {
   rain = { steady = 5, peak = 8, every = { 10, 25 }, length = { 2, 5 }, turn = 15 },
   storm = { steady = 17, peak = 26, every = { 5, 15 }, length = { 2, 6 }, turn = 30 },
+  thunderstorm = { steady = 10, peak = 24, every = { 4, 12 }, length = { 1, 4 }, turn = 45 },
   snow = { steady = 4, peak = 6, every = { 10, 25 }, length = { 2, 5 }, turn = 15 },
 }
 

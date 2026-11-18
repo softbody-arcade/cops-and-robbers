@@ -23,6 +23,7 @@ M.WEATHER = {
     precipitation = { dataBlock = "Snow_menu", numDrops = 5000, dropSize = 0.2, minSpeed = 0.1, maxSpeed = 0.3 },
   },
 }
+M.WEATHER.thunderstorm = M.WEATHER.storm
 
 M.BLEND_SECONDS = 3
 M.STEP_SECONDS = 0.5
@@ -404,7 +405,7 @@ function M.drop()
   forget()
 end
 
-M.BAD_WEATHER = { rain = true, storm = true, fog = true, snow = true }
+M.BAD_WEATHER = { rain = true, storm = true, thunderstorm = true, fog = true, snow = true }
 
 function M.isBadWeather(key)
   return M.BAD_WEATHER[key] == true

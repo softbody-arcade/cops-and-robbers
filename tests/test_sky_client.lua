@@ -10,6 +10,7 @@ test("labels join the time and the weather", function()
   local sky = load()
   assertEq(sky.label(RAIN_NIGHT), "Night · Rain")
   assertEq(sky.label({ weather = "snow" }), "Snow")
+  assertEq(sky.label({ weather = "thunderstorm" }), "Thunderstorm")
   assertEq(sky.label({ daySeconds = 1800 }), nil)
 end)
 
@@ -150,6 +151,23 @@ test("a round sky is applied and locked", function()
   assertEq(fake.models.ASPHALT.cdata.staticFrictionCoefficient, 0.92)
   sky.update(4)
   assertEq(fake.locked, true)
+end)
+
+test("a thunderstorm has the same sky and rain as a gale", function()
+  local sky, fake = load()
+  assertEq(sky.isBadWeather("thunderstorm"), true)
+  local gale = sky.WEATHER.storm
+  local thunderstorm = sky.WEATHER.thunderstorm
+  assertEq(thunderstorm ~= nil, true)
+  for _, field in ipairs({ "cloudCover", "fogDensity", "windSpeed" }) do
+    assertEq(thunderstorm[field], gale[field], field)
+  end
+  for field, value in pairs(gale.precipitation) do
+    assertEq(thunderstorm.precipitation[field], value, field)
+  end
+  sky.apply({ weather = "thunderstorm" })
+  sky.update(0.1)
+  assertEq(fake.objects.cnr_precipitation:getField("dataBlock"), "rain_medium")
 end)
 
 test("a part on the map's own comes from the map's start values", function()

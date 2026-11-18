@@ -32,8 +32,12 @@ test("the notices", function()
     { "cloudy", "snow", "Weather: snow coming" },
     { "rain", "cloudy", "Weather: clearing up" },
     { "rain", "storm", "Weather: the rain is getting heavier" },
+    { "rain", "thunderstorm", "Weather: a thunderstorm is coming" },
+    { "cloudy", "thunderstorm", "Weather: a thunderstorm is coming" },
     { "rain", "snow", "Weather: the rain is turning to snow" },
     { "storm", "rain", "Weather: the storm is easing" },
+    { "thunderstorm", "rain", "Weather: the thunderstorm is easing" },
+    { "thunderstorm", "cloudy", "Weather: clearing up" },
     { "snow", "cloudy", "Weather: clearing up" },
     { "snow", "rain", "Weather: the snow is turning to rain" },
     { "fog", "cloudy", "Weather: clearing up" },
@@ -70,9 +74,11 @@ test("the forecast words", function()
   assertEq(word("clear", "cloudy"), "Forecast: clouds any minute")
   assertEq(word("cloudy", "clear"), "Forecast: clear skies any minute")
   assertEq(word("rain", "storm"), "Forecast: a storm any minute")
+  assertEq(word("rain", "thunderstorm"), "Forecast: a thunderstorm any minute")
   assertEq(word("cloudy", "fog"), "Forecast: fog any minute")
   assertEq(word("cloudy", "snow"), "Forecast: snow any minute")
   assertEq(word("rain", "cloudy"), "Forecast: clearing up any minute")
+  assertEq(word("thunderstorm", "cloudy"), "Forecast: clearing up any minute")
   assertEq(word("fog", "clear"), "Forecast: clearing up any minute")
   assertEq(word("snow", "cloudy"), "Forecast: clearing up any minute")
 end)
@@ -102,10 +108,13 @@ test("the helicopter line only when it is on and the change grounds it or brings
     return sc.forecast(p, 100, on).heli
   end
   assertEq(line("rain", "storm", true), "(helicopter grounded)")
+  assertEq(line("rain", "thunderstorm", true), "(helicopter grounded)")
   assertEq(line("cloudy", "fog", true), "(helicopter grounded)")
   assertEq(line("cloudy", "snow", true), "(helicopter grounded)")
   assertEq(line("fog", "clear", true), "(helicopter returns)")
   assertEq(line("storm", "rain", true), "(helicopter returns)")
+  assertEq(line("thunderstorm", "rain", true), "(helicopter returns)")
+  assertEq(line("thunderstorm", "cloudy", true), "(helicopter returns)")
   assertEq(line("clear", "cloudy", true), nil)
   assertEq(line("rain", "storm", false), nil)
   assertEq(line("fog", "clear", false), nil)
@@ -116,6 +125,8 @@ test("the prep text for the first change", function()
   assertEq(sc.prepForecast(p), "Forecast: rain 5-7 min after release")
   p.changes[1].forecastFrom = 0
   assertEq(sc.prepForecast(p), "Forecast: rain within 2 min after release")
+  p.changes[1].to = "thunderstorm"
+  assertEq(sc.prepForecast(p), "Forecast: a thunderstorm within 2 min after release")
 end)
 
 test("nothing without changes", function()
@@ -154,6 +165,23 @@ test("grip", function()
   local dry = payload({ { at = 20, to = "rain", forecastFrom = 0 } })
   dry.driving = nil
   assertEq(sc.grip(dry, 50), nil)
+end)
+
+test("thunderstorm grip blends with rain and dries out like a gale", function()
+  local p = payload({
+    { at = 20, to = "thunderstorm", forecastFrom = 0 },
+    { at = 200, to = "cloudy", forecastFrom = 100 },
+  }, { weather = "rain" })
+  local g = sc.grip(p, 50)
+  assertNear(g.rain, 0.5, 1e-9)
+  assertNear(g.storm, 0.5, 1e-9)
+  assertEq(g.dry, 0)
+  assertEq(g.snow, 0)
+  assertEq(g.thunderstorm, nil)
+  assertEq(sc.grip(p, 260).storm, 1)
+  assertNear(sc.grip(p, 350).storm, 0.5, 1e-9)
+  assertEq(sc.grip(p, 440).storm, 0)
+  assertEq(sc.grip(p, 440).dry, 1)
 end)
 
 test("the curve", function()
