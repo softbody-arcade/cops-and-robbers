@@ -1488,6 +1488,26 @@ test("an evolving start skips picking and sets everyone up with the build", func
   assertEq(r.vehicle.config, BUILD.config); assertEq(r.vehicle.model, "pickup")
 end)
 
+test("an evolving practice with an AI runner skips the change: it starts ready and GO counts down", function()
+  for _, opts in ipairs({ { test = true, role = "cop", build = BUILD }, { test = true, aiOnly = true, build = BUILD } }) do
+    local r = round.new((config.merge(nil)))
+    local fx = r:start(0, nil, 2, players, opts)
+    assertEq(r.state, "ready")
+    local first = fx[1]
+    assertEq(first.phase, "ready")
+    assertEq(find(r:apply(1, 2), "reply").msg, "Apply only works during prep in evolving mode")
+    assertEq(r.state, "ready")
+    assertEq(find(r:go(1, 2), "countdown") ~= nil, true)
+  end
+end)
+
+test("an evolving practice as runner keeps the change step", function()
+  local r = round.new((config.merge(nil)))
+  r:start(0, nil, 2, players, { test = true, role = "runner", build = BUILD })
+  assertEq(r.state, "prep")
+  assertEq(find(r:go(1, 2), "reply").msg, "Apply the change first")
+end)
+
 test("apply asks the runner for his setup, then rebuilds every car until all are ready", function()
   local r = evolvingPrep()
   local fx = r:apply(1, 2)

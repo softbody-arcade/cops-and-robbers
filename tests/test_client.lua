@@ -4239,6 +4239,26 @@ test("a sitting-out player's own traffic is removed on spectate and never comes 
   end)
 end)
 
+test("spectating leaves parking-system cars alone and restores only the personal car", function()
+  withCamera(function()
+    local env = bootClient()
+    local entered = env.veh
+    local ambient = env.addObject(140, vec3(20, 30, 0))
+    env.addObject(150, vec3(30, 40, 0)).model = "etk800"
+    env.ownCars = { [140] = true, [150] = true }
+    local oldParking = gameplay_parking
+    _G.gameplay_parking = { getParkedCarsData = function() return { [entered.id] = {}, [140] = {} } end }
+    local ok, err = pcall(spectate, env)
+    _G.gameplay_parking = oldParking
+    assert(ok, err)
+    assertEq(env.objects[entered.id], entered); assertEq(env.objects[140], ambient)
+    assertEq(env.objects[150], nil)
+    env.fire("cnr_roundEnd", { reason = "cancelled" })
+    assertEq(#env.spawned, 1); assertEq(env.spawned[1].model, "etk800")
+    assertEq(env.spawned[1].opt.autoEnterVehicle, true)
+  end)
+end)
+
 test("a walking player's walker is removed but only the real car comes back", function()
   withCamera(function()
     local env = bootClient()
@@ -4353,7 +4373,7 @@ test("watching AI practice: the runner starts on the road by your parked car and
     assertEq(calls.road[1].pos.y, 20); assertEq(calls.road[1].heading.x, 1)
     assertEq(env.spawned[1].opt.pos.y, 60); assertEq(env.spawned[1].opt.autoEnterVehicle, false)
     assertEq(#calls.cop, 2)
-    assertEq(calls.cop[1].center.y, 60); assertEq(calls.cop[1].index, 1); assertEq(calls.cop[1].heading.x, 1)
+    assertEq(calls.cop[1].center.y, 60); assertEq(calls.cop[1].index, 1); assertEq(calls.cop[1].heading.y, 1)
     assertEq(calls.cop[2].center.y, 60); assertEq(calls.cop[2].index, 2)
   end)
 end)
@@ -4606,6 +4626,35 @@ end)
 
 local WATCH_SPAWN = "You can't spawn a car while watching the AI"
 local WATCH_REMOVE = "You can't remove a car while watching the AI"
+
+test("a failed watched AI setup restores the spawn lock", function()
+  withCamera(function()
+    local env = bootClient()
+    spectate(env)
+    package.loaded["copsAndRobbers/ai"].setup = function() error("failed to place AI") end
+    assertEq(pcall(env.fire, "cnr_setupAI", aiOnlySetup()), false)
+    assertEq(core_vehicles.spawnNewVehicle("etk800", {}), nil)
+    assertEq(#env.spawned, 0)
+  end)
+end)
+
+test("Earth reports an entered AI car only under its AI id", function()
+  withCamera(function()
+    local env = bootClient()
+    earthStub(env)
+    env.fire("cnr_mode", { geo = true })
+    MPVehicleGE.isOwn = function() return true end
+    watchPractice(env)
+    env.player = env.spawned[1].veh
+    env.tick(1)
+    local cars = env.lastSent("cnr_geo").cars
+    _G.beamngEarth_api = nil
+    assertEq(#cars, 3)
+    local ids = {}
+    for _, car in ipairs(cars) do ids[car.id] = true end
+    for _, id in ipairs({ -10, -11, -12 }) do assertEq(ids[id], true) end
+  end)
+end)
 
 test("while you watch AI practice the game can't spawn, replace, clone or remove a car", function()
   withCamera(function()

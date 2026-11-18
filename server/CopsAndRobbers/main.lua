@@ -561,7 +561,7 @@ local function applyEffects(effects)
       send(e.pid, "cnr_spectate", {
         runnerId = current.runnerId, runnerName = current:runnerName(), phase = e.phase,
         countdownRemaining = e.countdownRemaining, headStartRemaining = e.headStartRemaining, chaseElapsed = e.chaseElapsed,
-        heli = e.heli, practice = current.test or nil,
+        heli = e.heli,
         sky = sky.payload(current.sky, cfg, current.countdownStartedAt and math.max(0, now() - current.countdownStartedAt) or nil),
       })
     elseif e.kind == "setupAI" then
@@ -1076,8 +1076,7 @@ function cnrOnPanel(pid, data)
   elseif msg.action == "build" then
     panelBuild(pid, msg)
   elseif msg.action == "apply" then
-    local mayApply = pid == current.runnerId or (round.isAI(current.runnerId) and pid == current.issuerId)
-    if not mayApply then return send(pid, "cnr_panelReply", { text = "Only the runner can apply the change", tone = "warn" }) end
+    if pid ~= current.runnerId then return send(pid, "cnr_panelReply", { text = "Only the runner can apply the change", tone = "warn" }) end
     panelMirror = pid
     local ran, err = pcall(function() applyEffects(current:apply(now(), pid)) end)
     panelMirror = nil
@@ -1167,9 +1166,10 @@ end
 local function vehicleAllowed(pid, vid, data, isSpawn)
   if current:isActive() and current.aiOnly and pid == current.issuerId then
     local decoded = parseVehicleData(data)
+    if current.state == "picking" then return not isSpawn, decoded, isSpawn and WATCHING_AI or nil end
     local model = current.vehicle and current.vehicle.model
     local roundModel = model ~= nil and decoded ~= nil and decoded.jbm == model
-    if not roundModel or (isSpawn and aiSpawnsLeft <= 0) then return false, decoded, WATCHING_AI end
+    if not roundModel or (isSpawn and aiSpawnsLeft <= 0) then return false, decoded, isSpawn and WATCHING_AI or nil end
     if isSpawn then aiSpawnsLeft = aiSpawnsLeft - 1 end
     return true, decoded
   end

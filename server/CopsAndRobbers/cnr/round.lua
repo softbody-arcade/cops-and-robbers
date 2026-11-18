@@ -283,7 +283,6 @@ function Round:apply(now, pid)
   self.applyStartedAt = now
   self.setupDone = false
   self.readyPids = {}
-  if M.isAI(self.runnerId) then return self:markApplied() end
   return { { kind = "requestSetup", pid = self.runnerId } }
 end
 
@@ -307,7 +306,7 @@ function Round:vehiclePicked(now, pid, model, config, players)
   if not self.test and not self.players[self.runnerId] then
     return self:cancel(now, "Runner left, round cancelled")
   end
-  self.state = "prep"
+  self.state = (self.evolving and M.isAI(self.runnerId)) and "ready" or "prep"
   self.vehicle = { model = model, config = config }
   self.nextCopIndex = 1
   local fx = {}

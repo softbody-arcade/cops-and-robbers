@@ -322,7 +322,7 @@ function M.nearestRoad(pos, heading)
   if not a or not b then return nil end
   local dir = (b.pos - a.pos):normalized()
   if heading and dir.x * heading.x + dir.y * heading.y < 0 then dir = dir * -1 end
-  return a.pos, quatFromDir(dir, vec3(0, 0, 1))
+  return a.pos, quatFromDir(dir, vec3(0, 0, 1)), dir
 end
 
 return M

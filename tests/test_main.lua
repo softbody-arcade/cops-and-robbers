@@ -1883,16 +1883,6 @@ test("only the runner can apply the change", function()
   env.cleanup()
 end)
 
-test("in practice as cop, whoever started it applies", function()
-  local env = boot()
-  evolving(env); newBuild(env)
-  env.panel(1, "test cop")
-  env.call("cnr_panel", 1, '{"action":"apply"}')
-  assertEq(env.lastSent("cnr_applied") ~= nil, true)
-  assertEq(env.noticeHas("Cars ready"), false)
-  env.cleanup()
-end)
-
 test("someone rejoining during prep sees the runner's queued change", function()
   local env = boot()
   evolving(env); newBuild(env)
@@ -3332,7 +3322,7 @@ test("practice while sitting out runs the AI alone, the issuer spectates and not
     env.call("cnr_vehiclePicked", 1, PICK)
     assertEq(env.lastSent("cnr_roundSetup"), nil, cmd)
     local d = decodeJson(sentTo(env, "cnr_spectate", 1))
-    assertEq(d.phase, "prep"); assertEq(d.practice, true); assertEq(d.runnerName, "AI runner")
+    assertEq(d.phase, "prep"); assertEq(d.practice, nil); assertEq(d.runnerName, "AI runner")
     assertEq(sentTo(env, "cnr_spectate", 2), nil)
     local s = decodeJson(sentTo(env, "cnr_setupAI", 1))
     assertEq(s.aiOnly, true); assertEq(#s.ai, 3)
@@ -3352,6 +3342,38 @@ test("practice while sitting out runs the AI alone, the issuer spectates and not
     assertEq(env.call("onVehicleSpawn", 1, 4, string.format(AI_SPAWN, 4)), 0)
     env.cleanup()
   end
+end)
+
+test("an evolving practice with an AI runner has no change to apply: prep is ready and GO starts it", function()
+  for _, sitting in ipairs({ false, true }) do
+    local env = boot()
+    evolving(env); newBuild(env)
+    if sitting then sitOut(env, 1, true) end
+    env.sent = {}
+    env.panel(1, "test cop")
+    local setup = sitting and sentTo(env, "cnr_spectate", 1) or sentTo(env, "cnr_roundSetup", 1)
+    assertEq(decodeJson(setup).phase, "ready", tostring(sitting))
+    local st = panelOf(env)
+    assertEq(st.can.go, true); assertEq(st.can.apply, false); assertEq(st.goBlocked, nil)
+    env.call("cnr_panel", 1, '{"action":"apply"}')
+    assertEq(env.lastSent("cnr_requestSetup"), nil)
+    assertEq(env.lastSent("cnr_applied"), nil)
+    env.go()
+    assertEq(env.lastSent("cnr_countdown") ~= nil, true, tostring(sitting))
+    env.cleanup()
+  end
+end)
+
+test("an evolving practice as runner still waits for the runner's change", function()
+  local env = boot()
+  evolving(env); newBuild(env)
+  env.panel(1, "test runner")
+  assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 1)).phase, "prep")
+  env.go()
+  assertEq(env.lastSent("cnr_countdown"), nil)
+  env.call("cnr_panel", 1, '{"action":"apply"}')
+  assertEq(env.lastSent("cnr_requestSetup").pid, 1)
+  env.cleanup()
 end)
 
 test("someone else sitting out leaves practice as it was", function()
@@ -3396,6 +3418,8 @@ test("a watched practice refuses the issuer's own spawns and model changes, but 
   local env = boot()
   sitOut(env, 1, true)
   env.panel(1, "test cop")
+  assertEq(env.call("onVehicleEdited", 1, 2, string.format(AI_SPAWN, 2)), 0)
+  assertEq(env.call("onVehicleSpawn", 1, 3, string.format(AI_SPAWN, 3)), 1)
   env.call("cnr_vehiclePicked", 1, PICK)
   env.sent = {}
   for vid = 1, 3 do assertEq(env.call("onVehicleSpawn", 1, vid, string.format(AI_SPAWN, vid)), 0, vid) end
@@ -3403,6 +3427,7 @@ test("a watched practice refuses the issuer's own spawns and model changes, but 
   assertEq(env.noticeHas("You can't spawn a car while watching the AI", "warn"), true)
   assertEq(env.call("onVehicleSpawn", 1, 5, 'USER:Reinder:1-5:{"jbm":"etk800","vcf":{}}'), 1)
   assertEq(env.call("onVehicleEdited", 1, 2, 'USER:Reinder:1-2:{"jbm":"etk800","vcf":{}}'), 1)
+  assertEq(env.noticeHas("Only the round car is allowed", "warn"), true)
   assertEq(env.call("onVehicleEdited", 1, 2, string.format(AI_SPAWN, 2)), 0)
   assertEq(env.call("onVehicleSpawn", 2, 7, '2:Bob:2-7:{"jbm":"etk800","vcf":{}}'), 0)
   env.panel(1, "reroll")

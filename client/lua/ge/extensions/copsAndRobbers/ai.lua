@@ -114,7 +114,9 @@ function M.setup(d, center, heading)
   for _, a in ipairs(d.ai or {}) do
     local pos, rot
     if center and aiOnly and a.role == "runner" then
-      pos, rot = roads.nearestRoad(center, heading)
+      local runnerHeading
+      pos, rot, runnerHeading = roads.nearestRoad(center, heading)
+      heading = runnerHeading or heading
       copCenter = pos or center
     elseif center then
       copIndex = copIndex + 1

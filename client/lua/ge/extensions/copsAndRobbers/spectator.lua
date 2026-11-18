@@ -13,9 +13,12 @@ end
 
 local function ownCars()
   local list, seen = {}, {}
+  local parking = gameplay_parking
+  local parkedCars = parking and parking.getParkedCarsData and parking.getParkedCarsData() or {}
   local function add(veh)
-    if veh and not seen[veh:getID()] then
-      seen[veh:getID()] = true
+    local id = veh and veh:getID()
+    if id and not parkedCars[id] and not seen[id] then
+      seen[id] = true
       list[#list + 1] = veh
     end
   end

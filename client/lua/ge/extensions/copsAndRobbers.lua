@@ -152,9 +152,10 @@ local function onSetupAI(data)
     end
   end
   inputs.lockSpawns(false)
-  ai.setup(d, center, heading)
+  local ok, err = pcall(ai.setup, d, center, heading)
   inputs.lockSpawns(watchingAI)
   hidingBuiltAt = -math.huge
+  if not ok then error(err, 0) end
 end
 
 local function onPickVehicle(data)
@@ -818,7 +819,7 @@ local function updateGeo()
   if not geoMode then return end
   if clock - lastGeoSent >= GEO_SEND_INTERVAL then
     lastGeoSent = clock
-    geo.sendGeo(ai.objects())
+    geo.sendGeo(ai.objects(), spectating)
   end
   geo.lookupStations(clock)
 end
