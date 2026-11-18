@@ -61,7 +61,7 @@ local infoParts
 local infoSeenAt
 local pendingPlacement
 local personalCarId
-local parkingBystander, nextCarCleanup
+local parkingBystander, nextCarCleanup, pendingAISetup, drivingPractice
 local rebuildId
 local suppressResetUntil = 0
 local lastPose
@@ -164,7 +164,17 @@ local function onPlanStart(data)
   sendServer("cnr_startGrid", { id = d.id, slots = slots })
 end
 
+local function leaveWatchedAI()
+  local watched = getPlayerVehicle(0)
+  local cmds = rawget(_G, "commands")
+  if watched and ai.nameOf(watched:getID()) and cmds and cmds.setFreeCamera then cmds.setFreeCamera() end
+end
+
 local function onSetupAI(data)
+  if active and not nextCarCleanup then
+    pendingAISetup = data
+    return
+  end
   local d = jsonDecode(data) or {}
   local center, heading
   local watchingAI = spectating and d.aiOnly == true
@@ -172,9 +182,7 @@ local function onSetupAI(data)
     center, heading = watchCenter()
     if d.aiOnly == true then
       inputs.lock(true, requestReset, true, true, true)
-      local watched = getPlayerVehicle(0)
-      local cmds = rawget(_G, "commands")
-      if watched and ai.nameOf(watched:getID()) and cmds and cmds.setFreeCamera then cmds.setFreeCamera() end
+      leaveWatchedAI()
     end
   end
   inputs.lockSpawns(false)
@@ -182,6 +190,8 @@ local function onSetupAI(data)
   inputs.lockSpawns(watchingAI)
   hidingBuiltAt = -math.huge
   if not ok then error(err, 0) end
+  if runnerOut then ai.releaseRunner() end
+  if statusActive then ai.releaseCops() end
 end
 
 local function onPickVehicle(data)
@@ -266,7 +276,8 @@ end
 
 local function onRoundSetup(data)
   local d = jsonDecode(data) or {}
-  spectating, parkingBystander = false, false
+  spectating, parkingBystander, pendingAISetup = false, false, nil
+  drivingPractice = d.practice == true
   spectator.drop()
   hudfeed.clearRound()
   hudfeed.clearResult()
@@ -335,6 +346,10 @@ end
 local function onSpectate(data)
   local d = jsonDecode(data) or {}
   if active then return end
+  if spectating then
+    leaveWatchedAI()
+    ai.remove()
+  end
   hudfeed.clearRound()
   hudfeed.clearResult()
   setHeli(d.heli)
@@ -371,7 +386,7 @@ local function onParkBystanderCars(data)
   local d = jsonDecode(data) or {}
   if d.on == true and not parkingBystander then
     parkingBystander = true
-    spectator.park()
+    spectator.park(true)
     nextCarCleanup = clock + 1
   elseif d.on == false and parkingBystander then
     parkingBystander, nextCarCleanup = false, nil
@@ -624,7 +639,7 @@ local function onState(data)
 end
 
 local function endRound(leaving)
-  spectating, parkingBystander, nextCarCleanup = false, false, nil
+  spectating, parkingBystander, nextCarCleanup, pendingAISetup = false, false, nil, nil
   watchedId = nil
   ai.remove()
   inputs.lockSpawns(false)
@@ -790,8 +805,14 @@ local function updatePendingPlacement()
     if restore then veh:queueLuaCommand(restore) end
     modesHoldUntil = clock + MODES_SETTLE
     if frozen then veh:queueLuaCommand("controller.setFreeze(1)") end
+    personalCarId = p.gameId
     spectator.removeExtras(personalCarId, ai.objects())
     nextCarCleanup = clock + 1
+    if pendingAISetup then
+      local setup = pendingAISetup
+      pendingAISetup = nil
+      onSetupAI(setup)
+    end
     sendServer("cnr_myVehicle", { vid = vid, rebuild = p.rebuild })
     lightsPlaced = true
   elseif clock >= p.deadline then
@@ -998,6 +1019,30 @@ local function updateHeli(target)
   end
 end
 
+local function replacementRoundId()
+  local key = traffic.roundCar(MPConfig.getPlayerServerID())
+  local entry = key and MPVehicleGE.getVehicles()[key]
+  local id = entry and not entry.isDeleted and entry.isSpawned ~= false and tonumber(entry.gameVehicleID)
+  if id and getObjectByID(id) and MPVehicleGE.isOwn(id) then return id end
+end
+
+local function updateCarCleanup()
+  if not nextCarCleanup or clock < nextCarCleanup then return end
+  nextCarCleanup = clock + 1
+  if parkingBystander then
+    spectator.park(true)
+  elseif active then
+    if not personalCarId or not getObjectByID(personalCarId) then
+      if drivingPractice then
+        nextCarCleanup = nil
+        return
+      end
+      personalCarId = replacementRoundId()
+    end
+    if personalCarId then spectator.removeExtras(personalCarId, ai.objects()) end
+  end
+end
+
 local function onUpdate(dtReal, dtSim)
   spectator.updateHitches(dtSim or dtReal or 0)
   clock = clock + (dtReal or 0)
@@ -1007,14 +1052,7 @@ local function onUpdate(dtReal, dtSim)
     hudfeed.event(change.notice, clock, "info")
   end
   updatePendingPlacement()
-  if nextCarCleanup and clock >= nextCarCleanup then
-    nextCarCleanup = clock + 1
-    if parkingBystander then
-      spectator.park(true)
-    elseif active and personalCarId then
-      spectator.removeExtras(personalCarId, ai.objects())
-    end
-  end
+  updateCarCleanup()
   updateResetLock()
   updateOwnCar()
   local report = ai.tick(clock)
@@ -1294,7 +1332,10 @@ end
 M.onUpdate = onUpdate
 M.onVehicleSpawned = spectator.vehicleSpawned
 M.onBeforeVehicleReplaced = spectator.forgetVehicle
-M.onVehicleDestroyed = spectator.forgetVehicle
+M.onVehicleDestroyed = function(id)
+  spectator.forgetVehicle(id)
+  if id == personalCarId then personalCarId = nil end
+end
 M.onVehicleResetted = onVehicleResetted
 M.onVehicleCycleSwitchPerformedByUser = onVehicleCycleSwitchPerformedByUser
 

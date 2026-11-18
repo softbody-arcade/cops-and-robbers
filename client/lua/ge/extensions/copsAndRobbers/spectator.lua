@@ -96,6 +96,17 @@ local function saveHitches(byId)
   end
 end
 
+local function rigRegistered(id, visited)
+  if visited[id] then return true end
+  visited[id] = true
+  if not MPVehicleGE.getVehicleByGameID(id) then return false end
+  for _, pair in ipairs(core_vehicles.attachedCouplers or {}) do
+    local peer = pair[1] == id and pair[2] or pair[2] == id and pair[1]
+    if peer and not rigRegistered(peer, visited) then return false end
+  end
+  return true
+end
+
 function M.park(includeNewCars)
   if not parked then
     restoring = nil
@@ -104,6 +115,11 @@ function M.park(includeNewCars)
     return
   end
   local cars = ownCars()
+  if includeNewCars then
+    for i = #cars, 1, -1 do
+      if not rigRegistered(cars[i]:getID(), {}) then table.remove(cars, i) end
+    end
+  end
   if #cars == 0 then return end
   local cmds = rawget(_G, "commands")
   if cars[1] == game.ownVehicle() and cmds and cmds.setFreeCamera then cmds.setFreeCamera() end
