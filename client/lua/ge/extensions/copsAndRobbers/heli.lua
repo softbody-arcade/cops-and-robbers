@@ -400,7 +400,8 @@ end
 local function drawBeam(state, clock, opts)
   local lightPos, aimPos = state.lightPos, state.aimPos
   castBeam(state, lightPos, aimPos, clock)
-  local camPos = core_camera and core_camera.getPosition and core_camera.getPosition() or nil
+  local camera = opts and opts.getCameraPosition or (core_camera and core_camera.getPosition)
+  local camPos = camera and camera()
   local strength = beam.strength(opts and opts.weather, state.fx.bright, opts and opts.weatherFrom, opts and opts.weatherProgress)
   local n = beam.quads(lightPos, aimPos, strength, state.beamHit, camPos, state.beamQuads)
   drawTri = require("utils/debugDraw").drawTriSolid
@@ -483,7 +484,7 @@ function M.lightTick(state, target, night, clock, opts)
       lightError(state, "searchlight stopped: " .. tostring(err))
     end
   end
-  if target then state.lightPhase = phase end
+  if target or flyingAway(phase) then state.lightPhase = phase end
 end
 
 function M.wantsNight(state)

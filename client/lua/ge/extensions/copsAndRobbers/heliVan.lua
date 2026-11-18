@@ -193,6 +193,7 @@ local function palette(night)
 end
 
 local function glowRadius(pos, camPos)
+  if type(camPos) == "function" then camPos = camPos() end
   if not camPos then return M.LIGHT_RADIUS end
   local dx, dy, dz = pos.x - camPos.x, pos.y - camPos.y, pos.z - camPos.z
   return math.min(M.GLOW_MAX, M.LIGHT_RADIUS + M.GLOW_PER_METER * math.sqrt(dx * dx + dy * dy + dz * dz))
@@ -202,7 +203,7 @@ local function drawLights(s, pos, clock, night, camPos)
   if not color then return end
   sphere = sphere or require("utils/debugDraw").Sphere
   local p, pal = s.pose, palette(night == true)
-  local glow = glowRadius(pos, camPos)
+  local glow = night and glowRadius(pos, camPos) or M.LIGHT_RADIUS
   local beacon = model.beaconOn(clock)
   for i, l in ipairs(model.LIGHTS) do
     if beacon or not l.beacon then

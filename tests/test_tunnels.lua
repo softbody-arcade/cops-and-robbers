@@ -122,6 +122,22 @@ test("a symmetric fork is rotated by the seed", function()
   assertEq(tunnels.watch(car, 1, 0, roads, roofed)[1].id, 3)
 end)
 
+test("equal exits behind the car measure their turn from the reverse heading and rotate within that group", function()
+  local nodes, links = fork(math.pi / 4)
+  local roads = roadsOf(nodes, links, 1, 2, 2)
+  local car = v(50, 0, 0)
+  local function roofed(p) return p.x == 50 or p.x == 100 end
+  for seed = 0, 1 do
+    local list = tunnels.watch(car, -1, 0, roads, roofed, seed)
+    assertIds(list, seed == 0 and { 1, 3, 4 } or { 1, 4, 3 })
+    assertEq(list[1].behind, nil)
+    for i = 2, 3 do
+      assertEq(list[i].behind, true)
+      near(list[i].turn, math.pi / 4)
+    end
+  end
+end)
+
 test("ids in a tie are ordered as strings", function()
   local nodes = {
     [1] = { pos = v(0, 0, 0) },
