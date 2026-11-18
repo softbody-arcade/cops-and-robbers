@@ -120,6 +120,39 @@ test("full storms follow the expected rate and distance bands", function()
   assertNear((count - close - medium) / count, 0.55, 0.02)
 end)
 
+test("a strike's distance leaves the next wait and keep roll independent", function()
+  local p = storm(4242)
+  local all = strikes.between(strikes.new(4242), p, 0, 125000)
+  local blend = {weather = "rain", lightningSeed = 4242, changes = {{to = "thunderstorm"}}}
+  local cursor = strikes.new(4242)
+  local waits = {{n = 0, long = 0}, {n = 0, long = 0}, {n = 0, long = 0}}
+  local kept = {{n = 0, yes = 0}, {n = 0, yes = 0}}
+  for i = 2, #all do
+    local previous, following = all[i - 1], all[i]
+    local band, midpoint = 3, 4500
+    if previous.range < 1000 then band, midpoint = 1, 650
+    elseif previous.range < 3000 then band, midpoint = 2, 2000 end
+    local w = waits[band]
+    w.n = w.n + 1
+    if following.at - previous.at > 25 then w.long = w.long + 1 end
+    blend.changes[1].at = following.at - 30
+    local k = kept[previous.range < midpoint and 1 or 2]
+    k.n = k.n + 1
+    k.yes = k.yes + #strikes.between(cursor, blend, previous.at, following.at)
+  end
+  for _, w in ipairs(waits) do assertNear(w.long / w.n, math.exp(-1), 0.06, "wait by distance band") end
+  for _, k in ipairs(kept) do assertNear(k.yes / k.n, 0.5, 0.08, "keep roll by within-band distance") end
+end)
+
+test("pulse count leaves the bolt free to bend in either direction", function()
+  local sides = {{}, {}, {}}
+  for _, s in ipairs(strikes.between(strikes.new(42), storm(42), 0, 6000)) do
+    local midpoint = strikes.bolt(s.shapeSeed).main[33]
+    sides[#s.pulses - 1][midpoint.x > 0] = true
+  end
+  for _, bends in ipairs(sides) do assert(bends[true] and bends[false], "one-sided bend for a pulse count") end
+end)
+
 test("every pulse fits the half-second flash with a dark gap before each return", function()
   local p = storm(101)
   local sizes = {}

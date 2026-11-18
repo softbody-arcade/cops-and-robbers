@@ -9,7 +9,13 @@ local function nextSeed(seed)
   return seed * 16807 % MODULUS
 end
 
-local function generator(seed)
+local function forkGenerator(parentSeed)
+  local reversed = 0
+  for _ = 1, 31 do
+    reversed = 2 * reversed + parentSeed % 2
+    parentSeed = math.floor(parentSeed / 2)
+  end
+  local seed = MODULUS - reversed
   return function()
     seed = nextSeed(seed)
     return seed / MODULUS, seed
@@ -66,7 +72,7 @@ local function pulses(draw)
 end
 
 local function strike(event)
-  local draw = generator(event.detailSeed)
+  local draw = forkGenerator(event.detailSeed)
   local band = draw()
   local near, far = 3000, 6000
   if band < 0.10 then near, far = 300, 1000
@@ -119,7 +125,7 @@ local function channel(top, foot, levels, roughness, draw)
 end
 
 function M.bolt(shapeSeed)
-  local draw = generator(shapeSeed)
+  local draw = forkGenerator(shapeSeed)
   local main = channel({x = 0, y = 0, z = 900}, {x = 0, y = 0, z = 0}, 6, 0.35, draw)
   local branches = {}
   local count = 1 + math.floor(3 * draw())
