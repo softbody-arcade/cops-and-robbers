@@ -15,7 +15,7 @@ One entry per piece of work that has started: what it is, its branch (or "design
   - Helicopter test gaps from the 2.10.0 task reviews, all can-wait: the drop test passes via the phase-change branch; the dropped gap-3 refuel case and its dead loop (`test_heli_client.lua` ~886); blind-scaled distance bounds (~165, ~756, ~1451, ~897); no test for the behind entry's turn and rotation; `state.tunnelLogged` now also covers road failures; `heliSearch.tick` writes the light's `lightPhase`
 - [ ] ! Helicopter search, tunnel and sound regressions (`fix/heli-search-coverage`).
   - Helicopter search test gaps from the 2.9.4 reviews: tunnels with n2 == n1 or nil, the car on a node, a node with no links, a one-way link, a road at exactly 15 m, the budget summed across branches, and `roofedIds` matching by x,y only; the extra-1 refuel test only checks `leaving ~= nil`; reusing a leftover emitter mid-round; `core_camera` isn't stubbed in the client env, so the sound's muffle in `updateHeli` never runs in a client test
-- [ ] ! Unify the helicopter grounding-weather rules used by flight, weather changes and the forecast.
+- [ ] ! Share helicopter grounding-weather rules between flight, weather changes and the forecast (`fix/heli-grounding-rules`).
 
 ## In-game checks
 Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to decide what needs a player. Record deferred checks here with the action, expected observation and open question. Remove a check once verified and record failures under Issues.
@@ -45,7 +45,6 @@ Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to 
 - [ ] !!! Sitting out with a truck and trailer parked at an angle straightens the trailer on return, which can move it into a building. Restore both vehicles in their parked positions, still hitched. Deferred fix on `fix/restore-trailer-hitch`.
 - [ ] !!! Choosing Play can leave a personal trailer or spare car on the map. In normal and practice rounds, remove active players’ spare vehicles after successful placement so only round vehicles and traffic remain. Active players keep their round cars afterward. Players sitting out get their parked vehicles back. Deferred fix on `fix/active-round-trailer`.
 - [ ] ! The game's Vehicle Radar app shows hidden cars nearby (about 30 m, up to about 54 m ahead with its offset slider): it walks `be:getObject(i)` directly (`vehicleRadarApp.lua:187`), so the hiding can't filter it. The user accepted this (2026-11-17); fix only if an easy way turns up
-- [ ] ! Trees sometimes hide the runner from the helicopter's line of sight; the user thinks that's fair with thermals for now (2026-11-17). Revisit if it feels unfair
 - [ ] ! How to play, Panel and Leaderboard forget their size and position when closed and reopened. The shared close action removes the layout entry and reopening uses the app defaults (`apps.lua`, `placement.lua`). Decide whether to remember each app’s placement per HUD layout.
 - [ ] ! Panel tabs forget their state when you switch tabs, because the game only renders the open tab: the Settings "more" fold, the Car tab's choice and the Map tab's stations. Decide which to keep in Panel `app.vue`
 - [ ] ! `useFit` (`fit.js`) only shrinks text and never grows it in a large app. Decide whether it should
