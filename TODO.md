@@ -8,7 +8,7 @@ Priorities run from `!!!!` (highest) through `!!!` (high), `!!` (normal), and `!
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
 - [ ] ! Directional cop sight and weather visibility (`feat/cop-visibility`). Reviewed `ed6d475` is staged locally. The playtest is queued under **In-game checks**. [Design](docs/superpowers/specs/2026-11-18-cop-visibility-design.md) · [Plan](docs/superpowers/plans/2026-11-18-cop-visibility.md)
-- [ ] ! AI voice for the police helicopter (`feat/heli-voice`, design). Air One calls confirmed moves to pursuing cops, including ordered pairs such as “left, then right.” The first West Coast USA routes are the highway exit toward downtown and the financial district tunnel. The [voice design](docs/superpowers/specs/2026-11-20-helicopter-voice-design.md) proposes packaged AI recordings with server-selected calls and client playback. Awaiting player review before the implementation plan.
+- [ ] ! AI voice for the police helicopter (`feat/heli-voice`, planning). Air One calls confirmed moves to pursuing cops, including ordered pairs such as “left, then right.” The first West Coast USA routes are the highway exit toward downtown and the financial district tunnel. The [voice design](docs/superpowers/specs/2026-11-20-helicopter-voice-design.md) proposes packaged AI recordings with server-selected calls and client playback. The [implementation plan](docs/superpowers/plans/2026-11-20-helicopter-voice.md) is ready for build approval. Start with provisional routes from the installed map and tune them during the first playtest.
 
 ## In-game checks
 Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to decide what needs a player. Record deferred checks here with the action, expected observation and open question. Remove a check once verified and record failures under Issues.
@@ -26,6 +26,10 @@ Run these together on the local West Coast USA server at port 30814. The staged 
 - [ ] ! In the same round, keep the car facing ahead while the runner is 200–400 m down an open side street. Look toward them, then away. Expect acquisition and loss after grace. Put the car behind a wall and orbit the camera over it. That cop should still have no sight.
 - [ ] ! Solo night Practice as runner. Cross from a working streetlight into darkness and toggle low beam. At similar bearing, expect a shorter logged range outside the visible pool and a longer range with headlights on.
 - [ ] ! Two clients, clear night. Park the runner about 170 m ahead of the only cop on an unlit straight. Toggle the runner’s manual headlights. The observing cop’s logged lamp state should follow the switch and the runner should see SPOTTED with lights on and HIDDEN after grace with lights off.
+
+**When the helicopter radio build is staged**
+
+- [ ] ! West Coast USA. Take the city-bound highway exit your group uses, then drive the usual financial district tunnel. Use the solo route check supplied with the build or follow a runner as a cop. Listen for the exit call after the runner takes the ramp and the tunnel call when Air One loses visual. Note which label or trigger point needs moving.
 
 ## Ideas
 - [ ] !! Include the helicopter in the spectator camera cycle while it is airborne, so spectators can use Tab or Ctrl+Tab to switch between the helicopter and the round cars.
