@@ -4038,3 +4038,14 @@ test("Practice rejects a head-start sighting and honors the targeted host range"
     env.cleanup()
   end
 end)
+
+test("a malformed registration leaves valid siblings usable and quoted null text leaves sight usable", function()
+  local env = boot({config='{"helicopter":false}'})
+  setupPracticeSight(env, "runner")
+  env.call("cnr_aiVehicles", 1, '{"ai":[{"id":-11,"vid":3,"instance":null},null,{"id":-10,"vid":2,"instance":7}]}')
+  advanceSight(env, 41)
+  env.call("cnr_sight", 1, encode({aiId=-10, instance=7, seen=true, details='ignored ":null'}))
+  advanceSight(env)
+  assertEq(practiceSpotted(env), true)
+  env.cleanup()
+end)

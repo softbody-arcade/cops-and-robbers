@@ -94,6 +94,7 @@ function Round:clear()
   self.teleportAnnounced = {}
   self.lastTickAt = nil
   self.sight = sight.new()
+  self.lastGroundObservers = {}
   self.sightTargetChanged = false
   self.queued = nil
   self.inSight = false
@@ -577,9 +578,11 @@ end
 function Round:forgetVehicleSight(id)
   if id == self.runnerId then
     for pid in pairs(self.players) do sight.forget(self.sight, pid) end
+    self.lastGroundObservers = {}
     self.sightTargetChanged = true
   else
     sight.forget(self.sight, id)
+    self.lastGroundObservers[id] = nil
   end
 end
 
@@ -607,7 +610,13 @@ end
 function Round:sightTick(now, cars, runnerCar, pids, fx)
   local cfg = self.cfg
   local seeing = {}
-  if cfg.sightMaxMeters <= 0 or (not runnerCar and not self.sightTargetChanged) then return seeing end
+  if cfg.sightMaxMeters <= 0 then return seeing end
+  if not runnerCar then
+    if not self.inSight then return seeing end
+    for pid in pairs(self.lastGroundObservers) do
+      if sight.sees(self.sight, pid, now, cfg.sightGraceSeconds) then return seeing end
+    end
+  end
   local dt = self.sightTickAt and math.min(MAX_SIGHT_STEP, math.max(0, now - self.sightTickAt)) or 0
   self.sightTickAt = now
   local inSight = false
@@ -620,6 +629,7 @@ function Round:sightTick(now, cars, runnerCar, pids, fx)
       self.copSight[pid] = (self.copSight[pid] or 0) + dt
     end
   end
+  self.lastGroundObservers = seeing
   if not inSight then self.hiddenSeconds = self.hiddenSeconds + dt end
   if inSight and not self.inSight then
     self.inSight = true

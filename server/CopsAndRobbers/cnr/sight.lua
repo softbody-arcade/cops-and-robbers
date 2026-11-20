@@ -6,6 +6,11 @@ function M.new()
   return { seen = {}, lostAt = {}, at = {} }
 end
 
+local function fresh(state, pid, now)
+  local at = state.at[pid]
+  return at ~= nil and now - at <= M.STALE_SECONDS + 1e-9
+end
+
 function M.report(state, pid, seen, now)
   if seen then
     state.seen[pid] = true
@@ -13,7 +18,7 @@ function M.report(state, pid, seen, now)
     state.lostAt[pid] = nil
   elseif state.seen[pid] then
     state.seen[pid] = nil
-    state.lostAt[pid] = now
+    state.lostAt[pid] = fresh(state, pid, now) and now or nil
   end
 end
 
@@ -24,7 +29,7 @@ function M.forget(state, pid)
 end
 
 function M.sees(state, pid, now, grace)
-  if state.seen[pid] then return now - (state.at[pid] or now) <= M.STALE_SECONDS + 1e-9 end
+  if state.seen[pid] then return fresh(state, pid, now) end
   local lost = state.lostAt[pid]
   return lost ~= nil and now - lost < grace - 1e-9
 end

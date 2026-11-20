@@ -2009,3 +2009,40 @@ test("two human cops overlap for half a second and send one last position at los
   end
   assertEq(last.x, 6.5)
 end)
+
+test("removing a Practice observer during a missing position fix keeps only prior eligible cops", function()
+  for _, otherX in ipairs({300, 451}) do
+    local r, cars = practiceSight("runner")
+    cars[-11] = car(otherX)
+    r:tick(11, cars, {})
+    r:aiSightReport(12, 1, -10, true)
+    r:aiSightReport(12, 1, -11, true)
+    assertEq(find(r:tick(12, cars, {}), "spotted").spotted, true)
+    r:forgetVehicleSight(-10)
+    local missing = {[-11]=cars[-11]}
+    local fx = r:tick(12.25, missing, {})
+    if otherX == 300 then
+      assertEq(find(fx, "spotted"), nil)
+      assertEq(find(fx, "lastSeen"), nil)
+      r:forgetVehicleSight(-11)
+      fx = r:tick(12.5, {}, {})
+    end
+    local lost = find(fx, "spotted")
+    assertEq(lost and lost.spotted, false, otherX)
+    assertEq(find(fx, "lastSeen").pos.x, 0)
+    assertEq(find(r:tick(12.75, {}, {}), "lastSeen"), nil)
+  end
+end)
+
+test("the first negative AI report following expiry cannot generate a new spotted transition", function()
+  local r, cars = practiceSight("runner")
+  r:tick(11, cars, {})
+  r:aiSightReport(12, 1, -10, true)
+  assertEq(find(r:tick(12, cars, {}), "spotted").spotted, true)
+  assertEq(find(r:tick(23, cars, {}), "spotted"), nil)
+  assertEq(find(r:tick(23.25, cars, {}), "spotted").spotted, false)
+  r:aiSightReport(24, 1, -10, false)
+  assertEq(find(r:tick(24, cars, {}), "spotted"), nil)
+  r:aiSightReport(24.25, 1, -10, true)
+  assertEq(find(r:tick(24.25, cars, {}), "spotted").spotted, true)
+end)

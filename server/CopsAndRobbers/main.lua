@@ -1497,7 +1497,15 @@ local function registerAICar(pid, a, owned)
 end
 
 local function decodeObservationPacket(data)
-  if type(data) ~= "string" or data:find(":%s*null") then return end
+  if type(data) ~= "string" then return end
+  if data:find("null", 1, true) then
+    local quoted = false
+    data = data:gsub('([^"]*)("?)', function(chunk, quote)
+      local value = quoted and chunk or chunk:gsub("null", "[]")
+      if quote ~= "" and #chunk:match("\\*$") % 2 == 0 then quoted = not quoted end
+      return value .. quote
+    end)
+  end
   local ok, packet = pcall(Util.JsonDecode, data)
   if ok and type(packet) == "table" then return packet end
 end
