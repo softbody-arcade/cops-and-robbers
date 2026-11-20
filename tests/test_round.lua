@@ -2046,3 +2046,31 @@ test("the first negative AI report following expiry cannot generate a new spotte
   r:aiSightReport(24.25, 1, -10, true)
   assertEq(find(r:tick(24.25, cars, {}), "spotted").spotted, true)
 end)
+
+test("a public chase scores only the current tick when sight expires across a missing runner fix", function()
+  local r = chasing({helicopter=false})
+  local cars = farCars()
+  r:sightReport(12, 2, true)
+  assertEq(find(r:tick(12, cars, {}), "spotted").spotted, true)
+  local initialSight = r.copSight[2]
+  local initialHidden = r.hiddenSeconds
+  local missing = {[2]=cars[2], [3]=cars[3]}
+  for t = 12.25, 23, 0.25 do
+    assertEq(find(r:tick(t, missing, {}), "spotted"), nil, t)
+    assertEq(r.copSight[2], initialSight, t)
+    assertEq(r.hiddenSeconds, initialHidden, t)
+  end
+  local beforeLoss = r.hiddenSeconds
+  assertEq(find(r:tick(23.25, missing, {}), "spotted").spotted, false)
+  assertEq(r.hiddenSeconds - beforeLoss, 0.25)
+  for t = 23.5, 25, 0.25 do
+    r:tick(t, missing, {})
+    assertEq(r.copSight[2], initialSight, t)
+    assertEq(r.hiddenSeconds, beforeLoss + 0.25, t)
+  end
+  r:tick(25.25, cars, {})
+  assertEq(r.hiddenSeconds, beforeLoss + 0.5)
+  r:sightReport(25.5, 2, true)
+  assertEq(find(r:tick(25.5, cars, {}), "spotted").spotted, true)
+  assertEq(r.copSight[2] - initialSight, 0.25)
+end)

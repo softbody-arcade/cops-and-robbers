@@ -611,14 +611,14 @@ function Round:sightTick(now, cars, runnerCar, pids, fx)
   local cfg = self.cfg
   local seeing = {}
   if cfg.sightMaxMeters <= 0 then return seeing end
+  local dt = self.sightTickAt and math.min(MAX_SIGHT_STEP, math.max(0, now - self.sightTickAt)) or 0
+  self.sightTickAt = now
   if not runnerCar then
     if not self.inSight then return seeing end
     for pid in pairs(self.lastGroundObservers) do
       if sight.sees(self.sight, pid, now, cfg.sightGraceSeconds) then return seeing end
     end
   end
-  local dt = self.sightTickAt and math.min(MAX_SIGHT_STEP, math.max(0, now - self.sightTickAt)) or 0
-  self.sightTickAt = now
   local inSight = false
   for _, pid in ipairs(pids) do
     local car = cars[pid]
