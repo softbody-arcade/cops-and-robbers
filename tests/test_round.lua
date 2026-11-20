@@ -619,6 +619,7 @@ end)
 test("AI ids never collide with broadcast or players", function()
   assertEq(round.AI_FIRST <= -10, true)
   assertEq(round.isAI(round.AI_FIRST), true)
+  assertEq(round.isAI(-10.5), false)
   assertEq(round.isAI(-1), false)
   assertEq(round.isAI(0), false)
 end)
@@ -1909,4 +1910,102 @@ test("a cop crashing into traffic or the runner causing the crash gives no free 
   r2:tick(11.5, { [1] = kmh(5, -100), [2] = kmh(0, 60), [3] = kmh(500, 0) }, {})
   r2:tick(11.75, { [1] = kmh(4, 0), [2] = kmh(0, 0), [3] = kmh(500, 0) }, {})
   assertEq(r2.lastState[1].resetHint ~= FREE, true)
+end)
+
+local function practiceSight(role, cfg)
+  local r = round.new(config.merge(cfg or {helicopter=false}))
+  r:start(0, nil, 1, players, {test=true, role=role, aiOnly=role == "watch"})
+  r:vehiclePicked(1, 1, "pickup", "cfg", players)
+  r:go(1, 1)
+  local cars = {[-10]=car(300), [-11]=car(450), [-12]=car(300), [1]=car(290)}
+  cars[r.runnerId] = car(0)
+  r:tick(4, cars, {})
+  return r, cars
+end
+
+test("Practice attributes sight per AI cop at the distance, grace and freshness boundaries", function()
+  local r, cars = practiceSight("runner")
+  for t = 11, 30.25, 0.25 do
+    if t == 12 or t == 19 then r:aiSightReport(t, 1, -10, true) end
+    if t == 13 then
+      r:aiSightReport(t, 1, -11, true)
+      r:aiSightReport(t, 1, -10, false)
+    elseif t == 15 then
+      cars[-11] = car(451)
+    elseif t == 16 then
+      cars[-11] = car(300)
+      r:aiSightReport(t, 1, -11, true)
+    elseif t == 17 then
+      r:aiSightReport(t, 1, -11, false)
+    end
+    local first, second = r.copSight[-10] or 0, r.copSight[-11] or 0
+    local fx = r:tick(t, cars, {})
+    local seesFirst = (t >= 12 and t < 14.5) or (t >= 19 and t <= 30)
+    local seesSecond = (t >= 13 and t < 15) or (t >= 16 and t < 18.5)
+    assertEq((r.copSight[-10] or 0) - first, seesFirst and 0.25 or 0, t)
+    assertEq((r.copSight[-11] or 0) - second, seesSecond and 0.25 or 0, t)
+    assertEq(r.copSight[1], nil)
+    local spotted = find(fx, "spotted")
+    if t == 12 or t == 16 or t == 19 then
+      assertEq(spotted and spotted.spotted, true, t)
+      assertEq(find(fx, "live").pos.x, 0)
+    elseif t == 15 or t == 18.5 or t == 30.25 then
+      assertEq(spotted and spotted.spotted, false, t)
+      assertEq(find(fx, "lastSeen").pos.x, 0)
+    else
+      assertEq(spotted, nil, t)
+    end
+  end
+  local fx = r:endCalled(31, 1)
+  assertEq(find(fx, "roundEnd").reason, "called")
+  assertEq(find(fx, "record"), nil)
+end)
+
+test("Practice AI sight requires the running issuer and a rostered cop with sight enabled", function()
+  for _, role in ipairs({"runner", "cop", "watch"}) do
+    local r, cars = practiceSight(role, {helicopter=false, sightGraceSeconds=3})
+    r:aiSightReport(5, 1, -11, true)
+    assertEq(find(r:tick(11, cars, {}), "spotted"), nil)
+    for _, bad in ipairs({{2,-11,true}, {1,-13,true}, {1,-11.5,true}, {1,"-11",true}, {1,1,true}, {1,-11,"true"}}) do
+      r:aiSightReport(12, bad[1], bad[2], bad[3])
+    end
+    if role ~= "runner" then
+      r:aiSightReport(12, 1, -10, true)
+      assertEq(r.sight.at[-10], nil)
+    end
+    assertEq(find(r:tick(12, cars, {}), "spotted"), nil)
+    r:aiSightReport(13, 1, -11, true)
+    assertEq(find(r:tick(13, cars, {}), "spotted").spotted, true)
+    r:aiSightReport(14, 1, -11, false)
+    assertEq(find(r:tick(16.75, cars, {}), "spotted"), nil)
+    assertEq(find(r:tick(17, cars, {}), "spotted").spotted, false)
+  end
+  local off, cars = practiceSight("runner", {sightMaxMeters=0})
+  off:tick(11, cars, {})
+  off:aiSightReport(12, 1, -10, true)
+  assertEq(off.sight.at[-10], nil)
+  local public = chasing()
+  public:aiSightReport(12, 2, 3, true)
+  assertEq(find(public:tick(12, {[1]=car(0), [3]=car(300)}, {}), "spotted"), nil)
+end)
+
+test("two human cops overlap for half a second and send one last position at loss", function()
+  local r = chasing({helicopter=false})
+  local cars = {[1]=car(0), [2]=car(290), [3]=car(290)}
+  local last
+  for t = 0, 8, 0.25 do
+    if t == 0 or t == 2 then r:sightReport(12+t, 2, t == 0) end
+    if t == 3 or t == 5 then r:sightReport(12+t, 3, t == 3) end
+    cars[1] = car(t)
+    local a, b = r.copSight[2] or 0, r.copSight[3] or 0
+    local fx = r:tick(12+t, cars, {})
+    local spotted = find(fx, "spotted")
+    if t == 0 or t == 6.5 then assertEq(spotted.spotted, t == 0)
+    else assertEq(spotted, nil, t) end
+    assertEq((r.copSight[2] or 0) > a, t < 3.5, t)
+    assertEq((r.copSight[3] or 0) > b, t >= 3 and t < 6.5, t)
+    if t == 6.5 then last = find(fx, "lastSeen").pos
+    else assertEq(find(fx, "lastSeen"), nil, t) end
+  end
+  assertEq(last.x, 6.5)
 end)
