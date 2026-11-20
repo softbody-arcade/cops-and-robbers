@@ -7,15 +7,13 @@ Priorities run from `!!!!` (highest) through `!!!` (high), `!!` (normal), and `!
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
-- [ ] ! Directional cop sight and weather visibility (`feat/cop-visibility`). Reviewed commit `ed6d475` is staged on the local West Coast USA test server at port 30814. All 1,739 Lua tests, UI checks, LuaJIT and packaging passed. Awaiting the player's in-game results or explicit deferral before merge. [Design](docs/superpowers/specs/2026-11-18-cop-visibility-design.md) · [Diagram](docs/superpowers/specs/cop-visibility.svg) · [Plan and playtest steps](docs/superpowers/plans/2026-11-18-cop-visibility.md)
-  - Solo, clear-day Practice as cop at 400 m sight range. Turn the driving camera toward a runner 200–400 m down an open side street, then away. Look over a wall while the car stays behind it. Expect acquisition toward the street and none through the wall. On an open straight with the runner about 260 m behind, expect acquisition only when looking back. Use the probe for individual sight when another cop has the runner.
-  - Solo, night Practice as runner. Cross from a working lamp into darkness and toggle low beam. At similar bearing, expect shorter logged range outside the lit pool and longer range with headlights on.
-  - Two clients, clear night. Park the runner about 170 m ahead of the only cop on an unlit straight. Toggle manual headlights. Expect the observing cop to receive the change and the runner to show SPOTTED with lights on and HIDDEN after grace with lights off.
+- [ ] ! Directional cop sight and weather visibility (`feat/cop-visibility`). Reviewed `ed6d475` is staged locally. The playtest is queued under **In-game checks**. [Design](docs/superpowers/specs/2026-11-18-cop-visibility-design.md) · [Plan](docs/superpowers/plans/2026-11-18-cop-visibility.md)
+- [ ] ! AI voice for the police helicopter (design). Define what the crew says, who hears it and when a call helps during play. Compare generating speech on the server and on each player's client in the spec.
 
 ## In-game checks
 Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to decide what needs a player. Record deferred checks here with the action, expected observation and open question. Remove a check once verified and record failures under Issues.
 
-Run these together on the locally staged 2.14.8 (`364b545`) or later.
+Run these together on the local West Coast USA server at port 30814. The staged build is 2.14.8, cop-sight commit `ed6d475`. For individual cop readings during a sight check, run `extensions.load("cnrCopSightProbe"); cnrCopSightProbe.trace()` in the GE console after joining.
 
 - [ ] !!! Park a hitched truck and trailer at an angle beside a landmark. Sit out, watch an AI Practice round, then end it. Both should return at their original angles and the trailer should follow when you pull away.
 - [ ] !!! With Play selected, bring the hitched rig and a spare car into driving Practice with traffic enabled. After placement, the rig and spare should be gone, AI and round traffic should remain, and you should keep the round car at the end.
@@ -24,6 +22,10 @@ Run these together on the locally staged 2.14.8 (`364b545`) or later.
 - [ ] ! Continue the solo round through downtown and toward a hillside. The helicopter should clear roofs and slopes smoothly, then settle back to its usual height. Keep it airborne through dusk and watch the searchlight, glare and enabled beam brighten together over about one second.
 
 - [ ] ! In the BeamNG layout editor, enlarge the HUD and move and resize How to play. Save, close and reopen How to play. It should return to the saved rectangle. During the solo round, check that the HUD and announcements stay readable, with no clipped text or invisible area swallowing clicks.
+- [ ] ! Solo Practice as cop, clear daylight, 400 m sight range. Keep the runner about 260 m behind on an open straight. Look ahead, then directly back. The probe should rise from about 200 m to 400 m and the cop should acquire the runner on the deliberate look back.
+- [ ] ! In the same round, keep the car facing ahead while the runner is 200–400 m down an open side street. Look toward them, then away. Expect acquisition and loss after grace. Put the car behind a wall and orbit the camera over it. That cop should still have no sight.
+- [ ] ! Solo night Practice as runner. Cross from a working streetlight into darkness and toggle low beam. At similar bearing, expect a shorter logged range outside the visible pool and a longer range with headlights on.
+- [ ] ! Two clients, clear night. Park the runner about 170 m ahead of the only cop on an unlit straight. Toggle the runner’s manual headlights. The observing cop’s logged lamp state should follow the switch and the runner should see SPOTTED with lights on and HIDDEN after grace with lights off.
 
 ## Ideas
 - [ ] !! Include the helicopter in the spectator camera cycle while it is airborne, so spectators can use Tab or Ctrl+Tab to switch between the helicopter and the round cars.
@@ -37,7 +39,6 @@ Run these together on the locally staged 2.14.8 (`364b545`) or later.
 - [ ] ! Leaderboard filter by conditions (All / Normal / Night / Bad weather), next to the car-mode filter, so storm records don't compete with clear-day runs unless wanted. Runs already record their conditions (night and weather rounds)
 - [ ] ! Dry roads in tunnels: in rain, storm and snow rounds the road grip is the same inside a tunnel as outside, because the mod changes the map-wide surface types (`surfaces.lua`). The roof check that hides the rain (`shelter.lua`) could switch the surfaces back to dry while the player's own car is under a roof, with a short delay at tunnel mouths so grip doesn't flicker. Grip is simulated per player, so only your own car's grip changes noticeably; on your machine every road is briefly dry while you're under the roof
 - [ ] ! Let the runner get out of their car and flee on foot during a chase. Work out how cops spot and catch the runner once they leave the car.
-- [ ] ! Give the police helicopter an AI-generated voice. Decide in the spec whether the server or each player's client generates the speech.
 
 - [ ] ! Workflow request. Make it easy to see which subagents are currently working when the session list also contains completed agents.
 
