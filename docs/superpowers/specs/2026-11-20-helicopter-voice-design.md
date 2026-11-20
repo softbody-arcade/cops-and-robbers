@@ -2,68 +2,130 @@
 
 Design for player review · 20 November 2026
 
-A cop a junction behind the runner should hear enough to choose the same exit while keeping their eyes on the road. Air One is a spotter. “Took the first exit toward downtown” tells the driver which choice the runner made. “Turn right” could send two cops approaching from different directions down different streets. Every left and right is from the runner’s direction of travel.
+## Why
 
-## What a chase sounds like
+A cop comes up on a West Coast highway exit a few seconds behind the runner. The helicopter has eyes on the car. Its rotor tells the cop that air support is nearby, and the position marker helps them find the runner on the map. What the driver needs to know before passing the ramp is *which road the runner took*. “Suspect took the exit toward downtown” answers that with the driver's eyes still on the road.
 
-| What the crew sees | What pursuing cops might hear |
+The runner has a stake in what happens next. If they make it into a tunnel, Air One can tell the cops which entrance it saw. The choice of where to emerge belongs to the runner. Hearing “Lost visual at the financial district tunnel” should leave a real decision for the cops on the ground.
+
+## Goals
+
+- Give a pursuing cop enough information to take a confirmed branch from the same approach, or recognize its destination when approaching from another direction.
+- Make two quick moves understandable in order. The cop who hears “Took a left, then a right” should be able to repeat both directions without having to remember two separate radio calls.
+- Give the crew a recognizable voice. Use a runner's recorded name or “the suspect” at first contact, then keep the channel clear for turns, exits and changes of sight.
+- Make West Coast USA sound familiar to the group. On a map with no recorded place names, an observed junction turn or a travel heading should still be useful. A player driving a cop in solo Practice should hear the same kind of report as a cop in multiplayer.
+
+## Non-goals
+
+Helicopter flight, search paths, searchlight behavior, ground-cop AI, spotting rules and map markers are separate features. This release also leaves general police dispatch, voice commands from players, turn-by-turn routing for each cop, and recording every street or player name outside its scope.
+
+## Anti-goals
+
+- A pilot says “taking the east exit” because the helicopter is watching that mouth. A correct guess would still teach the cops that they can hear a hidden runner.
+- A cop approaching from the far side hears “turn right” and drives away from the pursuit. Left and right must describe the runner's maneuver from the runner's direction of travel.
+- A car following an S-bend triggers “left, then right,” or a driver on an overpass hears a tunnel-entry call about the car on top. Those false positives would make a genuine call hard to trust.
+- Speech overlaps, recites old turns while the cop passes the next junction, or talks often enough that players mute it to hear the chase.
+
+## User decisions
+
+| Decision | Consequence for the first build |
 | --- | --- |
-| First clear sight of a known runner travelling north | “Air One has Reinder, northbound.” |
-| An unfamiliar player commits to the first city-bound ramp on a surveyed approach | “Suspect took the first exit toward downtown.” |
-| Two nearby junctions, both turns visible before the radio speaks | “Took a left, then a right.” |
-| The left has already aired when the crew sees the right | “Now taking a right.” |
-| The last clear view is of the runner entering the identified tunnel mouth, followed by sustained loss of sight | “Lost visual at the financial district tunnel.” |
-| A ground cop sees the runner inside, while the helicopter watches a possible exit | Radio stays quiet. On seeing the runner emerge, the crew can say “Back in sight, heading east.” |
+| Give the helicopter an AI voice that reports what the runner actually did. A runner name or “suspect” works. Prepared variations fit the desired style. | Write short, complete lines for observed events. An exact exit becomes speakable once the crew sees the runner take it. |
+| Support chained moves such as left then right. | Include all four ordered pairs of left and right. Give a turn that happens after the first call has aired its own natural continuation. |
+| Prioritize West Coast USA, especially the highway exit into the city and the financial district tunnel. | Start with map-provided names and add specific approach and entrance matches for these two examples. |
+| Test the implementation in game and tweak the locations from that drive. | Ship provisional mappings **and their audio** in the first playtest build. The group can drive its usual routes without first supplying a pin or screenshot. |
 
-The group asked for short directions, runner names or “suspect,” natural variations, and sentences that can chain successive moves. West Coast USA gets extra attention because it is the map the group plays most. The highway exit and financial district tunnel are the two routes to identify first. The **audience, timing, voice production and name coverage below are proposed defaults**.
+The audience, radio switch, handling of unrecorded names and speech-generation location below are design proposals. The timing values are starting points for the drive.
 
-## When two moves belong in one sentence
+## What the current game establishes
 
-Give the first confirmed ordinary turn up to **one second** before starting its call. If a second distinct junction turn is confirmed in that window for the same runner, during uninterrupted aircraft sight, say them in order in one transmission. The writer prepares all four pairs, including “Two lefts in succession.” A left at a junction followed by a rightward bend on the same road earns only the left. A swerve or steering correction earns neither.
-
-Once the first call has started, treat it as heard. A second confirmed turn within **four seconds of the first** gets a short continuation at the next available break. Never repeat the first clause. Cap each transmission at two maneuvers. After a spoken pair a third turn can stand alone if it is still fresh. Keep at most one unsent call while audio is playing. On overload keep the latest useful action, and use standalone wording if an intervening maneuver was dropped. A confirmed named exit bypasses the one-second hold and takes the next available break. It replaces any unsent ordinary turn, even a left at the preceding junction. For a left followed 0.75 seconds later by the surveyed ramp, cops hear “Took the first exit toward downtown.” The ramp gets only one call.
-
-The first blocked sight sample clears pending route calls and breaks the chain. A brief obstruction that clears during tracking grace earns silence. Queue a loss report only when the helicopter enters search after having seen the runner. If sight returns before that report starts, cancel it and resume ordinary calls. Once a loss report starts, the next confirmed sighting earns “Back in sight.” The server tracks which calls it has started for the pursuit. A listener who missed the loss through mute or a connection delay can still understand the reacquisition on its own.
-
-Start with a **three-second start deadline** from the last maneuver in a line and keep recordings short enough to finish in roughly two seconds where the wording permits. The server accounts for the selected clip’s measured duration before issuing a continuation. Clients drop expired calls. Timing, phrase variety and the delivery of “then” are listening-test decisions. A pause long enough to miss the exit or a backlog narrating three junctions ago would spoil the feature.
-
-## What the helicopter can know
-
-The existing helicopter checks the line from the aircraft to the runner on the game client roughly every quarter second. The cover report sends initial or changed, filtered cover state. The server keeps tracking for two seconds under cover and can receive guidance from a ground cop while the aircraft searches. All three signals serve gameplay today. Voice needs the actual clear sample associated with each maneuver. [Aircraft sight](../../../client/lua/ge/extensions/copsAndRobbers/heli.lua) · [Flight phases](../../../server/CopsAndRobbers/cnr/helicopter.lua)
-
-- The client already responsible for cover, the human runner or the Practice host for an AI runner, observes the driven road and aircraft ray together. While visible, match approach and departure to connected, drivable road segments, using movement over several samples. A turn requires commitment to a distinct branch at a junction. Level, direction, travel distance and connectivity must distinguish parallel ramps, stacked roads and ordinary curves. When the match is ambiguous, omit the turn. A clear travel heading can still accompany contact or reacquisition. Parked or reversing cars do not establish a new outbound heading.
-- The observer sends bounded event and place identifiers with their observation sequence and current pursuit identity. The server accepts only its designated reporter for this runner and round, fresh observations from the current flight and a valid phase. Raw sight loss breaks turn continuity immediately, even within tracking grace. A sustained loss call needs prior confirmed sight and the aircraft entering search. If the last visible approach cannot establish tunnel entry, say “Lost visual.” Keep only the last positively observed place for that call. Acquisition and reacquisition need a fresh clear observation. Server positions, ground-cop guidance and predicted search exits alone cannot authorize speech. [Cover reporter](../../../server/CopsAndRobbers/cnr/round.lua) · [Client road graph and aircraft update](../../../client/lua/ge/extensions/copsAndRobbers.lua)
-- The server chooses a single phrase variant and sends it only to active human cops once the cops are released. Solo Practice as cop hears the same reports about the AI runner. A human runner, a spectator and a cop still waiting for release hear silence. At release, first contact requires current sight. Disable, refuel, grounding, round end, reporter or runner replacement and role changes invalidate pending calls. Rejoining, unmuting or regaining eligibility never replays a backlog. A local mute stops current playback.
-
-## Place names that help a driver
-
-Start with the map’s own readable place names. The installed West Coast USA level has 135 entries in `city.sites.json`, including Downtown Belasco and repeated entries for the BMRA tunnel. A named area can locate a sighting. Naming a particular exit or tunnel mouth requires a route match. For the first playable build, choose a plausible city-bound ramp and downtown tunnel mouth from the installed map. Record the approach, outgoing branch, elevation and direction for each candidate. Ship the candidate mappings and their spoken lines so the group can drive them and tell us which location, wording or timing to tweak. The group chose to identify its preferred routes in game. Use “first exit” only on an approach where the exit order can be established from the map. “Financial district tunnel” is a provisional local label. When road or sight evidence is ambiguous during a chase, use a generic call.
-
-The bundled voice can pronounce the places in its catalogue. Match the level and its map-provided name to a recorded label, with small hand-authored overrides for those West Coast routes. Other maps get the same junction and heading calls, plus any recorded name that matches their map data. An unknown name, missing graph or uncertain exit should still give a truthful call such as “Back in sight, eastbound,” when the evidence supports it. Avoid repeated heading reports on every bend. First contact, reacquisition and confirmed route decisions are the occasions to speak.
-
-## Where the AI voice runs
-
-| Approach | What players and hosts would experience |
+| Evidence | What it gives the radio |
 | --- | --- |
-| **Prepare AI-voiced recordings when making the mod; select on the server and play on the client. Recommended.** | A consistent crew voice, reviewed place pronunciations and immediate offline playback during a chase. Vocabulary grows when new recordings ship. |
-| Generate prepared text on the live server and cache the result | Can pronounce new names after synthesis. Requires a working voice service or model and a way to deliver new audio to already-connected players before the call expires. |
-| Synthesize prepared text on each player’s machine | Can speak arbitrary map and player names. Depends on a usable voice engine on each installation, with differing voices, pronunciation and startup times. |
+| The runner's client checks aircraft-to-car sight about every 0.25 seconds. In Practice with an AI runner, the issuer reports cover. Today's cover message carries the initial or changed, filtered result. [Client sight check](../../../client/lua/ge/extensions/copsAndRobbers/heli.lua) · [Server cover ownership](../../../server/CopsAndRobbers/cnr/round.lua) | Pair a fresh, clear aircraft sample with the car's actual road movement. A ground cop can keep the team's marker live after the aircraft loses sight. |
+| The server gives a tracking helicopter two seconds of sustained cover before it starts searching. Ground units can guide the search, and the helicopter can watch possible exits. [Flight phases](../../../server/CopsAndRobbers/cnr/helicopter.lua) · [Exit search](../../../client/lua/ge/extensions/copsAndRobbers/heliSearch.lua) | A bridge can briefly block the aircraft without requiring a loss announcement. A search destination supplies no evidence that the runner emerged there. |
+| The installed West Coast level has 135 zone entries in `city.sites.json`. They include Downtown Belasco, both directions of US Route 110 and repeated entries for the BMRA tunnel. BeamNG supplies connected road links and their elevations. [Road data used by the mod](../../../client/lua/ge/extensions/copsAndRobbers/roads.lua) | A zone can name the area. A particular ramp or tunnel entrance still needs a directional road match. The group's financial district label is provisional. |
+| Rotor audio is positional. Thunder already plays packaged Ogg clips through a non-positional emitter. [Rotor sound](../../../client/lua/ge/extensions/copsAndRobbers/heliSound.lua) · [Thunder playback](../../../client/lua/ge/extensions/copsAndRobbers/lightning.lua) | The mod has a playback path for an in-car transmission. Whether a short sentence is intelligible over the engine and siren still needs a listen. |
 
-Ship complete English lines as Ogg files, including the four turn pairs and standalone continuations. Use the same pilot, pace and radio treatment for all of them. Start with the generic line and an empty name list. Add a named first-contact clip when the player supplies the exact display name, confirms the pronunciation and opts in to distributing the recording. “Reinder” illustrates that path. Use a synthetic fixture name to test it before any player opts in. Use “the suspect” immediately for any unlisted or renamed player and for AI runners. Optional details such as a destination or name are included only when a complete clip exists for those facts. Choose a different valid variant from the last one when available. Never build a spoken name from unreviewed player text. Choosing the synthesis tool, voice with suitable distribution rights, trimming and file layout belongs to the builder.
+## Approaches
 
-The BeamMP server sends a clip ID, sequence, pursuit identity and expiry. It never needs an audio generator during play. A client plays the packaged file once as a non-positional radio transmission, independent of camera distance. An unknown or missing clip is skipped. Add a local **Helicopter radio** toggle, initially on, beside the existing helicopter preferences. Rotor sound keeps its own control. Thunder already uses packaged Ogg files and non-positional emitters. Speech clarity over sirens and the gap between two clips still need an in-car listen. [Current helicopter preferences](../../../client/lua/ge/extensions/copsAndRobbers/playerSettings.lua) · [Thunder playback](../../../client/lua/ge/extensions/copsAndRobbers/lightning.lua)
+| Where speech is generated | Benefit | Cost during a chase |
+| --- | --- | --- |
+| **Prepare whole AI-voiced lines when building the mod. Recommended.** The server selects a line and each cop plays the bundled recording. | We can listen to the pronunciation and cadence of “left, then right” before it ships. Every cop gets the same pilot and wording. | The voice can use only recorded names and phrases. A new local nickname needs a new recording. |
+| Synthesize prepared text on the live server and cache the result. | The host can add unfamiliar player and place names during a session. | A cache miss needs synthesis and audio delivery to connected clients before the turn goes stale. Hosts need a model or service. |
+| Synthesize prepared text on each client. | A player's machine can speak arbitrary names without receiving new audio. | Each supported installation needs a usable voice engine. Players may hear different pronunciation and delays for the same call. |
 
-## What proves the design
+The proposed first release spends the synthesis time before the chase. Use one English-speaking pilot, complete sentences and a few variations. An improvised account of the chase would add wording latency precisely when the cop is deciding whether to take the exit.
 
-| Check | Expected observation |
+## Design
+
+### Who hears Air One
+
+Only released, participating human cops receive the radio. This includes a player driving a cop in solo Practice. A human runner, a spectator watching an AI round and a cop waiting through the head start hear silence. If the helicopter is already tracking at cop release, a fresh clear observation can start the first contact call.
+
+Add **Helicopter radio** beside **Helicopter sound** in player settings. Radio defaults on, including for existing settings files. It plays in the listener's car regardless of camera distance from the aircraft. Muting radio stops the current sentence immediately. A player can keep radio on with rotors off or hear rotors with radio off. [Existing player preferences](../../../client/lua/ge/extensions/copsAndRobbers/playerSettings.lua)
+
+### What a pursuit sounds like
+
+| What happens in the chase | What a cop hears |
 | --- | --- |
-| Replay a surveyed highway trace taking the exit, passing it and passing above it | Only the first trace earns the named exit. Reverse travel uses only labels verified for that approach. |
-| Replay two distinct junctions at 0.75 s and 1.5 s apart, a single S-bend, and a three-turn burst | The close pair produces one ordered recording. The separated pair gives a single plus a continuation if fresh. The bend stays quiet. The third turn never creates a three-clause sentence or replays an older turn. |
-| Follow a left immediately with a named ramp, then try a brief obstruction and a sustained loss that clears before its queued report airs | The named ramp replaces the pending left. Neither obstruction produces a stray “Back in sight.” A sustained loss that actually starts playing gets one subsequent reacquisition. |
-| Break the aircraft ray between two turns, continue under cover while a ground cop sees the runner, then emerge | No chain crosses the gap. Loss identifies only the last confirmed entry. The exit or heading becomes speakable after the fresh sighting. |
-| Feed duplicate, expired, wrong-role and previous-round events, toggle mute mid-call, then reconnect | Only eligible cops receive a current call. Each eligible listener plays it at most once. Muting stops the clip and reconnecting starts with an empty queue. |
-| Audit the shipped voice catalogue against all four pairs, follow-ups, checked West Coast labels and name fallbacks | Every required phrase has a playable asset and a measured duration. A new player and a map without known names still get complete grammatical lines. |
+| Air One first sees a runner with a recorded name and a clear northbound heading. | “Air One has Reinder, northbound.” For an unfamiliar player or an AI runner, “Air One has the suspect, northbound.” |
+| The runner drives past the city ramp, then another time takes it from the mapped approach. | Passing the ramp earns silence. Taking it earns “Took the exit toward downtown.” Use “first exit” only where the map establishes the count from that approach. |
+| The runner takes a left and then a right at two visible junctions. | Close together, “Took a left, then a right.” If the left has already been called, “Now taking a right.” |
+| The last clear view shows the car entering the mapped tunnel mouth. Sustained cover puts the aircraft into search. | “Lost visual at the financial district tunnel.” If the crew saw only the runner disappear behind a building nearby, “Lost visual.” |
+| A ground cop follows the runner inside. The aircraft later sees the runner emerge heading east. | Quiet while the aircraft searches. When it regains sight after an announced loss, “Back in sight, heading east.” |
 
-During the build, verify candidate geometry with local map data, then replay approach, bypass and wrong-height samples. During the first staged playtest, drive the group’s familiar routes and compare the spoken label and trigger point with what the driver sees. Use that feedback to adjust the mapping. For the listening check, one player in Practice as cop can hear the actual recordings over their engine and siren. Use a reproducible pair of observed turns or replay its captured event timing locally. The listener should be able to repeat both directions in order, hear one natural transmission for the close pair, and still have time to act on the second turn. Keep open geography and listening checks with the other in-game checks once there is a staged build.
+Start with an empty list of recorded player names. Add a name when that player supplies the spelling and pronunciation and agrees to the packaged recording. “Reinder” illustrates the named version. An unlisted or renamed player immediately gets the generic line. Choose a different fitting variation from the previous one where possible. Omit an optional name, heading or location when the catalogue has no complete line for that combination.
 
-Changes to helicopter search, pursuit AI, map markers, cop routing and general dispatch chatter are outside this feature. A pilot that guesses the next exit, exposes a hidden runner or talks so continuously that the cops tune out would fail the chase even with perfect audio playback.
+### What counts as a move
+
+The observing client uses the runner's visible travel across a junction. It must match the incoming road and the outgoing branch using connected drivable roads, direction, distance travelled and elevation. A steering correction, reversing through the junction or following a curve with a single way forward earns no turn. With ambiguous road geometry, omit the turn. A clear direction of travel can still support a heading on first contact or reacquisition. A stationary or reversing car supplies no new outbound heading. First contact can simply say “Air One has the suspect.”
+
+Prefer the map's readable place name where the voice catalogue has a match. For West Coast USA, pick a plausible city-bound ramp and downtown tunnel mouth from installed map data. Record a starting landmark, approach, outgoing road, height and direction for each. A car crossing above the mouth or on a parallel road gets no named call. Use the group's first drive to adjust the candidate or its spoken label. On other maps use known place names when available and ordinary observed turns elsewhere.
+
+### When to combine, interrupt or drop a call
+
+Hold the first ordinary turn briefly. Two distinct junction turns in that window, with uninterrupted aircraft sight, become one recording in the order seen. That includes “Two lefts in succession.” Once the first call starts, it counts as heard. A second turn within the continuation window can follow at the next break. After a pair, a fresh third turn can stand alone. A bend or a blocked sight sample cannot supply the second half.
+
+A named exit bypasses the hold and replaces an unsent ordinary turn. If the runner goes left and takes the downtown ramp 0.75 seconds later, the useful line is “Took the exit toward downtown.” While a clip plays, allow at most one waiting call. Keep the latest useful maneuver. Use standalone wording if an intervening turn was dropped. Never talk over a clip to squeeze in another one.
+
+The first blocked aircraft sample clears waiting route calls. During a brief obstruction, the radio stays quiet. Announce a loss only after prior visual contact and a transition into search. Remember the last visibly entered mouth through continuous blocked samples. A gap in observations clears that evidence. If the crew sees the runner again before the loss call starts, cancel it. If the loss has already aired, one fresh sighting earns reacquisition.
+
+### How all cops get the same report
+
+The client responsible for the runner's cover sends ordered observations for its assigned car and flight. The server checks sender, pursuit identity, sequence, sample age and flight phase, then picks one recording for the eligible cops. A client's fresh observation supplies what happened. The server's pursuit state determines whether the crew may say it. A team position update or a predicted search exit cannot substitute for aircraft sight.
+
+The server schedules around the measured length of each recording. Each client checks that a call still belongs to its pursuit and can start before its deadline. Skip an unknown or missing recording. Round end, replacement of the runner or reporter, refuelling, grounding and helicopter disable clear pending speech. A listener who rejoins, unmutes or regains the cop role starts with new transmissions.
+
+## Proposed tuning for the first playtest
+
+| Setting | Starting value | What to judge |
+| --- | --- | --- |
+| Hold for a second ordinary turn | Up to 1 second after the first | Does “left, then right” sound like one thought, and does a single left still arrive in time to take it? |
+| Continuation after an announced turn | Within 4 seconds of the first maneuver | Does “now taking a right” still refer clearly to the left the driver heard? |
+| Latest start of a maneuver call | Before 3 seconds have elapsed since the last maneuver in it | If a busy channel holds a turn past the deadline, drop it. A driver should hear the current decision. |
+| Line length and delivery | Aim for about 2 seconds wherever the wording permits | Can a cop hear the destination or second direction over a siren? Use measured clip length to schedule the next line. |
+| Observation gap | Start by treating two missed 0.25-second samples as stale | A reporting pause must end a chain. Check ordinary travel still supplies consecutive observations at junctions. |
+
+## Automated acceptance
+
+| Replay or fixture | Observable pass condition |
+| --- | --- |
+| Drive the candidate ramp, its bypass, the road above it and its reverse. Repeat at the tunnel mouth and on an unknown map. | Only the matched approach earns the local label. The unknown map still produces a confirmed generic turn. Moving forward with missing road data still allows a supported contact heading. Stopping or reversing earns no new heading. |
+| Replay all four turn pairs at 0.75 seconds apart, then a pair at 1.5 seconds with the first already aired. Try a third turn, an S-bend and a named ramp following an unsent left. | The close pairs play once in order. The later turn uses a continuation. The third never extends the sentence to three clauses. The bend stays quiet and the named exit replaces the pending left. |
+| Break sight between turns, pass briefly under a bridge, then replay sustained tunnel cover while a ground cop has sight. Reacquire both before and after the loss call starts. | No chain crosses the break. Only sustained confirmed loss earns a loss line. No hidden exit leaks. Only an announced loss earns “Back in sight.” |
+| Feed a delayed or duplicate packet, wrong reporter, stale car or flight, role change, mute/unmute and reconnect through the normal round handlers. | Released human cops get the same current phrase once. Ineligible players hear silence. Obsolete calls never resume. Radio and rotors can be toggled independently. |
+| Check the packaged assets and measured durations for paired turns, follow-ups, named routes, first contact and loss. Try an unfamiliar display name and a missing clip. | Every required line decodes and has a duration. Unknown names get “suspect.” A missing asset skips cleanly and a later valid call can play. |
+
+## Engine questions and in-game checks
+
+The installed level supplies candidate geometry. The first radio build is where the group decides whether the mapped entrances and spoken names match its own routes. These are the checks that need a driver or listener. The deterministic cases above belong in tests.
+
+| Shortest setup and action | Observable pass condition | What the check settles |
+| --- | --- | --- |
+| One player, West Coast USA. Use the staged solo route check to drive the usual city-bound exit and the financial district tunnel, then pass the ramp once. The check simulates the aircraft entering search. | The turnoff is called as the car commits, passing it is quiet, and the loss line names the entrance the driver recognizes. | Which ramp and mouth the group means, their local names and where each trigger should sit. |
+| Inspect the real aircraft sight trace from a staged chase through the candidate mouth. A solo Practice runner can drive it while the reporter records the approach. | The trace shows whether the final clear sample places the runner on the incoming branch at the mouth, followed by continuous cover and search. That sequence qualifies for the named loss. Earlier occlusion qualifies only for generic loss. | Whether the actual aircraft can see the car commit to this entrance from its flight path. The trace answers this even when the driver is the runner and hears no radio. |
+| One player, Practice as cop with the helicopter airborne. Hear a pair of turns with the engine and siren on. If the AI takes another route, replay the captured pair timing locally. | Both directions are intelligible in order. The cop can still act on the second one. | Radio level, natural delivery of “then,” and whether the one-second hold helps or costs a turn. |
+
+## Left to the builder
+
+Choose the synthesis tool and a voice that permits distribution, trim and level the recordings, and author variations that fit the same observed facts. Select road-matching thresholds against the candidate, bypass and wrong-height fixtures. Choose the small route data format so a playtest correction can move an entrance or change its label without rewriting pursuit logic. The implementation plan covers modules, clocks, fixtures and staging. [Implementation plan](../plans/2026-11-20-helicopter-voice.md)
