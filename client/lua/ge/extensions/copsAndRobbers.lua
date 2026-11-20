@@ -124,9 +124,18 @@ local function teleport(veh, pos, rot)
   spawn.safeTeleport(veh, pos, rot)
 end
 
+local function retireRoundCar(id)
+  personalCarId, pendingPlacement, nextCarCleanup = nil, nil, nil
+  if active and not drivingPractice then
+    if id then retiredCar = { id = id, key = traffic.roundCar(MPConfig.getPlayerServerID()) } end
+    nextCarCleanup = clock + 1
+  end
+end
+
 local function placeVehicle(model, config, pos, rot, color, initialGrid, personal)
   groundSight.replaced(role)
   local opt = vehicles.options(config, color)
+  local previousId = personal and personal:getID() or personalCarId
   local veh
   if personal then
     rot = rot or game.uprightRotation(personal)
@@ -137,12 +146,12 @@ local function placeVehicle(model, config, pos, rot, color, initialGrid, persona
     if initialGrid then opt.pos, opt.rot = pos, rot end
     veh = core_vehicles.spawnNewVehicle(model, opt)
   end
-  nextCarCleanup = nil
   if not veh then
-    personalCarId, pendingPlacement = nil, nil
+    retireRoundCar(previousId)
     hudfeed.event("Could not spawn your round car", clock, "warn")
     return
   end
+  nextCarCleanup = nil
   personalCarId, retiredCar = veh:getID(), nil
   if initialGrid then pos, rot = nil, nil end
   pendingPlacement = { at = clock + SETUP_DELAY, pos = pos, rot = rot, gameId = personalCarId, rebuild = rebuildId }
@@ -815,7 +824,7 @@ local function updatePendingPlacement()
   if not p or (p.at and clock < p.at) then return end
   local veh = getObjectByID(p.gameId)
   if not veh then
-    pendingPlacement, personalCarId = nil, nil
+    retireRoundCar(p.gameId)
     hudfeed.event("Your round car disappeared before placement", clock, "warn")
     return
   end
@@ -1360,11 +1369,7 @@ M.onBeforeVehicleReplaced = spectator.forgetVehicle
 M.onVehicleDestroyed = function(id)
   spectator.forgetVehicle(id)
   ai.destroyed(id)
-  if id == personalCarId then
-    retiredCar = { id = id, key = traffic.roundCar(MPConfig.getPlayerServerID()) }
-    personalCarId, pendingPlacement = nil, nil
-    if active and not drivingPractice then nextCarCleanup = clock + 1 end
-  end
+  if id == personalCarId then retireRoundCar(id) end
 end
 M.onVehicleResetted = onVehicleResetted
 M.onVehicleCycleSwitchPerformedByUser = onVehicleCycleSwitchPerformedByUser

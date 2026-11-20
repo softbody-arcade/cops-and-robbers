@@ -16,11 +16,14 @@ local function finite(value)
   return type(value) == "number" and value == value and math.abs(value) < math.huge
 end
 
+local function copyVector(value)
+  local x, y, z = value.x, value.y, value.z
+  if finite(x) and finite(y) and finite(z) then return vec3(x, y, z) end
+end
+
 local function vector(value)
   local kind = type(value)
-  if (kind == "table" or kind == "userdata" or kind == "cdata") and finite(value.x) and finite(value.y) and finite(value.z) then
-    return vec3(value.x, value.y, value.z)
-  end
+  if kind == "table" or kind == "userdata" or kind == "cdata" then return read(copyVector, value) end
 end
 
 function M.position(car)

@@ -6281,6 +6281,24 @@ test("ground sight uses inclusive eye-centre 3D range and guarded two-way rays t
   assertEq(sight.visible(eye, target, heading, 10, nil), false)
 end)
 
+test("unreadable positions miss and an unreadable camera vector uses the assigned car heading", function()
+  withCamera(function()
+    local env, camera = sightFixture()
+    local sight = require("copsAndRobbers/sight")
+    local unreadable = setmetatable({}, {__index = function() error("engine vector expired") end})
+    local eye = vec3(0, 0, 0)
+    for _, value in ipairs({unreadable, io.stdout}) do
+      local casts = 0
+      assertEq(sight.visible(eye, value, vec3(0, 1, 0), 400, function() casts = casts + 1; return 1000 end), false)
+      assertEq(casts, 0)
+      camera.direction = value
+      local gaze, heading = sight.lookDirection(env.veh, true)
+      assertEq(gaze:distance(heading), 0)
+      assertEq(heading.y, 1)
+    end
+  end)
+end)
+
 test("only a live GE object for the registered remote round car permits clearance work", function()
   withCamera(function()
     local env, _, rays = sightFixture()
@@ -6341,29 +6359,43 @@ test("personal placement, repaint and rebuild bind sight even after a seat chang
   end)
 end)
 
-test("a destroyed personal assignment waits for a new public round registration", function()
-  withCamera(function()
-    local env, _, rays = sightFixture()
-    copInChase(env)
-    env.veh.pos = vec3(0, 0, 0)
-    env.mpVehicles["1-0"] = {gameVehicleID = 100, isSpawned = true}
-    env.fire("cnr_roundCars", {keys = {"1-0", "2-0"}})
-    sample(env)
-    assertEq(env.lastSent("cnr_sight").seen, true)
-    local before = #rays
-    env.veh:delete()
-    env.M.onVehicleDestroyed(100)
-    env.player = env.addObject(100, vec3(10, 0, 0))
-    env.tick(2, 0.25)
-    assertEq(env.lastSent("cnr_sight").seen, false)
-    assertEq(#rays, before)
-    env.mpVehicles["1-7"] = {gameVehicleID = 100, isSpawned = true}
-    env.fire("cnr_roundCars", {keys = {"1-7", "2-0"}})
-    env.tick(1, 0.25)
-    assertEq(env.lastSent("cnr_sight").seen, true)
-    assertEq(rays[before + 1].x, 10)
+for _, loss in ipairs({"destruction", "failed repaint", "pending disappearance"}) do
+  test("public sight waits for a fresh registration after " .. loss, function()
+    withCamera(function()
+      local env, _, rays = sightFixture()
+      if loss == "pending disappearance" then MPVehicleGE.getVehicleByGameID = function() end end
+      copInChase(env)
+      env.veh.pos = vec3(0, 0, 0)
+      env.mpVehicles["1-0"] = {gameVehicleID = 100, isSpawned = true}
+      env.fire("cnr_roundCars", {keys = {"1-0", "2-0"}})
+      sample(env)
+      assertEq(env.lastSent("cnr_sight").seen, true)
+      local before = #rays
+      if loss == "failed repaint" then
+        core_vehicles.replaceVehicle = function() return nil end
+        env.fire("cnr_paint", {color = {r = 0, g = 1, b = 0}})
+        env.tick(2, 0.25)
+        assertEq(env.lastSent("cnr_sight").seen, false)
+      end
+      env.veh:delete()
+      if loss == "pending disappearance" then
+        sample(env)
+        assertEq(env.lastSent("cnr_myVehicle"), nil)
+      else
+        env.M.onVehicleDestroyed(100)
+      end
+      env.player = env.addObject(100, vec3(10, 0, 0))
+      env.tick(2, 0.25)
+      assertEq(env.lastSent("cnr_sight").seen, false)
+      assertEq(#rays, before)
+      env.mpVehicles["1-7"] = {gameVehicleID = 100, isSpawned = true}
+      env.fire("cnr_roundCars", {keys = {"1-7", "2-0"}})
+      env.tick(1, 0.25)
+      assertEq(env.lastSent("cnr_sight").seen, true)
+      assertEq(rays[before + 1].x, 10)
+    end)
   end)
-end)
+end
 
 local function practice(env, role, maximum, lateSetup)
   local setup = aiOnlySetup()
