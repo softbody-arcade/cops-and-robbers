@@ -167,7 +167,9 @@ end
 
 local function clearStrength(light, cast)
   local object = light.object
-  if not boolField(object, "isEnabled") or (numberField(object, "intensity") or 0) <= 0 then return 0 end
+  local enabled = parseBool(read(object.getLightEnabled, object))
+  if enabled == nil then enabled = boolField(object, "isEnabled") end
+  if not enabled or (numberField(object, "intensity") or 0) <= 0 then return 0 end
   local extent = numberField(object, extentFields[light.class])
   if not extent or extent <= 0 then return 0 end
   extent = math.min(extent, CELL_SIZE)

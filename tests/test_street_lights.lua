@@ -131,6 +131,36 @@ test("a point light tapers beyond half radius and follows live enabled state and
   end)
 end)
 
+test("the live light getter overrides the saved enabled field in both directions", function()
+  withScene(function(scene)
+    local lamp = scene.pointLight(1, "point", point(0, 0, 5), 10)
+    local live
+    lamp.getLightEnabled = function() return live end
+    begin()
+    for _, row in ipairs({
+      {true, false, 1},
+      {false, true, 0},
+      {"1", "0", 1},
+      {"0", "1", 0},
+    }) do
+      live, lamp.isEnabled = row[1], row[2]
+      assertEq(scene.sample(0, 0, 0), row[3], "live enabled value " .. tostring(live))
+    end
+  end)
+end)
+
+test("the saved enabled field is used when the live getter is unavailable", function()
+  withScene(function(scene)
+    local lamp = scene.add(1, "point", "PointLight", point(0, 0, 5), {nightLight = "1", intensity = 50, radius = 10},
+      nil, {isEnabled = "1"})
+    lamp.getLightEnabled = function() error("getter unavailable") end
+    begin()
+    assertEq(scene.sample(0, 0, 0), 1)
+    lamp.getLightEnabled = function() return "unknown" end
+    assertEq(scene.sample(0, 0, 0), 1)
+  end)
+end)
+
 test("overlapping emitters contribute their strongest single clear strength", function()
   withScene(function(scene)
     scene.pointLight(1, "smaller", point(0, 0, 7.5), 10)
