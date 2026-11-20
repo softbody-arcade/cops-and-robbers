@@ -461,8 +461,13 @@ test("penalty is shown on everyone's screen", function()
   env.cleanup()
 end)
 
+local function confirmDrivers(env, count)
+  for pid = 1, count do env.call("cnr_myVehicle", pid, '{"vid":0}') end
+end
+
 local function runToChase(env, reportUncovered)
   env.startRound()
+  confirmDrivers(env, 2)
   env.go()
   for i = 1, 44 do
     env.clock = env.clock + 0.25; env.positions[2] = 900; env.call("cnr_tick")
@@ -1330,6 +1335,7 @@ end)
 
 local function runningRound(env)
   env.startRound()
+  confirmDrivers(env, 2)
   env.go()
   for _ = 1, 44 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
 end
@@ -2237,6 +2243,7 @@ end)
 
 test("prep rows show loading until the car is placed", function()
   local env = boot()
+  env.vehicles[2][3] = "round car"
   env.startRound()
   local st = panelOf(env)
   assertEq(st.nextRunner, nil)
@@ -2610,8 +2617,28 @@ test("in practice the issuer may spawn traffic of any model, but its own car sta
   env.cleanup()
 end)
 
+test("round-car announcements wait for each driver's confirmed vehicle", function()
+  local env = trafficBoot({vehicles={[1]={[0]="spare", [4]="round"}, [2]={[0]="round"}}})
+  env.panel(2, "start rein")
+  env.call("cnr_myVehicle", 1, '{"vid":0}')
+  assertEq(sentTo(env, "cnr_roundCars", -1), nil)
+  env.positions[1] = 0
+  env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  env.call("cnr_myVehicle", 2, '{"vid":0}')
+  assertEq(table.concat(decodeJson(sentTo(env, "cnr_roundCars", -1)).keys, ","), "2-0")
+  env.call("onPlayerJoin", 3)
+  assertEq(table.concat(decodeJson(sentTo(env, "cnr_roundCars", 3)).keys, ","), "2-0")
+  env.sent = {}
+  env.call("cnr_myVehicle", 2, '{"vid":4}')
+  assertEq(sentTo(env, "cnr_roundCars", -1), nil)
+  env.call("cnr_myVehicle", 1, '{"vid":4}')
+  assertEq(table.concat(decodeJson(sentTo(env, "cnr_roundCars", -1)).keys, ","), "1-4,2-0")
+  env.cleanup()
+end)
+
 test("everyone learns the round cars, and they're cleared at round end", function()
   local env = trafficBoot()
+  env.vehicles[2][3] = "round car"
   env.startRound()
   env.call("cnr_myVehicle", 1, '{"vid":0}')
   env.call("cnr_myVehicle", 2, '{"vid":3}')
@@ -3531,7 +3558,9 @@ test("the runner and both cop slots use identical West Coast poses across normal
             spawn.safeTeleport = function(veh, pos, rot) veh.pos = pos; store(slot, pos, rot) end
             client.fire(ev.ev, d)
             client.tick(1)
-            env.call("cnr_myVehicle", pid, encode(client.lastSent("cnr_myVehicle")))
+            local registration = client.lastSent("cnr_myVehicle")
+            env.vehicles[pid] = {[registration.vid]="round car"}
+            env.call("cnr_myVehicle", pid, encode(registration))
           elseif ev.ev == "cnr_spectate" or ev.ev == "cnr_setupAI" then
             client.fire(ev.ev, d)
             if ev.ev == "cnr_setupAI" then
@@ -3786,10 +3815,100 @@ local function setupPracticeSight(env, role)
   env.go()
 end
 
-local function practiceSpotted(env)
+local function runnerSpotted(env)
   local data = sentTo(env, "cnr_spotted", 1)
   if data then return decodeJson(data).spotted end
 end
+
+test("public sight starts with confirmed cars for both the observer and the target", function()
+  for _, first in ipairs({1, 2}) do
+    local env = boot({config='{"helicopter":false}'})
+    env.startRound()
+    env.positions[2] = 300
+    env.call("cnr_myVehicle", first, '{"vid":0}')
+    chase(env)
+    env.sent = {}
+    env.call("cnr_sight", 2, '{"seen":true}')
+    advanceSight(env)
+    assertEq(sentTo(env, "cnr_lastSeen", 2), nil)
+    env.call("cnr_myVehicle", 3 - first, '{"vid":0}')
+    advanceSight(env)
+    assertEq(runnerSpotted(env), nil)
+    env.call("cnr_sight", 2, '{"seen":true}')
+    advanceSight(env)
+    assertEq(runnerSpotted(env), true)
+    env.cleanup()
+  end
+end)
+
+test("replacing a human runner leaves all cops with the old target's last position", function()
+  for _, change in ipairs({"spawn after deletion", "missing for one tick", "placement acknowledgement"}) do
+    local env = boot({config='{"helicopter":false}'})
+    env.names = {"Reinder", "Bob", "Kim"}
+    env.vehicles[3] = {[0]="cop"}
+    env.startRound()
+    env.positions[2], env.positions[3] = 300, 320
+    confirmDrivers(env, 3)
+    chase(env)
+    env.call("cnr_sight", 2, '{"seen":true}')
+    env.call("cnr_sight", 3, '{"seen":true}')
+    advanceSight(env)
+    assertEq(decodeJson(sentTo(env, "cnr_lastSeen", 2)).pos.x, 0)
+    env.sent = {}
+    if change ~= "placement acknowledgement" then
+      env.call("onVehicleDeleted", 1, 0)
+      env.vehicles[1][0] = nil
+      env.call("cnr_sight", 3, '{"seen":true}')
+      if change == "missing for one tick" then
+        advanceSight(env)
+        assertEq(runnerSpotted(env), false)
+        assertEq(decodeJson(sentTo(env, "cnr_lastSeen", 2)).pos.x, 0)
+      end
+      assertEq(env.call("onVehicleSpawn", 1, 1, spawnOf(1, 1, "pickup", "vehicles/pickup/base.pc")), 0)
+    end
+    env.vehicles[1][1] = "replacement"
+    env.vidPositions["1-1"] = {pos={200,0,0}, vel={0,0,0}}
+    if change == "placement acknowledgement" then env.call("cnr_myVehicle", 1, '{"vid":1}') end
+    env.call("cnr_sight", 2, '{"seen":false}')
+    advanceSight(env, 4)
+    for pid = 2, 3 do
+      local last = decodeJson(sentTo(env, "cnr_lastSeen", pid))
+      assertEq(last.live, nil, change)
+      assertEq(last.pos.x, 0, change)
+    end
+    assertEq(runnerSpotted(env), false, change)
+    env.call("cnr_sight", 2, '{"seen":true}')
+    advanceSight(env)
+    assertEq(decodeJson(sentTo(env, "cnr_lastSeen", 2)).pos.x, 200)
+    env.cleanup()
+  end
+end)
+
+test("a cop replacement forgets only its own sight and duplicate acknowledgements preserve grace", function()
+  local env = boot({config='{"helicopter":false}'})
+  env.names = {"Reinder", "Bob", "Kim"}
+  env.vehicles[3] = {[0]="cop"}
+  env.startRound()
+  env.positions[2], env.positions[3] = 300, 320
+  confirmDrivers(env, 3)
+  chase(env)
+  for pid = 2, 3 do env.call("cnr_sight", pid, '{"seen":true}') end
+  advanceSight(env)
+  env.call("cnr_sight", 3, '{"seen":false}')
+  env.call("cnr_myVehicle", 1, '{"vid":0}')
+  env.call("cnr_myVehicle", 3, '{"vid":0}')
+  env.vehicles[2][1] = "replacement"
+  env.call("cnr_myVehicle", 2, '{"vid":1}')
+  env.call("onVehicleDeleted", 2, 0)
+  advanceSight(env, 4)
+  assertEq(runnerSpotted(env), true)
+  advanceSight(env, 2)
+  assertEq(runnerSpotted(env), false)
+  env.call("cnr_sight", 2, '{"seen":true}')
+  advanceSight(env)
+  assertEq(runnerSpotted(env), true)
+  env.cleanup()
+end)
 
 test("targeted Practice AI setup enables registered observers in each issuer role", function()
   for _, role in ipairs({"runner", "cop", "watch"}) do
@@ -3803,7 +3922,7 @@ test("targeted Practice AI setup enables registered observers in each issuer rol
     env.sent = {}
     reportAI(env, role == "runner" and -10 or -11, role == "runner" and 7 or 8, true)
     advanceSight(env)
-    assertEq(practiceSpotted(env), role == "runner" and true or nil)
+    assertEq(runnerSpotted(env), role == "runner" and true or nil)
     local live = sentTo(env, "cnr_lastSeen", 1)
     if role == "cop" then assertEq(decodeJson(live).live, true)
     else assertEq(live, nil) end
@@ -3821,6 +3940,7 @@ test("an invalid AI report cannot set or clear a human cop's own sight", functio
   env.names = {"Reinder", "Bob", "Watcher"}
   sitOut(env, 3, true)
   env.startRound()
+  confirmDrivers(env, 2)
   env.positions[2] = 290
   env.go()
   advanceSight(env, 41)
@@ -3837,21 +3957,21 @@ test("an invalid AI report cannot set or clear a human cop's own sight", functio
   env.call("cnr_sight", 2, '{"aiId":null,"seen":true}')
   env.call("cnr_sight", 2, '{"instance":null,"seen":true}')
   advanceSight(env)
-  assertEq(practiceSpotted(env), nil)
+  assertEq(runnerSpotted(env), nil)
   env.call("cnr_sight", 2, '{"seen":true}')
   advanceSight(env)
-  assertEq(practiceSpotted(env), true)
+  assertEq(runnerSpotted(env), true)
   for _, d in ipairs(invalid) do
     d.seen = false
     env.call("cnr_sight", 2, encode(d))
     advanceSight(env, 7)
-    assertEq(practiceSpotted(env), true)
+    assertEq(runnerSpotted(env), true)
     env.call("cnr_sight", 2, '{"seen":true}')
   end
   for _, msg in ipairs({'{"seen":"false"}', '{}', '{"seen":1}', '{"aiId":null,"seen":false}', 'invalid'}) do
     env.call("cnr_sight", 2, msg)
     advanceSight(env, 7)
-    assertEq(practiceSpotted(env), true)
+    assertEq(runnerSpotted(env), true)
     env.call("cnr_sight", 2, '{"seen":true}')
   end
   env.cleanup()
@@ -3871,14 +3991,16 @@ test("AI sight requires matching live issuer-owned registration and strict numer
   registerAI(env, -10, 2)
   reportAI(env, -10, 7, true)
   advanceSight(env)
-  assertEq(practiceSpotted(env), nil)
+  assertEq(runnerSpotted(env), nil)
   env.vehicles[2][5] = "pickup"
   registerAI(env, -10, 5, 8)
   placeAI(env, 5, 300)
   reportAI(env, -10, 8, true)
   advanceSight(env)
-  assertEq(practiceSpotted(env), nil)
+  assertEq(runnerSpotted(env), nil)
   registerAI(env, -10, 2, 9)
+  env.call("cnr_myVehicle", 1, '{"vid":2}')
+  assertEq(table.concat(decodeJson(sentTo(env, "cnr_roundCars", -1)).keys, ","), "1-0")
   local invalid = {
     {-11,9}, {-20,9}, {1,9}, {-10.5,9}, {"-10",9}, {-10,"9"}, {-10,8},
     {-10,9.5}, {-10,nil}, {nil,9}, {-10,9,2}
@@ -3888,14 +4010,14 @@ test("AI sight requires matching live issuer-owned registration and strict numer
   reportAI(env, -10, 9, true)
   env.vehicles[1][2] = "pickup"
   advanceSight(env)
-  assertEq(practiceSpotted(env), nil)
+  assertEq(runnerSpotted(env), nil)
   reportAI(env, -10, 9, true)
   advanceSight(env)
-  assertEq(practiceSpotted(env), true)
+  assertEq(runnerSpotted(env), true)
   for _, d in ipairs(invalid) do
     reportAI(env, d[1], d[2], false, d[3])
     advanceSight(env, 7)
-    assertEq(practiceSpotted(env), true)
+    assertEq(runnerSpotted(env), true)
     reportAI(env, -10, 9, true)
   end
   env.cleanup()
@@ -3910,12 +4032,12 @@ test("deletion, slot remap and VID transfer invalidate Practice AI sight immedia
     advanceSight(env, 41)
     reportAI(env, -10, 7, true)
     advanceSight(env)
-    assertEq(practiceSpotted(env), true, change)
+    assertEq(runnerSpotted(env), true, change)
     registerAI(env, -10, 2, 7)
     env.vehicles[2][2] = "personal"
     env.call("onVehicleDeleted", 2, 2)
     advanceSight(env, 7)
-    assertEq(practiceSpotted(env), true, change)
+    assertEq(runnerSpotted(env), true, change)
     reportAI(env, -10, 7, false)
     local id, vid = -10, 2
     if change == "delete" then
@@ -3923,7 +4045,7 @@ test("deletion, slot remap and VID transfer invalidate Practice AI sight immedia
       registerAI(env, -10, 2, 7)
       reportAI(env, -10, 7, true)
       advanceSight(env)
-      assertEq(practiceSpotted(env), false)
+      assertEq(runnerSpotted(env), false)
     elseif change == "remap" then
       vid = 4
       placeAI(env, vid, 310)
@@ -3934,10 +4056,10 @@ test("deletion, slot remap and VID transfer invalidate Practice AI sight immedia
     registerAI(env, -10, 2, 7)
     reportAI(env, -10, 7, true)
     advanceSight(env)
-    assertEq(practiceSpotted(env), false, change)
+    assertEq(runnerSpotted(env), false, change)
     reportAI(env, id, 9, true)
     advanceSight(env)
-    assertEq(practiceSpotted(env), true, change)
+    assertEq(runnerSpotted(env), true, change)
     env.cleanup()
   end
 end)
@@ -3983,7 +4105,7 @@ test("Practice rejects old registrations across rounds and starts a new serial s
   advanceSight(env, 41)
   reportAI(env, -10, 7, true)
   advanceSight(env)
-  assertEq(practiceSpotted(env), true)
+  assertEq(runnerSpotted(env), true)
   env.panel(1, "end")
   setupPracticeSight(env, "runner")
   env.sent = {}
@@ -3991,11 +4113,11 @@ test("Practice rejects old registrations across rounds and starts a new serial s
   registerAI(env, -10, 2, 7)
   reportAI(env, -10, 7, true)
   advanceSight(env)
-  assertEq(practiceSpotted(env), nil)
+  assertEq(runnerSpotted(env), nil)
   registerAI(env, -10, 2, 9)
   reportAI(env, -10, 9, true)
   advanceSight(env)
-  assertEq(practiceSpotted(env), true)
+  assertEq(runnerSpotted(env), true)
   env.call("onPlayerDisconnect", 1)
   env.call("onPlayerJoin", 1)
   setupPracticeSight(env, "runner")
@@ -4004,7 +4126,7 @@ test("Practice rejects old registrations across rounds and starts a new serial s
   advanceSight(env, 41)
   reportAI(env, -10, 1, true)
   advanceSight(env)
-  assertEq(practiceSpotted(env), true)
+  assertEq(runnerSpotted(env), true)
   env.cleanup()
 end)
 
@@ -4031,10 +4153,10 @@ test("Practice rejects a head-start sighting and honors the targeted host range"
     advanceSight(env, 16)
     reportAI(env, -10, 7, true)
     advanceSight(env, 25)
-    assertEq(practiceSpotted(env), nil)
+    assertEq(runnerSpotted(env), nil)
     reportAI(env, -10, 7, true)
     advanceSight(env)
-    assertEq(practiceSpotted(env), maximum > 0 and true or nil)
+    assertEq(runnerSpotted(env), maximum > 0 and true or nil)
     env.cleanup()
   end
 end)
@@ -4046,6 +4168,6 @@ test("a malformed registration leaves valid siblings usable and quoted null text
   advanceSight(env, 41)
   env.call("cnr_sight", 1, encode({aiId=-10, instance=7, seen=true, details='ignored ":null'}))
   advanceSight(env)
-  assertEq(practiceSpotted(env), true)
+  assertEq(runnerSpotted(env), true)
   env.cleanup()
 end)
