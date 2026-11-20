@@ -54,7 +54,7 @@
           <span v-if="!sightOff">
             <b>SPOTTED / HIDDEN</b> shows whether any cop on the ground can see you. Cops can spot you up to
             <span class="v cnr-mono">{{ dist("sightMaxMeters") }}</span> away in clear daylight when looking straight at you.
-            Darkness and bad weather shorten that range. At night your headlights and nearby streetlights make you easier to spot.
+            Darkness and bad weather shorten that range. At night your headlights and streetlights shining on your car make you easier to spot.
             While you're spotted, every cop sees where you are.
             <template v-if="heliOn">While the helicopter tracks you, cops get your live position, minimap marker and name tag even if the HUD says HIDDEN.</template>
           </span>
@@ -72,7 +72,7 @@
             <template v-if="refuelNever">Then it stays up.</template>
             <template v-else>Then it refuels for <span class="v cnr-mono">{{ duration("helicopterRefuelSeconds") }}</span>.</template>
             It starts by searching from where you are as it arrives or, after a refuel, from where it last knew you were, and it searches the same way when it loses you. If you were moving, it searches along the road ahead, then the best other branch, then back; if not, it circles that spot. In a tunnel it watches each way out in turn, then searches the road beyond. When a cop sees you in a tunnel, it waits at the exit ahead.
-            When a cop sees you, it flies to you; AI cops in practice don't guide it.
+            When a cop sees you, it flies to you. AI cops in Practice can guide it too.
             It finds you only by seeing you itself, within <span class="v cnr-mono">{{ meters(400) }}</span>. Then it tracks you, and the cops know where you are.
             Buildings, hills, tunnels and garages hide you: it loses you after 2 s out of its sight.
             <template v-if="refuelNever">Before it arrives, it can't see you.</template>
@@ -116,7 +116,7 @@
           <span v-if="!sightOff">
             Your <b>sight range</b> in clear daylight is <span class="v cnr-mono">{{ dist("sightMaxMeters") }}</span> in the direction you look.
             The mirrors give half range directly behind the car. Look straight back with the driving camera for full range.
-            Darkness and bad weather shorten that range. At night the runner's headlights and nearby streetlights make them easier to spot.
+            Darkness and bad weather shorten that range. At night the runner's headlights and streetlights shining on their car make them easier to spot.
             While any ground cop has the runner in sight, every cop sees their position, minimap marker and name tag.
           </span>
           <span v-else>
