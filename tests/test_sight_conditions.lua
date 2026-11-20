@@ -86,6 +86,10 @@ test("daylight falls back to a definite engine night flag when the solar sample 
     core_environment.getTimeOfDay = function() return {time = 0.5, day = 19} end
     core_solarTimeOfDay.getSolarTimeOfDayValues = function() return {sunrise = 0.5, sunset = 0.5} end
     assertEq((sightConditions.sample()), 1)
+
+    core_solarTimeOfDay.getSolarTimeOfDayValues = nil
+    core_environment.getLightState = function() return {isNight = true} end
+    assertEq((sightConditions.sample()), 0)
     core_environment.getLightState = function() return {isNight = "false"} end
     assertEq((sightConditions.sample()), 0)
     core_environment.getLightState = nil
