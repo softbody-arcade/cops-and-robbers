@@ -1210,8 +1210,16 @@ local function onExtensionLoaded()
     traffic.start(d.count, not runnerOut, clock)
   end)
   AddEventHandler("cnr_roundCars", function(data)
+    local pid = MPConfig and MPConfig.getPlayerServerID()
+    local previousOwn, previousRunner = traffic.roundCar(pid), traffic.roundCar(runnerId)
     traffic.setRoundCars((jsonDecode(data) or {}).keys)
-    if retiredCar and traffic.roundCar(MPConfig.getPlayerServerID()) ~= retiredCar.key then retiredCar = nil end
+    local own = traffic.roundCar(pid)
+    if previousRunner ~= traffic.roundCar(runnerId) then
+      groundSight.replaced("runner")
+    elseif role == "cop" and previousOwn ~= own then
+      groundSight.replaced("cop")
+    end
+    if retiredCar and own ~= retiredCar.key then retiredCar = nil end
     hidingBuiltAt = -math.huge
   end)
   AddEventHandler("cnr_runnerShown", function(data)

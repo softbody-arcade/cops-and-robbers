@@ -6187,6 +6187,50 @@ local function reportsSince(env, cursor)
   return reports
 end
 
+test("a cop reports a brief sighting as soon as their late VID is confirmed after GO", function()
+  local env = bootClient()
+  local resolve = MPVehicleGE.getVehicleByGameID
+  MPVehicleGE.getVehicleByGameID = function() end
+  copInChase(env)
+  sample(env)
+  assertEq(env.lastSent("cnr_myVehicle"), nil)
+  MPVehicleGE.getVehicleByGameID = resolve
+  sample(env)
+  local vid = env.lastSent("cnr_myVehicle").vid
+  local cursor = #env.sent
+  env.fire("cnr_roundCars", {keys={"2-0", "1-" .. vid}})
+  sample(env)
+  local report = reportsSince(env, cursor).human
+  assertEq(report and report.seen, true)
+  cursor = #env.sent
+  env.fire("cnr_roundCars", {keys={"1-" .. vid, "2-0"}})
+  env.fire("cnr_roundCars", {keys={"1-" .. vid, "2-0", "3-7"}})
+  sample(env)
+  assertEq(reportsSince(env, cursor).human, nil)
+  env.blockAt = 5
+  sample(env)
+  assertEq(reportsSince(env, cursor).human.seen, false)
+end)
+
+test("runner registration changes between frames renew sight even with a reused GE object ID", function()
+  local env = bootClient()
+  copInChase(env)
+  env.fire("cnr_roundCars", {keys={"1-100", "2-0"}})
+  sample(env)
+  assertEq(env.lastSent("cnr_sight").seen, true)
+  for _, newKey in ipairs({"2-0", "2-1"}) do
+    local cursor = #env.sent
+    if newKey == "2-0" then env.fire("cnr_roundCars", {keys={"1-100"}}) end
+    env.objects[300]:delete()
+    env.addObject(300, vec3(0, 120, 0))
+    env.mpVehicles[newKey] = {gameVehicleID=300, isSpawned=true}
+    env.fire("cnr_roundCars", {keys={"1-100", newKey}})
+    sample(env)
+    local row = reportsSince(env, cursor).human
+    assertEq(row and row.seen, true, newKey)
+  end
+end)
+
 test("attached driving views look down the side street from the assigned car", function()
   withCamera(function(free)
     local env, camera, rays = sightFixture()
@@ -6426,6 +6470,42 @@ local function registered(env)
   end
   return result
 end
+
+test("a Practice human cop's registration renews only their sight report", function()
+  local env = bootClient()
+  practice(env, "cop", 400)
+  local runner, cop = env.spawned[1].veh, env.spawned[2].veh
+  runner.pos = vec3(0, 90, 0)
+  env.veh.pos, cop.pos = vec3(0, 0, 0), vec3(0, 0, 0)
+  env.fire("cnr_release", {})
+  sample(env)
+  local aiId = -11
+  assertEq(reportsSince(env, 0)[aiId].seen, true)
+  local cursor = #env.sent
+  env.fire("cnr_roundCars", {keys={"1-100"}})
+  sample(env)
+  local rows = reportsSince(env, cursor)
+  assertEq(rows.human and rows.human.seen, true)
+  assertEq(rows[aiId], nil)
+  cursor = #env.sent
+  env.tick(4.75, 0.25)
+  assertEq(reportsSince(env, cursor)[aiId].seen, true)
+  assertEq(reportsSince(env, cursor).human, nil)
+end)
+
+test("confirming a human Practice runner renews sight for every registered AI cop", function()
+  local env = bootClient()
+  practice(env, "runner", 400)
+  env.veh.pos = vec3(0, 30, 0)
+  for _, car in ipairs(env.spawned) do car.veh.pos = vec3(0, 0, 0) end
+  env.fire("cnr_release", {})
+  sample(env)
+  local cursor = #env.sent
+  env.fire("cnr_roundCars", {keys={"1-100"}})
+  sample(env)
+  local rows = reportsSince(env, cursor)
+  for _, id in ipairs({-11, -12}) do assertEq(rows[id] and rows[id].seen, true) end
+end)
 
 test("watching Practice reports independent AI sight changes, keepalives and disappearance", function()
   withCamera(function()
