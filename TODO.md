@@ -7,7 +7,7 @@ Priorities run from `!!!!` (highest) through `!!!` (high), `!!` (normal), and `!
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
-- [ ] ! Directional cop sight and weather visibility. The [design](docs/superpowers/specs/2026-11-18-cop-visibility-design.md), [diagram](docs/superpowers/specs/cop-visibility.svg) and [implementation plan](docs/superpowers/plans/2026-11-18-cop-visibility.md) passed review and the user approved the design. Implementation is queued for the next session.
+- [ ] ! Directional cop sight and weather visibility (`feat/cop-visibility`). Implementing the [reviewed plan](docs/superpowers/plans/2026-11-18-cop-visibility.md), starting with the range calculation. [Design](docs/superpowers/specs/2026-11-18-cop-visibility-design.md) · [Diagram](docs/superpowers/specs/cop-visibility.svg)
   - Use the driving camera for human cops and car heading for Practice AI. At the default, the rear mirror gives 200 m straight behind the car in clear daylight. Looking directly back gives 400 m.
   - Scale spotting range with daylight, fog, precipitation, the runner’s headlights and nearby streetlights. In Practice, losing sight changes the shared spotting report while AI cops keep chasing.
 
@@ -36,6 +36,7 @@ Run these together on the locally staged 2.14.8 (`364b545`) or later.
 - [ ] ! Leaderboard filter by conditions (All / Normal / Night / Bad weather), next to the car-mode filter, so storm records don't compete with clear-day runs unless wanted. Runs already record their conditions (night and weather rounds)
 - [ ] ! Dry roads in tunnels: in rain, storm and snow rounds the road grip is the same inside a tunnel as outside, because the mod changes the map-wide surface types (`surfaces.lua`). The roof check that hides the rain (`shelter.lua`) could switch the surfaces back to dry while the player's own car is under a roof, with a short delay at tunnel mouths so grip doesn't flicker. Grip is simulated per player, so only your own car's grip changes noticeably; on your machine every road is briefly dry while you're under the roof
 - [ ] ! Let the runner get out of their car and flee on foot during a chase. Work out how cops spot and catch the runner once they leave the car.
+- [ ] ! Give the police helicopter an AI-generated voice. Decide in the spec whether the server or each player's client generates the speech.
 
 - [ ] ! Workflow request. Make it easy to see which subagents are currently working when the session list also contains completed agents.
 
