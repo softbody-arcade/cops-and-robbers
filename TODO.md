@@ -8,7 +8,7 @@ Priorities run from `!!!!` (highest) through `!!!` (high), `!!` (normal), and `!
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
 - [ ] ! Directional cop sight and weather visibility (`feat/cop-visibility`). Reviewed `ed6d475` is staged locally. The playtest is queued under **In-game checks**. [Design](docs/superpowers/specs/2026-11-18-cop-visibility-design.md) · [Plan](docs/superpowers/plans/2026-11-18-cop-visibility.md)
-- [ ] ! AI voice for the police helicopter (design). Define what the crew says, who hears it and when a call helps during play. Compare generating speech on the server and on each player's client in the spec.
+- [ ] ! AI voice for the police helicopter (design). Give pursuing players spoken directions from what the crew sees. The user's examples are the runner taking the first highway exit into the city and entering a tunnel in the financial district. Open decisions include map-name coverage and whether the server or each player's client generates speech.
 
 ## In-game checks
 Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to decide what needs a player. Record deferred checks here with the action, expected observation and open question. Remove a check once verified and record failures under Issues.
