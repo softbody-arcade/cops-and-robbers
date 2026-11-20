@@ -52,10 +52,11 @@
         <div class="li">
           <BngIcon :type="sightOff ? icons.eyeSolidClosed : icons.eyeSolidOpened" />
           <span v-if="!sightOff">
-            <b>SPOTTED / HIDDEN:</b> whether any cop can see you, up to <span class="v cnr-mono">{{ dist("sightMaxMeters") }}</span> away.
+            <b>SPOTTED / HIDDEN</b> shows whether any cop on the ground can see you. Cops can spot you up to
+            <span class="v cnr-mono">{{ dist("sightMaxMeters") }}</span> away in clear daylight when looking straight at you.
+            Darkness and bad weather shorten that range. At night your headlights and nearby streetlights make you easier to spot.
             While you're spotted, every cop sees where you are.
-            <template v-if="heliOn">SPOTTED / HIDDEN is about cop sight only: while the helicopter tracks you, cops see you anyway
-              (your live position, the minimap and your name tag).</template>
+            <template v-if="heliOn">While the helicopter tracks you, cops get your live position, minimap marker and name tag even if the HUD says HIDDEN.</template>
           </span>
           <span v-else>
             <b>Sight is off:</b> cops can't see you from their cars. They see you on the minimap and by name tag all round.
@@ -113,8 +114,10 @@
         <div class="li">
           <BngIcon :type="sightOff ? icons.eyeSolidClosed : icons.eyeSolidOpened" />
           <span v-if="!sightOff">
-            <b>Sight:</b> while any cop can see the runner (up to <span class="v cnr-mono">{{ dist("sightMaxMeters") }}</span>), every cop sees
-            where the runner is. Otherwise the runner is hidden on the minimap and by name tag.
+            Your <b>sight range</b> in clear daylight is <span class="v cnr-mono">{{ dist("sightMaxMeters") }}</span> in the direction you look.
+            The mirrors give half range directly behind the car. Look straight back with the driving camera for full range.
+            Darkness and bad weather shorten that range. At night the runner's headlights and nearby streetlights make them easier to spot.
+            While any ground cop has the runner in sight, every cop sees their position, minimap marker and name tag.
           </span>
           <span v-else>
             <b>Sight is off:</b> you see the runner on the minimap all round.

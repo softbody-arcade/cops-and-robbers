@@ -64,6 +64,8 @@ Switch "Evolving car" on in the panel. Instead of a random car each round, every
 - **Prep:** the centre shows your role ("YOU'RE THE RUNNER" or "YOU'RE A COP", and for cops the runner's name). The bottom shows "Waiting for the host to press GO" with the Settings, How to play and Host panel buttons. In evolving mode it shows the runner's queued change instead, with Apply change for the runner.
 - **Countdowns:** "RUNNER STARTS IN", "COPS RELEASED IN" and "CRASH PENALTY", then "GO!" or "PENALTY OVER".
 - **Chase:** role, time (with the time limit when there is one), SPOTTED or HIDDEN for the runner, IN SIGHT or live and last-seen positions for cops (with how long ago a last-seen point was), the distance, and the reset status. A catch bar shows while the catch timer runs: red "BEING CAUGHT" for the runner, blue "HOLDING RUNNER" for cops.
+  - **Sight range** is the clear-day distance in the direction the cop looks with the driving camera. Practice AI cops use their car heading. The mirrors give half range directly behind the car (200 m by default). Looking straight back gives full range (400 m by default). Buildings and terrain can block sight from the car. Darkness and bad weather shorten range. At night the runner's headlights and streetlights shining on the runner extend it.
+  - **SPOTTED / HIDDEN** shows whether any cop on the ground has sight. One cop spotting the runner shares their live position, minimap marker and name tag with all cops. The helicopter shares the same information while tracking, even when the runner's HUD says HIDDEN. With Sight range Off, ground spotting is disabled and the runner's minimap marker and name tag stay visible to cops.
 - **Notices:** rule breaks (illegal resets, teleports, parts changes, crash penalties), build changes and personal warnings appear as short lines above the chase line or the lobby card (or its tab), at most two at a time.
 - **Result:** the title, the runner's time and who caught them, the map's top 3 and "Next round in N" with automatic rounds.
 
@@ -106,7 +108,7 @@ For a five-second lightning test, choose **Night** and **Thunderstorm** in the S
 | `helicopterArrivalSeconds` | 60 | It arrives this long after the cops are released (0 = at release) |
 | `helicopterUpSeconds` | 120 | How long it flies before it refuels (more than 0) |
 | `helicopterRefuelSeconds` | 90 | How long it is away refuelling (0 = stays up) |
-| `sightMaxMeters` | 400 | How far cops can see the runner (0 = sight off) |
+| `sightMaxMeters` | 400 | Clear-day distance in the direction the cop looks (0 = ground sight off) |
 | `sightLiveIntervalSeconds` | 1 | Live runner position for all cops while one sees the runner |
 | `sightNoRouteSeconds` | 5 | A cop who sees the runner within their speed × this many seconds gets no route (with the default Out of sight route setting) |
 | `sightNoRouteMinMeters` | 50 | ...and always within this distance |
