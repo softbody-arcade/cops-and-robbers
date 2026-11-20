@@ -32,6 +32,7 @@ Helicopter flight, search paths, searchlight behavior, ground-cop AI, spotting r
 | --- | --- |
 | Give the helicopter an AI voice that reports what the runner actually did. A runner name or “suspect” works. Prepared variations fit the desired style. | Write short, complete lines for observed events. An exact exit becomes speakable once the crew sees the runner take it. |
 | Support chained moves such as left then right. | Include all four ordered pairs of left and right. Give a turn that happens after the first call has aired its own natural continuation. |
+| Describe a sequence such as “goes left, then took the third right.” | The left is where a following cop starts counting. Report which right the runner took once the crew sees it happen. |
 | Prioritize West Coast USA, especially the highway exit into the city and the financial district tunnel. | Start with map-provided names and add specific approach and entrance matches for these two examples. |
 | Test the implementation in game and tweak the locations from that drive. | Ship provisional mappings **and their audio** in the first playtest build. The group can drive its usual routes without first supplying a pin or screenshot. |
 
@@ -71,6 +72,7 @@ Add **Helicopter radio** beside **Helicopter sound** in player settings. Radio d
 | Air One first sees a runner with a recorded name and a clear northbound heading. | “Air One has Reinder, northbound.” For an unfamiliar player or an AI runner, “Air One has the suspect, northbound.” |
 | The runner drives past the city ramp, then another time takes it from the mapped approach. | Passing the ramp earns silence. Taking it earns “Took the exit toward downtown.” Use “first exit” only where the map establishes the count from that approach. |
 | The runner takes a left and then a right at two visible junctions. | Close together, “Took a left, then a right.” If the left has already been called, “Now taking a right.” |
+| The runner goes left, passes two streets on the right and turns into the third. | “Went left, then took the third right.” The crew stays quiet at the two streets the runner passes. |
 | The last clear view shows the car entering the mapped tunnel mouth. Sustained cover puts the aircraft into search. | “Lost visual at the financial district tunnel.” If the crew saw only the runner disappear behind a building nearby, “Lost visual.” |
 | A ground cop follows the runner inside. The aircraft later sees the runner emerge heading east. | Quiet while the aircraft searches. When it regains sight after an announced loss, “Back in sight, heading east.” |
 
@@ -82,6 +84,12 @@ The observing client uses the runner's visible travel across a junction. It must
 
 Prefer the map's readable place name where the voice catalogue has a match. For West Coast USA, pick a plausible city-bound ramp and downtown tunnel mouth from installed map data. Record a starting landmark, approach, outgoing road, height and direction for each. A car crossing above the mouth or on a parallel road gets no named call. Use the group's first drive to adjust the candidate or its spoken label. On other maps use known place names when available and ordinary observed turns elsewhere.
 
+### How a cop can count along
+
+On West Coast or any map with reliable road data, a confirmed left starts the count on the road the runner has just entered. Count each distinct junction where a driver on that road could legally turn right. A left-only side street, the two lane links into a single street and an overpass add no extra right. Two streets passed and the third taken earn “Went left, then took the third right.” Passing the third earns silence. If a junction is ambiguous, the car doubles back, sight breaks or another turn intervenes, abandon that count. A later right can still earn an ordinary turn call.
+
+Call the left at the usual time. The pilot needn't wait to find out how many streets the runner will pass. When the third right is confirmed, the pilot can refer back to the left even if several seconds have passed. “Goes left, then takes the third right” is a present-tense variation for the same completed route. The sentence describes the run between the two turns. Its three-second deadline starts at the right. If that right is also a mapped named exit, the more specific exit line gets the one transmission.
+
 ### When to combine, interrupt or drop a call
 
 Hold the first ordinary turn briefly. Two distinct junction turns in that window, with uninterrupted aircraft sight, become one recording in the order seen. That includes “Two lefts in succession.” Once the first call starts, it counts as heard. A second turn within the continuation window can follow at the next break. After a pair, a fresh third turn can stand alone. A bend or a blocked sight sample cannot supply the second half.
@@ -92,7 +100,7 @@ The first blocked aircraft sample clears waiting route calls. During a brief obs
 
 ### How all cops get the same report
 
-The client responsible for the runner's cover sends ordered observations for its assigned car and flight. The server checks sender, pursuit identity, sequence, sample age and flight phase, then picks one recording for the eligible cops. A client's fresh observation supplies what happened. The server's pursuit state determines whether the crew may say it. A team position update or a predicted search exit cannot substitute for aircraft sight.
+The client responsible for the runner's cover sends ordered observations for its assigned car and flight. The server checks sender, pursuit identity, sequence, sample age and flight phase, then picks one recording for the eligible cops. If it missed observations since the left, a confirmed right can earn only ordinary wording. A client's fresh observation supplies what happened. The server's pursuit state determines whether the crew may say it. A team position update or a predicted search exit cannot substitute for aircraft sight.
 
 The server schedules around the measured length of each recording. Each client checks that a call still belongs to its pursuit and can start before its deadline. Skip an unknown or missing recording. Round end, replacement of the runner or reporter, refuelling, grounding and helicopter disable clear pending speech. A listener who rejoins, unmutes or regains the cop role starts with new transmissions.
 
@@ -111,6 +119,7 @@ The server schedules around the measured length of each recording. Each client c
 | Replay or fixture | Observable pass condition |
 | --- | --- |
 | Drive the candidate ramp, its bypass, the road above it and its reverse. Repeat at the tunnel mouth and on an unknown map. | Only the matched approach earns the local label. The unknown map still produces a confirmed generic turn. Moving forward with missing road data still allows a supported contact heading. Stopping or reversing earns no new heading. |
+| Replay a left, two right-hand streets passed, and the third right taken six seconds after the left. Repeat with the runner passing the third, and with sight broken between junctions. | The confirmed route earns “Went left, then took the third right” once. Passing produces no call. Broken sight removes the count and a newly confirmed right uses ordinary wording. |
 | Replay all four turn pairs at 0.75 seconds apart, then a pair at 1.5 seconds with the first already aired. Try a third turn, an S-bend and a named ramp following an unsent left. | The close pairs play once in order. The later turn uses a continuation. The third never extends the sentence to three clauses. The bend stays quiet and the named exit replaces the pending left. |
 | Break sight between turns, pass briefly under a bridge, then replay sustained tunnel cover while a ground cop has sight. Reacquire both before and after the loss call starts. | No chain crosses the break. Only sustained confirmed loss earns a loss line. No hidden exit leaks. Only an announced loss earns “Back in sight.” |
 | Feed a delayed or duplicate packet, wrong reporter, stale car or flight, role change, mute/unmute and reconnect through the normal round handlers. | Released human cops get the same current phrase once. Ineligible players hear silence. Obsolete calls never resume. Radio and rotors can be toggled independently. |
