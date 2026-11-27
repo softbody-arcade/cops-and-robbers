@@ -60,6 +60,7 @@ case "$*" in
     if [[ ${COMPARE_FAIL:-} ]]; then echo 'compare failed' >&2; exit 7; fi
     echo ahead
     ;;
+  'api repos/'*'/compare/'*) echo "unexpected compare: $*" >&2; exit 9 ;;
   'api repos/'*'/releases/tags/v2.0.0'*)
     jq -n --argjson draft "${DRAFT:-false}" --argjson pre "${PRERELEASE:-false}" '{draft:$draft, prerelease:$pre}' |
       api_response "${@:3}"
@@ -229,6 +230,7 @@ order() { [[ $(sed -n 's/.*--field \([^ ]*\) --value .*/\1/p' "$LOG") == Status 
 order
 wrote 'issue create --title Card --type Feature'
 LANE=Inbox expect 0 '' triage 1 bug Medium
+[[ ! -s $tmp/out ]]
 wrote 'issue edit 1 --type Bug'
 wrote 'setIssueFieldValue'
 order
