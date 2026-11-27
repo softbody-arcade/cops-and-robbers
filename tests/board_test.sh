@@ -25,21 +25,48 @@ case "$*" in
   *'select(.name=="Effort")'*) printf 'SIZEFIELD\tSIZEOPTION\n' ;;
   'api graphql '*issueFields\(first*) printf 'FIELD\tOPTION\n' ;;
   'api graphql '*mutation*) echo '{}' ;;
-  'api graphql '*latestRelease*) echo "${RELEASE_TAG-v1.2.3}" ;;
-  'api graphql '*releaseCards*) cat "$RELEASE_CARDS" ;;
-  'api graphql '*includeClosedPrs*)
-    case " $* " in
-      *' issue=4 '*) printf '%s\n' - merged-sha ;;
-      *' issue=5 '*) echo unreleased-sha ;;
-      *' issue=6 '*) echo - ;;
-    esac
+  'api graphql '*latestRelease*)
+    jq -n --arg tag "${RELEASE_TAG-v1.2.3}" --argjson draft "${DRAFT:-false}" --argjson pre "${PRERELEASE:-false}" '
+      {data:{repository:{latestRelease:(if $tag == "" then null else {tagName:$tag,isDraft:$draft,isPrerelease:$pre} end)}}}' |
+      jq -r "${!#}"
     ;;
+  'api graphql '*releaseCards*)
+    if [[ " $* " == *' --paginate '* ]]; then cat "$RELEASE_CARDS"; else head -n 1 "$RELEASE_CARDS"; fi
+    ;;
+  'api graphql '*openLinkedPrs*)
+    [[ " $* " == *' --paginate '* && "$*" == *'nodes{url state}'* ]] || exit 9
+    jq -n --arg prs "${PRS:-}" --arg merged "${MERGED_PRS:-}" '
+      def links($urls; $state): [$urls | split(",")[] | select(. != "" and . != "-") | {url: ., state:$state}];
+      {data:{repository:{issue:{closedByPullRequestsReferences:{
+        nodes:(links($merged; "MERGED") + links($prs; "OPEN"))}}}}}' | jq -r "${!#}"
+    ;;
+  'api graphql '*includeClosedPrs:true*)
+    case " $* " in
+      *' issue=4 '*) nodes='[{"merged":false,"mergeCommit":null},{"merged":true,"mergeCommit":{"oid":"merged-sha"}}]' ;;
+      *' issue=2 '*|*' issue=5 '*) nodes='[{"merged":true,"mergeCommit":{"oid":"unreleased-sha"}}]' ;;
+      *' issue=6 '*) nodes='[{"merged":false,"mergeCommit":null}]' ;;
+      *' issue=13 '*) nodes='[{"merged":true,"mergeCommit":{"oid":"merged-sha"}}]' ;;
+      *' issue=15 '*) nodes='[{"merged":true,"mergeCommit":null}]' ;;
+      *' issue=17 '*) nodes='[{"merged":true,"mergeCommit":{"oid":"missing-sha"}}]' ;;
+      *' issue=18 '*) nodes='[{"merged":true,"mergeCommit":{"oid":"merged-sha"}},{"merged":true,"mergeCommit":{"oid":"unreleased-sha"}}]' ;;
+      *) nodes='[]' ;;
+    esac
+    jq -nc --argjson nodes "$nodes" --arg args " $* " '
+      ($nodes[:1], (select($args | contains(" --paginate ")) | $nodes[1:] | select(length > 0))) |
+      {data:{repository:{issue:{closedByPullRequestsReferences:{nodes:.}}}}}' | jq -r "${!#}"
+    ;;
+  'api repos/'*'/compare/'*...missing-sha*) echo 'gh: Not Found (HTTP 404)' >&2; exit 1 ;;
   'api repos/'*'/compare/'*...merged-sha*) echo "${MERGED_COMPARISON:-identical}" ;;
   'api repos/'*'/compare/'*...unreleased-sha*)
     if [[ ${COMPARE_FAIL:-} ]]; then echo 'compare failed' >&2; exit 7; fi
     echo ahead
     ;;
-  'api repos/'*'/releases/tags/v2.0.0'*) echo '{}' ;;
+  'api repos/'*'/compare/'*) echo "unexpected compare: $*" >&2; exit 9 ;;
+  'api repos/'*'/releases/tags/v2.0.0'*)
+    jq -n --argjson draft "${DRAFT:-false}" --argjson pre "${PRERELEASE:-false}" '{draft:$draft, prerelease:$pre}' |
+      api_response "${@:3}"
+    ;;
+  'api repos/'*'/releases/tags/'*) echo 'gh: Not Found (HTTP 404)' >&2; exit 1 ;;
   'api graphql '*projectV2*)
     status=$LANE
     if grep -q 'issue create --title Deferred' "$LOG"; then status=Inbox; fi
@@ -49,7 +76,7 @@ case "$*" in
     fi
     jq -n --arg lane "$status" --arg priority "${FIELD-High}" --arg effort "${SIZE-Low}" \
       --arg type "${TYPE-Feature}" --arg state "${STATE:-OPEN}" --arg label "${TAGS:-}" \
-      --arg assigned "$ASSIGNED" --arg prs "${PRS:-}" --argjson blockers "$BLOCKERS" \
+      --arg assigned "$ASSIGNED" --arg prs "${PRS:-}" --arg merged "${MERGED_PRS:-}" --argjson blockers "$BLOCKERS" \
       --argjson count "${CARD_COUNT:-1}" --argjson others "${OTHER_COUNT:-0}" --arg owner "${OWNER_TYPE:-Organization}" '
       def nodes($values; key): {nodes: [$values | split(",")[] | select(. != "" and . != "-") | key]};
       {data: {($owner|ascii_downcase): {projectV2: {items: {nodes: [
@@ -63,7 +90,7 @@ case "$*" in
               ({field: {name: "Priority"}, name: $priority}, {field: {name: "Effort"}, name: $effort})
               | select(.name != "-")]},
             labels: nodes($label; {name: .}), assignees: nodes($assigned; {login: .}),
-            closedByPullRequestsReferences: nodes($prs; {url: .}),
+            closedByPullRequestsReferences: {nodes: (nodes($merged; {url: .}).nodes + nodes($prs; {url: .}).nodes)[:20]},
             issueDependenciesSummary: {blockedBy: $blockers}}})]}}}}}' | jq -r "${!#}"
     ;;
   'issue view '*--json\ number*) echo '{"number":1,"title":"Card","issueType":{"name":"Feature"},"milestone":{"title":"v1"},"parent":{"number":3},"subIssues":{"nodes":[{"number":4}]},"blockedBy":{"nodes":[{"number":5}]},"closedByPullRequestsReferences":[{"url":"https://example.com/pr"}],"body":"First\nSecond"}' ;;
@@ -73,7 +100,7 @@ case "$*" in
   'api --paginate '*'/comments'*)
     jq -n --arg staged "${STAGED-}" --arg other "${OTHER_STAGED-}" \
       --arg comment "${EXISTING_COMMENT-}" --arg author "${COMMENT_AUTHOR:-me}" '
-      [($staged | select(length > 0) | {user:{login:"me"}, author_association:"OWNER", body:("Staged for playtest (#1): " + .)}),
+      [($staged | split(",")[] | select(length > 0) | {user:{login:"me"}, author_association:"OWNER", body:("Staged for playtest (#1): " + .)}),
        ($other | select(length > 0) | {user:{login:"peer"}, author_association:"MEMBER", body:("Staged for playtest (#1): " + .)}),
        ($comment | select(length > 0) | {user:{login:$author}, author_association:"COLLABORATOR", body:.})]' | api_response "${@:4}"
     ;;
@@ -123,7 +150,7 @@ wrote() { grep -Fq -- "$1" "$LOG"; }
 guard() {
   expect 1 "$@"
   [[ $(cat "$tmp/out") == "$1" ]]
-  ! grep -Eq '^(api -X|api graphql .*query=mutation|label create|project item-|issue (edit|create|close|comment)|pr (edit|comment))' "$LOG" || exit 1
+  ! grep -Eq '^(api -X|api graphql .*query=mutation|label create|project item-|issue (edit|create|close|reopen|comment)|pr (edit|comment))' "$LOG" || exit 1
 }
 export READY="$tmp/ready"
 sections=(Goal Why Scope 'Done when' 'Constraints and known facts' 'Open questions' Links)
@@ -147,6 +174,10 @@ LANE=Review expect 0 '' move 1 accepted
 wrote '--field Status --value Accepted'
 LANE=Accepted expect 0 '#1 Card' list accepted
 grep -Fxq Accepted "$tmp/out"
+STATE=CLOSED LANE=Done TYPE=- FIELD=- SIZE=- expect 0 '' check
+[[ ! -s $tmp/out ]]
+STATE=CLOSED LANE=Next CARD_COUNT=6 BLOCKERS=1 expect 0 '' check
+[[ ! -s $tmp/out ]]
 LANE=Accepted TYPE=- FIELD=- SIZE=- expect 0 '' check
 [[ ! -s $tmp/out ]]
 guard 'Result requires Playtest' result 1 pass
@@ -162,10 +193,18 @@ expect 0 Card list
 wrote 'items(first:50,after:$endCursor)'
 wrote 'pageInfo{hasNextPage endCursor}'
 expect 0 'Usage:' --help
+for route in 'Review or Playtest' 'reopen the issue' 're-stage' 'In-game check' 'Playtest to Backlog' 'move N done'; do
+  grep -Fiq -- "$route" "$tmp/out"
+done
 expect 0 'Usage:' -h
 GH_VERSION=2.105.9 expect 2 'requires gh' list
 OWNER_TYPE=User expect 0 Card list --all
 wrote 'user(login:$owner)'
+LANE=Accepted STATE=CLOSED guard 'To rework merged work, reopen #1: the board returns it to Inbox, then triage it again' move 1 build
+LANE=Accepted guard '#1 is already open: move it to Inbox with board move 1 inbox, then triage it again' move 1 build
+LANE=Accepted expect 0 '' move 1 inbox
+wrote '--field Status --value Inbox'
+LANE=Inbox guard 'Use start from Next to enter Design or Build' move 1 build
 LANE=Review expect 0 '' move 1 build
 wrote '--field Status --value Build'
 ASSIGNED=peer,me,another expect 0 '' start 1 build
@@ -187,11 +226,15 @@ expect 2 'Unexpected --staged' move 1 review --staged bad
 expect 1 'did not enter Inbox' new feature High Card
 ! wrote '--field Status' || exit 1
 DELAY_INBOX=1 expect 0 '' new feature High Card
+diff -u - "$tmp/out" <<'URL'
+https://github.com/softbody-arcade/cops-and-robbers/issues/1
+URL
 [[ -f $LOG.slept ]]
 order() { [[ $(sed -n 's/.*--field \([^ ]*\) --value .*/\1/p' "$LOG") == Status ]]; }
 order
 wrote 'issue create --title Card --type Feature'
 LANE=Inbox expect 0 '' triage 1 bug Medium
+[[ ! -s $tmp/out ]]
 wrote 'issue edit 1 --type Bug'
 wrote 'setIssueFieldValue'
 order
@@ -208,7 +251,14 @@ wrote '--field Status --value Build'
 expect 0 '' new in-game-check Card
 wrote '--type In-game check'
 ! wrote 'setIssueFieldValue' || exit 1
-guard 'Triage requires Inbox' triage 1 bug High
+for source in Backlog Next Design Build Review Playtest Accepted; do
+  LANE=$source TYPE=- SIZE=- expect 0 '' triage 1 bug High
+  wrote 'issue edit 1 --type Bug'
+  wrote 'select(.name=="High")'
+  wrote 'select(.name=="Medium")'
+  ! wrote 'project item-edit' || exit 1
+done
+LANE=Done guard 'Cannot triage a Done card' triage 1 bug High
 LANE=Inbox expect 0 '' new task High Medium 'Low'
 wrote 'issue create --title Low --type Task'
 wrote 'select(.name=="Effort")'
@@ -227,6 +277,7 @@ wrote 'select(.name=="Medium")'
 LANE=Inbox expect 2 'Invalid effort: Urgent' triage 1 task High Urgent
 ! wrote 'issue edit' || exit 1
 expect 0 '' priority 1 Urgent
+[[ ! -s $tmp/out ]]
 wrote 'select(.name=="Priority")'
 wrote 'select(.name=="Urgent")'
 wrote '-f issue=NODE-1 -f field=FIELD -f option=OPTION'
@@ -283,10 +334,12 @@ wrote 'POST repos/softbody-arcade/cops-and-robbers/issues/1/dependencies/blocked
 expect 0 '' unblock 1 --by 2
 wrote 'DELETE repos/softbody-arcade/cops-and-robbers/issues/1/dependencies/blocked_by/123'
 expect 0 '' labels
-[[ $(grep -c '^label create ' "$LOG") == 3 ]]
-wrote 'label create accessibility --repo softbody-arcade/cops-and-robbers --force'
-wrote 'label create needs-decision --repo softbody-arcade/cops-and-robbers --force'
-wrote 'label create needs-playtest --repo softbody-arcade/cops-and-robbers --force'
+[[ $(grep -c '^label create ' "$LOG") == 5 ]]
+wrote 'label create good first issue --repo softbody-arcade/cops-and-robbers --force --color 7057ff --description Good for newcomers'
+wrote 'label create help wanted --repo softbody-arcade/cops-and-robbers --force --color 008672 --description Extra attention is needed'
+wrote 'label create accessibility --repo softbody-arcade/cops-and-robbers --force --color f143ab --description Barrier affecting people with disabilities'
+wrote 'label create needs-decision --repo softbody-arcade/cops-and-robbers --force --color D93F0B --description Waiting on a maintainer decision'
+wrote 'label create needs-playtest --repo softbody-arcade/cops-and-robbers --force --color 5319E7 --description PR changes something a player sees, hears or feels'
 printf 'Low: Observe.\nHigh: Keep it.\n' > "$tmp/note"
 expect 0 '' decide 1 --file "$tmp/note"
 wrote "**Decision ($(date +%F)):**"
@@ -301,7 +354,14 @@ TYPE='In-game check' expect 2 'Unexpected --staged' move 1 playtest --staged "$H
 guard 'Staged SHA differs from PR head' move 1 playtest --staged "$(git rev-parse HEAD^)"
 expect 0 '' move 1 playtest --staged "$HEAD_SHA"
 wrote "Staged for playtest (#1): $HEAD_SHA"
+merged_history=$(for id in {1..20}; do printf '%s/%s,' "${PRS%/*}" "$id"; done)
+MERGED_PRS=$merged_history expect 0 '' move 1 playtest --staged "$HEAD_SHA"
+wrote "pr comment 42 --body Staged for playtest (#1): $HEAD_SHA"
+MERGED_PRS=$PRS PRS= guard 'Requires one linked open PR in this repository' move 1 playtest --staged "$HEAD_SHA"
 recovery='Use board move 1 build for rework, or board move 1 playtest --staged <full sha> after staging the current linked PR head.'
+STAGED="$HEAD_SHA,other" LANE=Playtest guard "PR head differs from staged SHA. $recovery" result 1 pass
+STAGED="other,$HEAD_SHA" MERGED_PRS=${PRS%/*}/41 LANE=Playtest expect 0 '' result 1 defer --checks-file "$tmp/note"
+wrote "Build: $HEAD_SHA ($PRS), work card #1"
 STAGED=other LANE=Playtest guard "PR head differs from staged SHA. $recovery" result 1 pass
 STAGED= LANE=Playtest guard "No staged comment from me. $recovery" result 1 pass
 STAGED= OTHER_STAGED=$HEAD_SHA LANE=Playtest guard "No staged comment from me. $recovery" result 1 pass
@@ -314,6 +374,8 @@ for links in '' "$PRS,${PRS%/*}/43"; do
 done
 LANE=Playtest expect 0 '' move 1 playtest --staged "$HEAD_SHA"
 wrote "pr comment 42 --body Staged for playtest (#1): $HEAD_SHA"
+LANE=Playtest TYPE='In-game check' expect 0 '' move 1 backlog
+wrote '--field Status --value Backlog'
 LANE=Playtest expect 1 'Playtest' move 1 backlog
 for source in Inbox Backlog Next; do
   TYPE='In-game check' SIZE=- LANE=$source READY=/dev/null expect 0 '' move 1 playtest
@@ -337,6 +399,8 @@ expect 2 'Expected priority-prefixed check' result 1 defer --checks-file "$tmp/i
 ! wrote 'issue create' || exit 1
 expect 2 'Defer requires --checks-file F' result 1 defer
 EXISTING=22 expect 0 '' result 1 defer --checks-file "$tmp/note"
+wrote '-f issue=NODE-22 -f field=SIZEFIELD -f option=SIZEOPTION'
+wrote 'select(.name=="Medium")'
 ! wrote 'issue create' || exit 1
 expect 0 '' result 1 defer --checks-file "$tmp/note"
 wrote '--type In-game check'
@@ -376,7 +440,7 @@ guard '#33 is a pull request' parent 1 33
 guard '#33 is a pull request' block 1 --by 33
 guard '#33 is a pull request' unblock 1 --by 33
 export RELEASE_CARDS="$tmp/release-cards"
-jq -n '
+jq -nc '
   def card($number; $lane; $reason; $type):
     {id: "ITEM-\($number)", updatedAt: "2000-01-01T00:00:00Z", isArchived: false, status: {name: $lane},
      content: {number: $number, state: "CLOSED", stateReason: $reason, issueType: {name: $type},
@@ -385,44 +449,67 @@ jq -n '
     card(1; "Accepted"; "NOT_PLANNED"; "Feature"),
     card(2; "Accepted"; "COMPLETED"; "In-game check"),
     card(3; "Accepted"; "COMPLETED"; "Task"),
+    card(17; "Accepted"; "COMPLETED"; "Task"),
     card(4; "Accepted"; "COMPLETED"; "Bug"),
     card(5; "Accepted"; "COMPLETED"; "Bug"),
     card(6; "Accepted"; "COMPLETED"; "Task"),
-    card(7; "Done"; "COMPLETED"; "Task"),
+    (card(7; "Done"; "COMPLETED"; "Task") | .updatedAt = (now - 14*86400 - 1 | todateiso8601) | .content.updatedAt = .updatedAt),
     (card(8; "Done"; "COMPLETED"; "Task") | .updatedAt = (now - 13*86400 | todateiso8601)),
     (card(9; "Done"; "COMPLETED"; "Task") | .content.updatedAt = (now - 13*86400 | todateiso8601)),
     (card(10; "Accepted"; "DUPLICATE"; "Task") | .content.repository.nameWithOwner = "softbody-arcade/other"),
     card(11; "Accepted"; "DUPLICATE"; "Task"),
     (card(12; "Done"; "COMPLETED"; "Task") | .isArchived = true),
-    (card(13; "Accepted"; null; "Task") | .content.state = "OPEN")
-  ]}}}}}' > "$RELEASE_CARDS"
+    (card(13; "Accepted"; null; "Task") | .content.state = "OPEN"),
+    (card(14; "Done"; null; "Task") | .content.state = "OPEN"),
+    card(15; "Accepted"; "COMPLETED"; "Task"),
+    card(16; "Accepted"; null; "Task"),
+    card(18; "Accepted"; "COMPLETED"; "Task"),
+    {id:"DRAFT", status:{name:"Accepted"}, content:{}},
+    {id:"REDACTED", status:{name:"Accepted"}, content:null}
+  ]}}}}} | (.data.organization.projectV2.items.nodes |= .[:4]), (.data.organization.projectV2.items.nodes |= .[4:])' > "$RELEASE_CARDS"
 expect 0 '#1 moved to Done' release
 diff -u - "$tmp/out" <<'RELEASE'
 #1 moved to Done
 #2 moved to Done
 #3 moved to Done
+#17 waiting for a release
 #4 moved to Done
 #5 waiting for a release
-#6 waiting for a release
+#6 has no merged PR
 #7 archived
 #11 moved to Done
-#13 waiting for a release
+#13 is still open
+#15 waiting for a release
+#16 has no completion reason or linked PR
+#18 waiting for a release
 RELEASE
 cp "$tmp/out" "$tmp/release-output"
 [[ $(grep -c 'project item-edit .* --field Status --value Done' "$LOG") == 5 ]]
 wrote 'item=ITEM-7'
 [[ $(grep -c 'archiveProjectV2Item' "$LOG") == 1 ]]
 wrote '/compare/v1.2.3...merged-sha'
-expect 0 '#1 moved to Done' release --dry-run
-diff -u "$tmp/release-output" "$tmp/out"
+expect 0 '#1 would move to Done' release --dry-run
+sed -e 's/ moved to Done$/ would move to Done/' -e 's/ archived$/ would archive/' "$tmp/release-output" > "$tmp/expected-dry-run"
+diff -u "$tmp/expected-dry-run" "$tmp/out"
 ! wrote 'project item-edit' || exit 1
 ! wrote 'archiveProjectV2Item' || exit 1
-MERGED_COMPARISON=behind expect 0 '#4 moved to Done' release v2.0.0 --dry-run
+MERGED_COMPARISON=behind expect 0 '#4 would move to Done' release v2.0.0 --dry-run
 wrote '/compare/v2.0.0...merged-sha'
 ! wrote 'latestRelease' || exit 1
-: > "$LOG"
+expect 2 'HTTP 404' release v9.9.9
+! wrote 'project item-edit' || exit 1
+for flag in DRAFT PRERELEASE; do
+  export "$flag=true"
+  expect 1 'draft or prerelease' release v2.0.0
+  ! wrote 'project item-edit' || exit 1
+  ! wrote 'archiveProjectV2Item' || exit 1
+  expect 0 'No published release yet' release --dry-run
+  grep -qx '#4 waiting for a release' "$tmp/out"
+  ! wrote '/compare/' || exit 1
+  unset "$flag"
+done
 RELEASE_TAG= expect 0 'No published release yet' release --dry-run
-grep -qx '#1 moved to Done' "$tmp/out"
+grep -qx '#1 would move to Done' "$tmp/out"
 grep -qx '#4 waiting for a release' "$tmp/out"
 ! wrote '/compare/' || exit 1
 COMPARE_FAIL=1 expect 2 'compare failed' release
@@ -438,7 +525,7 @@ if (cd "$other" && "$tmp/repo/scripts/board" labels) >"$tmp/out" 2>&1; then exit
 git switch -qc feature/test
 guard 'Board writes require the develop branch' labels
 guard 'Board writes require the develop branch' release
-expect 0 '#1 moved to Done' release --dry-run
+expect 0 '#1 would move to Done' release --dry-run
 guard 'Board writes require the develop branch' effort 1 High
 guard 'Board writes require the develop branch' priority 1 Low
 git switch -q develop

@@ -26,15 +26,15 @@ GitHub Issues and the organization board **Softbody Arcade** (project 1) record 
 
 | Lane | Holds | Leaves when |
 |---|---|---|
-| Inbox | New, untriaged issues | `board triage <n> <type> <priority> [effort]` sets type, priority and effort, moving it to Backlog |
+| Inbox | New, untriaged issues | `board triage <n> <type> <priority> [effort]` sets type, priority and effort, moving it to Backlog. In any later lane except Done, the same command corrects the fields without moving the card |
 | Backlog | Triaged; a simple ticket is fine | The maintainer picks it for Next |
 | Next | At most 5 (`board check` warns above that), top first, each meeting the definition of ready | `board start <n> design\|build` |
 | Design | Brainstorm, spec and plan | The maintainer approves the plan, then `board move <n> build` |
 | Build | Branch, worktree, draft PR; per-task implement and review | The PR is ready: `board move <n> review`, or `board move <n> playtest --staged <sha>` when a player check comes first |
 | Review | Whole-branch review, fixes, CI | With `needs-playtest`: `board move <n> playtest --staged <sha>`. Without it, the PR merges. Rework goes back with `board move <n> build` |
-| Playtest | Waiting on the maintainer's in-game result, plus `In-game check` issues (moved in from Inbox, Backlog or Next with `board move <n> playtest`; from Inbox, set `board priority <n> ...` first) | `board result <n> ...` (below). After a new push, re-stage with `board move <n> playtest --staged <sha>`; for rework, `board move <n> build` |
-| Accepted | Merged work waiting for a release, and closed tickets not yet tidied. Cards arrive when their issue closes (the board does this; a staged PR that passed its playtest arrives when it merges), or when a playtester accepts merged work they tested on `develop` | `board release` (after each release, or any time) moves released work, not-planned and duplicate closes, closed checks and no-code tickets to Done. For rework, the maintainer drags the card back to Build on the board and reopens the issue |
-| Done | Released work; closed as not planned or duplicate; closed checks; no-code tickets. Only `board release` moves cards here, never `board move` | `board release` archives cards unchanged for 14 days |
+| Playtest | Waiting on the maintainer's in-game result, plus `In-game check` issues (moved in from Inbox, Backlog or Next with `board move <n> playtest`; from Inbox, set `board priority <n> ...` first) | `board result <n> ...` (below). After a new push, re-stage with `board move <n> playtest --staged <sha>`; for rework, `board move <n> build`. To postpone an `In-game check`, `board move <n> backlog` |
+| Accepted | Merged work waiting for a release, and closed tickets not yet tidied. Cards arrive when their issue closes (the board does this; a staged PR that passed its playtest arrives when it merges), or when a playtester accepts merged work they tested on `develop` | `board release` (after each release, or any time) moves released work, not-planned and duplicate closes, closed checks and no-code tickets to Done. For rework, reopen the issue: the board returns the card to Inbox, and it goes through triage, Next and `board start` again like other work. If the issue is already open, `board move <n> inbox` puts it back for triage |
+| Done | Released work; closed as not planned or duplicate; closed checks; no-code tickets. Only `board release` moves cards here, never `board move` | `board release` archives closed cards unchanged for 14 days |
 
 **Definition of ready for Next.** The ticket body has these sections: `## Goal`, `## Why`, `## Scope`, `## Done when`, `## Constraints and known facts`, `## Open questions`, `## Links`. The **Ready ticket** issue template provides them, and `board move <n> next` refuses without them.
 
@@ -55,7 +55,7 @@ GitHub Issues and the organization board **Softbody Arcade** (project 1) record 
 - Run a board write only for something the maintainer asked for or decided in the current session (a standing instruction such as "triage the new issues" counts for that session).
 - Run `board start <n> build` or `board move <n> build` only after the maintainer approved that plan (for a fix batch without a spec: that batch) in the current session.
 - Run `board result` only with a result the maintainer reported in the current session.
-- An agent never drags a card out of Playtest on the board; it uses `board result`, or `board move` for re-staging and rework. (People in the playtesters team may drag merged work, as above.)
+- An agent never drags a card out of Playtest on the board; it uses `board result`, or `board move` for re-staging, rework and postponing an `In-game check`. (People in the playtesters team may drag merged work, as above.)
 
 ## Roles
 
@@ -115,8 +115,12 @@ Add source comments or emojis only when the maintainer asks for them.
   - for `needs-playtest` PRs, a `board result` of pass or defer for exactly that head SHA. A later push voids the result, the review and the go.
 - **Merging.** From the maintainer's main checkout (on `develop`):
   1. Remove the worktree.
-  2. `gh pr merge <pr> --merge --delete-branch --match-head-commit <sha>`.
+  2. `gh pr merge <pr> --admin --merge --delete-branch --match-head-commit <sha>`.
   3. Pull `develop`.
+
+  `develop-merge` and `main-merge` let only maintainers update those branches, so every merge into them is a maintainer bypass:
+  - On the command line, `--admin` claims that bypass. It skips only those `*-merge` rulesets: `develop-checks` and `main-checks` have no bypass, so CI still has to pass.
+  - In the web UI, tick "Merge without waiting for requirements to be met (bypass rules)" before merging.
 - **No direct commits on `develop` or `main`.** Every change, docs and this file included, goes through a PR. Version bumps always do (see Releases).
 - **Identity.** Everyone commits with their GitHub noreply address (`ID+login@users.noreply.github.com`), never a personal or work email. The privacy check rejects other personal addresses (it allows only noreply and a few GitHub service addresses). The maintainer commits as `ReinderN` and SSH-signs.
 
@@ -172,7 +176,7 @@ Hooks, Make targets and scripts run with the credentials of whoever runs them, a
   - `make version V=x.y.z` builds the version commit on top of `origin/develop` without touching the checkout, pushes `release/x.y.z` and opens the PR **Release x.y.z** into `main`.
   - **Hotfix:** `make version V=x.y.z FROM=main` starts the release branch from `main` instead, so unreleased work on `develop` stays out. Put the fix on `release/x.y.z` through a PR into that branch, then merge the release PR.
   - Before merging it, check that milestone `x.y.z` has no open issues (`gh issue list --milestone x.y.z --state open`); close them or move them to another milestone.
-  - Merging it is the approval to release: `release.yml` tags the merge commit and publishes the GitHub Release with the ZIP, tarball and checksums. It then opens **Sync main into develop**. A maintainer merges it with `gh pr merge <pr> --merge --match-head-commit <sha>`, without `--delete-branch`, because its head is `main`.
+  - Merging it is the approval to release: `release.yml` tags the merge commit and publishes the GitHub Release with the ZIP, tarball and checksums. It then opens **Sync main into develop**. A maintainer merges it with `gh pr merge <pr> --admin --merge --match-head-commit <sha>`, without `--delete-branch`, because its head is `main`. The release PR itself merges the same way, with `--delete-branch`.
   - After publishing, run `scripts/board release` (from the maintainer's checkout of `develop`) to move the released work from Accepted to Done.
   - Agents merge a release PR only after the maintainer said, in the current session, to release that version.
   - Version numbers stay out of feature plans and branches. Tests use `CNR_VERSION`.
