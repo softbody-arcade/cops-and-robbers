@@ -9,7 +9,8 @@ For contributors:
 - `lua5.3`, `luajit` and `python3` for tests and Lua checks
 - Node 22 with npm for UI checks
 - `zip` and `rsync` for packaging
-- `git` 2.41 or newer (the privacy check uses `--attr-source`), and `gh` for the board tooling in `scripts/board`
+- `git` 2.41 or newer (the privacy check uses `--attr-source`)
+- Bash 4.4+, `jq` and `gh` 2.106+ for `scripts/board` and its tests
 
 ## Install
 

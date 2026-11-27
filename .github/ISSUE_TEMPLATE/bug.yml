@@ -8,7 +8,7 @@ body:
       label: File and line
       description: Where does the problem occur?
     validations:
-      required: true
+      required: false
   - type: textarea
     id: observable-problem
     attributes:

@@ -13,8 +13,11 @@ git -c commit.gpgsign=false -c user.name=Tester -c user.email=tester@users.norep
 export LOG="$tmp/log" PATH="$tmp:$PATH" LANE=Next ASSIGNED=- BLOCKERS=0
 cat > "$tmp/gh" <<'STUB'
 #!/usr/bin/env bash
-set -eu
+set -euo pipefail
 printf '%s\n' "$*" >> "$LOG"
+api_response() {
+  if [[ ${1:-} == --jq ]]; then jq -r "$2"; else cat; fi
+}
 case "$*" in
   '--version') echo "gh version ${GH_VERSION:-2.106.0}" ;;
   'api users/'*) echo "${OWNER_TYPE:-Organization}" ;;
@@ -29,18 +32,48 @@ case "$*" in
       status=-
       if [[ -f $LOG.slept ]]; then status=Inbox; fi
     fi
-    printf '%s\n' "softbody-arcade/cops-and-robbers|1|$status|${FIELD-High}|${SIZE-Low}|${TYPE-Feature}|v1|${TAGS:-}|$ASSIGNED|${PRS:--}|$BLOCKERS|Card"
+    jq -n --arg lane "$status" --arg priority "${FIELD-High}" --arg effort "${SIZE-Low}" \
+      --arg type "${TYPE-Feature}" --arg state "${STATE:-OPEN}" --arg label "${TAGS:-}" \
+      --arg assigned "$ASSIGNED" --arg prs "${PRS:-}" --argjson blockers "$BLOCKERS" \
+      --argjson count "${CARD_COUNT:-1}" --argjson others "${OTHER_COUNT:-0}" --arg owner "${OWNER_TYPE:-Organization}" '
+      def nodes($values; key): {nodes: [$values | split(",")[] | select(. != "" and . != "-") | key]};
+      {data: {($owner|ascii_downcase): {projectV2: {items: {nodes: [
+        {content: null}, {content: {}},
+        (range(1; $count+$others+1) as $n | {
+          status: (if $lane == "-" then null else {name: $lane} end),
+          content: {repository: {nameWithOwner: (if $n > $count then "softbody-arcade/other" else "softbody-arcade/cops-and-robbers" end)},
+            number: $n, title: "Card", state: $state, milestone: {title: "v1"},
+            issueType: (if $type == "-" then null else {name: $type} end),
+            issueFieldValues: {nodes: [
+              ({field: {name: "Priority"}, name: $priority}, {field: {name: "Effort"}, name: $effort})
+              | select(.name != "-")]},
+            labels: nodes($label; {name: .}), assignees: nodes($assigned; {login: .}),
+            closedByPullRequestsReferences: nodes($prs; {url: .}),
+            issueDependenciesSummary: {blockedBy: $blockers}}})]}}}}}' | jq -r "${!#}"
     ;;
   'issue view '*--json\ number*) echo '{"number":1,"title":"Card","issueType":{"name":"Feature"},"milestone":{"title":"v1"},"parent":{"number":3},"subIssues":{"nodes":[{"number":4}]},"blockedBy":{"nodes":[{"number":5}]},"closedByPullRequestsReferences":[{"url":"https://example.com/pr"}],"body":"First\nSecond"}' ;;
   'issue view '*--json\ id*) echo "NODE-${3}" ;;
   'issue view '*--json\ parent*) echo "${PARENT-PARENT}" ;;
   'pr view '*headRefOid*) echo "${HEAD_SHA:?}" ;;
-  'api --paginate '*'/comments '*@base64*) echo "${EXISTING_COMMENT:-}" ;;
-  'api --paginate '*'/comments '*) echo "Staged for playtest (#1): ${STAGED:?}" ;;
+  'api --paginate '*'/comments'*)
+    jq -n --arg staged "${STAGED-}" --arg other "${OTHER_STAGED-}" \
+      --arg comment "${EXISTING_COMMENT-}" --arg author "${COMMENT_AUTHOR:-me}" '
+      [($staged | select(length > 0) | {user:{login:"me"}, author_association:"OWNER", body:("Staged for playtest (#1): " + .)}),
+       ($other | select(length > 0) | {user:{login:"peer"}, author_association:"MEMBER", body:("Staged for playtest (#1): " + .)}),
+       ($comment | select(length > 0) | {user:{login:$author}, author_association:"COLLABORATOR", body:.})]' | api_response "${@:4}"
+    ;;
   'pr comment '*) echo '{}' ;;
   'api user '*) echo me ;;
   'issue view '*--json\ body*) cat "$READY" ;;
-  'api --paginate '*'/issues?state='*) echo "${EXISTING:-}" ;;
+  'api --paginate '*'/issues?state='*)
+    jq -n --arg existing "${EXISTING:-}" --arg author "${CREATOR:-me}" --arg head "$HEAD_SHA" --arg prs "$PRS" '
+      [select($existing != "") | {number: ($existing|tonumber), user:{login:$author}, author_association:"MEMBER"}
+       + ({type:{name:"Bug"}, body:"Failed in-game check #1"},
+          {type:{name:"In-game check"}, body:("Build: " + $head + " (" + $prs + "), work card #1")})]' | api_response "${@:4}"
+    ;;
+  'api repos/'*'/issues/'*)
+    jq -n --arg id "${2##*/}" '{id:123} + (if $id == "33" then {pull_request:{url:"https://example.com/pr"}} else {} end)' | api_response "${@:3}"
+    ;;
   'pr view '*--json\ body*) echo "${BODY:-}" ;;
   'issue edit '*--milestone\ 9.9.9*) echo 'milestone not found' >&2; exit 7 ;;
   'api repos/'*) echo 123 ;;
@@ -90,9 +123,16 @@ ASSIGNED=someone guard 'Already assigned to someone' start 1 design
 LANE=Backlog guard 'Start requires Next' start 1 build
 guard 'Use start from Next to enter Design or Build' move 1 build
 TYPE=- guard 'Set type and priority first' move 1 review
-LANE=Playtest guard 'Only result may move a Playtest card' move 1 done
+LANE=Playtest guard 'Close the issue to move it to Done through board automation' move 1 done
 guard 'Result requires Playtest' result 1 pass
 expect 2 'Unknown lane: elsewhere' move 1 elsewhere
+expect 0 Card list next
+expect 0 '' list backlog
+[[ ! -s $tmp/out ]]
+LANE=Paused expect 0 Other list
+grep -Fxq Other "$tmp/out"
+grep -Fq '#1 Card' "$tmp/out"
+LANE=- expect 0 Other list
 expect 0 Card list
 wrote 'items(first:50,after:$endCursor)'
 wrote 'pageInfo{hasNextPage endCursor}'
@@ -101,11 +141,22 @@ expect 0 'Usage:' -h
 GH_VERSION=2.105.9 expect 2 'requires gh' list
 OWNER_TYPE=User expect 0 Card list --all
 wrote 'user(login:$owner)'
+LANE=Review expect 0 '' move 1 build
+wrote '--field Status --value Build'
+ASSIGNED=peer,me,another expect 0 '' start 1 build
+wrote '--field Status --value Build'
+ASSIGNED=peer,someone guard 'Already assigned to peer,someone' start 1 build
 LANE=Next guard 'Use start to leave Next for active work' move 1 review
 LANE=Backlog guard 'Move ready work to Next first' move 1 review
 LANE=Inbox guard 'Use triage to leave Inbox' move 1 next
 TAGS=needs-decision expect 0 '[needs-decision]' waiting --all
 LANE=Playtest expect 0 '[awaiting playtest]' waiting
+STATE=CLOSED LANE=Playtest TAGS=needs-decision expect 0 '' waiting
+[[ ! -s $tmp/out ]]
+CARD_COUNT=6 expect 1 'Next holds 6 cards' check
+CARD_COUNT=5 OTHER_COUNT=1 expect 1 'Next holds 6 cards' check
+CARD_COUNT=5 expect 0 '' check
+[[ ! -s $tmp/out ]]
 LANE=- guard 'Issue #1 has no board status' start 1 build
 expect 2 'Unexpected --staged' move 1 review --staged bad
 expect 1 'did not enter Inbox' new feature High Card
@@ -121,7 +172,7 @@ wrote 'setIssueFieldValue'
 order
 LANE=Inbox TYPE=- FIELD=- expect 0 '' check
 [[ ! -s $tmp/out ]]
-TYPE=- FIELD=- BLOCKERS=1 expect 0 'missing type' check
+TYPE=- FIELD=- BLOCKERS=1 expect 1 'missing type' check
 grep -q 'missing priority' "$tmp/out"
 grep -q 'blocked in Next' "$tmp/out"
 expect 0 '' start 1 design
@@ -138,6 +189,10 @@ wrote 'issue create --title Low --type Task'
 wrote 'select(.name=="Effort")'
 wrote 'select(.name=="Medium")'
 wrote '-f field=SIZEFIELD -f option=SIZEOPTION'
+expect 2 'Invalid type: Chore' new Chore Card
+! wrote 'issue create' || exit 1
+expect 0 '' new bug Card --body-file "$READY"
+wrote "issue create --title Card --type Bug --body-file $READY"
 expect 2 'Invalid effort: Urgent' new task High Urgent Card
 ! wrote 'issue create' || exit 1
 LANE=Inbox expect 0 '' triage 1 task High Low
@@ -146,6 +201,12 @@ LANE=Inbox SIZE=- expect 0 '' triage 1 task Low
 wrote 'select(.name=="Medium")'
 LANE=Inbox expect 2 'Invalid effort: Urgent' triage 1 task High Urgent
 ! wrote 'issue edit' || exit 1
+expect 0 '' priority 1 Urgent
+wrote 'select(.name=="Priority")'
+wrote 'select(.name=="Urgent")'
+wrote '-f issue=NODE-1 -f field=FIELD -f option=OPTION'
+expect 2 'Invalid priority: Later' priority 1 Later
+! wrote 'setIssueFieldValue' || exit 1
 expect 0 '' effort 1 High
 wrote 'select(.name=="Effort")'
 wrote 'select(.name=="High")'
@@ -158,7 +219,7 @@ wrote 'select(.name=="High")'
 expect 0 '' new task High
 wrote 'issue create --title High --type Task'
 ! wrote 'setIssueFieldValue' || exit 1
-SIZE=- expect 0 '#1 missing effort' check
+SIZE=- expect 1 '#1 missing effort' check
 LANE=Inbox SIZE=- expect 0 '' check
 [[ ! -s $tmp/out ]]
 expect 0 'Card | Feature | High | Low |' list
@@ -197,7 +258,8 @@ wrote 'POST repos/softbody-arcade/cops-and-robbers/issues/1/dependencies/blocked
 expect 0 '' unblock 1 --by 2
 wrote 'DELETE repos/softbody-arcade/cops-and-robbers/issues/1/dependencies/blocked_by/123'
 expect 0 '' labels
-[[ $(grep -c '^label create ' "$LOG") == 2 ]]
+[[ $(grep -c '^label create ' "$LOG") == 3 ]]
+wrote 'label create accessibility --repo softbody-arcade/cops-and-robbers --force'
 wrote 'label create needs-decision --repo softbody-arcade/cops-and-robbers --force'
 wrote 'label create needs-playtest --repo softbody-arcade/cops-and-robbers --force'
 printf 'Low: Observe.\nHigh: Keep it.\n' > "$tmp/note"
@@ -214,7 +276,27 @@ TYPE='In-game check' expect 2 'Unexpected --staged' move 1 playtest --staged "$H
 guard 'Staged SHA differs from PR head' move 1 playtest --staged "$(git rev-parse HEAD^)"
 expect 0 '' move 1 playtest --staged "$HEAD_SHA"
 wrote "Staged for playtest (#1): $HEAD_SHA"
-STAGED=other LANE=Playtest guard 'PR head differs from staged SHA' result 1 pass
+recovery='Use board move 1 build for rework, or board move 1 playtest --staged <full sha> after staging the current linked PR head.'
+STAGED=other LANE=Playtest guard "PR head differs from staged SHA. $recovery" result 1 pass
+STAGED= LANE=Playtest guard "No staged comment from me. $recovery" result 1 pass
+STAGED= OTHER_STAGED=$HEAD_SHA LANE=Playtest guard "No staged comment from me. $recovery" result 1 pass
+OTHER_STAGED=other LANE=Playtest expect 0 '' result 1 pass
+wrote "pr comment 42 --body Playtest pass"
+for links in '' "$PRS,${PRS%/*}/43"; do
+  PRS=$links LANE=Playtest guard "Requires one linked open PR in this repository. $recovery" result 1 pass
+  PRS=$links LANE=Playtest expect 0 '' move 1 build
+  wrote '--field Status --value Build'
+done
+LANE=Playtest expect 0 '' move 1 playtest --staged "$HEAD_SHA"
+wrote "pr comment 42 --body Staged for playtest (#1): $HEAD_SHA"
+LANE=Playtest expect 1 'Playtest' move 1 backlog
+for source in Inbox Backlog Next; do
+  TYPE='In-game check' SIZE=- LANE=$source READY=/dev/null expect 0 '' move 1 playtest
+  wrote '--field Status --value Playtest'
+  wrote 'select(.name=="Medium")'
+  ! wrote '--json body' || exit 1
+  TYPE='In-game check' FIELD=- LANE=$source guard 'Set type and priority first' move 1 playtest
+done
 TYPE='In-game check' expect 0 '' move 1 playtest
 wrote '--field Status --value Playtest'
 export LANE=Playtest
@@ -236,12 +318,15 @@ wrote '--type In-game check'
 wrote '-f issue=NODE-1 -f field=FIELD -f option=OPTION'
 wrote '- [ ] High: Keep it.'
 wrote 'select(.name=="High")'
-EXISTING_COMMENT=$(printf 'Playtest fail\n' | base64 -w0) EXISTING=22 TYPE='In-game check' expect 0 '' result 1 fail
+EXISTING_COMMENT=$'Playtest fail\n' EXISTING=22 TYPE='In-game check' expect 0 '' result 1 fail
 ! wrote 'issue create' || exit 1
 ! wrote 'issue comment' || exit 1
-EXISTING_COMMENT=$(printf 'Playtest fail for #1 at %s\n' "$HEAD_SHA" | base64 -w0) expect 0 '' result 1 fail
+EXISTING_COMMENT="Playtest fail for #1 at $HEAD_SHA"$'\n' expect 0 '' result 1 fail
 ! wrote 'pr comment' || exit 1
 ! wrote 'issue comment' || exit 1
+CREATOR=peer EXISTING=22 COMMENT_AUTHOR=peer EXISTING_COMMENT=$'Playtest fail\n' TYPE='In-game check' expect 0 '' result 1 fail
+wrote 'issue create --title Failed check:'
+wrote 'issue comment 1 --body Playtest fail'
 for result in pass fail; do
   TYPE='In-game check' expect 0 '' result 1 "$result"
   wrote "issue close 1 --repo"
@@ -249,6 +334,22 @@ for result in pass fail; do
   if [[ $result == fail ]]; then wrote 'issue create --title Failed check:'; fi
 done
 TYPE='In-game check' guard 'Check already deferred' result 1 defer
+guard '#33 is a pull request' show 33
+guard '#33 is a pull request' decide 33 --file "$tmp/note"
+guard '#33 is a pull request' effort 33 Low
+guard '#33 is a pull request' priority 33 Low
+guard '#33 is a pull request' milestone 33 none
+guard '#33 is a pull request' triage 33 Bug High
+guard '#33 is a pull request' start 33 build
+guard '#33 is a pull request' move 33 review
+guard '#33 is a pull request' result 33 pass
+guard '#33 is a pull request' parent 33 1
+guard '#33 is a pull request' unparent 33
+guard '#33 is a pull request' block 33 --by 1
+guard '#33 is a pull request' unblock 33 --by 1
+guard '#33 is a pull request' parent 1 33
+guard '#33 is a pull request' block 1 --by 33
+guard '#33 is a pull request' unblock 1 --by 33
 other="$tmp/other"
 git init -qb main "$other"
 if (cd "$other" && "$tmp/repo/scripts/board" labels) >"$tmp/out" 2>&1; then exit 1; else rc=$?; fi
@@ -256,6 +357,9 @@ if (cd "$other" && "$tmp/repo/scripts/board" labels) >"$tmp/out" 2>&1; then exit
 git switch -qc feature/test
 guard 'Board writes require the main branch' labels
 guard 'Board writes require the main branch' effort 1 High
+guard 'Board writes require the main branch' priority 1 Low
 git switch -q main
 touch untracked
+expect 0 '' labels
+echo >> scripts/board
 guard 'Board writes require a clean checkout' labels
