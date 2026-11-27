@@ -99,6 +99,7 @@ parse() {
 load() {
   local rows row
   rows=$(cards)
+  unset game num field size type milestone labels assigned prs blockers state caption
   lane=-
   while IFS= read -r row; do
     [[ $row == "$repo|$n|"* ]] || continue
@@ -107,7 +108,7 @@ load() {
   done <<< "$rows"
 }
 edit_field() {
-  gh project item-edit "$project_number" --owner "$owner" --url "https://github.com/$repo/issues/$n" --field "$1" --value "$2"
+  gh project item-edit "$project_number" --owner "$owner" --url "https://github.com/$repo/issues/$n" --field "$1" --value "$2" >/dev/null
 }
 classified() {
   [[ $type != - && $field != - ]] || refuse 'Set type and priority first'
@@ -119,7 +120,7 @@ set_select() {
   IFS=$'\t' read -r fid opt <<< "$ids"
   [[ -n $fid && -n $opt ]] || error "Cannot resolve $1 option $2"
   node=$(issue view "$n" --json id --jq .id)
-  gh api graphql -f issue="$node" -f field="$fid" -f option="$opt" -f query='mutation($issue:ID!,$field:ID!,$option:ID!){setIssueFieldValue(input:{issueId:$issue,issueFields:[{fieldId:$field,singleSelectOptionId:$option}]}){clientMutationId}}'
+  gh api graphql -f issue="$node" -f field="$fid" -f option="$opt" -f query='mutation($issue:ID!,$field:ID!,$option:ID!){setIssueFieldValue(input:{issueId:$issue,issueFields:[{fieldId:$field,singleSelectOptionId:$option}]}){clientMutationId}}' >/dev/null
 }
 create() {
   local k=$1 p=$2 requested_size=$3 heading=$4 dest=$5 url deadline
@@ -128,7 +129,7 @@ create() {
   n=${url##*/}
   number "$n"
   echo "$url"
-  gh project item-add "$project_number" --owner "$owner" --url "$url"
+  gh project item-add "$project_number" --owner "$owner" --url "$url" >/dev/null
   if [[ -n $p ]]; then
     deadline=$((SECONDS+30))
     while :; do
@@ -288,6 +289,7 @@ case $cmd in
   while IFS= read -r row; do
     [[ -n $row ]] || continue
     parse "$row"
+    [[ $cmd != check || $state != CLOSED ]] || continue
     if [[ $cmd == check && $lane == Next ]]; then next_count=$((next_count+1)); fi
     [[ $game == "$repo" || $all == true ]] || continue
     if [[ $cmd == check ]]; then
@@ -405,8 +407,11 @@ LABELS
       [[ $selected != - || $# == 3 ]] || selected=Medium
       effort "$selected"
       k=$(kind "$1"); priority "$2"
-      [[ $lane == Inbox ]] || refuse 'Triage requires Inbox'
-      issue edit "$n" --type "$k"; set_select Priority "$2"; set_select Effort "$selected"; edit_field Status Backlog
+      [[ $lane != Done ]] || refuse 'Cannot triage a Done card'
+      issue edit "$n" --type "$k" >/dev/null
+      set_select Priority "$2"
+      set_select Effort "$selected"
+      if [[ $lane == Inbox ]]; then edit_field Status Backlog; fi
       ;;
      start)
       [[ $# == 1 && $1 =~ ^(design|build)$ ]] || bad 'Expected design or build'

@@ -147,6 +147,10 @@ LANE=Review expect 0 '' move 1 accepted
 wrote '--field Status --value Accepted'
 LANE=Accepted expect 0 '#1 Card' list accepted
 grep -Fxq Accepted "$tmp/out"
+STATE=CLOSED LANE=Done TYPE=- FIELD=- SIZE=- expect 0 '' check
+[[ ! -s $tmp/out ]]
+STATE=CLOSED LANE=Next CARD_COUNT=6 BLOCKERS=1 expect 0 '' check
+[[ ! -s $tmp/out ]]
 LANE=Accepted TYPE=- FIELD=- SIZE=- expect 0 '' check
 [[ ! -s $tmp/out ]]
 guard 'Result requires Playtest' result 1 pass
@@ -187,6 +191,9 @@ expect 2 'Unexpected --staged' move 1 review --staged bad
 expect 1 'did not enter Inbox' new feature High Card
 ! wrote '--field Status' || exit 1
 DELAY_INBOX=1 expect 0 '' new feature High Card
+diff -u - "$tmp/out" <<'URL'
+https://github.com/softbody-arcade/cops-and-robbers/issues/1
+URL
 [[ -f $LOG.slept ]]
 order() { [[ $(sed -n 's/.*--field \([^ ]*\) --value .*/\1/p' "$LOG") == Status ]]; }
 order
@@ -208,7 +215,14 @@ wrote '--field Status --value Build'
 expect 0 '' new in-game-check Card
 wrote '--type In-game check'
 ! wrote 'setIssueFieldValue' || exit 1
-guard 'Triage requires Inbox' triage 1 bug High
+for source in Backlog Next Design Build Review Playtest Accepted; do
+  LANE=$source TYPE=- SIZE=- expect 0 '' triage 1 bug High
+  wrote 'issue edit 1 --type Bug'
+  wrote 'select(.name=="High")'
+  wrote 'select(.name=="Medium")'
+  ! wrote 'project item-edit' || exit 1
+done
+LANE=Done guard 'Cannot triage a Done card' triage 1 bug High
 LANE=Inbox expect 0 '' new task High Medium 'Low'
 wrote 'issue create --title Low --type Task'
 wrote 'select(.name=="Effort")'
@@ -227,6 +241,7 @@ wrote 'select(.name=="Medium")'
 LANE=Inbox expect 2 'Invalid effort: Urgent' triage 1 task High Urgent
 ! wrote 'issue edit' || exit 1
 expect 0 '' priority 1 Urgent
+[[ ! -s $tmp/out ]]
 wrote 'select(.name=="Priority")'
 wrote 'select(.name=="Urgent")'
 wrote '-f issue=NODE-1 -f field=FIELD -f option=OPTION'
@@ -337,6 +352,8 @@ expect 2 'Expected priority-prefixed check' result 1 defer --checks-file "$tmp/i
 ! wrote 'issue create' || exit 1
 expect 2 'Defer requires --checks-file F' result 1 defer
 EXISTING=22 expect 0 '' result 1 defer --checks-file "$tmp/note"
+wrote '-f issue=NODE-22 -f field=SIZEFIELD -f option=SIZEOPTION'
+wrote 'select(.name=="Medium")'
 ! wrote 'issue create' || exit 1
 expect 0 '' result 1 defer --checks-file "$tmp/note"
 wrote '--type In-game check'
