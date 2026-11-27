@@ -155,7 +155,7 @@ release_cards() {
       def old: fromdateiso8601 <= (now - 14*86400);
       .data[$namespace].projectV2 | .id as $project |
       .items.nodes[] | select(.content.repository.nameWithOwner == $repo and (.isArchived | not)) |
-      select(.status.name == "Accepted" or (.status.name == "Done" and (.updatedAt | old) and (.content.updatedAt | old))) |
+      select(.status.name == "Accepted" or (.status.name == "Done" and .content.state == "CLOSED" and (.updatedAt | old) and (.content.updatedAt | old))) |
       [$project, .id, .status.name, .content.number, .content.state,
        (.content.stateReason // "-"), (.content.issueType.name // "-")] | @tsv' || exit 2
 }
@@ -251,7 +251,8 @@ case $cmd in
       .data.repository.latestRelease | select(. and (.isDraft | not) and (.isPrerelease | not)) | .tagName')
     [[ -n $tag ]] || echo 'No published release yet: shipped work waits for one'
   else
-    gh api "repos/$repo/releases/tags/$tag" >/dev/null
+    published=$(gh api "repos/$repo/releases/tags/$tag" --jq '(.draft == false and .prerelease == false)')
+    [[ $published == true ]] || refuse "Release $tag is a draft or prerelease"
   fi
   project
   rows=$(release_cards)
@@ -266,15 +267,21 @@ case $cmd in
     read -r action n project_id item <<< "$row"
     case $action in
       move)
-        if [[ $dry_run == false ]]; then edit_field Status Done >/dev/null; fi
-        echo "#$n moved to Done"
+        if [[ $dry_run == true ]]; then
+          echo "#$n would move to Done"
+        else
+          edit_field Status Done
+          echo "#$n moved to Done"
+        fi
         ;;
       archive)
-        if [[ $dry_run == false ]]; then
+        if [[ $dry_run == true ]]; then
+          echo "#$n would archive"
+        else
           gh api graphql -f project="$project_id" -f item="$item" -f query='mutation($project:ID!,$item:ID!){
             archiveProjectV2Item(input:{projectId:$project,itemId:$item}){clientMutationId}}' >/dev/null
+          echo "#$n archived"
         fi
-        echo "#$n archived"
         ;;
       wait) echo "#$n waiting for a release";;
     esac

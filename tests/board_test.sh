@@ -25,7 +25,11 @@ case "$*" in
   *'select(.name=="Effort")'*) printf 'SIZEFIELD\tSIZEOPTION\n' ;;
   'api graphql '*issueFields\(first*) printf 'FIELD\tOPTION\n' ;;
   'api graphql '*mutation*) echo '{}' ;;
-  'api graphql '*latestRelease*) echo "${RELEASE_TAG-v1.2.3}" ;;
+  'api graphql '*latestRelease*)
+    jq -n --arg tag "${RELEASE_TAG-v1.2.3}" --argjson draft "${DRAFT:-false}" --argjson pre "${PRERELEASE:-false}" '
+      {data:{repository:{latestRelease:(if $tag == "" then null else {tagName:$tag,isDraft:$draft,isPrerelease:$pre} end)}}}' |
+      jq -r "${!#}"
+    ;;
   'api graphql '*releaseCards*) cat "$RELEASE_CARDS" ;;
   'api graphql '*openLinkedPrs*)
     [[ " $* " == *' --paginate '* && "$*" == *'nodes{url state}'* ]] || exit 9
@@ -46,7 +50,11 @@ case "$*" in
     if [[ ${COMPARE_FAIL:-} ]]; then echo 'compare failed' >&2; exit 7; fi
     echo ahead
     ;;
-  'api repos/'*'/releases/tags/v2.0.0'*) echo '{}' ;;
+  'api repos/'*'/releases/tags/v2.0.0'*)
+    jq -n --argjson draft "${DRAFT:-false}" --argjson pre "${PRERELEASE:-false}" '{draft:$draft, prerelease:$pre}' |
+      api_response "${@:3}"
+    ;;
+  'api repos/'*'/releases/tags/'*) echo 'gh: Not Found (HTTP 404)' >&2; exit 1 ;;
   'api graphql '*projectV2*)
     status=$LANE
     if grep -q 'issue create --title Deferred' "$LOG"; then status=Inbox; fi
@@ -426,13 +434,16 @@ jq -n '
     card(4; "Accepted"; "COMPLETED"; "Bug"),
     card(5; "Accepted"; "COMPLETED"; "Bug"),
     card(6; "Accepted"; "COMPLETED"; "Task"),
-    card(7; "Done"; "COMPLETED"; "Task"),
+    (card(7; "Done"; "COMPLETED"; "Task") | .updatedAt = (now - 14*86400 - 1 | todateiso8601) | .content.updatedAt = .updatedAt),
     (card(8; "Done"; "COMPLETED"; "Task") | .updatedAt = (now - 13*86400 | todateiso8601)),
     (card(9; "Done"; "COMPLETED"; "Task") | .content.updatedAt = (now - 13*86400 | todateiso8601)),
     (card(10; "Accepted"; "DUPLICATE"; "Task") | .content.repository.nameWithOwner = "softbody-arcade/other"),
     card(11; "Accepted"; "DUPLICATE"; "Task"),
     (card(12; "Done"; "COMPLETED"; "Task") | .isArchived = true),
-    (card(13; "Accepted"; null; "Task") | .content.state = "OPEN")
+    (card(13; "Accepted"; null; "Task") | .content.state = "OPEN"),
+    (card(14; "Done"; null; "Task") | .content.state = "OPEN"),
+    {id:"DRAFT", status:{name:"Accepted"}, content:{}},
+    {id:"REDACTED", status:{name:"Accepted"}, content:null}
   ]}}}}}' > "$RELEASE_CARDS"
 expect 0 '#1 moved to Done' release
 diff -u - "$tmp/out" <<'RELEASE'
@@ -451,16 +462,28 @@ cp "$tmp/out" "$tmp/release-output"
 wrote 'item=ITEM-7'
 [[ $(grep -c 'archiveProjectV2Item' "$LOG") == 1 ]]
 wrote '/compare/v1.2.3...merged-sha'
-expect 0 '#1 moved to Done' release --dry-run
-diff -u "$tmp/release-output" "$tmp/out"
+expect 0 '#1 would move to Done' release --dry-run
+sed -e 's/ moved to Done$/ would move to Done/' -e 's/ archived$/ would archive/' "$tmp/release-output" > "$tmp/expected-dry-run"
+diff -u "$tmp/expected-dry-run" "$tmp/out"
 ! wrote 'project item-edit' || exit 1
 ! wrote 'archiveProjectV2Item' || exit 1
-MERGED_COMPARISON=behind expect 0 '#4 moved to Done' release v2.0.0 --dry-run
+MERGED_COMPARISON=behind expect 0 '#4 would move to Done' release v2.0.0 --dry-run
 wrote '/compare/v2.0.0...merged-sha'
 ! wrote 'latestRelease' || exit 1
-: > "$LOG"
+expect 2 'HTTP 404' release v9.9.9
+! wrote 'project item-edit' || exit 1
+for flag in DRAFT PRERELEASE; do
+  export "$flag=true"
+  expect 1 'draft or prerelease' release v2.0.0
+  ! wrote 'project item-edit' || exit 1
+  ! wrote 'archiveProjectV2Item' || exit 1
+  expect 0 'No published release yet' release --dry-run
+  grep -qx '#4 waiting for a release' "$tmp/out"
+  ! wrote '/compare/' || exit 1
+  unset "$flag"
+done
 RELEASE_TAG= expect 0 'No published release yet' release --dry-run
-grep -qx '#1 moved to Done' "$tmp/out"
+grep -qx '#1 would move to Done' "$tmp/out"
 grep -qx '#4 waiting for a release' "$tmp/out"
 ! wrote '/compare/' || exit 1
 COMPARE_FAIL=1 expect 2 'compare failed' release
@@ -476,7 +499,7 @@ if (cd "$other" && "$tmp/repo/scripts/board" labels) >"$tmp/out" 2>&1; then exit
 git switch -qc feature/test
 guard 'Board writes require the develop branch' labels
 guard 'Board writes require the develop branch' release
-expect 0 '#1 moved to Done' release --dry-run
+expect 0 '#1 would move to Done' release --dry-run
 guard 'Board writes require the develop branch' effort 1 High
 guard 'Board writes require the develop branch' priority 1 Low
 git switch -q develop
