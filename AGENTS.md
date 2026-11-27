@@ -62,7 +62,7 @@ GitHub Issues and the organization board **Softbody Arcade** (project 1) record 
 ## Design and implementation
 
 - **Skills.** Use the repo-local [Superpowers v7.0.2 skills](https://github.com/obra/superpowers/tree/22f0b463e7a5e579904dd6211a520321035526f7/skills) for feature design, planning and implementation. Codex uses `.agents/skills/`, and Claude Code uses the same files through `.claude/skills/`. An agent without skill support reads each `SKILL.md` as instructions. See the [Codex tool mapping](.agents/skills/using-superpowers/references/codex-tools.md).
-- **Documentation** lives in `docs/`, which is also an Obsidian vault. Only files that tools need at the root stay there: `README.md`, `LICENSE`, `AGENTS.md` and `CLAUDE.md`. Links are plain relative Markdown links, so they work on GitHub and in the vault.
+- **Documentation** lives in `docs/`, which is also an Obsidian vault. The root keeps only what must be found at once: `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `LICENSE`, `AGENTS.md` and `CLAUDE.md`; they link into `docs/` for detail. Links are plain relative Markdown links, so they work on GitHub and in the vault.
 - **Specs and plans.**
   - For new features, agree on the design with the maintainer.
   - Write the spec in `docs/superpowers/specs/` and the task plan in `docs/superpowers/plans/`, and link both from the ticket.
