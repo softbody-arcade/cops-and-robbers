@@ -36,6 +36,11 @@ MUST_FLAG = [
     "/opt/Game",
     "/srv/data",
     "/srv/2box",
+    "/srv/.cache/private",
+    "/opt/_service/bin",
+    "git clone git+ssh://user@host/repo",
+    "see https://user@host/",
+    "https://user:pw@example.org/x",
     "mail someone@example.org",
     "deploys to Secret-Host now",
     "restart container-x1",
@@ -53,6 +58,8 @@ MUST_PASS = [
     "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
     "Co-Authored-By: Codex <noreply@openai.com>",
     "git@github.com:softbody-arcade/cops-and-robbers.git",
+    "ssh://git@github.com/softbody-arcade/cops-and-robbers.git",
+    "https://github.com/softbody-arcade/cops-and-robbers",
     "@update:model-value",
     "uses: actions/checkout@v7",
     "uses: owner/some-action@0123456789abcdef0123456789abcdef01234567",
@@ -193,6 +200,28 @@ def history_tests():
         git(repo, "commit", "-q", "-m", "submodule")
         r = run_check(repo, "tree", "HEAD")
         check(r.returncode == 1 and "five@example.org" in r.stdout, "a submodule entry broke the tree scan")
+
+        write(repo, ".gitattributes", "nodiff.txt -diff\n")
+        write(repo, "nodiff.txt", "mail seven@example.org\n")
+        git(repo, "add", ".")
+        git(repo, "commit", "-q", "-m", "attributes")
+        r = run_check(repo, "history", "--", "HEAD")
+        check("seven@example.org" in r.stdout, "a file marked -diff hid its content from the history scan")
+
+        deny_file = os.path.join(repo, ".git", "info", "privacy-deny")
+        os.makedirs(os.path.dirname(deny_file), exist_ok=True)
+        with open(deny_file, "w") as f:
+            f.write("re:secretname\\.txt$\nsecrettag\n")
+        write(repo, "secretname.txt", "mail eight@example.org\n")
+        git(repo, "add", ".")
+        git(repo, "commit", "-q", "-m", "private name")
+        git(repo, "tag", "secrettag")
+        r = run_check(repo, "tree", "secrettag")
+        check(r.returncode == 1 and "secret" not in r.stdout.lower() and "eight@example.org" in r.stdout,
+              "tree mode printed a private file name or revision name")
+        r = run_check(repo, "--bogus-secrettag", "tree", "HEAD")
+        check(r.returncode == 2 and "secrettag" not in r.stderr, "an argument error echoed its input")
+        os.remove(deny_file)
 
         r = run_check(repo, "history", "--", "no-such-rev")
         check(r.returncode == 2 and "no-such-rev" not in r.stderr, "a git failure did not exit 2 cleanly")

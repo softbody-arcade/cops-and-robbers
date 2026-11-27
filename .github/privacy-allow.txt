@@ -1,2 +1,3 @@
 # path:exact text. Exempts that text in that file from scripts/privacy-check.
 docs/DEPENDENCIES.md:0.40.5.0
+.agents/skills/subagent-driven-development/scripts/sdd-workspace:/Users/...

@@ -18,15 +18,19 @@ PATTERNS = [
     ("email", re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")),
     ("login", re.compile(r"(?<![A-Za-z0-9._%+/-])[A-Za-z_][A-Za-z0-9_.-]*@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*")),
     ("home", re.compile(r"(?<![A-Za-z0-9])/home/[A-Za-z0-9._-]+|/Users/[^/\s]+|[A-Za-z]:\\+Users\\+")),
-    ("server-path", re.compile(r"(?<![A-Za-z0-9])/(?:opt|srv)/[A-Za-z0-9]")),
+    ("server-path", re.compile(r"(?<![A-Za-z0-9])/(?:opt|srv)/[A-Za-z0-9._-]")),
+    ("url-login", re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^/\s@]+@[^/\s:]+")),
 ]
 
 DOC_IPV4 = re.compile(r"^(?:127\.\d+\.\d+\.\d+|0\.0\.0\.0|192\.0\.2\.\d+|198\.51\.100\.\d+|203\.0\.113\.\d+)$")
+URL_OK = re.compile(r"^(?:ssh|git\+ssh)://git@github\.com$", re.I)
 ADDRESS_OK = re.compile(r"(?:@users\.noreply\.github\.com|^noreply@anthropic\.com|^noreply@openai\.com|^git@github\.com)$", re.I)
 DOC_LOGIN = re.compile(r"@(?:192\.0\.2|198\.51\.100|203\.0\.113)\.\d+$")
-SKIP_PREFIXES = (".agents/skills/", ".claude/skills/")
+SKIP_PREFIXES = ()
 SKIP_FILES = ("scripts/privacy-check", ".github/privacy-allow.txt", "tests/privacy_check_test.py")
-GIT = ["git", "-c", "core.quotePath=false", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false"]
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+GIT = ["git", "-c", "core.quotePath=false", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false",
+       "-c", "core.attributesFile=/dev/null", f"--attr-source={EMPTY_TREE}"]
 
 
 class CheckError(Exception):
@@ -56,6 +60,8 @@ def benign(kind, s):
     if kind == "ipv6":
         low = s.lower()
         return low == "::1" or re.match(r"^2001:0*db8:", low) is not None
+    if kind == "url-login":
+        return bool(URL_OK.match(s))
     if kind in ("email", "login"):
         return bool(ADDRESS_OK.search(s)) or (kind == "login" and bool(DOC_LOGIN.search(s)))
     return False
@@ -114,7 +120,7 @@ def report(out, commit, path, text, deny, allow, where=None):
     if kinds:
         shown = "(line hidden: matches a private term)" if private else text.strip()[:200]
         location = where or path
-        if any(rx.search(location) for rx in deny):
+        if any(rx.search(path) or rx.search(location) for rx in deny):
             location = "(path hidden: matches a private term)"
         out.append((commit, location, ",".join(kinds), shown))
 
@@ -157,6 +163,10 @@ def scan_history(revs, deny, allow):
 
 def scan_tree(rev, deny, allow):
     out = []
+    resolved = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}"], capture_output=True, text=True)
+    if resolved.returncode != 0:
+        raise CheckError("the revision to scan could not be resolved")
+    label = resolved.stdout.strip()[:12]
     ls = subprocess.run(GIT + ["ls-tree", "-r", "-z", rev], capture_output=True)
     if ls.returncode != 0:
         raise CheckError(f"git ls-tree failed with exit code {ls.returncode}")
@@ -172,12 +182,17 @@ def scan_tree(rev, deny, allow):
         if b"\0" in blob.stdout[:8000]:
             continue
         for n, text in enumerate(blob.stdout.decode("utf-8", "replace").split("\n"), 1):
-            report(out, rev, path, text, deny, allow, where=f"{path}:{n}")
+            report(out, label, path, text, deny, allow, where=f"{path}:{n}")
     return out
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Report personal data or private server details in commits or a tree.")
+    class QuietParser(argparse.ArgumentParser):
+        def error(self, message):
+            print("privacy-check: invalid arguments (usage: privacy-check history -- <revs> | tree <rev>)", file=sys.stderr)
+            sys.exit(2)
+
+    ap = QuietParser(description="Report personal data or private server details in commits or a tree.")
     ap.add_argument("mode", choices=["history", "tree"])
     ap.add_argument("revs", nargs="+", help="history: git log revisions (put them after --); tree: one revision")
     ap.add_argument("--allow", default=".github/privacy-allow.txt")
