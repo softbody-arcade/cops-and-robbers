@@ -42,6 +42,7 @@ case $tool in
                 case ${GH_LOGGED_IN:-yes} in
                     no) exit 1 ;;
                     network) printf '%s\n' 'github.com' '  X Failed to log in to github.com using token (GH_TOKEN)' '  - Active account: true' '  - The token in GH_TOKEN is invalid.' "  - Error: Post \"https://api.github.com/graphql\": proxyconnect tcp: $GH_ERROR" >&2; exit 1 ;;
+                    deadline) printf '%s\n' 'github.com' '  X Failed to log in to github.com using token (GH_TOKEN)' '  - Active account: true' '  - The token in GH_TOKEN is invalid.' '  - Error: Post "https://api.github.com/graphql": context deadline exceeded' >&2; exit 1 ;;
                     timeout) printf '%s\n' '  X Timeout trying to log in to github.com account test (keyring)' >&2; exit 1 ;;
                     offline)
                         printf '%s\n' 'error connecting to api.github.com' 'Check your internet connection or https://githubstatus.com' >&2
@@ -191,6 +192,9 @@ for error in 'dial tcp 127.0.0.1:9: connect: connection refused' 'dial tcp: look
     expect_line 'missing gh project access.*network.*'
 done
 
+run_doctor 1 GH_LOGGED_IN=deadline
+expect_line 'missing gh project access.*network.*'
+
 run_doctor 1 GH_LOGGED_IN=timeout
 expect_line 'missing gh project access.*network.*'
 
@@ -232,5 +236,10 @@ run_doctor 1
 expect_line 'ok Lua 5\.4\.8'
 expect_line 'missing jq.*pacman.*apt.*brew.*'
 expect_line 'missing ssh-keygen.*'
+output=''
+if grep -nE '\$\{[^}]*(,,|\^\^)' "$repo/scripts/doctor"; then
+    fail 'scripts/doctor uses Bash 4 case conversion, which Bash 3.2 cannot parse'
+fi
+
 (( failures == 0 )) || exit 1
 printf 'doctor: all checks passed\n'
