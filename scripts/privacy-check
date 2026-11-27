@@ -24,7 +24,7 @@ PATTERNS = [
 
 DOC_IPV4 = re.compile(r"^(?:127\.\d+\.\d+\.\d+|0\.0\.0\.0|192\.0\.2\.\d+|198\.51\.100\.\d+|203\.0\.113\.\d+)$")
 URL_OK = re.compile(r"^(?:ssh|git\+ssh)://git@github\.com$", re.I)
-ADDRESS_OK = re.compile(r"(?:@users\.noreply\.github\.com|^noreply@anthropic\.com|^noreply@openai\.com|^git@github\.com)$", re.I)
+ADDRESS_OK = re.compile(r"(?:@users\.noreply\.github\.com|^noreply@anthropic\.com|^noreply@openai\.com|^noreply@github\.com|^support@github\.com|^git@github\.com)$", re.I)
 DOC_LOGIN = re.compile(r"@(?:192\.0\.2|198\.51\.100|203\.0\.113)\.\d+$")
 SKIP_PREFIXES = ()
 SKIP_FILES = ("scripts/privacy-check", ".github/privacy-allow.txt", "tests/privacy_check_test.py")

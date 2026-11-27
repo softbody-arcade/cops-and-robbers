@@ -9,7 +9,7 @@ For contributors:
 - `lua5.3`, `luajit` and `python3` for tests and Lua checks
 - Node 22 with npm for UI checks
 - `zip` and `rsync` for packaging
-- `git` for version control and `gh` for board tooling
+- `git` 2.41 or newer (the privacy check uses `--attr-source`), and `gh` for the board tooling in `scripts/board`
 
 ## Install
 

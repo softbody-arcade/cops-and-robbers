@@ -10,7 +10,11 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   test:
@@ -51,11 +55,8 @@ jobs:
         run: scripts/privacy-check history -- "$BASE_SHA..$HEAD_SHA"
       - if: github.event_name == 'push'
         run: scripts/privacy-check tree HEAD
-      - if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
-        env:
-          BEFORE_SHA: ${{ github.event.before }}
-          HEAD_SHA: ${{ github.sha }}
-        run: scripts/privacy-check history -- "$BEFORE_SHA..$HEAD_SHA"
+      - if: github.event_name == 'push'
+        run: scripts/privacy-check history -- HEAD
 
   package:
     needs: [test, luajit, vuecheck, privacy]
@@ -65,6 +66,6 @@ jobs:
       - run: make package
       - uses: actions/upload-artifact@v7
         with:
-          name: cops-and-robbers-${{ github.sha }}
+          name: cops-and-robbers-${{ github.event.pull_request.head.sha || github.sha }}
           path: dist/
           retention-days: 7

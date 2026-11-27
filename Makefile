@@ -14,7 +14,7 @@ hooks:
 	git config core.hooksPath .githooks
 
 vuecheck:
-	cd tools/vuecheck && npm ci --silent --no-audit --no-fund && node check.mjs ../../client/ui
+	cd tools/vuecheck && $(if $(CI),npm ci,npm install) --silent --no-audit --no-fund && node check.mjs ../../client/ui
 	cd tools/vuecheck && node --experimental-vm-modules hud-settings.test.mjs
 	cd tools/vuecheck && node --experimental-vm-modules panel-tabs.test.mjs
 
