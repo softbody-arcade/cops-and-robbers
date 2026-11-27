@@ -127,22 +127,28 @@ else
     report missing 'git hooks — run make hooks'
 fi
 
+base_staged= base_entries=0
+while IFS=$'\t' read -r base_meta base_path; do
+    base_entries=$((base_entries + 1))
+    read -r _ base_sha base_stage <<< "$base_meta"
+    [[ $base_path != base || $base_stage != 0 ]] || base_staged=$base_sha
+done < <(git ls-files -s -- base 2>/dev/null)
 base_status=$(git submodule status -- base 2>/dev/null)
-case ${base_status:0:1} in
-    '' | -) report missing 'base submodule — not initialised; run git submodule update --init (base/ holds the shared rules)' ;;
-    U) report missing 'base submodule — the base pin has a merge conflict; see "The base submodule" in docs/DEVELOPMENT.md' ;;
-    *)
-        base_checkout=$(git -C base rev-parse HEAD 2>/dev/null)
-        base_committed=$(git rev-parse HEAD:base 2>/dev/null)
-        base_staged=
-        while read -r _ base_sha base_stage _; do
-            [[ $base_stage != 0 ]] || base_staged=$base_sha
-        done < <(git ls-files -s -- base 2>/dev/null)
-        if [[ ${base_status:0:1} == ' ' && -n $base_checkout && $base_checkout == "$base_committed" && $base_staged == "$base_committed" ]]; then
-            report ok 'base submodule'
-        else
-            report missing "base submodule — base/ is at ${base_checkout:0:12}, the index pins ${base_staged:0:12} and the last commit pins ${base_committed:0:12}; see \"The base submodule\" in docs/DEVELOPMENT.md"
-        fi ;;
-esac
+if (( base_entries == 0 )); then
+    report missing 'base submodule — the index has no base pin; see "The base submodule" in docs/DEVELOPMENT.md'
+else
+    case ${base_status:0:1} in
+        U) report missing 'base submodule — the base pin has a merge conflict; see "The base submodule" in docs/DEVELOPMENT.md' ;;
+        '' | -) report missing 'base submodule — not initialised; run git submodule update --init (base/ holds the shared rules)' ;;
+        *)
+            base_checkout=$(git -C base rev-parse HEAD 2>/dev/null)
+            base_committed=$(git rev-parse HEAD:base 2>/dev/null)
+            if [[ ${base_status:0:1} == ' ' && -n $base_checkout && $base_checkout == "$base_committed" && $base_staged == "$base_committed" ]]; then
+                report ok 'base submodule'
+            else
+                report missing "base submodule — base/ is at ${base_checkout:0:12}, the index pins ${base_staged:0:12} and the last commit pins ${base_committed:0:12}; see \"The base submodule\" in docs/DEVELOPMENT.md"
+            fi ;;
+    esac
+fi
 
 exit "$failed"

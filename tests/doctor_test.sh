@@ -34,7 +34,7 @@ case $tool in
             'submodule status -- base') printf '%s\n' "${BASE_REPORT- 6198cea32b7b8469a390bf2d12e012cafe35d8de base (v0.1.0)}" ;;
             '-C base rev-parse HEAD') printf '%s\n' "${BASE_HEAD-6198cea32b7b8469a390bf2d12e012cafe35d8de}" ;;
             'rev-parse HEAD:base') printf '%s\n' "${BASE_PIN-6198cea32b7b8469a390bf2d12e012cafe35d8de}" ;;
-            'ls-files -s -- base') printf '160000 %s 0\tbase\n' "${BASE_STAGED-6198cea32b7b8469a390bf2d12e012cafe35d8de}" ;;
+            'ls-files -s -- base') [[ -z ${BASE_STAGED-x} ]] || printf '160000 %s 0\tbase\n' "${BASE_STAGED-6198cea32b7b8469a390bf2d12e012cafe35d8de}" ;;
             *) exit 2 ;;
         esac ;;
     node) echo "v${NODE_REPORT:-22.1.0}" ;;
@@ -111,9 +111,9 @@ run_doctor() {
         if [[ ${expect_auth:-yes} == yes ]]; then
             printf '%s\n' 'gh auth status --active --hostname github.com --no-refresh'
         fi
-        printf '%s\n' 'git config user.email' 'git config core.hooksPath' 'git submodule status -- base'
+        printf '%s\n' 'git config user.email' 'git config core.hooksPath' 'git ls-files -s -- base' 'git submodule status -- base'
         if [[ ${expect_pin:-yes} == yes ]]; then
-            printf '%s\n' 'git -C base rev-parse HEAD' 'git rev-parse HEAD:base' 'git ls-files -s -- base'
+            printf '%s\n' 'git -C base rev-parse HEAD' 'git rev-parse HEAD:base'
         fi
     } > "$bin/expected-calls"
     if ! diff -u "$bin/expected-calls" "$bin/calls"; then
@@ -166,8 +166,8 @@ expect_line 'ok base submodule'
 
 expect_pin=no run_doctor 1 'BASE_REPORT=-6198cea32b7b8469a390bf2d12e012cafe35d8de base'
 expect_line 'missing base submodule — not initialised; run git submodule update --init.*'
-expect_pin=no run_doctor 1 BASE_REPORT=
-expect_line 'missing base submodule — not initialised; run git submodule update --init.*'
+expect_pin=no run_doctor 1 'BASE_REPORT=-6198cea32b7b8469a390bf2d12e012cafe35d8de base' BASE_STAGED=
+expect_line 'missing base submodule — the index has no base pin; see .*docs/DEVELOPMENT.md.*'
 expect_pin=no run_doctor 1 'BASE_REPORT=U0000000000000000000000000000000000000000 base'
 expect_line 'missing base submodule — the base pin has a merge conflict; see .*docs/DEVELOPMENT.md.*'
 run_doctor 1 'BASE_REPORT=+0123456789abcdef0123456789abcdef01234567 base (heads/develop)' BASE_HEAD=0123456789abcdef0123456789abcdef01234567

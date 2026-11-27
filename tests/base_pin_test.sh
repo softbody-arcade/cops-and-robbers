@@ -13,8 +13,9 @@ two="[a](https://github.com/softbody-arcade/arcade-base/blob/main/AGENTS.md) and
 [[ -z $(unpinned "$self" <<< "[b](https://github.com/softbody-arcade/arcade-base/tree/$self/docs)") ]] || { echo "base-pin: self-test flagged a pinned link" >&2; exit 1; }
 
 entries=$(git ls-files -s -- base)
+[[ $(awk -F '\t' '$2 != "base"' <<< "$entries") == "" ]] || { echo "base-pin: the index has entries inside base/; only the base gitlink belongs there" >&2; exit 1; }
 [[ $(awk '$3 != 0' <<< "$entries") == "" ]] || { echo "base-pin: the base pin has a merge conflict" >&2; exit 1; }
-pin=$(awk '$1 == "160000" && $3 == 0 {print $2}' <<< "$entries")
+pin=$(awk -F '\t' '{split($1, f, " ")} f[1] == "160000" && f[3] == 0 && $2 == "base" {print f[2]}' <<< "$entries")
 [[ $pin =~ ^[0-9a-f]{40}$ ]] || { echo "base-pin: no base gitlink in the index" >&2; exit 1; }
 url=$(git config -f .gitmodules submodule.base.url)
 [[ $url == https://github.com/softbody-arcade/arcade-base ]] || { echo "base-pin: unexpected base URL $url" >&2; exit 1; }
