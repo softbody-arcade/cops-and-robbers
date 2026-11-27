@@ -6,9 +6,10 @@ if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 4) ))
 fi
 shopt -s inherit_errexit
 usage() {
-  echo 'Usage: board list [--all] [lane] | waiting [--all] | show N | new TYPE [PRIORITY] TITLE [--body-file F] | triage N TYPE PRIORITY | start N design|build | move N LANE [--staged SHA] | result N pass|fail|defer [--checks-file F] | check | parent N PARENT | unparent N | milestone N x.y.z|none | block|unblock N --by M | decide N --file F | labels'
+  echo 'Usage: board list [--all] [lane] | waiting [--all] | show N | new TYPE [PRIORITY [EFFORT]] TITLE [--body-file F] | triage N TYPE PRIORITY [EFFORT] | effort N High|Medium|Low | start N design|build | move N LANE [--staged SHA] | result N pass|fail|defer [--checks-file F] | check | parent N PARENT | unparent N | milestone N x.y.z|none | block|unblock N --by M | decide N --file F | labels'
+  echo 'Quote multiword titles. Effort is High, Medium or Low. Triage keeps existing effort. Missing effort defaults to Medium when leaving Inbox.'
   echo 'Start work from Next with start. From Design, move to Build after plan approval. Work cards entering Playtest require --staged with a full local commit SHA.'
-  echo 'Requires Bash 4.4+ and gh 2.106.0+ for project item-edit --field/--value.'
+  echo 'Requires jq, Bash 4.4+ and gh 2.106.0+ for project item-edit --field/--value.'
 }
 bad() { echo "$*" >&2; usage >&2; exit 2; }
 refuse() { echo "$*" >&2; exit 1; }
@@ -37,6 +38,7 @@ kind() {
   esac
 }
 priority() { [[ $1 =~ ^(Urgent|High|Medium|Low)$ ]] || bad "Invalid priority: $1"; }
+effort() { [[ $1 =~ ^(High|Medium|Low)$ ]] || bad "Invalid effort: $1"; }
 file() { [[ -f $1 && -r $1 ]] || bad "Cannot read $1"; }
 lanes=(Inbox Backlog Next Design Build Review Playtest Done)
 lane_name() {
@@ -78,13 +80,13 @@ cards() {
     assignees(first:100){nodes{login}} issueDependenciesSummary{blockedBy}
     closedByPullRequestsReferences(first:20){nodes{url}}}}}}}}}' --jq '
     .data.'"$namespace"'.projectV2.items.nodes[] | select(.content.number != null) |
-    [.content.repository.nameWithOwner,.content.number,(.status.name // "-"),([.content.issueFieldValues.nodes[]|select(.field.name=="Priority")|.name][0] // "-"),(.content.issueType.name // "-"),((.content.milestone.title // "-")|gsub("[|]";"／")),
+    [.content.repository.nameWithOwner,.content.number,(.status.name // "-"),([.content.issueFieldValues.nodes[]|select(.field.name=="Priority")|.name][0] // "-"),([.content.issueFieldValues.nodes[]|select(.field.name=="Effort")|.name][0] // "-"),(.content.issueType.name // "-"),((.content.milestone.title // "-")|gsub("[|]";"／")),
     ([.content.labels.nodes[].name | select(.=="needs-decision")]|join(",")),
     ([.content.assignees.nodes[].login]|join(",")),([.content.closedByPullRequestsReferences.nodes[].url]|join(",")),
     .content.issueDependenciesSummary.blockedBy,.content.title] | map(tostring) | join("|")'
 }
 parse() {
-  IFS='|' read -r game num lane field type milestone labels assigned prs blockers caption <<< "$1"
+  IFS='|' read -r game num lane field size type milestone labels assigned prs blockers caption <<< "$1"
 }
 load() {
   local rows row
@@ -101,18 +103,19 @@ edit_field() {
 }
 classified() {
   [[ $type != - && $field != - ]] || refuse 'Set type and priority first'
+  [[ $size != - ]] || refuse 'Set effort first'
 }
-set_priority() {
+set_select() {
   local ids fid opt node
-  ids=$(gh api graphql --paginate -f login="${repo%/*}" -f query='query($login:String!,$endCursor:String){organization(login:$login){issueFields(first:100,after:$endCursor){pageInfo{hasNextPage endCursor} nodes{... on IssueFieldSingleSelect{id name options{id name}}}}}}' --jq ".data.organization.issueFields.nodes[] | select(.name==\"Priority\") | .id as \$f | .options[] | select(.name==\"$1\") | [\$f,.id] | @tsv")
+  ids=$(gh api graphql --paginate -f login="${repo%/*}" -f query='query($login:String!,$endCursor:String){organization(login:$login){issueFields(first:100,after:$endCursor){pageInfo{hasNextPage endCursor} nodes{... on IssueFieldSingleSelect{id name options{id name}}}}}}' --jq ".data.organization.issueFields.nodes[] | select(.name==\"$1\") | .id as \$f | .options[] | select(.name==\"$2\") | [\$f,.id] | @tsv")
   IFS=$'\t' read -r fid opt <<< "$ids"
-  [[ -n $fid && -n $opt ]] || error "Cannot resolve Priority option $1"
+  [[ -n $fid && -n $opt ]] || error "Cannot resolve $1 option $2"
   node=$(issue view "$n" --json id --jq .id)
   gh api graphql -f issue="$node" -f field="$fid" -f option="$opt" -f query='mutation($issue:ID!,$field:ID!,$option:ID!){setIssueFieldValue(input:{issueId:$issue,issueFields:[{fieldId:$field,singleSelectOptionId:$option}]}){clientMutationId}}'
 }
 create() {
-  local k=$1 p=$2 heading=$3 dest=$4 url deadline
-  shift 4
+  local k=$1 p=$2 requested_size=$3 heading=$4 dest=$5 url deadline
+  shift 5
   url=$(issue create --title "$heading" --type "$k" "$@")
   n=${url##*/}
   number "$n"
@@ -126,7 +129,8 @@ create() {
       [[ $lane == - && $SECONDS -lt $deadline ]] || refuse "Issue #$n did not enter Inbox"
       sleep 1
     done
-    set_priority "$p"
+    set_select Priority "$p"
+    set_select Effort "${requested_size:-Medium}"
     edit_field Status "$dest"
   fi
 }
@@ -161,7 +165,7 @@ for arg in "$@"; do
   [[ $arg != --staged || ( $cmd == move && $# == 4 && ${3:-} == --staged && ${2,,} == playtest ) ]] || bad 'Unexpected --staged'
 done
 case $cmd in
- new|triage|move|start|result|decide|labels|parent|unparent|milestone|block|unblock)
+ new|triage|effort|move|start|result|decide|labels|parent|unparent|milestone|block|unblock)
   [[ $(git symbolic-ref --quiet --short HEAD) == main ]] || refuse 'Board writes require the main branch'
   [[ $(git rev-parse --show-toplevel) == "$(cd "$(dirname "$0")/.." && pwd -P)" ]] || refuse 'Run the board script from its own checkout'
   dirty=$(git status --porcelain)
@@ -187,6 +191,7 @@ case $cmd in
       if [[ $lane != Inbox ]]; then
         [[ $type != - ]] || echo "#$num missing type"
         [[ $field != - ]] || echo "#$num missing priority"
+        [[ $size != - ]] || echo "#$num missing effort"
       fi
       if [[ $lane == Next && $blockers != 0 ]]; then echo "#$num blocked in Next"; fi
       continue
@@ -197,7 +202,7 @@ case $cmd in
     [[ $blockers == 0 ]] || marker=' [blocked]'
     if [[ $cmd == waiting && ,$labels, == *,needs-decision,* ]]; then marker+=' [needs-decision]'; fi
     if [[ $cmd == waiting && $lane == Playtest ]]; then marker+=' [awaiting playtest]'; fi
-    groups[$lane]+="$game#$num $caption | $type | $field | $milestone | ${assigned:--} | ${prs:--}$marker"$'\n'
+    groups[$lane]+="$game#$num $caption | $type | $field | $size | $milestone | ${assigned:--} | ${prs:--}$marker"$'\n'
   done <<< "$rows"
   for lane in "${lanes[@]}" -; do
     if [[ -n ${groups[$lane]:-} ]]; then printf '%s\n%s' "$lane" "${groups[$lane]}"; fi
@@ -214,26 +219,41 @@ LABELS
   ;;
  new)
   (($# >= 2)) || bad 'Missing type or title'
-  k=$1 p=
-  k=$(kind "$k"); shift
-  if [[ $1 =~ ^(Urgent|High|Medium|Low)$ ]]; then p=$1; shift; fi
-  [[ -n ${1:-} ]] || bad 'Missing title'
-  heading=$1; shift
+  k=$(kind "$1"); shift
   args=(--body '')
-  if (($#)); then
-    [[ $# == 2 && $1 == --body-file ]] || bad 'Expected --body-file F'
-    file "$2"; args=(--body-file "$2")
+  if (( $# >= 3 )) && [[ ${@: -2:1} == --body-file ]]; then
+    file "${!#}"; args=(--body-file "${!#}")
+    set -- "${@:1:$#-2}"
   fi
-  project; create "$k" "$p" "$heading" Backlog "${args[@]}"
+  p= requested_size=
+  if (( $# >= 2 )); then priority "$1"; p=$1; shift; fi
+  if (( $# >= 2 )); then effort "$1"; requested_size=$1; shift; fi
+  [[ $# == 1 && -n $1 ]] || bad 'Expected one title'
+  project; create "$k" "$p" "$requested_size" "$1" Backlog "${args[@]}"
   ;;
- parent|unparent|milestone|show|decide|block|unblock|triage|move|start|result)
+ parent|unparent|milestone|show|effort|decide|block|unblock|triage|move|start|result)
   n=${1:-}; number "$n"; shift
   case $cmd in
    show)
     (($# == 0)) || bad 'Unexpected arguments'
-    field=$(gh api "repos/$repo/issues/$n" --jq '[.issue_field_values[]? | select(.issue_field_name=="Priority") | .single_select_option.name][0] // "-"')
-    echo "Priority: $field"
-    issue view "$n" --json number,title,body,issueType,milestone,parent,subIssues,blockedBy,closedByPullRequestsReferences
+    project; load
+    if [[ -z ${field:-} ]]; then
+      values=$(gh api "repos/$repo/issues/$n" --jq 'def value($name): [.issue_field_values[]? | select(.issue_field_name==$name) | .single_select_option.name][0] // "-"; [value("Priority"),value("Effort")] | @tsv')
+      IFS=$'\t' read -r field size <<< "$values"
+    fi
+    issue view "$n" --json number,title,body,issueType,milestone,parent,subIssues,blockedBy,closedByPullRequestsReferences |
+      jq -r --arg priority "$field" --arg size "$size" --arg lane "$lane" '
+        def refs: map("#" + (.number|tostring)) | join(", ");
+        def display: if . == "" or . == null then "-" else . end;
+        "#\(.number) \(.title)", "Type: \(.issueType.name|display)",
+        "Priority: \($priority)", "Effort: \($size)", "Lane: \($lane)",
+        "Milestone: \(.milestone.title|display)", "Parent: \([.parent|select(.)]|refs|display)",
+        "Sub-issues: \(.subIssues.nodes|refs|display)", "Blocked by: \(.blockedBy.nodes|refs|display)",
+        "Linked PRs: \(.closedByPullRequestsReferences|map(.url)|join(", ")|display)", "", .body'
+    ;;
+   effort)
+    (($# == 1)) || bad 'Expected effort'
+    effort "$1"; set_select Effort "$1"
     ;;
    parent|unparent)
     child=$(issue view "$n" --json id --jq .id)
@@ -273,10 +293,13 @@ LABELS
     [[ $lane != Playtest || $cmd == result ]] || refuse 'Only result may move a Playtest card'
     case $cmd in
      triage)
-      (($# == 2)) || bad 'Expected type and priority'
+      (($# == 2 || $# == 3)) || bad 'Expected type, priority and optional effort'
+      selected=${3:-$size}
+      [[ $selected != - || $# == 3 ]] || selected=Medium
+      effort "$selected"
       k=$(kind "$1"); priority "$2"
       [[ $lane == Inbox ]] || refuse 'Triage requires Inbox'
-      issue edit "$n" --type "$k"; set_priority "$2"; edit_field Status Backlog
+      issue edit "$n" --type "$k"; set_select Priority "$2"; set_select Effort "$selected"; edit_field Status Backlog
       ;;
      start)
       [[ $# == 1 && $1 =~ ^(design|build)$ ]] || bad 'Expected design or build'
@@ -320,7 +343,7 @@ LABELS
         if [[ $outcome == fail ]]; then
           marker="Failed in-game check #$original"
           existing=$(find_created "$marker" Bug)
-          if [[ -z $existing ]]; then create Bug '' "Failed check: $caption" Inbox --body "$marker"$'\n'"$notes"; fi
+          if [[ -z $existing ]]; then create Bug '' '' "Failed check: $caption" Inbox --body "$marker"$'\n'"$notes"; fi
         fi
         comment_once issue "$original" "Playtest $outcome"$'\n'"$notes"
         issue close "$original"
@@ -347,11 +370,12 @@ LABELS
             gh project item-add "$project_number" --owner "$owner" --url "https://github.com/$repo/issues/$n"
             load
             if [[ $lane == Inbox || $lane == - ]]; then
-              set_priority "$p"
+              set_select Priority "$p"
+              if [[ ${size:--} == - ]]; then set_select Effort Medium; fi
               edit_field Status Playtest
             fi
           else
-            create 'In-game check' "$p" "Deferred checks: $caption" Playtest --body "$build"$'\n\n'"$checklist"
+            create 'In-game check' "$p" Medium "Deferred checks: $caption" Playtest --body "$build"$'\n\n'"$checklist"
           fi
           report+=". Deferred to #$n"
         elif [[ $outcome == fail ]]; then

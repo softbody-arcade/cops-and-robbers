@@ -19,6 +19,7 @@ case "$*" in
   '--version') echo "gh version ${GH_VERSION:-2.106.0}" ;;
   'api users/'*) echo "${OWNER_TYPE:-Organization}" ;;
   'api graphql '*projectsV2*) printf '9\tSoftbody Arcade\n' ;;
+  *'select(.name=="Effort")'*) printf 'SIZEFIELD\tSIZEOPTION\n' ;;
   'api graphql '*issueFields\(first*) printf 'FIELD\tOPTION\n' ;;
   'api graphql '*mutation*) echo '{}' ;;
   'api graphql '*projectV2*)
@@ -28,8 +29,9 @@ case "$*" in
       status=-
       if [[ -f $LOG.slept ]]; then status=Inbox; fi
     fi
-    printf '%s\n' "softbody-arcade/cops-and-robbers|1|$status|${FIELD-High}|${TYPE-Feature}|v1|${TAGS:-}|$ASSIGNED|${PRS:--}|$BLOCKERS|Card"
+    printf '%s\n' "softbody-arcade/cops-and-robbers|1|$status|${FIELD-High}|${SIZE-Low}|${TYPE-Feature}|v1|${TAGS:-}|$ASSIGNED|${PRS:--}|$BLOCKERS|Card"
     ;;
+  'issue view '*--json\ number*) echo '{"number":1,"title":"Card","issueType":{"name":"Feature"},"milestone":{"title":"v1"},"parent":{"number":3},"subIssues":{"nodes":[{"number":4}]},"blockedBy":{"nodes":[{"number":5}]},"closedByPullRequestsReferences":[{"url":"https://example.com/pr"}],"body":"First\nSecond"}' ;;
   'issue view '*--json\ id*) echo "NODE-${3}" ;;
   'issue view '*--json\ parent*) echo "${PARENT-PARENT}" ;;
   'pr view '*headRefOid*) echo "${HEAD_SHA:?}" ;;
@@ -131,6 +133,53 @@ expect 0 '' new in-game-check Card
 wrote '--type In-game check'
 ! wrote 'setIssueFieldValue' || exit 1
 guard 'Triage requires Inbox' triage 1 bug High
+LANE=Inbox expect 0 '' new task High Medium 'Low'
+wrote 'issue create --title Low --type Task'
+wrote 'select(.name=="Effort")'
+wrote 'select(.name=="Medium")'
+wrote '-f field=SIZEFIELD -f option=SIZEOPTION'
+expect 2 'Invalid effort: Urgent' new task High Urgent Card
+! wrote 'issue create' || exit 1
+LANE=Inbox expect 0 '' triage 1 task High Low
+wrote '-f field=SIZEFIELD -f option=SIZEOPTION'
+LANE=Inbox SIZE=- expect 0 '' triage 1 task Low
+wrote 'select(.name=="Medium")'
+LANE=Inbox expect 2 'Invalid effort: Urgent' triage 1 task High Urgent
+! wrote 'issue edit' || exit 1
+expect 0 '' effort 1 High
+wrote 'select(.name=="Effort")'
+wrote 'select(.name=="High")'
+wrote '-f issue=NODE-1 -f field=SIZEFIELD -f option=SIZEOPTION'
+expect 2 'Invalid effort: Urgent' effort 1 Urgent
+! wrote 'setIssueFieldValue' || exit 1
+SIZE=- guard 'Set effort first' move 1 review
+LANE=Inbox SIZE=High expect 0 '' triage 1 task Low
+wrote 'select(.name=="High")'
+expect 0 '' new task High
+wrote 'issue create --title High --type Task'
+! wrote 'setIssueFieldValue' || exit 1
+SIZE=- expect 0 '#1 missing effort' check
+LANE=Inbox SIZE=- expect 0 '' check
+[[ ! -s $tmp/out ]]
+expect 0 'Card | Feature | High | Low |' list
+wrote 'select(.field.name=="Effort")'
+expect 0 '#1 Card' show 1
+diff -u - "$tmp/out" <<'SHOW'
+#1 Card
+Type: Feature
+Priority: High
+Effort: Low
+Lane: Next
+Milestone: v1
+Parent: #3
+Sub-issues: #4
+Blocked by: #5
+Linked PRs: https://example.com/pr
+
+First
+Second
+SHOW
+wrote 'subIssues,blockedBy,closedByPullRequestsReferences'
 expect 0 '' parent 1 2
 wrote 'addSubIssue'
 wrote '-f child=NODE-1 -f par=NODE-2'
@@ -206,6 +255,7 @@ if (cd "$other" && "$tmp/repo/scripts/board" labels) >"$tmp/out" 2>&1; then exit
 [[ $rc == 1 && $(cat "$tmp/out") == 'Run the board script from its own checkout' ]]
 git switch -qc feature/test
 guard 'Board writes require the main branch' labels
+guard 'Board writes require the main branch' effort 1 High
 git switch -q main
 touch untracked
 guard 'Board writes require a clean checkout' labels
