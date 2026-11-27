@@ -12,8 +12,10 @@ two="[a](https://github.com/softbody-arcade/arcade-base/blob/main/AGENTS.md) and
 [[ $(unpinned "$self" <<< "$two") == github.com/softbody-arcade/arcade-base/blob/main ]] || { echo "base-pin: self-test missed an unpinned link next to a pinned one" >&2; exit 1; }
 [[ -z $(unpinned "$self" <<< "[b](https://github.com/softbody-arcade/arcade-base/tree/$self/docs)") ]] || { echo "base-pin: self-test flagged a pinned link" >&2; exit 1; }
 
-pin=$(git ls-tree HEAD base | awk '$2 == "commit" {print $3}')
-[[ $pin =~ ^[0-9a-f]{40}$ ]] || { echo "base-pin: no base gitlink in HEAD" >&2; exit 1; }
+entries=$(git ls-files -s -- base)
+[[ $(awk '$3 != 0' <<< "$entries") == "" ]] || { echo "base-pin: the base pin has a merge conflict" >&2; exit 1; }
+pin=$(awk '$1 == "160000" && $3 == 0 {print $2}' <<< "$entries")
+[[ $pin =~ ^[0-9a-f]{40}$ ]] || { echo "base-pin: no base gitlink in the index" >&2; exit 1; }
 url=$(git config -f .gitmodules submodule.base.url)
 [[ $url == https://github.com/softbody-arcade/arcade-base ]] || { echo "base-pin: unexpected base URL $url" >&2; exit 1; }
 [[ $(git config -f .gitmodules --get-regexp '^submodule\..*\.path$' | awk '{print $2}') == base ]] || { echo "base-pin: base must be the only submodule" >&2; exit 1; }

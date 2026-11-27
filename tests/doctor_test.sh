@@ -34,6 +34,7 @@ case $tool in
             'submodule status -- base') printf '%s\n' "${BASE_REPORT- 6198cea32b7b8469a390bf2d12e012cafe35d8de base (v0.1.0)}" ;;
             '-C base rev-parse HEAD') printf '%s\n' "${BASE_HEAD-6198cea32b7b8469a390bf2d12e012cafe35d8de}" ;;
             'rev-parse HEAD:base') printf '%s\n' "${BASE_PIN-6198cea32b7b8469a390bf2d12e012cafe35d8de}" ;;
+            'ls-files -s -- base') printf '160000 %s 0\tbase\n' "${BASE_STAGED-6198cea32b7b8469a390bf2d12e012cafe35d8de}" ;;
             *) exit 2 ;;
         esac ;;
     node) echo "v${NODE_REPORT:-22.1.0}" ;;
@@ -112,7 +113,7 @@ run_doctor() {
         fi
         printf '%s\n' 'git config user.email' 'git config core.hooksPath' 'git submodule status -- base'
         if [[ ${expect_pin:-yes} == yes ]]; then
-            printf '%s\n' 'git -C base rev-parse HEAD' 'git rev-parse HEAD:base'
+            printf '%s\n' 'git -C base rev-parse HEAD' 'git rev-parse HEAD:base' 'git ls-files -s -- base'
         fi
     } > "$bin/expected-calls"
     if ! diff -u "$bin/expected-calls" "$bin/calls"; then
@@ -164,15 +165,17 @@ expect_line 'ok git hooks'
 expect_line 'ok base submodule'
 
 expect_pin=no run_doctor 1 'BASE_REPORT=-6198cea32b7b8469a390bf2d12e012cafe35d8de base'
-expect_line 'missing base submodule.*git submodule update --init.*'
-expect_pin=no run_doctor 1 'BASE_REPORT=+0123456789abcdef0123456789abcdef01234567 base (heads/develop)'
-expect_line 'missing base submodule.*not at the pinned commit.*git submodule update.*'
-expect_pin=no run_doctor 1 'BASE_REPORT=U0000000000000000000000000000000000000000 base'
-expect_line 'missing base submodule.*merge conflict.*'
+expect_line 'missing base submodule — not initialised; run git submodule update --init.*'
 expect_pin=no run_doctor 1 BASE_REPORT=
-expect_line 'missing base submodule.*git submodule update --init.*'
-run_doctor 1 BASE_PIN=0123456789abcdef0123456789abcdef01234567
-expect_line 'missing base submodule.*differs from the commit.*git restore --staged -- base.*git submodule update -- base.*'
+expect_line 'missing base submodule — not initialised; run git submodule update --init.*'
+expect_pin=no run_doctor 1 'BASE_REPORT=U0000000000000000000000000000000000000000 base'
+expect_line 'missing base submodule — the base pin has a merge conflict; see .*docs/DEVELOPMENT.md.*'
+run_doctor 1 'BASE_REPORT=+0123456789abcdef0123456789abcdef01234567 base (heads/develop)' BASE_HEAD=0123456789abcdef0123456789abcdef01234567
+expect_line 'missing base submodule — base/ is at 0123456789ab, the index pins 6198cea32b7b and the last commit pins 6198cea32b7b; see .*docs/DEVELOPMENT.md.*'
+run_doctor 1 BASE_STAGED=0123456789abcdef0123456789abcdef01234567 BASE_HEAD=0123456789abcdef0123456789abcdef01234567
+expect_line 'missing base submodule — base/ is at 0123456789ab, the index pins 0123456789ab and the last commit pins 6198cea32b7b; see .*docs/DEVELOPMENT.md.*'
+run_doctor 1 BASE_STAGED=0123456789abcdef0123456789abcdef01234567
+expect_line 'missing base submodule — base/ is at 6198cea32b7b, the index pins 0123456789ab and the last commit pins 6198cea32b7b; see .*docs/DEVELOPMENT.md.*'
 
 run_doctor 0 "GH_SCOPES='repo', 'project'" NODE_REPORT=24.1.0
 expect_line 'ok gh project access'
