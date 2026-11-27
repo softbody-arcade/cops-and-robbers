@@ -1,0 +1,428 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if (( BASH_VERSINFO[0] < 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] < 4) )); then
+  echo 'board requires Bash 4.4 or newer' >&2
+  exit 2
+fi
+shopt -s inherit_errexit
+usage() {
+  echo 'Usage: board list [--all] [lane] | waiting [--all] | show N | new TYPE [PRIORITY [EFFORT]] TITLE [--body-file F] | triage N TYPE PRIORITY [EFFORT] | effort N High|Medium|Low | priority N Urgent|High|Medium|Low | start N design|build | move N LANE [--staged SHA] | result N pass|fail|defer [--checks-file F] | check | parent N PARENT | unparent N | milestone N x.y.z|none | block|unblock N --by M | decide N --file F | labels'
+  echo 'Quote multiword titles. Effort is High, Medium or Low. Triage keeps existing effort. Missing effort defaults to Medium when leaving Inbox.'
+  echo 'Start work from Next with start. From Design, move to Build after plan approval. Work cards entering Playtest require --staged with a full local commit SHA.'
+  echo 'Requires jq, Bash 4.4+ and gh 2.106.0+ for project item-edit --field/--value.'
+}
+bad() { echo "$*" >&2; usage >&2; exit 2; }
+refuse() { echo "$*" >&2; exit 1; }
+gh() { command gh "$@" || exit 2; }
+error() { echo "$*" >&2; exit 2; }
+if [[ $# == 1 && ( $1 == --help || $1 == -h ) ]]; then usage; exit 0; fi
+repo='' owner='' title=''
+while IFS= read -r line || [[ -n $line ]]; do
+  [[ $line =~ ^(repo|owner|title)=([A-Za-z0-9._/\ -]+)$ ]] || error 'Invalid board.conf entry'
+  printf -v "${BASH_REMATCH[1]}" '%s' "${BASH_REMATCH[2]}"
+done < "$(dirname "$0")/board.conf"
+[[ -n $repo && -n $owner && -n $title ]] || error 'Missing board.conf setting'
+[[ $repo =~ ^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+$ && $owner =~ ^[A-Za-z0-9][A-Za-z0-9-]*$ && $title =~ [[:alnum:]] ]] || error 'Invalid board.conf value'
+version=$(gh --version)
+[[ $version =~ gh\ version\ ([0-9]+)\.([0-9]+)\. ]] &&
+  (( BASH_REMATCH[1] > 2 || (BASH_REMATCH[1] == 2 && BASH_REMATCH[2] >= 106) )) ||
+  error 'board requires gh 2.106.0 or newer'
+issue() { gh issue "$@" --repo "$repo"; }
+pr() { gh pr "$@" --repo "$repo"; }
+number() { [[ $1 =~ ^[1-9][0-9]*$ ]] || bad "Invalid issue number: $1"; }
+issue_id() {
+  number "$1"
+  local id
+  id=$(gh api "repos/$repo/issues/$1" --jq 'if .pull_request then "pr" else .id end')
+  [[ $id != pr ]] || refuse "#$1 is a pull request"
+  echo "$id"
+}
+kind() {
+  case ${1,,} in
+    bug|task|feature) local lower=${1,,}; echo "${lower^}";;
+    in-game-check|'in-game check') echo 'In-game check';;
+    *) bad "Invalid type: $1";;
+  esac
+}
+priority() { [[ $1 =~ ^(Urgent|High|Medium|Low)$ ]] || bad "Invalid priority: $1"; }
+effort() { [[ $1 =~ ^(High|Medium|Low)$ ]] || bad "Invalid effort: $1"; }
+file() { [[ -f $1 && -r $1 ]] || bad "Cannot read $1"; }
+lanes=(Inbox Backlog Next Design Build Review Playtest Done)
+lane_name() {
+  local x
+  for x in "${lanes[@]}"; do
+    if [[ ${x,,} == "${1,,}" ]]; then echo "$x"; return; fi
+  done
+  bad "Unknown lane: $1"
+}
+project() {
+  local matches row
+  project_number=
+  # shellcheck disable=SC2016
+  lookup_project() {
+    gh api graphql --paginate -f owner="$owner" -f title="$title" -f query='query($owner:String!,$title:String!,$endCursor:String){
+    '"$namespace"'(login:$owner){projectsV2(first:50,query:$title,after:$endCursor){
+    pageInfo{hasNextPage endCursor} nodes{number title}}}}' --jq '.data.'"$namespace"'.projectsV2.nodes[] | [.number,.title] | @tsv'
+  }
+  local owner_type
+  owner_type=$(gh api "users/$owner" --jq .type)
+  case $owner_type in Organization) namespace=organization;; User) namespace=user;; *) error "Unknown project owner type: $owner_type";; esac
+  matches=$(lookup_project)
+  while IFS= read -r row; do
+    if [[ ${row#*$'\t'} == "$title" ]]; then
+      [[ -z $project_number ]] || error "Ambiguous project title: $title"
+      project_number=${row%%$'\t'*}
+    fi
+  done <<< "$matches"
+  [[ $project_number =~ ^[0-9]+$ ]] || error "Cannot resolve project $title"
+}
+cards() {
+  # shellcheck disable=SC2016
+  gh api graphql --paginate -f owner="$owner" -F project="$project_number" -f query='query($owner:String!,$project:Int!,$endCursor:String){
+    '"$namespace"'(login:$owner){projectV2(number:$project){items(first:50,after:$endCursor){
+    pageInfo{hasNextPage endCursor} nodes{
+    status:fieldValueByName(name:"Status"){... on ProjectV2ItemFieldSingleSelectValue{name}}
+
+    content{... on Issue{number title state milestone{title} issueType{name} issueFieldValues(first:100){nodes{... on IssueFieldSingleSelectValue{name field{... on IssueFieldSingleSelect{name}}}}} repository{nameWithOwner} labels(first:100){nodes{name}}
+    assignees(first:100){nodes{login}} issueDependenciesSummary{blockedBy}
+    closedByPullRequestsReferences(first:20){nodes{url}}}}}}}}}' --jq '
+    .data.'"$namespace"'.projectV2.items.nodes[] | select(.content.number != null) |
+    [.content.repository.nameWithOwner,.content.number,(.status.name // "-"),([.content.issueFieldValues.nodes[]|select(.field.name=="Priority")|.name][0] // "-"),([.content.issueFieldValues.nodes[]|select(.field.name=="Effort")|.name][0] // "-"),(.content.issueType.name // "-"),((.content.milestone.title // "-")|gsub("[|]";"／")),
+    ([.content.labels.nodes[].name | select(.=="needs-decision")]|join(",")),
+    ([.content.assignees.nodes[].login]|join(",")),([.content.closedByPullRequestsReferences.nodes[].url]|join(",")),
+    .content.issueDependenciesSummary.blockedBy,.content.state,.content.title] | map(tostring) | join("|")'
+}
+parse() {
+  IFS='|' read -r game num lane field size type milestone labels assigned prs blockers state caption <<< "$1"
+}
+load() {
+  local rows row
+  rows=$(cards)
+  lane=-
+  while IFS= read -r row; do
+    [[ $row == "$repo|$n|"* ]] || continue
+    parse "$row"
+    return
+  done <<< "$rows"
+}
+edit_field() {
+  gh project item-edit "$project_number" --owner "$owner" --url "https://github.com/$repo/issues/$n" --field "$1" --value "$2"
+}
+classified() {
+  [[ $type != - && $field != - ]] || refuse 'Set type and priority first'
+  [[ $size != - ]] || refuse 'Set effort first'
+}
+set_select() {
+  local ids fid opt node
+  ids=$(gh api graphql --paginate -f login="${repo%/*}" -f query='query($login:String!,$endCursor:String){organization(login:$login){issueFields(first:100,after:$endCursor){pageInfo{hasNextPage endCursor} nodes{... on IssueFieldSingleSelect{id name options{id name}}}}}}' --jq ".data.organization.issueFields.nodes[] | select(.name==\"$1\") | .id as \$f | .options[] | select(.name==\"$2\") | [\$f,.id] | @tsv")
+  IFS=$'\t' read -r fid opt <<< "$ids"
+  [[ -n $fid && -n $opt ]] || error "Cannot resolve $1 option $2"
+  node=$(issue view "$n" --json id --jq .id)
+  gh api graphql -f issue="$node" -f field="$fid" -f option="$opt" -f query='mutation($issue:ID!,$field:ID!,$option:ID!){setIssueFieldValue(input:{issueId:$issue,issueFields:[{fieldId:$field,singleSelectOptionId:$option}]}){clientMutationId}}'
+}
+create() {
+  local k=$1 p=$2 requested_size=$3 heading=$4 dest=$5 url deadline
+  shift 5
+  url=$(issue create --title "$heading" --type "$k" "$@")
+  n=${url##*/}
+  number "$n"
+  echo "$url"
+  gh project item-add "$project_number" --owner "$owner" --url "$url"
+  if [[ -n $p ]]; then
+    deadline=$((SECONDS+30))
+    while :; do
+      load
+      [[ $lane != Inbox ]] || break
+      [[ $lane == - && $SECONDS -lt $deadline ]] || refuse "Issue #$n did not enter Inbox"
+      sleep 1
+    done
+    set_select Priority "$p"
+    set_select Effort "${requested_size:-Medium}"
+    edit_field Status "$dest"
+  fi
+}
+owned_entries() {
+  gh api --paginate "$1" | jq -c --arg login "$me" '.[] | select(.user.login == $login)'
+}
+comment_once() {
+  local target=$2 body=$3 comments encoded
+  comments=$(owned_entries "repos/$repo/issues/$target/comments" | jq -r '.body | @base64')
+  encoded=$(printf %s "$body" | base64 | tr -d '\n')
+  if ! grep -Fxq "$encoded" <<< "$comments"; then
+    "$1" comment "$target" --body "$body"
+  fi
+}
+find_created() {
+  owned_entries "repos/$repo/issues?state=all&per_page=100" |
+    jq -r --arg type "$2" --arg marker "$1" '
+      select(.pull_request == null and .type.name == $type and ((.body // "") | split("\n")[0]) == $marker) | .number'
+}
+linked() {
+  [[ $prs == "https://github.com/$repo/pull/"* && ${prs##*/} =~ ^[0-9]+$ && $prs != *,* ]] || refuse "Requires one linked open PR in this repository${1:-}"
+  pull=${prs##*/}
+}
+ready() {
+  local body heading missing=()
+  body=$(issue view "$n" --json body --jq .body)
+  body=${body//$'\r'/}
+  for heading in Goal Why Scope 'Done when' 'Constraints and known facts' 'Open questions' Links; do
+    grep -Eq "^## $heading[[:space:]]*$" <<< "$body" || missing+=("## $heading")
+  done
+  (( ${#missing[@]} == 0 )) || refuse "Missing sections: ${missing[*]}"
+}
+cmd=${1:-}
+[[ $# -gt 0 ]] || bad 'Missing command'
+shift
+for arg in "$@"; do
+  [[ $arg != --staged || ( $cmd == move && $# == 4 && ${3:-} == --staged && ${2,,} == playtest ) ]] || bad 'Unexpected --staged'
+done
+case $cmd in
+ new|triage|effort|priority|move|start|result|decide|labels|parent|unparent|milestone|block|unblock)
+  [[ $(git symbolic-ref --quiet --short HEAD) == main ]] || refuse 'Board writes require the main branch'
+  [[ $(git rev-parse --show-toplevel) == "$(cd "$(dirname "$0")/.." && pwd -P)" ]] || refuse 'Run the board script from its own checkout'
+  dirty=$(git status --porcelain --untracked-files=no)
+  [[ -z $dirty ]] || refuse 'Board writes require a clean checkout'
+  ;;
+esac
+case $cmd in
+ list|waiting|check)
+  all=false filter=
+  if [[ $cmd != check ]]; then
+    if [[ ${1:-} == --all ]]; then all=true; shift; fi
+    if [[ $cmd == list ]] && (($#)); then filter=$(lane_name "$1"); shift; fi
+  fi
+  (($# == 0)) || bad 'Unexpected arguments'
+  project
+  rows=$(cards)
+  problems=0 next_count=0
+  problem() { echo "$*"; problems=1; }
+  declare -A groups=()
+  while IFS= read -r row; do
+    [[ -n $row ]] || continue
+    parse "$row"
+    if [[ $cmd == check && $lane == Next ]]; then next_count=$((next_count+1)); fi
+    [[ $game == "$repo" || $all == true ]] || continue
+    if [[ $cmd == check ]]; then
+      if [[ $lane != Inbox ]]; then
+        [[ $type != - ]] || problem "#$num missing type"
+        [[ $field != - ]] || problem "#$num missing priority"
+        [[ $size != - ]] || problem "#$num missing effort"
+      fi
+      if [[ $lane == Next && $blockers != 0 ]]; then problem "#$num blocked in Next"; fi
+      continue
+    fi
+    [[ $cmd != waiting || ( $state == OPEN && ( $lane == Playtest || ,$labels, == *,needs-decision,* ) ) ]] || continue
+    [[ -z $filter || $filter == "$lane" ]] || continue
+    marker=
+    [[ $blockers == 0 ]] || marker=' [blocked]'
+    if [[ $cmd == waiting && ,$labels, == *,needs-decision,* ]]; then marker+=' [needs-decision]'; fi
+    if [[ $cmd == waiting && $lane == Playtest ]]; then marker+=' [awaiting playtest]'; fi
+    case $lane in Inbox|Backlog|Next|Design|Build|Review|Playtest|Done) ;; *) lane=Other;; esac
+    groups[$lane]+="$game#$num $caption | $type | $field | $size | $milestone | ${assigned:--} | ${prs:--}$marker"$'\n'
+  done <<< "$rows"
+  if [[ $cmd == check ]]; then
+    (( next_count <= 5 )) || problem "Next holds $next_count cards (maximum 5)"
+    exit "$problems"
+  fi
+  for lane in "${lanes[@]}" Other; do
+    if [[ -n ${groups[$lane]:-} ]]; then printf '%s\n%s' "$lane" "${groups[$lane]}"; fi
+  done
+  ;;
+ labels)
+  (($# == 0)) || bad 'Unexpected arguments'
+  while IFS='|' read -r name color description; do
+    gh label create "$name" --repo "$repo" --force --color "$color" --description "$description"
+  done <<'LABELS'
+needs-decision|fbca04|Waiting for a maintainer decision
+needs-playtest|c5def5|Requires an in-game playtest
+accessibility|0075ca|Barrier affecting players with disabilities
+LABELS
+  ;;
+ new)
+  (($# >= 2)) || bad 'Missing type or title'
+  k=$(kind "$1"); shift
+  args=(--body '')
+  if (( $# >= 3 )) && [[ ${@: -2:1} == --body-file ]]; then
+    file "${!#}"; args=(--body-file "${!#}")
+    set -- "${@:1:$#-2}"
+  fi
+  p= requested_size=
+  if (( $# >= 2 )); then priority "$1"; p=$1; shift; fi
+  if (( $# >= 2 )); then effort "$1"; requested_size=$1; shift; fi
+  [[ $# == 1 && -n $1 ]] || bad 'Expected one title'
+  project; create "$k" "$p" "$requested_size" "$1" Backlog "${args[@]}"
+  ;;
+ parent|unparent|milestone|show|effort|priority|decide|block|unblock|triage|move|start|result)
+  n=${1:-}; issue_id "$n" >/dev/null; shift
+  case $cmd in
+   show)
+    (($# == 0)) || bad 'Unexpected arguments'
+    project; load
+    if [[ -z ${field:-} ]]; then
+      values=$(gh api "repos/$repo/issues/$n" --jq 'def value($name): [.issue_field_values[]? | select(.issue_field_name==$name) | .single_select_option.name][0] // "-"; [value("Priority"),value("Effort")] | @tsv')
+      IFS=$'\t' read -r field size <<< "$values"
+    fi
+    issue view "$n" --json number,title,body,issueType,milestone,parent,subIssues,blockedBy,closedByPullRequestsReferences |
+      jq -r --arg priority "$field" --arg size "$size" --arg lane "$lane" '
+        def refs: map("#" + (.number|tostring)) | join(", ");
+        def display: if . == "" or . == null then "-" else . end;
+        "#\(.number) \(.title)", "Type: \(.issueType.name|display)",
+        "Priority: \($priority)", "Effort: \($size)", "Lane: \($lane)",
+        "Milestone: \(.milestone.title|display)", "Parent: \([.parent|select(.)]|refs|display)",
+        "Sub-issues: \(.subIssues.nodes|refs|display)", "Blocked by: \(.blockedBy.nodes|refs|display)",
+        "Linked PRs: \(.closedByPullRequestsReferences|map(.url)|join(", ")|display)", "", .body'
+    ;;
+   effort|priority)
+    (($# == 1)) || bad "Expected $cmd"
+    "$cmd" "$1"; set_select "${cmd^}" "$1"
+    ;;
+   parent|unparent)
+    child=$(issue view "$n" --json id --jq .id)
+    if [[ $cmd == parent ]]; then
+      (($# == 1)) || bad 'Expected parent number'
+      issue_id "$1" >/dev/null
+      par=$(issue view "$1" --json id --jq .id)
+      op=addSubIssue
+    else
+      (($# == 0)) || bad 'Unexpected arguments'
+      par=$(issue view "$n" --json parent --jq '.parent.id // empty')
+      [[ -n $par ]] || refuse 'Issue has no parent'
+      op=removeSubIssue
+    fi
+    gh api graphql -f child="$child" -f par="$par" -f query="mutation(\$child:ID!,\$par:ID!){$op(input:{issueId:\$par,subIssueId:\$child}){clientMutationId}}"
+    ;;
+   milestone)
+    [[ $# == 1 && $1 =~ ^(none|[0-9]+\.[0-9]+\.[0-9]+)$ ]] || bad 'Expected x.y.z or none'
+    if [[ $1 == none ]]; then issue edit "$n" --remove-milestone; else issue edit "$n" --milestone "$1"; fi
+    ;;
+   decide)
+    [[ $# == 2 && $1 == --file ]] || bad 'Expected --file F'
+    file "$2"
+    issue comment "$n" --body "**Decision ($(date +%F)):**"$'\n'"$(<"$2")"
+    ;;
+   block|unblock)
+    [[ $# == 2 && $1 == --by ]] || bad 'Expected --by N'
+    id=$(issue_id "$2")
+    endpoint="repos/$repo/issues/$n/dependencies/blocked_by"
+    if [[ $cmd == block ]]; then gh api -X POST "$endpoint" -F issue_id="$id"
+    else gh api -X DELETE "$endpoint/$id"; fi
+    ;;
+   *)
+    project; load
+    [[ $lane != - ]] || refuse "Issue #$n has no board status"
+    case $cmd in
+     triage)
+      (($# == 2 || $# == 3)) || bad 'Expected type, priority and optional effort'
+      selected=${3:-$size}
+      [[ $selected != - || $# == 3 ]] || selected=Medium
+      effort "$selected"
+      k=$(kind "$1"); priority "$2"
+      [[ $lane == Inbox ]] || refuse 'Triage requires Inbox'
+      issue edit "$n" --type "$k"; set_select Priority "$2"; set_select Effort "$selected"; edit_field Status Backlog
+      ;;
+     start)
+      [[ $# == 1 && $1 =~ ^(design|build)$ ]] || bad 'Expected design or build'
+      [[ $lane == Next ]] || refuse 'Start requires Next'
+      classified
+      [[ $blockers == 0 ]] || refuse 'Issue is blocked'
+      me=$(gh api user --jq .login)
+      [[ -z $assigned || ,$assigned, == *,"$me",* || $assigned == - ]] || refuse "Already assigned to $assigned"
+      issue edit "$n" --add-assignee "$me"; edit_field Status "${1^}"
+      ;;
+     move)
+      [[ $# == 1 || ( $# == 3 && $2 == --staged ) ]] || bad 'Expected lane [--staged SHA]'
+      dest=$(lane_name "$1")
+      [[ $dest != Done ]] || refuse 'Close the issue to move it to Done through board automation'
+      [[ $lane != Playtest || $dest == Build || $dest == Playtest ]] || refuse 'From Playtest, record a result, re-stage, or move to Build for rework'
+      [[ $dest != Design && ( $dest != Build || $lane =~ ^(Design|Review|Playtest)$ ) ]] || refuse 'Use start from Next to enter Design or Build'
+      [[ $# != 3 || $type != 'In-game check' ]] || bad 'Unexpected --staged'
+      if [[ $type == 'In-game check' && $dest == Playtest && $lane =~ ^(Inbox|Backlog|Next)$ ]]; then
+        [[ $field != - ]] || refuse 'Set type and priority first'
+        if [[ $size == - ]]; then set_select Effort Medium; fi
+      else
+        [[ $dest == Inbox ]] || classified
+        [[ $lane != Inbox || $dest == Inbox ]] || refuse 'Use triage to leave Inbox'
+        [[ $lane != Backlog || $dest =~ ^(Inbox|Backlog|Next)$ ]] || refuse 'Move ready work to Next first'
+        [[ $lane != Next || $dest =~ ^(Inbox|Backlog|Next)$ ]] || refuse 'Use start to leave Next for active work'
+      fi
+      if [[ $dest == Next ]]; then ready; fi
+      if [[ $dest == Playtest && $type != 'In-game check' ]]; then
+        [[ -n ${3:-} ]] || refuse 'Requires --staged SHA'
+        [[ $3 =~ ^[0-9a-fA-F]{40}$ && $(git cat-file -t "$3" 2>/dev/null) == commit ]] || bad 'Expected full local commit SHA'
+        linked
+        head=$(pr view "$pull" --json headRefOid --jq .headRefOid)
+        [[ $head == "${3,,}" ]] || refuse 'Staged SHA differs from PR head'
+        pr comment "$pull" --body "Staged for playtest (#$n): $head"
+      fi
+      edit_field Status "$dest"
+      ;;
+     result)
+      [[ $# == 1 || ( $# == 3 && $2 == --checks-file ) ]] || bad 'Expected result [--checks-file F]'
+      outcome=$1
+      [[ $outcome =~ ^(pass|fail|defer)$ ]] || bad 'Unknown result'
+      [[ $lane == Playtest ]] || refuse 'Result requires Playtest'
+      notes=
+      if (($# == 3)); then file "$3"; notes=$(<"$3"); fi
+      original=$n
+      me=$(gh api user --jq .login)
+      if [[ $type == 'In-game check' ]]; then
+        [[ $outcome != defer ]] || refuse 'Check already deferred'
+        if [[ $outcome == fail ]]; then
+          marker="Failed in-game check #$original"
+          existing=$(find_created "$marker" Bug)
+          if [[ -z $existing ]]; then create Bug '' '' "Failed check: $caption" Inbox --body "$marker"$'\n'"$notes"; fi
+        fi
+        comment_once issue "$original" "Playtest $outcome"$'\n'"$notes"
+        issue close "$original"
+      else
+        recovery="Use board move $n build for rework, or board move $n playtest --staged <full sha> after staging the current linked PR head."
+        linked ". $recovery"
+        head=$(pr view "$pull" --json headRefOid --jq .headRefOid)
+        staged=$(owned_entries "repos/$repo/issues/$pull/comments" |
+          jq -r --arg prefix "Staged for playtest (#$n): " --arg head "$head" '
+            .body | select(startswith($prefix)) | . == ($prefix + $head)')
+        [[ -n $staged ]] || refuse "No staged comment from $me. $recovery"
+        [[ ${staged##*$'\n'} == true ]] || refuse "PR head differs from staged SHA. $recovery"
+        report="Playtest $outcome for #$original at $head"
+        if [[ $outcome == defer ]]; then
+          [[ -n $notes ]] || bad 'Defer requires --checks-file F'
+          p=Low checklist=
+          while IFS= read -r line; do
+            [[ $line =~ ^(Urgent|High|Medium|Low):[[:space:]]*[^[:space:]].*$ ]] || bad 'Expected priority-prefixed check'
+            rank=${BASH_REMATCH[1]}
+            case "$p:$rank" in *:Urgent|Low:*|Medium:High) p=$rank;; esac
+            checklist+="- [ ] $line"$'\n'
+          done <<< "$notes"
+          build="Build: $head ($prs), work card #$original"
+          existing=$(find_created "$build" 'In-game check')
+          if [[ -n $existing ]]; then
+            n=${existing%%$'\n'*}
+            gh project item-add "$project_number" --owner "$owner" --url "https://github.com/$repo/issues/$n"
+            load
+            if [[ $lane == Inbox || $lane == - ]]; then
+              set_select Priority "$p"
+              if [[ ${size:--} == - ]]; then set_select Effort Medium; fi
+              edit_field Status Playtest
+            fi
+          else
+            create 'In-game check' "$p" Medium "Deferred checks: $caption" Playtest --body "$build"$'\n\n'"$checklist"
+          fi
+          report+=". Deferred to #$n"
+        elif [[ $outcome == fail ]]; then
+          body=$(pr view "$pull" --json body --jq .body)
+          if ! grep -Eq "^- \[[ xX]\] Playtest fail for #$original at $head([[:space:]]|$)" <<< "$body"; then
+            pr edit "$pull" --body "$body"$'\n\n- [ ] '"$report ${notes//$'\n'/ }"
+          fi
+        fi
+        body="$report"$'\n'"$notes"
+        comment_once pr "$pull" "$body"
+        comment_once issue "$original" "$body"
+        if [[ $outcome == fail ]]; then edit_field Status Build; fi
+      fi
+      ;;
+    esac
+    ;;
+  esac
+  ;;
+ *) bad "Unknown command: $cmd" ;;
+esac

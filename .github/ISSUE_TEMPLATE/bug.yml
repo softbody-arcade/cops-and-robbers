@@ -1,0 +1,32 @@
+name: Bug
+description: Report an observable defect.
+type: Bug
+body:
+  - type: textarea
+    id: file-and-line
+    attributes:
+      label: File and line
+      description: Where does the problem occur?
+    validations:
+      required: false
+  - type: textarea
+    id: observable-problem
+    attributes:
+      label: Observable problem
+      description: What happened and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      description: How can someone reproduce it?
+    validations:
+      required: true
+  - type: textarea
+    id: links
+    attributes:
+      label: Links
+      description: Related issues, specs or plans.
+    validations:
+      required: false
