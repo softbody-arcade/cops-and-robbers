@@ -1,1 +1,1 @@
-{"private": true, "type": "module", "dependencies": {"@vue/compiler-sfc": "3.5.43", "sass": "1.105.0", "vue": "3.5.43"}}
+{"private": true, "type": "module", "dependencies": {"@vue/compiler-sfc": "3.5.43", "sass": "1.105.0", "vue": "3.5.46"}}
