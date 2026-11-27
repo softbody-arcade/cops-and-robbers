@@ -26,6 +26,7 @@ esac
 case $tool in
     bash) echo "GNU bash, version ${BASH_REPORT:-4.4.23}(1)-release" ;;
     git)
+        [[ $1 != config ]] || printf '%s\n' "$PWD" >> "$PWD_LOG"
         case "$*" in
             --version) echo "git version ${GIT_REPORT:-2.56.1}" ;;
             'config user.email') printf '%s\n' "${EMAIL_REPORT-123+contributor@$noreply_domain}" ;;
@@ -40,7 +41,8 @@ case $tool in
                 [[ ${GH_PROMPT_DISABLED:-} == 1 && ${NO_COLOR:-} == 1 ]] || exit 2
                 case ${GH_LOGGED_IN:-yes} in
                     no) exit 1 ;;
-                    network) printf "Failed to log in: The token in keyring is invalid\n- Error: %s\n" "$GH_ERROR" >&2; exit 1 ;;
+                    network) printf '%s\n' 'github.com' '  X Failed to log in to github.com using token (GH_TOKEN)' '  - Active account: true' '  - The token in GH_TOKEN is invalid.' "  - Error: Post \"https://api.github.com/graphql\": proxyconnect tcp: $GH_ERROR" >&2; exit 1 ;;
+                    timeout) printf '%s\n' '  X Timeout trying to log in to github.com account test (keyring)' >&2; exit 1 ;;
                     offline)
                         printf '%s\n' 'error connecting to api.github.com' 'Check your internet connection or https://githubstatus.com' >&2
                         exit 1 ;;
@@ -50,7 +52,9 @@ case $tool in
                     '  - Active account: true' \
                     '  - Git operations protocol: https' \
                     '  - Token: gho_fixture_masked' >&2
-                if [[ ${CLICOLOR_FORCE:-0} == 1 ]]; then
+                if [[ ${OMIT_SCOPES:-no} == yes ]]; then
+                    :
+                elif [[ ${CLICOLOR_FORCE:-0} == 1 ]]; then
                     printf '  - \033[1mToken scopes:\033[0m %s\n' "${GH_SCOPES-$default_scopes}" >&2
                 else
                     printf '  - Token scopes: %s\n' "${GH_SCOPES-$default_scopes}" >&2
@@ -82,7 +86,8 @@ run_doctor() {
     local expected=$1 status=0 lua=lua5.3
     shift
     : > "$bin/calls"
-    output=$(env PATH="$bin" CALL_LOG="$bin/calls" "$@" "$runner" "$repo/scripts/doctor" 2>&1) || status=$?
+    : > "$bin/pwds"
+    output=$(env PATH="$bin" CALL_LOG="$bin/calls" PWD_LOG="$bin/pwds" "$@" "$runner" "$repo/scripts/doctor" 2>&1) || status=$?
     if [[ $status != "$expected" ]]; then
         fail "Expected doctor exit $expected, got $status ($*)"
     fi
@@ -124,7 +129,13 @@ assert_private() {
     fi
 }
 
-(cd /tmp; run_doctor 0)
+mkdir "$bin/elsewhere"
+cd "$bin/elsewhere"
+run_doctor 0
+if [[ $(cat "$bin/pwds") != "$(printf '%s\n%s' "$repo" "$repo")" ]]; then
+    fail 'Git config did not run from the repository root'
+fi
+cd "$repo"
 run_doctor 0
 expect_line 'ok gzip.*'
 expect_line 'ok sha256sum.*'
@@ -175,10 +186,13 @@ expect_line 'missing node.*brew install node.*'
 run_doctor 0 CLICOLOR_FORCE=1
 expect_line 'ok gh project access'
 
-for error in 'dial tcp' 'no such host' 'connection refused' 'i/o timeout' 'network is unreachable'; do
+for error in 'dial tcp 127.0.0.1:9: connect: connection refused' 'dial tcp: lookup api.github.com: no such host' 'connection reset by peer' 'i/o timeout' 'network is unreachable'; do
     run_doctor 1 GH_LOGGED_IN=network GH_ERROR="$error"
     expect_line 'missing gh project access.*network.*'
 done
+
+run_doctor 1 GH_LOGGED_IN=timeout
+expect_line 'missing gh project access.*network.*'
 
 run_doctor 1 GH_LOGGED_IN=offline
 expect_line 'missing gh project access.*network.*'
@@ -186,8 +200,11 @@ expect_line 'missing gh project access.*network.*'
 run_doctor 1 GH_LOGGED_IN=no
 expect_line 'missing gh project access.*gh auth login.*'
 
-run_doctor 1 GH_SCOPES=
-expect_line 'missing gh project access.*token.*'
+run_doctor 1 OMIT_SCOPES=yes
+expect_line 'missing gh project access.*classic token.*'
+
+run_doctor 1 GH_SCOPES=none
+expect_line 'missing gh project access.*gh auth refresh.*'
 
 run_doctor 1 "GH_SCOPES='repo', 'project:read'"
 expect_line 'missing gh project access.*gh auth refresh.*'
@@ -207,8 +224,8 @@ done
 
 rm "$bin/gzip" "$bin/sha256sum"
 run_doctor 1
-expect_line 'missing gzip.*'
-expect_line 'missing sha256sum.*'
+expect_line 'missing gzip.*pacman -S gzip.*apt install gzip.*brew install gzip.*'
+expect_line 'missing sha256sum.*pacman -S coreutils.*apt install coreutils.*brew install coreutils.*'
 
 rm "$bin/lua5.3" "$bin/jq" "$bin/ssh-keygen"
 run_doctor 1

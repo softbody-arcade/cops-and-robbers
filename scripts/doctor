@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
-cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
+script_dir=${BASH_SOURCE[0]%/*}
+[[ $script_dir != "${BASH_SOURCE[0]}" ]] || script_dir=.
+CDPATH= cd -- "$script_dir/.." || exit 1
 
 export LC_ALL=C
 failed=0
@@ -61,12 +63,14 @@ check_project_access() {
     local auth line scopes
     local project_scope='(^|,)[[:blank:]]*(read:project|project)[[:blank:]]*(,|$)'
     if ! auth=$(GH_PROMPT_DISABLED=1 NO_COLOR=1 CLICOLOR_FORCE=0 gh auth status --active --hostname github.com --no-refresh 2>&1); then
+        shopt -s nocasematch
         case "$auth" in
-            *"couldn't connect"*|*"could not connect"*|*"error connecting"*|*"timeout trying to log in"*|*"- Error:"*"dial tcp"*|*"- Error:"*"no such host"*|*"- Error:"*"connection refused"*|*"- Error:"*"i/o timeout"*|*"- Error:"*"network is unreachable"*)
+            *"couldn't connect"*|*"could not connect"*|*"error connecting"*|*"timeout trying to log in"*|*"- Error:"*"dial tcp"*|*"- Error:"*"no such host"*|*"- Error:"*"connection refused"*|*"- Error:"*"i/o timeout"*|*"- Error:"*"network is unreachable"*|*"- Error:"*"connection reset by peer"*)
                 report missing 'gh project access — check your network connection to GitHub, then rerun make doctor' ;;
             *)
                 report missing 'gh project access — run gh auth login --hostname github.com, then gh auth refresh --hostname github.com -s read:project' ;;
         esac
+        shopt -u nocasematch
         return
     fi
 
@@ -98,8 +102,8 @@ check_tool python3 python3 --version '' 'Install Python (pacman -S python, apt i
 check_tool node node --version 22 'Install Node 22 or newer (pacman -S nodejs, apt install nodejs, brew install node) or see https://nodejs.org/download.'
 check_tool npm npm --version '' 'Install npm (pacman -S npm, apt install npm, brew install node).'
 check_tool zip zip -v '' 'Install Zip (pacman -S zip, apt install zip, brew install zip).'
-check_tool gzip gzip --version '' 'Install gzip.'
-check_tool sha256sum sha256sum --version '' 'Install GNU coreutils.'
+check_tool gzip gzip --version '' 'Install gzip (pacman -S gzip, apt install gzip, brew install gzip).'
+check_tool sha256sum sha256sum --version '' 'Install GNU coreutils for sha256sum (pacman -S coreutils, apt install coreutils, brew install coreutils).'
 check_tool unzip unzip -v '' 'Install UnZip (pacman -S unzip, apt install unzip, brew install unzip).'
 check_tool rsync rsync --version '' 'Install rsync (pacman -S rsync, apt install rsync, brew install rsync).'
 check_tool tar tar --version '' 'Install GNU tar (pacman -S tar or apt install tar). On macOS, run brew install gnu-tar, then put its gnubin directory first on PATH.' 'GNU tar'
