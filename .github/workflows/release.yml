@@ -128,7 +128,8 @@ jobs:
     steps:
       - name: Open the PR that merges main back into develop
         run: |
-          open="$(gh pr list --base develop --head main --state open --json number --jq '.[].number')"
+          open="$(gh pr list --base develop --head main --state open --limit 100 --json number,isCrossRepository \
+            --jq '.[] | select(.isCrossRepository | not) | .number')"
           if [[ -n "$open" ]]; then
             echo "Sync PR #$open is already open"
             exit 0

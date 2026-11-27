@@ -56,6 +56,7 @@ fixture() {
     cd "$dir/work"
     mkdir -p scripts server/CopsAndRobbers client/lua/ge/extensions client/mod_info/CopsAndRobbers docs
     cp "$ROOT/scripts/version.sh" scripts/
+    cp "$ROOT/Makefile" .
     echo 'local VERSION = "1.0.0"' > server/CopsAndRobbers/main.lua
     echo 'local CLIENT_VERSION = "1.0.0"' > client/lua/ge/extensions/copsAndRobbers.lua
     echo '{ "version_string": "1.0.0" }' > client/mod_info/CopsAndRobbers/info.json
@@ -208,9 +209,26 @@ work="$(fixture hotfix)"
 git -C "$work" commit -q --allow-empty -m "ticket on develop"
 git -C "$work" push -q origin HEAD:develop
 git -C "$work" reset -q --hard HEAD^
-RELEASE_FROM=main run_version "$work"
+: > "$tmp/gh.log"
+set +e
+make -s -C "$work" version V=1.1.0 FROM=main LUA=fake-lua > "$tmp/out" 2>&1
+echo $? > "$tmp/status"
+set -e
 check "a hotfix release with FROM=main branches from main" '[[ $(cat "$tmp/status") == 0 && $(git -C "$work/../origin.git" rev-parse release/1.1.0^) == $(git -C "$work/../origin.git" rev-parse main) ]]'
 check "a release PR always targets main" 'grep -q "^pr create.*--base main" "$tmp/gh.log"'
+
+work="$(fixture reuse)"
+sed -i 's/1.0.0/1.1.0/' "$work/server/CopsAndRobbers/main.lua"
+git -C "$work" commit -qam "release 1.1.0"
+git -C "$work" push -q origin HEAD:main
+git -C "$work" reset -q --hard HEAD^
+run_version "$work"
+check "a version already released on main is refused" '[[ $(cat "$tmp/status") == 1 ]] && grep -q "must be greater than 1.1.0" "$tmp/out" && ! git -C "$work/../origin.git" show-ref --verify --quiet refs/heads/release/1.1.0'
+
+work="$(fixture tagged)"
+git -C "$work" push -q origin HEAD:refs/tags/v1.1.0
+run_version "$work"
+check "an existing v1.1.0 tag is refused" '[[ $(cat "$tmp/status") == 1 ]] && grep -q "v1.1.0 already exists" "$tmp/out"'
 
 work="$(fixture badfrom)"
 RELEASE_FROM=feature run_version "$work"
