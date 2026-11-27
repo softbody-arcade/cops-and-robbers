@@ -142,7 +142,7 @@ Add source comments or emojis only when the maintainer asks for them.
   - Use freeroam for console experiments, and request screenshots for placement or visual tuning.
   - Ask before deleting a probe from the maintainer's game folder.
 - **Releases.**
-  - `make version V=x.y.z` on an up-to-date `main` opens the PR **Release x.y.z**.
+  - `make version V=x.y.z` builds the version commit on top of `origin/main` without touching the checkout, pushes `release/x.y.z` and opens the PR **Release x.y.z**.
   - Merging it is the approval to release: `release.yml` tags the merge commit and publishes the GitHub Release with the ZIP, tarball and checksums.
   - Agents merge a release PR only after the maintainer said, in the current session, to release that version.
   - Version numbers stay out of feature plans and branches. Tests use `CNR_VERSION`.
