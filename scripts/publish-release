@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+refuse() {
+  echo "$*" >&2
+  exit 1
+}
+
+version="${1:-}"
+sha="${2:-}"
+dir="${3:-}"
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || refuse "usage: publish-release x.y.z <commit sha> <asset dir>"
+[[ "$sha" =~ ^[0-9a-f]{40}$ ]] || refuse "expected a full commit sha, got: $sha"
+[[ -d "$dir" ]] || refuse "no asset directory: $dir"
+[[ -n "${GH_REPO:-}" ]] || refuse "set GH_REPO to owner/repo"
+tag="v$version"
+assets=("$dir"/CopsAndRobbers.zip "$dir"/CopsAndRobbers-server.tar.gz "$dir"/SHA256SUMS)
+for asset in "${assets[@]}"; do
+  [[ -f "$asset" ]] || refuse "missing asset: $asset"
+done
+
+state="$(gh api --paginate "repos/$GH_REPO/releases" \
+  --jq ".[] | select(.tag_name == \"$tag\") | [.draft, .prerelease] | map(tostring) | join(\" \")")" ||
+  refuse "could not list the releases of $GH_REPO"
+[[ "$(grep -c . <<<"$state")" -le 1 ]] || refuse "more than one release uses $tag; fix it by hand"
+if [[ -n "$state" ]]; then
+  read -r draft prerelease <<<"$state"
+  [[ "$prerelease" == false ]] || refuse "$tag is a prerelease; fix it by hand"
+fi
+
+current="$(gh api "repos/$GH_REPO/git/matching-refs/tags/$tag" \
+  --jq ".[] | select(.ref == \"refs/tags/$tag\") | .object.type + \" \" + .object.sha")" ||
+  refuse "could not look up tag $tag"
+if [[ -n "$current" ]]; then
+  [[ "$current" == "commit $sha" ]] || refuse "tag $tag already points at $current, not $sha; fix it by hand"
+else
+  gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$sha" >/dev/null
+fi
+
+if [[ -n "$state" ]]; then
+  existing="$(gh release view "$tag" --json assets --jq '.assets[].name')"
+  published="$(mktemp -d)"
+  trap 'rm -rf "$published"' EXIT
+  for asset in "${assets[@]}"; do
+    name="$(basename "$asset")"
+    if grep -Fxq "$name" <<<"$existing"; then
+      gh release download "$tag" --pattern "$name" --dir "$published" --clobber
+      cmp -s "$published/$name" "$asset" || refuse "$name on the release differs from the rebuilt one; fix the release by hand"
+    fi
+  done
+  for asset in "${assets[@]}"; do
+    grep -Fxq "$(basename "$asset")" <<<"$existing" || gh release upload "$tag" "$asset"
+  done
+  [[ "$draft" == false ]] || gh release edit "$tag" --draft=false
+else
+  gh release create "$tag" --verify-tag --title "Cops and Robbers $version" --generate-notes \
+    --notes "Upgrading: Extract the server archive with \`--exclude 'CopsAndRobbers/config.json'\` to preserve your existing settings." "${assets[@]}"
+fi
+
+milestones="$(gh api --paginate "repos/$GH_REPO/milestones?state=open" --jq ".[] | select(.title == \"$version\") | .number")"
+for milestone in $milestones; do
+  gh api --method PATCH "repos/$GH_REPO/milestones/$milestone" -f state=closed >/dev/null
+done
