@@ -15,6 +15,19 @@ For contributors:
 
 Run `make doctor` to check these prerequisites and your contributor setup.
 
+## The base submodule
+
+`base/` is [arcade-base](https://github.com/softbody-arcade/arcade-base), the shared rules and tooling, pinned to one commit of a base release. `make doctor` reports when `base/` doesn't match the pin; fix it with the step for what it says:
+
+- **Not initialised** (a clone made without `--recurse-submodules`): `git submodule update --init`.
+- **`base/` is at another commit than the pin** (you checked out something inside `base/`): `git submodule update -- base` puts it back at the pin.
+- **The index pins another commit than the last commit** (you staged a pin change you didn't mean): `git restore --staged -- base`, then `git submodule update -- base`.
+- **The index has no base pin** (for example after `git rm --cached base`): `git restore --staged -- base`, then `git submodule update --init -- base`.
+- **The base pin has a merge conflict:** keep this branch's pin with `git restore --source=HEAD --staged -- base` (or the other side's with `--source=MERGE_HEAD`), then `git submodule update --init -- base`.
+- **Moving the pin on purpose** (to a new base release): check out the release commit inside `base/`, `git add base`, and move every arcade-base link to the same commit in the same PR; `make test` checks the links against the staged pin.
+
+Never edit or commit inside `base/`; changes to the base go through a PR in arcade-base.
+
 ## Development
 
 See the compatibility checks for BeamMP and BeamNG.drive updates. [Dependencies](DEPENDENCIES.md)
