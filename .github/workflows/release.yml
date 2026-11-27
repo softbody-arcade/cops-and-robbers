@@ -23,6 +23,8 @@ jobs:
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'pull_request' && github.event.pull_request.merged &&
       github.event.pull_request.head.repo.full_name == github.repository)
+    permissions:
+      pull-requests: read
     runs-on: ubuntu-latest
     outputs:
       sha: ${{ steps.select.outputs.sha }}
@@ -30,6 +32,7 @@ jobs:
     steps:
       - id: select
         env:
+          GH_TOKEN: ${{ github.token }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
           VERSION: ${{ inputs.version }}
@@ -40,31 +43,29 @@ jobs:
             sha="$MERGE_SHA"
           else
             [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Expected version x.y.z' >&2; exit 1; }
-            sha="$GITHUB_SHA"
+            sha="$(gh pr list --repo "$GITHUB_REPOSITORY" --state merged --base main --head "release/$VERSION" \
+              --json mergeCommit --jq '.[].mergeCommit.oid')"
+            [[ "$(wc -w <<<"$sha")" == 1 ]] || { echo "Expected exactly one merged PR from release/$VERSION" >&2; exit 1; }
           fi
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-  publish:
-    permissions:
-      contents: write
-      issues: write
-    concurrency:
-      group: release-${{ needs.select.outputs.version }}
-      cancel-in-progress: false
+  build:
     needs: select
     if: needs.select.outputs.sha != ''
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.select.outputs.version }}
       SHA: ${{ needs.select.outputs.sha }}
     steps:
-      - name: Check out release commit with full history
+      - name: Check out release commit
         uses: actions/checkout@v7
         with:
           ref: ${{ env.SHA }}
-          fetch-depth: 0
+          persist-credentials: false
       - name: Verify release commit
         run: '[[ "$(git rev-parse HEAD)" == "$SHA" ]]'
       - name: Check version
@@ -78,45 +79,38 @@ jobs:
           make test
           find client -name '*.lua' -print0 | xargs -0 -n1 sh -c 'luajit -bl "$0" >/dev/null'
           make package
-      - name: Tag and publish
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ env.VERSION }}-${{ env.SHA }}
+          path: dist/release/
+          retention-days: 7
+
+  publish:
+    needs: [select, build]
+    permissions:
+      contents: write
+      issues: write
+    concurrency:
+      group: release-${{ needs.select.outputs.version }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.select.outputs.version }}
+      SHA: ${{ needs.select.outputs.sha }}
+    steps:
+      - name: Check out the publish script
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SHA }}
+          persist-credentials: false
+          sparse-checkout: scripts/publish-release
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-${{ env.VERSION }}-${{ env.SHA }}
+          path: ${{ runner.temp }}/release
+      - name: Tag, publish and close the milestone
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          ref="refs/tags/v$VERSION"
-          git push origin "$SHA:$ref"
-          remote_tag="$(git ls-remote --exit-code --refs origin "$ref")"
-          [[ "$remote_tag" == "$SHA"$'\t'"$ref" ]]
-          assets=(dist/release/*)
-          if gh release view "v$VERSION" >/dev/null 2>&1; then
-            existing="$(gh release view "v$VERSION" --json assets --jq '.assets[].name')"
-            published="$RUNNER_TEMP/published"
-            mkdir -p "$published"
-            for asset in "${assets[@]}"; do
-              name="$(basename "$asset")"
-              if grep -Fxq "$name" <<<"$existing"; then
-                gh release download "v$VERSION" --pattern "$name" --dir "$published" --clobber
-                if ! cmp -s "$published/$name" "$asset"; then
-                  echo "$name on the release differs from the rebuilt one; fix the release by hand" >&2
-                  exit 1
-                fi
-              fi
-            done
-            for asset in "${assets[@]}"; do
-              if ! grep -Fxq "$(basename "$asset")" <<<"$existing"; then
-                gh release upload "v$VERSION" "$asset"
-              fi
-            done
-            gh release edit "v$VERSION" --draft=false
-          else
-            gh release create "v$VERSION" --verify-tag --title "Cops and Robbers $VERSION" --generate-notes \
-              --notes "Upgrading: Extract the server archive with \`--exclude 'CopsAndRobbers/config.json'\` to preserve your existing settings." "${assets[@]}"
-          fi
-      - name: Close release milestone
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          milestone="$(gh api --paginate 'repos/{owner}/{repo}/milestones?state=open' |
-            jq -r --arg version "$VERSION" '.[] | select(.title == $version) | .number')"
-          if [[ -n "$milestone" ]]; then
-            gh api --method PATCH "repos/{owner}/{repo}/milestones/$milestone" -f state=closed
-          fi
+          GH_REPO: ${{ github.repository }}
+        run: scripts/publish-release "$VERSION" "$SHA" "$RUNNER_TEMP/release"

@@ -23,9 +23,12 @@ body="Merging this PR publishes the release. Deployment is separate."
 files=(server/CopsAndRobbers/main.lua client/lua/ge/extensions/copsAndRobbers.lua client/mod_info/CopsAndRobbers/info.json docs/FEATURES.md)
 
 command -v gh >/dev/null || refuse "gh is required to open the release PR"
+origin_url="$(git config --get remote.origin.url || true)"
+[[ "$origin_url" =~ github\.com[:/]([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)$ ]] || refuse "origin must be a GitHub repository, got: $origin_url"
+repo="${BASH_REMATCH[1]%.git}"
 gh auth status >/dev/null 2>&1 || refuse "authenticate gh before starting a release"
 git fetch origin '+refs/heads/main:refs/remotes/origin/main'
-base="$(git rev-parse origin/main)"
+base="$(git rev-parse --verify --end-of-options refs/remotes/origin/main^{commit})"
 set +e
 git ls-remote --exit-code --heads origin "refs/heads/$release" >/dev/null
 lookup=$?
@@ -63,7 +66,7 @@ commit="$(git commit-tree "${sign[@]}" "$(git write-tree)" -p "$base" -m "chore:
 unset GIT_INDEX_FILE
 
 git push --force-with-lease="refs/heads/$release:" origin "$commit:refs/heads/$release"
-if ! gh pr create --base main --head "$release" --title "$title" --body "$body"; then
-  echo "$release is pushed but its PR was not opened; run: gh pr create --base main --head $release --title \"$title\" --body \"$body\"" >&2
+if ! gh pr create --repo "$repo" --base main --head "$release" --title "$title" --body "$body"; then
+  echo "$release is pushed but its PR was not opened; run: gh pr create --repo $repo --base main --head $release --title \"$title\" --body \"$body\"" >&2
   exit 1
 fi

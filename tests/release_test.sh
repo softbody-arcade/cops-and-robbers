@@ -22,7 +22,7 @@ cat > "$tmp/bin/gh" <<'STUB'
 #!/usr/bin/env bash
 case "$1 $2" in
   'auth status') exit 0 ;;
-  'pr create') exit "${GH_PR_STATUS:-0}" ;;
+  'pr create') [[ " $* " == *" --repo test/repo "* ]] || exit 3; exit "${GH_PR_STATUS:-0}" ;;
 esac
 exit 1
 STUB
@@ -50,7 +50,8 @@ fixture() {
     echo readme > README.md
     git add -A
     git commit -qm fixture
-    git remote add origin "$dir/origin.git"
+    git remote add origin https://github.com/test/repo.git
+    git config url."$dir/origin.git".insteadOf https://github.com/test/repo.git
     git push -q origin main
   )
   echo "$dir/work"
@@ -111,7 +112,7 @@ check "an existing release branch on origin is refused" '[[ $(cat "$tmp/status")
 work="$(fixture pr)"
 GH_PR_STATUS=1 run_version "$work"
 check "a failed PR keeps the pushed branch" 'git -C "$work/../origin.git" show-ref --verify --quiet refs/heads/release/1.1.0'
-check "a failed PR prints a retry with title and body" 'grep -Fq -- "--title \"Release 1.1.0\" --body \"Merging this PR publishes the release. Deployment is separate.\"" "$tmp/out"'
+check "a failed PR prints a retry with repo, title and body" 'grep -Fq -- "--repo test/repo --base main --head release/1.1.0 --title \"Release 1.1.0\" --body \"Merging this PR publishes the release. Deployment is separate.\"" "$tmp/out"'
 check "a failed PR fails the release" '[[ $(cat "$tmp/status") == 1 ]]'
 
 work="$(fixture ok)"
@@ -140,6 +141,17 @@ git -C "$work" config commit.gpgsign true
 run_version "$work"
 check "a release commit is signed when signing is on" '[[ $(cat "$tmp/status") == 0 ]] && git -C "$work/../origin.git" cat-file commit release/1.1.0 | grep -q "^gpgsig "'
 
+work="$(fixture shadow)"
+git -C "$work" commit -q --allow-empty -m "local only"
+git -C "$work" branch origin/main
+run_version "$work"
+check "a local branch named origin/main is not the release base" '[[ $(git -C "$work/../origin.git" rev-parse release/1.1.0^) == $(git -C "$work/../origin.git" rev-parse main) ]]'
+
+work="$(fixture not-github)"
+git -C "$work" remote set-url origin "$work/../origin.git"
+run_version "$work"
+check "an origin outside GitHub is refused" '[[ $(cat "$tmp/status") == 1 ]] && grep -q "must be a GitHub repository" "$tmp/out"'
+
 work="$(fixture older)"
 (cd "$work" && scripts/version.sh 0.9.0) > "$tmp/out" 2>&1 && echo 0 > "$tmp/status" || echo $? > "$tmp/status"
 check "an older version is refused" '[[ $(cat "$tmp/status") == 1 ]] && grep -q "must be greater" "$tmp/out"'
@@ -147,10 +159,10 @@ check "an older version is refused" '[[ $(cat "$tmp/status") == 1 ]] && grep -q 
 pkg="$tmp/package"
 mkdir -p "$pkg"
 cp -r "$ROOT/Makefile" "$ROOT/client" "$ROOT/server" "$pkg/"
-make -s -C "$pkg" package SOURCE_DATE_EPOCH=1700000000 >/dev/null
+make -s -C "$pkg" package >/dev/null
 cp "$pkg/dist/release/SHA256SUMS" "$tmp/first"
 find "$pkg/client" "$pkg/server" -exec touch -h -d '2001-02-03 04:05:06' {} +
-TZ=Asia/Tokyo make -s -C "$pkg" package SOURCE_DATE_EPOCH=1700000000 >/dev/null
+TZ=Asia/Tokyo SOURCE_DATE_EPOCH=1 make -s -C "$pkg" package >/dev/null
 check "repackaging the same source gives the same checksums" 'cmp -s "$tmp/first" "$pkg/dist/release/SHA256SUMS"'
 check "packaging leaves file times in dist/Server alone" '[[ $(stat -c %Y "$pkg/dist/Server/CopsAndRobbers/main.lua") == $(stat -c %Y "$pkg/server/CopsAndRobbers/main.lua") ]]'
 check "the client zip holds the mod folders" 'unzip -Z1 "$pkg/dist/release/CopsAndRobbers.zip" | grep -x "mod_info/CopsAndRobbers/info.json" >/dev/null'
@@ -159,13 +171,13 @@ for module in strikeSchedule groundingWeather; do
 done
 umask_pkg="$tmp/package-umask"
 mkdir -p "$umask_pkg"
-(umask 077 && cp -r "$ROOT/Makefile" "$ROOT/client" "$ROOT/server" "$umask_pkg/" && chmod -R go-rwx "$umask_pkg" && make -s -C "$umask_pkg" package SOURCE_DATE_EPOCH=1700000000 >/dev/null)
+(umask 077 && cp -r "$ROOT/Makefile" "$ROOT/client" "$ROOT/server" "$umask_pkg/" && chmod -R go-rwx "$umask_pkg" && make -s -C "$umask_pkg" package >/dev/null)
 check "a different umask gives the same checksums" 'cmp -s "$tmp/first" "$umask_pkg/dist/release/SHA256SUMS"'
 setgid_pkg="$tmp/package-setgid"
 mkdir -p "$setgid_pkg"
 chmod g+s "$setgid_pkg"
 cp -r "$ROOT/Makefile" "$ROOT/client" "$ROOT/server" "$setgid_pkg/"
-make -s -C "$setgid_pkg" package SOURCE_DATE_EPOCH=1700000000 >/dev/null
+make -s -C "$setgid_pkg" package >/dev/null
 check "a setgid build folder gives the same checksums" 'cmp -s "$tmp/first" "$setgid_pkg/dist/release/SHA256SUMS"'
 broken="$tmp/package-broken"
 mkdir -p "$broken/bin"
@@ -174,7 +186,61 @@ printf '#!/bin/sh
 exit 2
 ' > "$broken/bin/tar"
 chmod +x "$broken/bin/tar"
-check "a failing tar fails the package" '! PATH="$broken/bin:$PATH" make -s -C "$broken" package SOURCE_DATE_EPOCH=1700000000 >/dev/null 2>&1'
+check "a failing tar fails the package" '! PATH="$broken/bin:$PATH" make -s -C "$broken" package >/dev/null 2>&1'
+
+pub="$tmp/publish"
+mkdir -p "$pub/bin" "$pub/assets"
+printf zip > "$pub/assets/CopsAndRobbers.zip"
+printf tar > "$pub/assets/CopsAndRobbers-server.tar.gz"
+printf sums > "$pub/assets/SHA256SUMS"
+cat > "$pub/bin/gh" <<'STUB'
+#!/usr/bin/env bash
+state="$PUB_STATE"
+echo "$*" >> "$state/log"
+case "$*" in
+  "api repos/test/repo/git/ref/tags/"*) [[ -f $state/tag ]] || exit 1; echo "commit $(cat "$state/tag")" ;;
+  "api --method POST repos/test/repo/git/refs"*) [[ ! -f $state/tag ]] || exit 1; all="$*"; echo "${all##*sha=}" > "$state/tag" ;;
+  "release view "*"isDraft,isPrerelease"*) [[ -d $state/release ]] || exit 1; echo "$(cat "$state/draft") $(cat "$state/pre")" ;;
+  "release view "*"assets"*) ls "$state/release" ;;
+  "release download "*) cp "$state/release/$5" "$7/" ;;
+  "release upload "*) cp "$4" "$state/release/" ;;
+  "release edit "*) echo false > "$state/draft" ;;
+  "release create "*) mkdir -p "$state/release"; echo false > "$state/draft"; echo false > "$state/pre"; for a in "$@"; do [[ -f $a ]] && cp "$a" "$state/release/"; done; true ;;
+  "api --paginate repos/test/repo/milestones"*) echo 7 ;;
+  "api --method PATCH repos/test/repo/milestones/7"*) touch "$state/milestone-closed" ;;
+  *) exit 1 ;;
+esac
+STUB
+chmod +x "$pub/bin/gh"
+sha=0123456789abcdef0123456789abcdef01234567
+other=fedcba9876543210fedcba9876543210fedcba98
+publish() {
+  set +e
+  PUB_STATE="$1" GH_REPO=test/repo PATH="$pub/bin:$PATH" "$ROOT/scripts/publish-release" 1.1.0 "${2:-$sha}" "$pub/assets" > "$tmp/out" 2>&1
+  echo $? > "$tmp/status"
+  set -e
+}
+state="$pub/new"; mkdir -p "$state"
+publish "$state"
+check "publish tags the release commit" '[[ $(cat "$tmp/status") == 0 && $(cat "$state/tag") == "$sha" ]]'
+check "publish uploads all three assets" '[[ $(ls "$state/release" | wc -l) == 3 ]]'
+check "publish closes the milestone" '[[ -f $state/milestone-closed ]]'
+
+state="$pub/moved"; mkdir -p "$state"; echo "$other" > "$state/tag"
+publish "$state"
+check "publish refuses a tag at another commit" '[[ $(cat "$tmp/status") == 1 && ! -d $state/release ]] && grep -q "already points at" "$tmp/out"'
+
+state="$pub/pre"; mkdir -p "$state/release"; echo "$sha" > "$state/tag"; echo true > "$state/draft"; echo true > "$state/pre"
+publish "$state"
+check "publish refuses a prerelease draft" '[[ $(cat "$tmp/status") == 1 && $(cat "$state/draft") == true && ! -f $state/milestone-closed ]] && [[ -z $(ls "$state/release") ]]'
+
+state="$pub/differs"; mkdir -p "$state/release"; echo "$sha" > "$state/tag"; echo true > "$state/draft"; echo false > "$state/pre"; printf other > "$state/release/CopsAndRobbers.zip"
+publish "$state"
+check "publish refuses a retained asset that differs" '[[ $(cat "$tmp/status") == 1 && ! -f $state/release/SHA256SUMS && $(cat "$state/draft") == true ]]'
+
+state="$pub/partial"; mkdir -p "$state/release"; echo "$sha" > "$state/tag"; echo true > "$state/draft"; echo false > "$state/pre"; printf zip > "$state/release/CopsAndRobbers.zip"
+publish "$state"
+check "publish completes a partial draft" '[[ $(cat "$tmp/status") == 0 && $(ls "$state/release" | wc -l) == 3 && $(cat "$state/draft") == false && -f $state/milestone-closed ]]'
 
 if ((failures)); then
   echo "$failures release checks failed"
