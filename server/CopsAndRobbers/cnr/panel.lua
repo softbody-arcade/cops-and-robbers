@@ -1,3 +1,4 @@
+local settings = require("arcade.settings")
 local config = require("cnr.config")
 
 local M = {}
@@ -106,68 +107,8 @@ function M.signature(t)
   return "{" .. table.concat(parts, ",") .. "}"
 end
 
-local function validListValue(v)
-  if type(v) == "string" then return true end
-  if type(v) ~= "table" then return false end
-  local n = 0
-  for _ in pairs(v) do n = n + 1 end
-  if n ~= #v then return false end
-  for _, item in ipairs(v) do
-    if type(item) ~= "string" and type(item) ~= "number" then return false end
-  end
-  return true
-end
-
-local function toText(v)
-  if type(v) == "number" then return string.format("%.10g", v) end
-  if type(v) == "table" then
-    local items = {}
-    for _, item in ipairs(v) do items[#items + 1] = tostring(item) end
-    return table.concat(items, ", ")
-  end
-  return tostring(v)
-end
-
 function M.applyValues(raw, values)
-  if type(values) ~= "table" then return nil, "Nothing to save" end
-  local keys = {}
-  for k in pairs(values) do
-    if type(k) ~= "string" then return nil, "Nothing to save" end
-    keys[#keys + 1] = k
-  end
-  if #keys == 0 then return nil, "Nothing to save" end
-  table.sort(keys, function(a, b)
-    local am, bm = config.TIMING_RANGES[a] ~= nil, config.TIMING_RANGES[b] ~= nil
-    if am ~= bm then return am end
-    return a < b
-  end)
-  for _, key in ipairs(keys) do
-    if type(config.DEFAULTS[key]) == "table" and not validListValue(values[key]) then
-      return nil, "Invalid value for " .. key
-    end
-  end
-  local updated, pending = raw or {}, keys
-  while #pending > 0 do
-    local failed, firstErr = {}, nil
-    for _, key in ipairs(pending) do
-      local nextCfg, err = config.setValue(updated, key, toText(values[key]))
-      if nextCfg then
-        updated = nextCfg
-      else
-        failed[#failed + 1] = key
-        firstErr = firstErr or err
-      end
-    end
-    if #failed == #pending then return nil, firstErr end
-    pending = failed
-  end
-  local _, warnings = config.merge(updated)
-  for _, w in ipairs(warnings) do
-    for _, key in ipairs(keys) do
-      if w:find(key .. " ", 1, true) == 1 then return nil, "Invalid value for " .. key .. ": " .. toText(values[key]) end
-    end
-  end
-  return updated, keys
+  return settings.applyValues(raw, values, config.declaration)
 end
 
 return M

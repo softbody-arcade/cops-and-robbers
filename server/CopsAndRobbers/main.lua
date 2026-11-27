@@ -26,6 +26,7 @@ local stationsDir = dataDir .. "stations/"
 local leaderboardPath = dataDir .. "leaderboard.json"
 local buildPath = dataDir .. "build.json"
 local currentBuild
+local settings = require("arcade.settings").new(pluginDir .. "config.json", config.declaration, log)
 local playerColors = require("arcade.playerColors").new(dataDir .. "colors.json", r, messages)
 
 local cfg
@@ -94,12 +95,8 @@ local lastPanelError
 local lastLobbyError
 
 local function loadConfig()
-  local raw, corrupt = store.decode(pluginDir .. "config.json")
-  if corrupt then log("config.json is not valid JSON, using defaults") end
-  rawConfig = type(raw) == "table" and raw or {}
   local warnings
-  cfg, warnings = config.merge(raw)
-  for _, w in ipairs(warnings) do log("config: " .. w) end
+  cfg, warnings, rawConfig = settings:load()
 end
 
 local function loadLeaderboard()
@@ -766,7 +763,7 @@ function handlers.auto(pid, cmd)
   local arg = cmd.args[1] and cmd.args[1]:lower()
   if arg ~= "on" and arg ~= "off" then arg = cfg.autoNextRound and "off" or "on" end
   local updated = config.setValue(rawConfig, "autoNextRound", arg)
-  store.write(pluginDir .. "config.json", Util.JsonPrettify(Util.JsonEncode(updated)))
+  settings:save(updated)
   loadConfig()
   current.cfg = cfg
   pushRules()
@@ -959,7 +956,7 @@ local function panelSettings(pid, values, id)
   if current:isActive() then return answer(false, "Stop the round first") end
   local updated, keys = panel.applyValues(rawConfig, values)
   if not updated then return answer(false, keys) end
-  store.write(pluginDir .. "config.json", Util.JsonPrettify(Util.JsonEncode(updated)))
+  settings:save(updated)
   loadConfig()
   current = round.new(cfg)
   answer(true, "Saved", keys)
