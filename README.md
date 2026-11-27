@@ -178,7 +178,7 @@ The thunder clips use three CC0 originals. To recreate the shipped clips, use [t
 
 See the compatibility checks for BeamMP and BeamNG.drive updates. [Dependencies](docs/DEPENDENCIES.md)
 
-The repository is also an [Obsidian](https://obsidian.md) vault for reading the specs, plans and other docs: open the repository folder with **Open folder as vault**. The shared `.obsidian/app.json` keeps links in the plain Markdown format GitHub shows, and keeps the code and build folders out of search, the graph and link suggestions. Your own Obsidian settings stay local.
+The repository is also an [Obsidian](https://obsidian.md) vault for reading the specs, plans and other docs: open the repository folder with **Open folder as vault**. The shared `.obsidian/app.json` holds the vault settings: links in the plain Markdown format GitHub shows, and the code and build folders kept out of search and the graph (Obsidian still lists them in the file tree and ranks them low in link suggestions). Workspace layout, themes and plugins stay local.
 
 Run `python3 tools/previews/generate.py` to rebuild the app picker thumbnails from the mod logo and the names in each app's `app.json`. The generator uses Pillow and the DejaVu Sans Bold font.
 
