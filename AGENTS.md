@@ -154,7 +154,7 @@ Hooks, Make targets and scripts run with the credentials of whoever runs them, a
     4. Run `make install-local TESTSERVER="$test_server"`.
   - **A contributor's PR:** staging it runs its Makefile, packaging and server Lua under the maintainer's account, and no recipe on that account makes this safe. Agents never stage a contributor's PR. Until an isolated test server exists (#40), the maintainer decides per PR, after reviewing the whole diff, whether to playtest it and how.
   - **`develop` itself:** to test several merged tickets together, follow the same steps with `git archive origin/develop` (after `git fetch`). Their PRs are merged, so record the session as an `In-game check` issue that lists the tickets and checks (`board new in-game-check <priority> "<title>" --body-file F`, then `board move <n> playtest`), and report it with `board result <n> pass|fail`; skip `--staged`.
-  - After installing, restart the local BeamMP server and, from the maintainer's checkout of `develop` (not the snapshot), record the SHA with `scripts/board move <n> playtest --staged <sha>`. The maintainer handles game and launcher restarts.
+  - After installing, restart the local BeamMP server. When staging a single PR, record its head SHA from the maintainer's checkout of `develop` (not the snapshot) with `scripts/board move <n> playtest --staged <sha>`. The maintainer handles game and launcher restarts.
 - **Engine probes (maintainer-only).**
   - Use a temporary GE extension in the game's user folder (`current/lua/ge/extensions/`), and read its tagged output in `current/beamng.log`.
   - Give the maintainer one comment-free GE console line, with statements separated by `;`.
