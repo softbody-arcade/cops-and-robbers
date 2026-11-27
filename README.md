@@ -11,6 +11,8 @@ For contributors:
 - `zip` and `rsync` for packaging
 - `git` 2.41 or newer (the privacy check uses `--attr-source`), and `gh` for the board tooling in `scripts/board`
 
+Run `make doctor` to check these prerequisites and your contributor setup.
+
 ## Install
 
 ```
