@@ -30,7 +30,9 @@ case "$*" in
       {data:{repository:{latestRelease:(if $tag == "" then null else {tagName:$tag,isDraft:$draft,isPrerelease:$pre} end)}}}' |
       jq -r "${!#}"
     ;;
-  'api graphql '*releaseCards*) cat "$RELEASE_CARDS" ;;
+  'api graphql '*releaseCards*)
+    if [[ " $* " == *' --paginate '* ]]; then cat "$RELEASE_CARDS"; else head -n 1 "$RELEASE_CARDS"; fi
+    ;;
   'api graphql '*openLinkedPrs*)
     [[ " $* " == *' --paginate '* && "$*" == *'nodes{url state}'* ]] || exit 9
     jq -n --arg prs "${PRS:-}" --arg merged "${MERGED_PRS:-}" '
@@ -38,13 +40,21 @@ case "$*" in
       {data:{repository:{issue:{closedByPullRequestsReferences:{
         nodes:(links($merged; "MERGED") + links($prs; "OPEN"))}}}}}' | jq -r "${!#}"
     ;;
-  'api graphql '*includeClosedPrs*)
+  'api graphql '*includeClosedPrs:true*)
     case " $* " in
-      *' issue=4 '*) printf '%s\n' - merged-sha ;;
-      *' issue=5 '*) echo unreleased-sha ;;
-      *' issue=6 '*) echo - ;;
+      *' issue=4 '*) nodes='[{"merged":false,"mergeCommit":null},{"merged":true,"mergeCommit":{"oid":"merged-sha"}}]' ;;
+      *' issue=2 '*|*' issue=5 '*) nodes='[{"merged":true,"mergeCommit":{"oid":"unreleased-sha"}}]' ;;
+      *' issue=6 '*) nodes='[{"merged":false,"mergeCommit":null}]' ;;
+      *' issue=13 '*) nodes='[{"merged":true,"mergeCommit":{"oid":"merged-sha"}}]' ;;
+      *' issue=15 '*) nodes='[{"merged":true,"mergeCommit":null}]' ;;
+      *' issue=17 '*) nodes='[{"merged":true,"mergeCommit":{"oid":"missing-sha"}}]' ;;
+      *) nodes='[]' ;;
     esac
+    jq -nc --argjson nodes "$nodes" --arg args " $* " '
+      ($nodes[:1], (select($args | contains(" --paginate ")) | $nodes[1:] | select(length > 0))) |
+      {data:{repository:{issue:{closedByPullRequestsReferences:{nodes:.}}}}}' | jq -r "${!#}"
     ;;
+  'api repos/'*'/compare/'*...missing-sha*) echo 'gh: Not Found (HTTP 404)' >&2; exit 1 ;;
   'api repos/'*'/compare/'*...merged-sha*) echo "${MERGED_COMPARISON:-identical}" ;;
   'api repos/'*'/compare/'*...unreleased-sha*)
     if [[ ${COMPARE_FAIL:-} ]]; then echo 'compare failed' >&2; exit 7; fi
@@ -422,7 +432,7 @@ guard '#33 is a pull request' parent 1 33
 guard '#33 is a pull request' block 1 --by 33
 guard '#33 is a pull request' unblock 1 --by 33
 export RELEASE_CARDS="$tmp/release-cards"
-jq -n '
+jq -nc '
   def card($number; $lane; $reason; $type):
     {id: "ITEM-\($number)", updatedAt: "2000-01-01T00:00:00Z", isArchived: false, status: {name: $lane},
      content: {number: $number, state: "CLOSED", stateReason: $reason, issueType: {name: $type},
@@ -431,6 +441,7 @@ jq -n '
     card(1; "Accepted"; "NOT_PLANNED"; "Feature"),
     card(2; "Accepted"; "COMPLETED"; "In-game check"),
     card(3; "Accepted"; "COMPLETED"; "Task"),
+    card(17; "Accepted"; "COMPLETED"; "Task"),
     card(4; "Accepted"; "COMPLETED"; "Bug"),
     card(5; "Accepted"; "COMPLETED"; "Bug"),
     card(6; "Accepted"; "COMPLETED"; "Task"),
@@ -442,20 +453,25 @@ jq -n '
     (card(12; "Done"; "COMPLETED"; "Task") | .isArchived = true),
     (card(13; "Accepted"; null; "Task") | .content.state = "OPEN"),
     (card(14; "Done"; null; "Task") | .content.state = "OPEN"),
+    card(15; "Accepted"; "COMPLETED"; "Task"),
+    card(16; "Accepted"; null; "Task"),
     {id:"DRAFT", status:{name:"Accepted"}, content:{}},
     {id:"REDACTED", status:{name:"Accepted"}, content:null}
-  ]}}}}}' > "$RELEASE_CARDS"
+  ]}}}}} | (.data.organization.projectV2.items.nodes |= .[:4]), (.data.organization.projectV2.items.nodes |= .[4:])' > "$RELEASE_CARDS"
 expect 0 '#1 moved to Done' release
 diff -u - "$tmp/out" <<'RELEASE'
 #1 moved to Done
 #2 moved to Done
 #3 moved to Done
+#17 waiting for a release
 #4 moved to Done
 #5 waiting for a release
-#6 waiting for a release
+#6 has no merged PR
 #7 archived
 #11 moved to Done
-#13 waiting for a release
+#13 is still open
+#15 waiting for a release
+#16 has no completion reason or linked PR
 RELEASE
 cp "$tmp/out" "$tmp/release-output"
 [[ $(grep -c 'project item-edit .* --field Status --value Done' "$LOG") == 5 ]]

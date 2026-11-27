@@ -164,31 +164,34 @@ release_prs() {
     repository(owner:$owner,name:$name){issue(number:$issue){closedByPullRequestsReferences(first:50,after:$endCursor,includeClosedPrs:true){
     pageInfo{hasNextPage endCursor} nodes{merged mergeCommit{oid}}}}}}' --jq '
       .data.repository.issue.closedByPullRequestsReferences.nodes[] |
-      if .merged then .mergeCommit.oid // "-" else "-" end'
+      if .merged then .mergeCommit.oid // "-" else "unmerged" end'
 }
 release_action() {
-  local state=$1 reason=$2 type=$3 prs sha comparison
-  if [[ $state == CLOSED ]]; then
-    if [[ $reason == NOT_PLANNED || $reason == DUPLICATE || $type == 'In-game check' ]]; then
-      echo move
-      return
-    fi
-    prs=$(release_prs "$n")
-    if [[ $reason == COMPLETED && -z $prs ]]; then
-      echo move
-      return
-    fi
-    [[ -n $tag ]] || { echo wait; return; }
-    while IFS= read -r sha; do
-      [[ -n $sha && $sha != - ]] || continue
-      comparison=$(gh api "repos/$repo/compare/$tag...$sha" --jq .status)
-      if [[ $comparison == behind || $comparison == identical ]]; then
-        echo move
-        return
-      fi
-    done <<< "$prs"
+  local state=$1 reason=$2 type=$3 prs sha comparison action=unmerged
+  if [[ $state != CLOSED ]]; then echo open; return; fi
+  if [[ $reason == NOT_PLANNED || $reason == DUPLICATE || $type == 'In-game check' ]]; then
+    echo move
+    return
   fi
-  echo wait
+  prs=$(release_prs "$n")
+  if [[ -z $prs ]]; then
+    if [[ $reason == COMPLETED ]]; then echo move; else echo unresolved; fi
+    return
+  fi
+  while IFS= read -r sha; do
+    [[ $sha != unmerged ]] || continue
+    action=wait
+    [[ -n $tag && $sha != - ]] || continue
+    if ! comparison=$(gh api "repos/$repo/compare/$tag...$sha" --jq .status 2>&1); then
+      [[ $comparison == *'(HTTP 404)'* ]] || error "$comparison"
+      continue
+    fi
+    if [[ $comparison == behind || $comparison == identical ]]; then
+      echo move
+      return
+    fi
+  done <<< "$prs"
+  echo "$action"
 }
 owned_entries() {
   gh api --paginate "$1" | jq -c --arg login "$me" '.[] | select(.user.login == $login)'
@@ -283,6 +286,9 @@ case $cmd in
           echo "#$n archived"
         fi
         ;;
+      open) echo "#$n is still open";;
+      unmerged) echo "#$n has no merged PR";;
+      unresolved) echo "#$n has no completion reason or linked PR";;
       wait) echo "#$n waiting for a release";;
     esac
   done
