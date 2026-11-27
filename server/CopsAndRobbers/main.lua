@@ -1,6 +1,7 @@
 local pluginDir = (debug.getinfo(1, "S").source:match("^@?(.*[/\\])") or "./")
 package.path = pluginDir .. "?.lua;" .. package.path
 
+local store = require("arcade.store")
 local vec = require("cnr.vec")
 local config = require("cnr.config")
 local rules = require("cnr.rules")
@@ -70,31 +71,6 @@ math.randomseed(os.time())
 
 local function log(msg) print(PREFIX .. msg) end
 
-local function readFile(path)
-  local f = io.open(path, "r")
-  if not f then return nil end
-  local s = f:read("*a")
-  f:close()
-  return s
-end
-
-local function writeFile(path, content)
-  local tmp = path .. ".tmp"
-  local f = assert(io.open(tmp, "w"))
-  f:write(content)
-  f:close()
-  FS.Remove(path)
-  FS.Rename(tmp, path)
-end
-
-local function decodeFile(path)
-  local s = readFile(path)
-  if not s or s == "" then return nil, false end
-  local ok, value = pcall(Util.JsonDecode, s)
-  if not ok or type(value) ~= "table" then return nil, true end
-  return value, false
-end
-
 local function now() return serverClock:GetCurrent() end
 
 local function placing(pid)
@@ -137,7 +113,7 @@ local function refuse(pid, msg) reply(pid, msg, "warn") end
 local function broadcast(msg, tone) notify(-1, msg, tone) end
 
 local function loadConfig()
-  local raw, corrupt = decodeFile(pluginDir .. "config.json")
+  local raw, corrupt = store.decode(pluginDir .. "config.json")
   if corrupt then log("config.json is not valid JSON, using defaults") end
   rawConfig = type(raw) == "table" and raw or {}
   local warnings
@@ -146,7 +122,7 @@ local function loadConfig()
 end
 
 local function loadLeaderboard()
-  local decoded, corrupt = decodeFile(leaderboardPath)
+  local decoded, corrupt = store.decode(leaderboardPath)
   if not corrupt and not leaderboard.validShape(decoded) then
     corrupt = true
     decoded = nil
@@ -172,7 +148,7 @@ local function loadLeaderboard()
 end
 
 local function loadBuild()
-  local decoded, corrupt = decodeFile(buildPath)
+  local decoded, corrupt = store.decode(buildPath)
   currentBuild = not corrupt and build.normalize(decoded) or nil
   if decoded ~= nil and not currentBuild or corrupt then
     local aside = buildPath .. ".corrupt-" .. os.time()
@@ -184,7 +160,7 @@ local function loadBuild()
 end
 
 local function saveBuild()
-  if currentBuild then writeFile(buildPath, Util.JsonPrettify(Util.JsonEncode(currentBuild))) end
+  if currentBuild then store.write(buildPath, Util.JsonPrettify(Util.JsonEncode(currentBuild))) end
 end
 
 local function backupBuild()
@@ -208,15 +184,15 @@ end
 
 local function saveLeaderboard()
   if leaderboardLocked then return log("leaderboard not saved: the old file could not be moved aside") end
-  writeFile(leaderboardPath, Util.JsonPrettify(Util.JsonEncode(board)))
+  store.write(leaderboardPath, Util.JsonPrettify(Util.JsonEncode(board)))
 end
 
 local function loadColors()
-  colorStore = colors.load((decodeFile(colorsPath)))
+  colorStore = colors.load((store.decode(colorsPath)))
 end
 
 local function saveColors()
-  writeFile(colorsPath, Util.JsonPrettify(Util.JsonEncode(colorStore)))
+  store.write(colorsPath, Util.JsonPrettify(Util.JsonEncode(colorStore)))
 end
 
 local function colorTable(c)
@@ -261,7 +237,7 @@ end
 local function stationsPath() return stationsDir .. mapName .. ".json" end
 
 local function loadStations()
-  local decoded = decodeFile(stationsPath())
+  local decoded = store.decode(stationsPath())
   stations = {}
   for _, s in ipairs(decoded and decoded.stations or {}) do
     local v = vec.toVec(s)
@@ -274,7 +250,7 @@ local function loadStations()
 end
 
 local function saveStations()
-  writeFile(stationsPath(), Util.JsonPrettify(Util.JsonEncode({ stations = stations })))
+  store.write(stationsPath(), Util.JsonPrettify(Util.JsonEncode({ stations = stations })))
 end
 
 local function requestStations(pid)
@@ -853,7 +829,7 @@ function handlers.auto(pid, cmd)
   local arg = cmd.args[1] and cmd.args[1]:lower()
   if arg ~= "on" and arg ~= "off" then arg = cfg.autoNextRound and "off" or "on" end
   local updated = config.setValue(rawConfig, "autoNextRound", arg)
-  writeFile(pluginDir .. "config.json", Util.JsonPrettify(Util.JsonEncode(updated)))
+  store.write(pluginDir .. "config.json", Util.JsonPrettify(Util.JsonEncode(updated)))
   loadConfig()
   current.cfg = cfg
   pushRules()
@@ -1046,7 +1022,7 @@ local function panelSettings(pid, values, id)
   if current:isActive() then return answer(false, "Stop the round first") end
   local updated, keys = panel.applyValues(rawConfig, values)
   if not updated then return answer(false, keys) end
-  writeFile(pluginDir .. "config.json", Util.JsonPrettify(Util.JsonEncode(updated)))
+  store.write(pluginDir .. "config.json", Util.JsonPrettify(Util.JsonEncode(updated)))
   loadConfig()
   current = round.new(cfg)
   answer(true, "Saved", keys)
