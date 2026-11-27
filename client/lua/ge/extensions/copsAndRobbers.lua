@@ -24,7 +24,7 @@ local playerSettings = require("copsAndRobbers/playerSettings")
 local ownLights = require("copsAndRobbers/ownLights")
 local spectator = require("copsAndRobbers/spectator")
 
-local CLIENT_VERSION = "2.14.8"
+local CLIENT_VERSION = "2.15.0"
 local LIGHTS_OFF = "electrics.set_lightbar_signal(0)"
 local SETUP_DELAY = 0.5
 local FREEZE_REASSERT = 0.5
