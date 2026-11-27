@@ -69,7 +69,6 @@ case "$*" in
   'api graphql '*projectV2*)
     status=$LANE
     if grep -q 'issue create --title Deferred' "$LOG"; then status=Inbox; fi
-    if [[ -z ${REOPEN_STUCK:-} ]] && grep -q '^issue reopen' "$LOG"; then status=Inbox; fi
     if [[ -n ${DELAY_INBOX:-} ]]; then
       status=-
       if [[ -f $LOG.slept ]]; then status=Inbox; fi
@@ -119,7 +118,7 @@ case "$*" in
   'pr view '*--json\ body*) echo "${BODY:-}" ;;
   'issue edit '*--milestone\ 9.9.9*) echo 'milestone not found' >&2; exit 7 ;;
   'api repos/'*) echo 123 ;;
-  'api -X '*|'issue edit '*|'label create '*|'issue close '*|'issue reopen '*|'pr edit '*) echo '{}' ;;
+  'api -X '*|'issue edit '*|'label create '*|'issue close '*|'pr edit '*) echo '{}' ;;
   'issue create '*) echo https://github.com/softbody-arcade/cops-and-robbers/issues/1 ;;
   'project item-edit '*--value\ Done)
     if [[ ${MOVE_FAIL:-} ]]; then echo 'move failed' >&2; exit 7; fi
@@ -131,7 +130,7 @@ esac
 STUB
 cat > "$tmp/sleep" <<'STUB'
 #!/usr/bin/env bash
-[[ -n ${DELAY_INBOX:-}${REOPEN_STUCK:-} ]] || exit 99
+[[ -n ${DELAY_INBOX:-} ]] || exit 99
 touch "$LOG.slept"
 STUB
 chmod +x "$tmp/gh" "$tmp/sleep"
@@ -193,25 +192,15 @@ expect 0 Card list
 wrote 'items(first:50,after:$endCursor)'
 wrote 'pageInfo{hasNextPage endCursor}'
 expect 0 'Usage:' --help
-for route in 'Review, Playtest or Accepted' 'reopens a closed issue' 're-stage' 'In-game check' 'Playtest to Backlog' 'move N done'; do
+for route in 'Review or Playtest' 'reopen the issue' 're-stage' 'In-game check' 'Playtest to Backlog' 'move N done'; do
   grep -Fiq -- "$route" "$tmp/out"
 done
 expect 0 'Usage:' -h
 GH_VERSION=2.105.9 expect 2 'requires gh' list
 OWNER_TYPE=User expect 0 Card list --all
 wrote 'user(login:$owner)'
-LANE=Accepted expect 0 '' move 1 build
-wrote '--field Status --value Build'
-! wrote 'issue reopen'
-LANE=Accepted STATE=CLOSED expect 0 '' move 1 build
-wrote 'issue reopen 1'
-[[ $(grep -c '^issue reopen' "$LOG") == 1 ]]
-[[ $(sed -n 's/.*--field Status --value \([A-Za-z]*\).*/\1/p' "$LOG") == Build ]]
-LANE=Accepted STATE=CLOSED REOPEN_STUCK=1 expect 1 'rerun board move 1 build' move 1 build
-! wrote '--field Status'
-LANE=Inbox expect 0 '' move 1 build
-wrote '--field Status --value Build'
-LANE=Inbox TYPE=- FIELD=- guard 'Use start from Next to enter Design or Build' move 1 build
+LANE=Accepted STATE=CLOSED guard 'To rework merged work, reopen #1: the board returns it to Inbox, then triage it again' move 1 build
+LANE=Inbox guard 'Use start from Next to enter Design or Build' move 1 build
 LANE=Review expect 0 '' move 1 build
 wrote '--field Status --value Build'
 ASSIGNED=peer,me,another expect 0 '' start 1 build

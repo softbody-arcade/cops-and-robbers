@@ -8,7 +8,7 @@ shopt -s inherit_errexit
 usage() {
   echo 'Usage: board list [--all] [lane] | waiting [--all] | show N | new TYPE [PRIORITY [EFFORT]] TITLE [--body-file F] | triage N TYPE PRIORITY [EFFORT] | effort N High|Medium|Low | priority N Urgent|High|Medium|Low | start N design|build | move N LANE [--staged SHA] | result N pass|fail|defer [--checks-file F] | release [vX.Y.Z] [--dry-run] | check | parent N PARENT | unparent N | milestone N x.y.z|none | block|unblock N --by M | decide N --file F | labels'
   echo 'Quote multiword titles. Triage moves Inbox cards to Backlog and updates fields in place in other lanes except Done. Omitted effort keeps its value or defaults to Medium.'
-  echo 'Start work from Next with start. Move from Design to Build after plan approval or from Review, Playtest or Accepted to Build for rework. From Accepted, move N build reopens a closed issue and waits for the board to return it to Inbox; a reopened card in Inbox can also move to Build.'
+  echo 'Start work from Next with start. Move from Design to Build after plan approval or from Review or Playtest to Build for rework. To rework merged work in Accepted, reopen the issue: the board returns it to Inbox for triage.'
   echo 'Stage or re-stage a work card with move N playtest --staged SHA using the full local commit SHA of its linked open PR.'
   echo 'Move an In-game check from Inbox, Backlog or Next to Playtest after setting priority. Move it from Playtest to Backlog to defer testing.'
   echo 'Closed issues enter Accepted. Only release can move eligible cards to Done. Board refuses move N done. Release archives closed Done cards after 14 days without updates. Use --dry-run to preview changes.'
@@ -447,26 +447,18 @@ LABELS
       [[ $# == 1 || ( $# == 3 && $2 == --staged ) ]] || bad 'Expected lane [--staged SHA]'
       dest=$(lane_name "$1")
       [[ $dest != Done ]] || refuse 'Use board release to move Accepted cards to Done'
-      if [[ $dest == Build && $lane == Accepted && $state == CLOSED ]]; then
-        issue reopen "$n" >/dev/null
-        for ((wait = 0; ; wait++)); do
-          load
-          [[ $lane != Inbox ]] || break
-          ((wait < 30)) || refuse "The board has not moved #$n back to Inbox yet; rerun board move $n build"
-          sleep 1
-        done
-      fi
+      [[ $lane != Accepted || $dest != Build ]] || refuse "To rework merged work, reopen #$n: the board returns it to Inbox, then triage it again"
       if [[ $lane == Playtest && $dest != Build && $dest != Playtest ]]; then
         [[ $type == 'In-game check' && $dest == Backlog ]] || refuse 'From Playtest, record a result, re-stage, or move to Build for rework'
       fi
-      [[ $dest != Design && ( $dest != Build || $lane =~ ^(Design|Review|Playtest|Accepted)$ || ( $lane == Inbox && $type != - && $field != - ) ) ]] || refuse 'Use start from Next to enter Design or Build'
+      [[ $dest != Design && ( $dest != Build || $lane =~ ^(Design|Review|Playtest)$ ) ]] || refuse 'Use start from Next to enter Design or Build'
       [[ $# != 3 || $type != 'In-game check' ]] || bad 'Unexpected --staged'
       if [[ $type == 'In-game check' && $dest == Playtest && $lane =~ ^(Inbox|Backlog|Next)$ ]]; then
         [[ $field != - ]] || refuse 'Set type and priority first'
         if [[ $size == - ]]; then set_select Effort Medium; fi
       else
         [[ $dest == Inbox ]] || classified
-        [[ $lane != Inbox || $dest == Inbox || ( $dest == Build && $type != - && $field != - ) ]] || refuse 'Use triage to leave Inbox'
+        [[ $lane != Inbox || $dest == Inbox ]] || refuse 'Use triage to leave Inbox'
         [[ $lane != Backlog || $dest =~ ^(Inbox|Backlog|Next)$ ]] || refuse 'Move ready work to Next first'
         [[ $lane != Next || $dest =~ ^(Inbox|Backlog|Next)$ ]] || refuse 'Use start to leave Next for active work'
       fi
