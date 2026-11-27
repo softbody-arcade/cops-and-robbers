@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to publish (x.y.z)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  select:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged &&
+      github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.select.outputs.sha }}
+      version: ${{ steps.select.outputs.version }}
+    steps:
+      - id: select
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            [[ "$HEAD_REF" =~ ^release/([0-9]+\.[0-9]+\.[0-9]+)$ ]] || exit 0
+            VERSION="${BASH_REMATCH[1]}"
+            sha="$MERGE_SHA"
+          else
+            [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Expected version x.y.z' >&2; exit 1; }
+            sha="$GITHUB_SHA"
+          fi
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: select
+    if: needs.select.outputs.sha != ''
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.select.outputs.version }}
+      SHA: ${{ needs.select.outputs.sha }}
+    steps:
+      - name: Check out release commit with full history
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git init
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          gh auth setup-git
+          git fetch origin "$SHA"
+          git checkout --detach FETCH_HEAD
+          [[ "$(git rev-parse HEAD)" == "$SHA" ]]
+      - name: Check version
+        run: |
+          grep -Fx "local VERSION = \"$VERSION\"" server/CopsAndRobbers/main.lua
+          grep -Fx "local CLIENT_VERSION = \"$VERSION\"" client/lua/ge/extensions/copsAndRobbers.lua
+      - name: Test and package
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.3 luajit
+          make test
+          find client -name '*.lua' -print0 | xargs -0 -n1 sh -c 'luajit -bl "$0" >/dev/null'
+          make package
+      - name: Tag and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ref="refs/tags/v$VERSION"
+          git push origin "$SHA:$ref"
+          remote_tag="$(git ls-remote --exit-code --refs origin "$ref")"
+          [[ "$remote_tag" == "$SHA"$'\t'"$ref" ]]
+          gh release create "v$VERSION" --verify-tag --title "Cops and Robbers $VERSION" --generate-notes \
+            dist/Client/CopsAndRobbers.zip dist/CopsAndRobbers-server.tar.gz dist/SHA256SUMS

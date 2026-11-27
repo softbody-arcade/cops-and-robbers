@@ -13,3 +13,11 @@ test("client, mod info and FEATURES carry the server version", function()
     assertEq(versionIn(place[1], place[2]), CNR_VERSION, place[1])
   end
 end)
+
+test("invalid release versions print usage before checking git", function()
+  local output = assert(io.popen("./scripts/version.sh 1.2-beta 2>&1"))
+  local message = output:read("*a")
+  local ok = output:close()
+  assertEq(ok, nil)
+  assertEq(message, "usage: make version V=x.y.z\n")
+end)

@@ -22,6 +22,8 @@ package: clean
 	mkdir -p dist/Client dist/Server
 	cd client && zip -qr ../dist/Client/CopsAndRobbers.zip scripts lua mod_info ui art
 	rsync -a --exclude data server/CopsAndRobbers dist/Server/
+	tar -czf dist/CopsAndRobbers-server.tar.gz -C dist/Server CopsAndRobbers
+	cd dist && sha256sum Client/CopsAndRobbers.zip CopsAndRobbers-server.tar.gz > SHA256SUMS
 
 install-local: package
 	mkdir -p $(TESTSERVER)/Resources/Client $(TESTSERVER)/Resources/Server
@@ -34,6 +36,7 @@ clean:
 deploy: package
 	./scripts/deploy.sh
 
+version: export RELEASE_VERSION := $(value V)
+version: export VERSION_LUA := $(LUA)
 version:
-	./scripts/version.sh $(V)
-	$(LUA) tests/run.lua tests/test_version.lua
+	./scripts/version.sh "$$RELEASE_VERSION"
