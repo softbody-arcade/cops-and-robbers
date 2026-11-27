@@ -489,7 +489,8 @@ LABELS
         if [[ $outcome == fail ]]; then
           marker="Failed in-game check #$original"
           existing=$(find_created "$marker" Bug)
-          if [[ -z $existing ]]; then create Bug '' '' "Failed check: $caption" Inbox --body "$marker"$'\n'"$notes"; fi
+          if [[ -z $existing ]]; then create Bug '' '' "Failed check: $caption" Inbox --body "$marker"$'\n'"$notes"
+          else gh project item-add "$project_number" --owner "$owner" --url "https://github.com/$repo/issues/${existing%%$'\n'*}" >/dev/null; fi
         fi
         comment_once issue "$original" "Playtest $outcome"$'\n'"$notes"
         issue close "$original"

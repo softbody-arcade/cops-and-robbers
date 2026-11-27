@@ -20,6 +20,6 @@ body:
     id: links
     attributes:
       label: Links
-      description: Related issues, specs or plans.
+      description: Specs, plans and outside references. Link related issues with GitHub's parent, sub-issue and blocked-by fields instead.
     validations:
       required: false
