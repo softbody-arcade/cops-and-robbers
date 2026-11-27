@@ -2,11 +2,11 @@
 
 Thanks for helping. Cops and Robbers is a chase minigame for BeamNG.drive multiplayer (BeamMP), part of [Softbody Arcade](https://github.com/softbody-arcade).
 
-The full rules, for people and for coding agents alike, are in [AGENTS.md](AGENTS.md). This page is the short version.
+The full rules, for people and for coding agents alike, are in [AGENTS.md](../AGENTS.md). This page is the short version.
 
 ## Set up
 
-1. Install the prerequisites listed in the [README](README.md#prerequisites).
+1. Install the prerequisites listed in the [README](../README.md#prerequisites).
 2. Clone the repo and run `make hooks` once. This turns on the privacy check that runs before every push.
 3. Commit with your GitHub noreply address (`git config user.email ID+login@users.noreply.github.com`). The privacy check rejects other addresses.
 4. Check everything works: `make test`, `make vuecheck` and `make package`.
@@ -24,7 +24,7 @@ The full rules, for people and for coding agents alike, are in [AGENTS.md](AGENT
 
 1. Create a branch named `feature/<topic>` or `fixes/<topic>`.
 2. Push early, and open a draft pull request that says `Fixes #<issue>`.
-3. Follow the design, test and review rules in [AGENTS.md](AGENTS.md#design-and-implementation).
+3. Follow the design, test and review rules in [AGENTS.md](../AGENTS.md#design-and-implementation).
    - New gameplay gets a short spec and plan first.
    - Every change comes with tests where the result can be checked automatically.
 4. CI must be green: `test`, `luajit`, `vuecheck`, `privacy` and `package`.
@@ -50,4 +50,4 @@ The pre-push hook and CI enforce this with `scripts/privacy-check`.
 
 ## Licence
 
-By contributing you agree that your contribution is licensed under the [MIT Licence](LICENSE).
+By contributing you agree that your contribution is licensed under the [MIT Licence](../LICENSE).
