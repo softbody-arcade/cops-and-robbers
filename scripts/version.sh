@@ -23,9 +23,34 @@ body="Merging this PR publishes the release. Deployment is separate."
 files=(server/CopsAndRobbers/main.lua client/lua/ge/extensions/copsAndRobbers.lua client/mod_info/CopsAndRobbers/info.json docs/FEATURES.md)
 
 command -v gh >/dev/null || refuse "gh is required to open the release PR"
-origin_url="$(git config --get remote.origin.url || true)"
-[[ "$origin_url" =~ github\.com[:/]([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)$ ]] || refuse "origin must be a GitHub repository, got: $origin_url"
-repo="${BASH_REMATCH[1]%.git}"
+github_repo() {
+  local url="$1" host path
+  if [[ "$url" =~ ^(https|ssh)://([^/@]*@)?([^/@:]+)(:[0-9]+)?/(.*)$ ]]; then
+    host="${BASH_REMATCH[3]}"
+    path="${BASH_REMATCH[5]}"
+  elif [[ "$url" =~ ^([^/@:]+@)?([^/@:]+):([^/].*)$ ]]; then
+    host="${BASH_REMATCH[2]}"
+    path="${BASH_REMATCH[3]}"
+  else
+    return 1
+  fi
+  [[ "$host" == github.com || "$host" == ssh.github.com ]] || return 1
+  path="${path%/}"
+  path="${path%.git}"
+  [[ "$path" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || return 1
+  echo "$path"
+}
+
+repo=""
+fetch_urls="$(git config --get-all remote.origin.url || true)"
+push_urls="$(git config --get-all remote.origin.pushurl || true)"
+while IFS= read -r url; do
+  [[ -n "$url" ]] || continue
+  found="$(github_repo "$url")" || refuse "origin must fetch from and push to a GitHub repository"
+  [[ -z "$repo" || "$found" == "$repo" ]] || refuse "origin fetches from or pushes to more than one repository ($repo and $found)"
+  repo="$found"
+done <<<"$fetch_urls"$'\n'"$push_urls"
+[[ -n "$repo" ]] || refuse "origin must fetch from and push to a GitHub repository"
 gh auth status >/dev/null 2>&1 || refuse "authenticate gh before starting a release"
 git fetch origin '+refs/heads/main:refs/remotes/origin/main'
 base="$(git rev-parse --verify --end-of-options refs/remotes/origin/main^{commit})"

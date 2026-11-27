@@ -19,15 +19,21 @@ for asset in "${assets[@]}"; do
   [[ -f "$asset" ]] || refuse "missing asset: $asset"
 done
 
+state=""
+if state="$(gh release view "$tag" --json isDraft,isPrerelease --jq '[.isDraft, .isPrerelease] | map(tostring) | join(" ")' 2>/dev/null)"; then
+  read -r draft prerelease <<<"$state"
+  [[ "$prerelease" == false ]] || refuse "$tag is a prerelease; fix it by hand"
+else
+  state=""
+fi
+
 if current="$(gh api "repos/$GH_REPO/git/ref/tags/$tag" --jq '.object.type + " " + .object.sha' 2>/dev/null)"; then
   [[ "$current" == "commit $sha" ]] || refuse "tag $tag already points at $current, not $sha; fix it by hand"
 else
   gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$sha" >/dev/null
 fi
 
-if state="$(gh release view "$tag" --json isDraft,isPrerelease --jq '[.isDraft, .isPrerelease] | map(tostring) | join(" ")' 2>/dev/null)"; then
-  read -r draft prerelease <<<"$state"
-  [[ "$prerelease" == false ]] || refuse "$tag is a prerelease; fix it by hand"
+if [[ -n "$state" ]]; then
   existing="$(gh release view "$tag" --json assets --jq '.assets[].name')"
   published="$(mktemp -d)"
   trap 'rm -rf "$published"' EXIT

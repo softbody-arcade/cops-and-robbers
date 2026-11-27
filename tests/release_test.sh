@@ -7,6 +7,7 @@ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=Tester GIT_AUTHOR_EMAIL=tester@users.noreply.github.com
 export GIT_COMMITTER_NAME=Tester GIT_COMMITTER_EMAIL=tester@users.noreply.github.com
 failures=0
+at=@
 
 check() {
   if eval "$2"; then
@@ -150,7 +151,28 @@ check "a local branch named origin/main is not the release base" '[[ $(git -C "$
 work="$(fixture not-github)"
 git -C "$work" remote set-url origin "$work/../origin.git"
 run_version "$work"
-check "an origin outside GitHub is refused" '[[ $(cat "$tmp/status") == 1 ]] && grep -q "must be a GitHub repository" "$tmp/out"'
+check "an origin outside GitHub is refused" '[[ $(cat "$tmp/status") == 1 ]] && grep -q "must fetch from and push to a GitHub repository" "$tmp/out"'
+
+work="$(fixture ssh443)"
+git -C "$work" remote set-url origin "ssh://git${at}ssh.github.com:443/test/repo.git"
+git -C "$work" config url."$work/../origin.git".insteadOf "ssh://git${at}ssh.github.com:443/test/repo.git"
+run_version "$work"
+check "GitHub SSH over port 443 is accepted" '[[ $(cat "$tmp/status") == 0 ]]'
+
+work="$(fixture mirror)"
+git -C "$work" remote set-url origin https://mirror.example.test/github.com/test/repo.git
+run_version "$work"
+check "a non-GitHub host is refused" '[[ $(cat "$tmp/status") == 1 ]] && grep -q "must fetch from and push to a GitHub repository" "$tmp/out"'
+
+work="$(fixture secret)"
+git -C "$work" remote set-url origin "https://user:hunter2${at}github.com/test/"
+run_version "$work"
+check "a refused origin never prints its credentials" '[[ $(cat "$tmp/status") == 1 ]] && ! grep -q hunter2 "$tmp/out"'
+
+work="$(fixture split)"
+git -C "$work" config remote.origin.pushurl https://github.com/other/repo.git
+run_version "$work"
+check "an origin that pushes to another repository is refused" '[[ $(cat "$tmp/status") == 1 ]] && grep -q "more than one repository" "$tmp/out" && ! git -C "$work/../origin.git" show-ref --verify --quiet refs/heads/release/1.1.0'
 
 work="$(fixture older)"
 (cd "$work" && scripts/version.sh 0.9.0) > "$tmp/out" 2>&1 && echo 0 > "$tmp/status" || echo $? > "$tmp/status"
@@ -198,14 +220,17 @@ cat > "$pub/bin/gh" <<'STUB'
 state="$PUB_STATE"
 echo "$*" >> "$state/log"
 case "$*" in
-  "api repos/test/repo/git/ref/tags/"*) [[ -f $state/tag ]] || exit 1; echo "commit $(cat "$state/tag")" ;;
-  "api --method POST repos/test/repo/git/refs"*) [[ ! -f $state/tag ]] || exit 1; all="$*"; echo "${all##*sha=}" > "$state/tag" ;;
+  "api repos/test/repo/git/ref/"*) ref="refs/${2#repos/test/repo/git/ref/}"; [[ -f $state/$ref ]] || exit 1; echo "commit $(cat "$state/$ref")" ;;
+  "api --method POST repos/test/repo/git/refs"*)
+    for a in "$@"; do case $a in ref=*) ref="${a#ref=}" ;; sha=*) sha="${a#sha=}" ;; esac; done
+    [[ ! -f $state/$ref ]] || exit 1
+    mkdir -p "$state/$(dirname "$ref")"; echo "$sha" > "$state/$ref" ;;
   "release view "*"isDraft,isPrerelease"*) [[ -d $state/release ]] || exit 1; echo "$(cat "$state/draft") $(cat "$state/pre")" ;;
   "release view "*"assets"*) ls "$state/release" ;;
   "release download "*) cp "$state/release/$5" "$7/" ;;
   "release upload "*) cp "$4" "$state/release/" ;;
   "release edit "*) echo false > "$state/draft" ;;
-  "release create "*) mkdir -p "$state/release"; echo false > "$state/draft"; echo false > "$state/pre"; for a in "$@"; do [[ -f $a ]] && cp "$a" "$state/release/"; done; true ;;
+  "release create "*) [[ " $* " == *" --verify-tag "* && -f $state/refs/tags/$3 ]] || exit 1; mkdir -p "$state/release"; echo false > "$state/draft"; echo false > "$state/pre"; for a in "$@"; do [[ -f $a ]] && cp "$a" "$state/release/"; done; true ;;
   "api --paginate repos/test/repo/milestones"*) echo 7 ;;
   "api --method PATCH repos/test/repo/milestones/7"*) touch "$state/milestone-closed" ;;
   *) exit 1 ;;
@@ -222,23 +247,27 @@ publish() {
 }
 state="$pub/new"; mkdir -p "$state"
 publish "$state"
-check "publish tags the release commit" '[[ $(cat "$tmp/status") == 0 && $(cat "$state/tag") == "$sha" ]]'
+check "publish tags the release commit" '[[ $(cat "$tmp/status") == 0 && $(cat "$state/refs/tags/v1.1.0") == "$sha" ]]'
 check "publish uploads all three assets" '[[ $(ls "$state/release" | wc -l) == 3 ]]'
 check "publish closes the milestone" '[[ -f $state/milestone-closed ]]'
 
-state="$pub/moved"; mkdir -p "$state"; echo "$other" > "$state/tag"
+state="$pub/moved"; mkdir -p "$state"; mkdir -p "$state/refs/tags"; echo "$other" > "$state/refs/tags/v1.1.0"
 publish "$state"
 check "publish refuses a tag at another commit" '[[ $(cat "$tmp/status") == 1 && ! -d $state/release ]] && grep -q "already points at" "$tmp/out"'
 
-state="$pub/pre"; mkdir -p "$state/release"; echo "$sha" > "$state/tag"; echo true > "$state/draft"; echo true > "$state/pre"
+state="$pub/pre"; mkdir -p "$state/release"; mkdir -p "$state/refs/tags"; echo "$sha" > "$state/refs/tags/v1.1.0"; echo true > "$state/draft"; echo true > "$state/pre"
 publish "$state"
 check "publish refuses a prerelease draft" '[[ $(cat "$tmp/status") == 1 && $(cat "$state/draft") == true && ! -f $state/milestone-closed ]] && [[ -z $(ls "$state/release") ]]'
 
-state="$pub/differs"; mkdir -p "$state/release"; echo "$sha" > "$state/tag"; echo true > "$state/draft"; echo false > "$state/pre"; printf other > "$state/release/CopsAndRobbers.zip"
+state="$pub/pre-untagged"; mkdir -p "$state/release"; echo true > "$state/draft"; echo true > "$state/pre"
+publish "$state"
+check "publish refuses a prerelease before creating its tag" '[[ $(cat "$tmp/status") == 1 && ! -e $state/refs/tags/v1.1.0 ]]'
+
+state="$pub/differs"; mkdir -p "$state/release"; mkdir -p "$state/refs/tags"; echo "$sha" > "$state/refs/tags/v1.1.0"; echo true > "$state/draft"; echo false > "$state/pre"; printf other > "$state/release/CopsAndRobbers.zip"
 publish "$state"
 check "publish refuses a retained asset that differs" '[[ $(cat "$tmp/status") == 1 && ! -f $state/release/SHA256SUMS && $(cat "$state/draft") == true ]]'
 
-state="$pub/partial"; mkdir -p "$state/release"; echo "$sha" > "$state/tag"; echo true > "$state/draft"; echo false > "$state/pre"; printf zip > "$state/release/CopsAndRobbers.zip"
+state="$pub/partial"; mkdir -p "$state/release"; mkdir -p "$state/refs/tags"; echo "$sha" > "$state/refs/tags/v1.1.0"; echo true > "$state/draft"; echo false > "$state/pre"; printf zip > "$state/release/CopsAndRobbers.zip"
 publish "$state"
 check "publish completes a partial draft" '[[ $(cat "$tmp/status") == 0 && $(ls "$state/release" | wc -l) == 3 && $(cat "$state/draft") == false && -f $state/milestone-closed ]]'
 
