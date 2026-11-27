@@ -13,7 +13,7 @@ One entry per piece of work that has started: what it is, its branch (or "design
 ## In-game checks
 Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to decide what needs a player. Record deferred checks here with the action, expected observation and open question. Remove a check once verified and record failures under Issues.
 
-Deferred by the user on 2026-11-27 so the cop sight branch (`ed6d475`) could merge into main as 2.15.0. Run these together on the local West Coast USA server at port 30814 once it carries a build with that merge. For individual cop readings during a sight check, run `extensions.load("cnrCopSightProbe"); cnrCopSightProbe.trace()` in the GE console after joining.
+Deferred by the user on 2026-11-27 so the cop sight branch (`dee690d`) could merge into main as 2.15.0. Run these together on the local West Coast USA server at port 30814 once it carries a build with that merge. For individual cop readings during a sight check, run `extensions.load("cnrCopSightProbe"); cnrCopSightProbe.trace()` in the GE console after joining.
 
 - [ ] !!! Park a hitched truck and trailer at an angle beside a landmark. Sit out, watch an AI Practice round, then end it. Both should return at their original angles and the trailer should follow when you pull away.
 - [ ] !!! With Play selected, bring the hitched rig and a spare car into driving Practice with traffic enabled. After placement, the rig and spare should be gone, AI and round traffic should remain, and you should keep the round car at the end.

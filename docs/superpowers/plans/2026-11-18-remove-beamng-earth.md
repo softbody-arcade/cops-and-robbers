@@ -8,11 +8,11 @@
 
 **Tech stack** — BeamMP server Lua, BeamNG LuaJIT, Vue, Bash, GNU Make and rsync.
 
-**Approved design** — [Removal design](../specs/2026-11-18-remove-beamng-earth-design.md), commit `cdbf4a8`.
+**Approved design** — [Removal design](../specs/2026-11-18-remove-beamng-earth-design.md), commit `cc1e77a`.
 
 ## Global constraints
 
-- Work on `remove-beamng-earth`. Read the shared ledger from main. Before starting, compare the branch with current main, `fixes-16` (reviewed design baseline `fcb7a00`) and `thunder` (documentation head `9661997`). Carry merged work forward. Coordinate any still-unmerged overlap with its owner and repeat the package audit on the eventual integrated revision. The placement and thunder changes have their own review and playtest gates.
+- Work on `remove-beamng-earth`. Read the shared ledger from main. Before starting, compare the branch with current main, `fixes-16` (reviewed design baseline `3c21153`) and `thunder` (documentation head `6bd7132`). Carry merged work forward. Coordinate any still-unmerged overlap with its owner and repeat the package audit on the eventual integrated revision. The placement and thunder changes have their own review and playtest gates.
 - No special map detection, unsupported-map screen, compatibility shim, data migration, purge, fixture naming the old level, or installer deletion list. Leave host files and existing leaderboard rows alone. Keep historical design records in the repository.
 - For each code task, run its focused cases and `make test`. Compile each changed game Lua file with `luajit -bl path/to/file.lua >/dev/null`. Run `make vuecheck` for UI edits. Commit and review each task before advancing. Keep the version bump for merged main.
 

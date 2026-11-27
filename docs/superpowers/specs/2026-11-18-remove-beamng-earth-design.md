@@ -1,6 +1,6 @@
 # Remove BeamNG.Earth support
 
-Design proposal for review, based on main at `aa5465626fc1354834870b25eb1aaa7bbf6502d0`.
+Design proposal for review, based on main at `f2046e37ab8a2e38af9479de89f8640a37f91448`.
 
 CnR currently shares game-world positions on ordinary BeamMP maps. BeamNG.Earth gives each player a different coordinate origin, so CnR maintains a second network protocol and uses Earth services for routes and stations. Retire that integration end to end. Acceptance means a packaged, upgraded ordinary BeamMP server can run a chase, including practice and rejoin, with its usual routes, stations, rules and history. Earlier Earth traffic and weather proposals become historical research. Any future support requires a separate complete design, implementation and multiplayer verification in game.
 
@@ -30,9 +30,9 @@ Keep normal leaderboard reads and writes, including the existing handling of arb
 
 | Inspected branch head | Integration consequence |
 | --- | --- |
-| `fixes-16` · `fcb7a00e0c9fc9647b8b3993e4984aabd32722ff` | Coordinate before either branch lands. Preserve the negotiated canonical start grid (`cnr_startGridReady`, `cnr_planStart`, `cnr_startGrid`), ordinary `pos/dir` validation, per-slot failures, one-way headings, AI/human parity, timeouts and fallback for a missing planner. Its `startGrid.lua`, pending human/AI placement, server validation and tests also encode Earth `geo/toward` poses, rebase retries and a warning. Remove these Earth branches on the integrated head. Its watched-AI geo-report fix disappears with the sender. |
-| `fixes-17` · `440f72eda007f748f1bb0c16ed8df64b684694da` and `fixes-18` · `19843bf562b3157b74215e33ea9ddff201aa36fc` | Rotor sound and helicopter search/flight edits are independent. Keep their tests and exercise helicopter tracking during sight changes and round cleanup. |
-| `thunder` · `94cfd10618feb64fbf3477dda7adf152e24ddde0` | Shares client update/sky, host settings, server sky selection and tests. Carry forward storm selection, shared seed, scheduled strikes, the round/rejoin clock, spectator handling and the player's flash preference. Update pending Earth-only acceptance wording when integrating the approved work. |
+| `fixes-16` · `3c21153c369b9d69b32adbe9353c52ab0ba5e13f` | Coordinate before either branch lands. Preserve the negotiated canonical start grid (`cnr_startGridReady`, `cnr_planStart`, `cnr_startGrid`), ordinary `pos/dir` validation, per-slot failures, one-way headings, AI/human parity, timeouts and fallback for a missing planner. Its `startGrid.lua`, pending human/AI placement, server validation and tests also encode Earth `geo/toward` poses, rebase retries and a warning. Remove these Earth branches on the integrated head. Its watched-AI geo-report fix disappears with the sender. |
+| `fixes-17` · `4d76504b482fac48a16e8bf5efb412401e5669a9` and `fixes-18` · `80859ac067c94668ef5a3131fc7cabe4ea501fd2` | Rotor sound and helicopter search/flight edits are independent. Keep their tests and exercise helicopter tracking during sight changes and round cleanup. |
+| `thunder` · `aa6891f110933aefbda03ca1d99bad4376be5f65` | Shares client update/sky, host settings, server sky selection and tests. Carry forward storm selection, shared seed, scheduled strikes, the round/rejoin clock, spectator handling and the player's flash preference. Update pending Earth-only acceptance wording when integrating the approved work. |
 
 Refresh these heads when preparing the implementation plan. Coordinate overlap on the removal or integration branch and repeat the checks after merging conflicting work.
 
