@@ -2,12 +2,12 @@
 
 Thanks for helping. Cops and Robbers is a chase minigame for BeamNG.drive multiplayer (BeamMP), part of [Softbody Arcade](https://github.com/softbody-arcade).
 
-The full rules, for people and for coding agents alike, are in [AGENTS.md](AGENTS.md). This page is the short version, and [Roles](docs/ROLES.md) explains what each team can do.
+The full rules, for people and for coding agents alike, are the shared rules in [base/AGENTS.md](https://github.com/softbody-arcade/arcade-base/blob/main/AGENTS.md) plus this repo's [AGENTS.md](AGENTS.md). This page is the short version, and [Roles](docs/ROLES.md) explains what each team can do.
 
 ## Set up
 
 1. Install the prerequisites listed in [Development](docs/DEVELOPMENT.md#prerequisites).
-2. Clone the repo and run `make hooks` once. This turns on the privacy check that runs before every push.
+2. Clone the repo with `git clone --recurse-submodules` (it includes arcade-base, which holds the shared rules, at `base/`; in an existing clone run `git submodule update --init`), and run `make hooks` once. This turns on the privacy check that runs before every push.
 3. Commit with your GitHub noreply address (`git config user.email ID+login@users.noreply.github.com`), never a personal or work email.
 4. Run `make doctor` to check your tools, hooks and email, then check everything works: `make test`, `make vuecheck` and `make package`.
 
@@ -26,7 +26,7 @@ The full rules, for people and for coding agents alike, are in [AGENTS.md](AGENT
 
 1. Create a branch from `develop` named `feature/<topic>` or `fixes/<topic>`. `develop` is the default branch, and PRs target it; `main` only receives releases. The one exception is a fix for an open patch release: branch it from that release's `release/x.y.z` branch and target the PR there, so unreleased work from `develop` stays out.
 2. Push early, and open a draft pull request that says `Fixes #<issue>`.
-3. Follow the design, test and review rules in [AGENTS.md](AGENTS.md#design-and-implementation).
+3. Follow the design, test and review rules in [base/AGENTS.md](https://github.com/softbody-arcade/arcade-base/blob/main/AGENTS.md#design-and-implementation).
    - New gameplay gets a short spec and plan first.
    - Every change comes with tests where the result can be checked automatically.
 4. CI must be green: `test`, `luajit`, `vuecheck`, `privacy` and `package`.

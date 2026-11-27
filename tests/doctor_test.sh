@@ -31,6 +31,7 @@ case $tool in
             --version) echo "git version ${GIT_REPORT:-2.56.1}" ;;
             'config user.email') printf '%s\n' "${EMAIL_REPORT-123+contributor@$noreply_domain}" ;;
             'config core.hooksPath') printf '%s\n' "${HOOKS_REPORT-.githooks}" ;;
+            'submodule status -- base') printf '%s\n' "${BASE_REPORT- 6198cea32b7b8469a390bf2d12e012cafe35d8de base (v0.1.0)}" ;;
             *) exit 2 ;;
         esac ;;
     node) echo "v${NODE_REPORT:-22.1.0}" ;;
@@ -107,7 +108,7 @@ run_doctor() {
         if [[ ${expect_auth:-yes} == yes ]]; then
             printf '%s\n' 'gh auth status --active --hostname github.com --no-refresh'
         fi
-        printf '%s\n' 'git config user.email' 'git config core.hooksPath'
+        printf '%s\n' 'git config user.email' 'git config core.hooksPath' 'git submodule status -- base'
     } > "$bin/expected-calls"
     if ! diff -u "$bin/expected-calls" "$bin/calls"; then
         fail "Unexpected tool calls ($*)"
@@ -155,6 +156,16 @@ done
 expect_line 'ok gh project access'
 expect_line 'ok git noreply email'
 expect_line 'ok git hooks'
+expect_line 'ok base submodule'
+
+run_doctor 1 'BASE_REPORT=-6198cea32b7b8469a390bf2d12e012cafe35d8de base'
+expect_line 'missing base submodule.*git submodule update --init.*'
+run_doctor 1 'BASE_REPORT=+0123456789abcdef0123456789abcdef01234567 base (heads/develop)'
+expect_line 'missing base submodule.*not at the pinned commit.*'
+run_doctor 1 'BASE_REPORT=U6198cea32b7b8469a390bf2d12e012cafe35d8de base'
+expect_line 'missing base submodule.*not at the pinned commit.*'
+run_doctor 1 BASE_REPORT=
+expect_line 'missing base submodule.*git submodule update --init.*'
 
 run_doctor 0 "GH_SCOPES='repo', 'project'" NODE_REPORT=24.1.0
 expect_line 'ok gh project access'

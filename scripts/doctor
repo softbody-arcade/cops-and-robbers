@@ -127,4 +127,11 @@ else
     report missing 'git hooks — run make hooks'
 fi
 
+base_status=$(git submodule status -- base 2>/dev/null)
+case ${base_status:0:1} in
+    ' ') report ok 'base submodule' ;;
+    '' | -) report missing 'base submodule — run git submodule update --init (base/ holds the shared rules)' ;;
+    *) report missing 'base submodule — base/ is not at the pinned commit; run git submodule update' ;;
+esac
+
 exit "$failed"

@@ -1,6 +1,8 @@
 # Who can do what
 
-This page covers the [Softbody Arcade](https://github.com/softbody-arcade) organization, the `cops-and-robbers` repo and the [Softbody Arcade board](https://github.com/orgs/softbody-arcade/projects/1). The repo and the board are public. Tickets merge into `develop`, the default branch; `main` only receives releases. GitHub enforces the access rules below; the working rules on top of them are in [AGENTS.md](../AGENTS.md) and [CONTRIBUTING.md](../CONTRIBUTING.md).
+This page covers the [Softbody Arcade](https://github.com/softbody-arcade) organization, the `cops-and-robbers` repo and the [Softbody Arcade board](https://github.com/orgs/softbody-arcade/projects/1). The repo and the board are public. Tickets merge into `develop`, the default branch; `main` only receives releases. GitHub enforces the access rules below; the working rules on top of them are in the shared [agent rules](https://github.com/softbody-arcade/arcade-base/blob/main/AGENTS.md), this repo's [AGENTS.md](../AGENTS.md) and [CONTRIBUTING.md](../CONTRIBUTING.md).
+
+The teams are organization-wide: they get the same access in every Softbody Arcade repo, including [arcade-base](https://github.com/softbody-arcade/arcade-base) (the shared library and tooling), which has its own [roles page](https://github.com/softbody-arcade/arcade-base/blob/main/docs/ROLES.md). Its rulesets match this repo's, except that its required CI checks are `test` and `privacy`.
 
 ## At a glance
 
@@ -98,7 +100,7 @@ An agent (Claude, Codex or any other) acts with the GitHub login of the person r
 
 | Automation | What it does | Rights |
 |---|---|---|
-| Board workflows | Add new issues to the board in Inbox, move closed issues to Accepted and reopened ones back to Inbox, add sub-issues. `scripts/board release` (run by the maintainer) moves released and finished work to Done and archives closed Done cards after 14 days without updates | Board only |
+| Board workflows | Add new issues to the board in Inbox (the board's one auto-add workflow covers only this repo; issues in other repos, such as arcade-base, are added by a maintainer), move closed issues to Accepted and reopened ones back to Inbox, add sub-issues. `scripts/board release` (run by the maintainer) moves released and finished work to Done and archives closed Done cards after 14 days without updates | Board only |
 | CI (`ci.yml`) | Runs the five checks on every PR and on pushes to `develop` and `main` | Read-only token |
 | Release (`release.yml`) | When a PR from this repo's `release/x.y.z` branch merges into `main` (or on a manual run for an already merged one): tests and packages without write access, then tags `vx.y.z`, publishes the release with the ZIP, server archive and checksums, and closes milestone `x.y.z`, then opens **Sync main into develop** | Writes in the publish job (tag, release, milestone) and the sync job (opens a PR) |
 | Dependabot | Opens a PR each week when a GitHub Action or a `tools/vuecheck` npm package has a new version, and raises security alerts | Opens PRs; a maintainer merges them |
