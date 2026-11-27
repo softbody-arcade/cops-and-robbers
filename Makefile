@@ -52,6 +52,7 @@ deploy: package
 	./scripts/deploy.sh
 
 version: export RELEASE_VERSION := $(value V)
+version: export RELEASE_FROM := $(value FROM)
 version: export VERSION_LUA := $(LUA)
 version:
 	./scripts/version.sh "$$RELEASE_VERSION"

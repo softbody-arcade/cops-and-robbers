@@ -114,3 +114,29 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: scripts/publish-release "$VERSION" "$SHA" "$RUNNER_TEMP/release"
+
+  sync-develop:
+    needs: [select, publish]
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.select.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Open the PR that merges main back into develop
+        run: |
+          open="$(gh api "repos/$GH_REPO/pulls?state=open&base=develop&head=${GH_REPO%%/*}:main" --jq '.[].number')"
+          if [[ -n "$open" ]]; then
+            echo "Sync PR #$open is already open"
+            exit 0
+          fi
+          ahead="$(gh api "repos/$GH_REPO/compare/develop...main" --jq .ahead_by)"
+          if [[ "$ahead" == 0 ]]; then
+            echo "develop already contains main"
+            exit 0
+          fi
+          gh pr create --base develop --head main --title "Sync main into develop after $VERSION" \
+            --body "Brings release $VERSION (its version bump, and any hotfix) back into \`develop\`. CI already ran on this \`main\` commit. A maintainer merges it like any PR."

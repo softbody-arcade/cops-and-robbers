@@ -30,8 +30,10 @@ to choose a different local BeamMP server directory.
 The version lives in four places (server `main.lua`, client `copsAndRobbers.lua`, `mod_info/.../info.json`, the
 `docs/FEATURES.md` heading); `tests/test_version.lua` checks they agree and the other tests read it from the server.
 Feature branches never change it, so branches built side by side don't conflict. To release, run
-`make version V=x.y.z`: it builds the version commit on top of `origin/main` (not your local branch), pushes it as
-`release/x.y.z` and opens the **Release x.y.z** PR, without touching your checkout. Merging that PR publishes the release.
+`make version V=x.y.z`: it builds the version commit on top of `origin/develop` (not your local branch), pushes it as
+`release/x.y.z` and opens the **Release x.y.z** PR into `main`, without touching your checkout. Merging that PR publishes the
+release, and the release workflow then opens a PR that merges `main` back into `develop`. For a hotfix, `make version
+V=x.y.z FROM=main` starts the release branch from `main` instead.
 
 Client layout (`client/lua/ge/extensions/`): `copsAndRobbers.lua` holds round state, the server event handlers and the
 `onUpdate` steps; `copsAndRobbers/` has `game` (GE helpers), `inputs` (locks, reset hooks), `roads` (spawn spots),

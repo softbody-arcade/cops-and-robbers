@@ -17,12 +17,14 @@ The full rules, for people and for coding agents alike, are in [AGENTS.md](AGENT
   - The **Quick wins** view lists important issues that need little effort.
   - Issues labelled `good first issue` or `help wanted` are open for contributors.
 - Comment on the issue before you start. The maintainer starts the card and assigns it to you.
-- Contributors don't move cards themselves.
-- Have an idea or found a bug? Open an issue with one of the templates.
+- Once it's yours, you move your card between **Build** and **Review** yourself. Other moves are the maintainer's; see [Roles](docs/ROLES.md).
+- Found a bug or have an idea for Cops and Robbers? Open an issue in this repo with one of the templates. It lands in **Inbox** by itself.
+- Have an idea for a **new minigame**? Add it as a draft item on the board (**Game ideas** view, **+ Add item**, no repository).
+- The green status badge on an issue page is GitHub's own issue status, not the board lane. The board lane is what counts.
 
 ## Make a change
 
-1. Create a branch named `feature/<topic>` or `fixes/<topic>`.
+1. Create a branch from `develop` named `feature/<topic>` or `fixes/<topic>`. `develop` is the default branch, and PRs target it; `main` only receives releases. The one exception is a fix for an open patch release: branch it from that release's `release/x.y.z` branch and target the PR there, so unreleased work from `develop` stays out.
 2. Push early, and open a draft pull request that says `Fixes #<issue>`.
 3. Follow the design, test and review rules in [AGENTS.md](AGENTS.md#design-and-implementation).
    - New gameplay gets a short spec and plan first.
@@ -32,10 +34,10 @@ The full rules, for people and for coding agents alike, are in [AGENTS.md](AGENT
 
 ## Playtesting
 
-Playtesters pick up issues of type **In-game check**:
-1. Follow the setup and action in each check.
-2. Post what you saw as a comment: pass or fail, and what happened.
-3. File a **Bug** for anything else you notice.
+Playtesters test what's in the **Playtest** lane:
+- **An `In-game check` issue, or a change that isn't merged yet:** follow its setup and action, and post what you saw as a comment: pass or fail, and what happened. Leave the card where it is; the maintainer records your result.
+- **A change that's already merged** (it's on `develop`): play it, comment what you saw, and move the card yourself: **Playtest → Accepted** when it passed, **Playtest → Build** when it didn't.
+- File a **Bug** for anything else you notice.
 
 ## Privacy
 

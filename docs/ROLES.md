@@ -1,6 +1,6 @@
 # Who can do what
 
-This page covers the [Softbody Arcade](https://github.com/softbody-arcade) organization, the `cops-and-robbers` repo and the [Softbody Arcade board](https://github.com/orgs/softbody-arcade/projects/1). The repo and the board are public. GitHub enforces the access rules below; the working rules on top of them are in [AGENTS.md](../AGENTS.md) and [CONTRIBUTING.md](../CONTRIBUTING.md).
+This page covers the [Softbody Arcade](https://github.com/softbody-arcade) organization, the `cops-and-robbers` repo and the [Softbody Arcade board](https://github.com/orgs/softbody-arcade/projects/1). The repo and the board are public. Tickets merge into `develop`, the default branch; `main` only receives releases. GitHub enforces the access rules below; the working rules on top of them are in [AGENTS.md](../AGENTS.md) and [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## At a glance
 
@@ -12,17 +12,18 @@ This page covers the [Softbody Arcade](https://github.com/softbody-arcade) organ
 | Report a security problem privately | Yes | Yes | Yes | Yes |
 | Edit and close their own issues | Yes | Yes | Yes | Yes |
 | Set labels, type, Priority, Effort, milestone and assignee on any issue; close and reopen it | No | Yes | Yes | Yes |
-| Push branches to the repo itself | No | No | Yes, except `main` and `release/*` | Yes, except `main` |
+| Push branches to the repo itself | No | No | Yes, except `develop`, `main` and `release/*` | Yes, except `develop` and `main` |
 | Review a PR, including an approving review | Yes, unless reviews are limited to people with access | Yes | Yes | Yes |
-| Merge into `main` | No | No | No | Yes, through a PR with green CI |
-| Push straight to `main` | No | No | No | No |
+| Merge into `develop` or `main` | No | No | No | Yes, through a PR with green CI |
+| Push straight to `develop` or `main` | No | No | No | No |
 | Start a release (`release/*` branch) | No | No | No | Yes |
 | Move or delete a `v*` tag | No | No | No | Yes |
-| Move cards on the board | No | No | No | Yes |
+| Move cards on the board | No | Merged work: Playtest → Accepted or Build | Own cards, Build ↔ Review | Anything |
+| Add game idea drafts to the board | No | Yes | Yes | Yes |
 | Change repo and board settings | No | No | No | Yes |
 | Change org-wide settings and create teams | No | No | No | Org owner only |
 
-Teams give the extra rights: `playtesters` is Triage on the repo, `contributors` is Write and `maintainers` is Admin. On the board, `maintainers` is Admin and everyone else can read.
+Teams give the extra rights: `playtesters` is Triage on the repo, `contributors` is Write and `maintainers` is Admin. On the board, `playtesters` and `contributors` have Write and `maintainers` Admin. Board Write can't be limited per lane, so the allowed moves are a rule, not enforced; GitHub's history shows who moved what.
 
 ## Anyone on GitHub
 
@@ -46,9 +47,10 @@ On top of what anyone can do, they can:
 What they normally do:
 1. Pick an issue of type **In-game check**.
 2. Follow its setup and action, and post a comment: pass or fail, and what happened.
-3. File a **Bug** for anything else they notice.
+3. For merged work they tested on `develop`, move the card: **Playtest → Accepted** when it passed, **Playtest → Build** when it didn't. For `In-game check` issues and unmerged changes, the comment is enough; the maintainer records the result.
+4. File a **Bug** for anything else they notice.
 
-The maintainer records the result and moves the card.
+They can also add new minigame ideas to the board as draft items (the **Game ideas** view). Bugs and ideas for an existing game start as an issue in its repo, which lands in Inbox by itself. The green status badge on an issue page is GitHub's own issue status, not the board lane; the board lane is what counts.
 
 ## Contributors
 
@@ -60,10 +62,10 @@ On top of what a playtester can do, they can:
 - delete their own branches. Merged branches are deleted automatically.
 
 They can't:
-- merge into `main`, push to it, force-push it or delete it
+- merge into `develop` or `main`, push to them, force-push them or delete them
 - create, change or delete `release/*` branches
 - move or delete a `v*` tag
-- move cards on the board. They comment on the issue and the maintainer moves the card.
+- move cards other than their own between Build and Review. The maintainer moves the rest.
 
 Known gap: a contributor can still create a new `v*` tag or publish a release by hand (#42). Today releases are deployed by hand, so the maintainer decides what goes live. The planned updater (#25) will only install releases published by the release workflow.
 
@@ -78,8 +80,8 @@ What they normally do:
 The `maintainers` team has Admin on the repo and on the board. Org-wide settings, creating teams and billing belong to the organization owner, which is a separate role. A team maintainer can still manage, and delete, their own team.
 
 Only maintainers:
-- triage new issues, order the Next lane and move cards between lanes
-- merge PRs into `main`, after the merge gate in [AGENTS.md](../AGENTS.md): the maintainer's go, a final review of the head being merged, and a playtest result where needed. GitHub itself requires a PR with the five CI checks green: `test`, `luajit`, `vuecheck`, `privacy` and `package`. Nobody can push to `main` directly, maintainers included.
+- triage new issues, order the Next lane, and make every card move other than the playtester and contributor drags above
+- merge PRs into `develop`, and release PRs into `main`, after the merge gate in [AGENTS.md](../AGENTS.md): the maintainer's go, a final review of the head being merged, and a playtest result where needed. GitHub itself requires a PR with the five CI checks green: `test`, `luajit`, `vuecheck`, `privacy` and `package`. Nobody can push to `develop` or `main` directly, maintainers included.
 - start a release with `make version V=x.y.z` and merge the `Release x.y.z` PR, which tags and publishes it
 - stage builds on the local test server and deploy to the live server
 - change repo settings, rulesets, and the board's fields, views and workflows
@@ -96,9 +98,9 @@ An agent (Claude, Codex or any other) acts with the GitHub login of the person r
 
 | Automation | What it does | Rights |
 |---|---|---|
-| Board workflows | Add new issues to the board in Inbox, move closed issues to Done and reopened ones back to Inbox, add sub-issues, archive Done cards after 14 days without updates | Board only |
-| CI (`ci.yml`) | Runs the five checks on every PR and on `main` | Read-only token |
-| Release (`release.yml`) | When a PR from this repo's `release/x.y.z` branch merges into `main` (or on a manual run for an already merged one): tests and packages without write access, then tags `vx.y.z`, publishes the release with the ZIP, server archive and checksums, and closes milestone `x.y.z` | Writes only in the publish job |
+| Board workflows | Add new issues to the board in Inbox, move closed issues to Accepted and reopened ones back to Inbox, add sub-issues. `scripts/board release` (run by the maintainer) moves released and finished work to Done and archives Done cards after 14 days without updates | Board only |
+| CI (`ci.yml`) | Runs the five checks on every PR and on pushes to `develop` and `main` | Read-only token |
+| Release (`release.yml`) | When a PR from this repo's `release/x.y.z` branch merges into `main` (or on a manual run for an already merged one): tests and packages without write access, then tags `vx.y.z`, publishes the release with the ZIP, server archive and checksums, and closes milestone `x.y.z`, then opens **Sync main into develop** | Writes in the publish job (tag, release, milestone) and the sync job (opens a PR) |
 | Dependabot | Opens a PR each week when a GitHub Action or a `tools/vuecheck` npm package has a new version, and raises security alerts | Opens PRs; a maintainer merges them |
 | Secret scanning | Blocks a push that contains a supported secret pattern, unless push protection is bypassed | Push protection on |
 
@@ -106,8 +108,8 @@ An agent (Claude, Codex or any other) acts with the GitHub login of the person r
 
 | Ruleset | Applies to | Effect |
 |---|---|---|
-| `main-checks` | `main` | PR required, the five CI checks must pass, merge commits only, no force-push or deletion. Nobody bypasses it. |
-| `main-merge` | `main` | Only maintainers can update `main`, and only by merging a PR. |
+| `develop-checks`, `main-checks` | `develop`, `main` | PR required, the five CI checks must pass, merge commits only, no force-push or deletion. Nobody bypasses them. |
+| `develop-merge`, `main-merge` | `develop`, `main` | Only maintainers can update them, and only by merging a PR. |
 | `release-branches` | `release/*` | Only maintainers can create, update or delete them. |
 | `release-tags` | `v*` tags | Only maintainers can move or delete them. |
 
