@@ -135,7 +135,7 @@ Hooks, Make targets and scripts run with the credentials of whoever runs them, a
   - Keep game-side Lua compatible with BeamNG's LuaJIT. Check each changed game-side Lua file with `luajit -bl path/to/file.lua >/dev/null`.
   - Run `make test` for Lua changes and `make vuecheck` for UI changes.
   - `make package` builds the client ZIP, server payload, tarball and checksums.
-  - The README lists the prerequisites. `docs/DEPENDENCIES.md` locates upstream APIs and compatibility checks.
+  - `docs/DEVELOPMENT.md` lists the prerequisites (`make doctor` checks them). `docs/DEPENDENCIES.md` locates upstream APIs and compatibility checks.
 - **CI** runs `test`, `luajit`, `vuecheck`, `privacy` and `package` on every PR and push to `main`.
 - **Playtests.**
   - Ask the maintainer for a playtest (label the PR `needs-playtest`) only when an open question depends on what BeamNG or BeamMP actually does, or on what the player sees, hears or feels. Use an engine probe or logs first when they can answer it.

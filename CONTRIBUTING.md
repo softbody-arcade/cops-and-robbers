@@ -6,7 +6,7 @@ The full rules, for people and for coding agents alike, are in [AGENTS.md](AGENT
 
 ## Set up
 
-1. Install the prerequisites listed in the [README](README.md#prerequisites).
+1. Install the prerequisites listed in [Development](docs/DEVELOPMENT.md#prerequisites), and run `make doctor` to check them.
 2. Clone the repo and run `make hooks` once. This turns on the privacy check that runs before every push.
 3. Commit with your GitHub noreply address (`git config user.email ID+login@users.noreply.github.com`), never a personal or work email.
 4. Check everything works: `make test`, `make vuecheck` and `make package`.
