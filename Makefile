@@ -7,6 +7,7 @@ ARCHIVE_EPOCH := 315532800
 test:
 	$(LUA) tests/run.lua tests/test_*.lua
 	python3 -I tests/privacy_check_test.py
+	bash tests/board_test.sh
 	bash tests/release_test.sh
 	bash tests/doctor_test.sh
 

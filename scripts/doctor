@@ -29,14 +29,17 @@ at_least() {
 }
 
 check_tool() {
-    local label=$1 command=$2 flag=$3 minimum=$4 hint=$5
+    local label=$1 command=$2 flag=$3 minimum=$4 hint=$5 required_banner=${6-}
     local output version
     if ! command -v "$command" >/dev/null 2>&1; then
         report missing "$label — $hint"
     elif [[ -z $flag ]]; then
         report ok "$label"
+    elif ! output=$("$command" "$flag" 2>&1); then
+        report missing "$label (version command failed) — $hint"
+    elif [[ -n $required_banner && $output != *"$required_banner"* ]]; then
+        report old "$label (need $required_banner) — $hint"
     else
-        output=$("$command" "$flag" 2>&1)
         if [[ $output =~ [0-9]+(\.[0-9]+)+ ]]; then
             version=${BASH_REMATCH[0]}
             if [[ -z $minimum ]] || at_least "$version" "$minimum"; then
@@ -55,8 +58,13 @@ check_tool() {
 check_project_access() {
     local auth line scopes
     local project_scope='(^|,)[[:blank:]]*(read:project|project)[[:blank:]]*(,|$)'
-    if ! auth=$(GH_PROMPT_DISABLED=1 NO_COLOR=1 gh auth status --active --hostname github.com --no-refresh 2>&1); then
-        report missing 'gh project access — run gh auth login --hostname github.com, then gh auth refresh --hostname github.com -s read:project'
+    if ! auth=$(GH_PROMPT_DISABLED=1 NO_COLOR=1 CLICOLOR_FORCE=0 gh auth status --active --hostname github.com --no-refresh 2>&1); then
+        case "${auth,,}" in
+            *"couldn't connect"*|*"could not connect"*|*"error connecting"*|*"timeout trying to log in"*)
+                report missing 'gh project access — check your network connection to GitHub, then rerun make doctor' ;;
+            *)
+                report missing 'gh project access — run gh auth login --hostname github.com, then gh auth refresh --hostname github.com -s read:project' ;;
+        esac
         return
     fi
 
@@ -86,7 +94,7 @@ check_tool npm npm --version '' 'Install npm (pacman -S npm, apt install npm, br
 check_tool zip zip -v '' 'Install Zip (pacman -S zip, apt install zip, brew install zip).'
 check_tool unzip unzip -v '' 'Install UnZip (pacman -S unzip, apt install unzip, brew install unzip).'
 check_tool rsync rsync --version '' 'Install rsync (pacman -S rsync, apt install rsync, brew install rsync).'
-check_tool tar tar --version '' 'Install tar (pacman -S tar, apt install tar, brew install gnu-tar).'
+check_tool tar tar --version '' 'Install GNU tar (pacman -S tar or apt install tar). On macOS, run brew install gnu-tar, then put its gnubin directory first on PATH.' 'GNU tar'
 check_tool jq jq --version '' 'Install jq (pacman -S jq, apt install jq, brew install jq).'
 check_tool ssh-keygen ssh-keygen '' '' 'Install OpenSSH (pacman -S openssh, apt install openssh-client, brew install openssh).'
 if check_tool gh gh --version 2.106 'Install or upgrade GitHub CLI (pacman -S github-cli, apt install gh, brew install gh) or see https://cli.github.com/.'; then
