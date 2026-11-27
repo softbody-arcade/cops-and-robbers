@@ -7,7 +7,7 @@ Priorities run from `!!!!` (highest) through `!!!` (high), `!!` (normal), and `!
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
-- [ ] !!! Migrate the project to GitHub (local scrub): rules reviewed (rev 12). Org `softbody-arcade` and teams are set up. Scrubbing history in a separate clone, with the backup and the hit report under `~/Backups/cnr-migration-2026-11-27/`. No push until the maintainer signs off on the removal list
+- [ ] !!! Migrate the project to GitHub (bootstrap pushed): scrubbed history and the privacy check are live in private `softbody-arcade/cops-and-robbers`. Next: CI, labels and the Softbody Arcade board, issues from this file, the `AGENTS.md` rewrite and releases, then go public the same day. The latest privacy-check fixes (bare CR, filename leaks, unicode quoting, message marker, submodules) are covered by tests but await the counterpart review on the CI PR. `make test` now also needs python3 (README prerequisite)
 
 
 ## In-game checks
