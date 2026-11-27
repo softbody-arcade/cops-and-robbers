@@ -175,6 +175,7 @@ release_action() {
       echo move
       return
     fi
+    [[ -n $tag ]] || { echo wait; return; }
     while IFS= read -r sha; do
       [[ -n $sha && $sha != - ]] || continue
       comparison=$(gh api "repos/$repo/compare/$tag...$sha" --jq .status)
@@ -241,7 +242,7 @@ case $cmd in
     tag=$(gh api graphql -f owner="${repo%/*}" -f name="${repo#*/}" -f query='query($owner:String!,$name:String!){
       repository(owner:$owner,name:$name){latestRelease{tagName isDraft isPrerelease}}}' --jq '
       .data.repository.latestRelease | select(. and (.isDraft | not) and (.isPrerelease | not)) | .tagName')
-    [[ -n $tag ]] || refuse 'No published release found'
+    [[ -n $tag ]] || echo 'No published release yet: shipped work waits for one'
   else
     gh api "repos/$repo/releases/tags/$tag" >/dev/null
   fi
@@ -253,7 +254,7 @@ case $cmd in
     if [[ $lane == Done ]]; then action=archive; else action=$(release_action "$state" "$reason" "$type"); fi
     plan+=("$action $n $project_id $item")
   done <<< "$rows"
-  if (( ${#plan[@]} == 0 )); then echo "No board changes for $tag"; fi
+  if (( ${#plan[@]} == 0 )); then echo "No board changes${tag:+ for $tag}"; fi
   for row in "${plan[@]}"; do
     read -r action n project_id item <<< "$row"
     case $action in

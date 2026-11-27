@@ -420,7 +420,11 @@ diff -u "$tmp/release-output" "$tmp/out"
 MERGED_COMPARISON=behind expect 0 '#4 moved to Done' release v2.0.0 --dry-run
 wrote '/compare/v2.0.0...merged-sha'
 ! wrote 'latestRelease' || exit 1
-RELEASE_TAG= guard 'No published release found' release
+: > "$LOG"
+RELEASE_TAG= expect 0 'No published release yet' release --dry-run
+grep -qx '#1 moved to Done' "$tmp/out"
+grep -qx '#4 waiting for a release' "$tmp/out"
+! wrote '/compare/' || exit 1
 COMPARE_FAIL=1 expect 2 'compare failed' release
 ! wrote 'project item-edit' || exit 1
 ! wrote 'archiveProjectV2Item' || exit 1
