@@ -8,8 +8,9 @@ The repo is `softbody-arcade/cops-and-robbers`, in the `softbody-arcade` organiz
 
 GitHub Issues and the organization board **Softbody Arcade** (project 1) record all work: ideas, bugs, in-game checks, and what is in progress. An issue is the single place that says what happened to a piece of work and why. Use what GitHub provides natively; never mirror the same fact twice.
 
-- **Type** (the org's issue types): `Feature` for ideas and new functionality, `Bug`, `Task` for maintenance and tooling, `In-game check` for something to verify in game. Every issue outside Inbox has one.
+- **Type** (the org's issue types): `Feature` for ideas and new functionality, `Bug`, `Task` for maintenance and tooling, `In-game check` for something to verify in game. Every issue outside Inbox has a type, a priority and an effort.
 - **Priority** (the org's issue field): `Urgent`, `High`, `Medium` or `Low`. Rank by player impact, then host or panel problems, then cosmetics, then maintainer-only work. Every issue outside Inbox has one.
+- **Effort** (the org's issue field): `High`, `Medium` or `Low`, a rough size set at triage and refined in Design. Together with Priority it ranks the work: the board's **Quick wins** view lists open Urgent or High issues with Low effort, which are good picks for Next and for contributors.
 - **Milestone**: the release version an issue is targeted at, named `x.y.z`. The maintainer assigns it when committing to a release. A release ships when its milestone's issues are closed or moved on, and `release.yml` closes the milestone.
 - **Parent and sub-issues** give the structure: a large feature is a parent with its parts as sub-issues, and the issues folded into a fix batch become sub-issues of the batch's ticket. Progress rolls up on the parent.
 - **Blocked by / blocking** (issue dependencies) records order: `scripts/board block <n> --by <m>`. Never use a label or prose for it.
@@ -24,7 +25,7 @@ GitHub Issues and the organization board **Softbody Arcade** (project 1) record 
 
 | Lane | Holds | Leaves when |
 |---|---|---|
-| Inbox | New, untriaged issues | `board triage <n> <type> <priority>` sets type and priority, moving it to Backlog |
+| Inbox | New, untriaged issues | `board triage <n> <type> <priority> [effort]` sets type, priority and effort, moving it to Backlog |
 | Backlog | Triaged; a simple ticket is fine | The maintainer picks it for Next |
 | Next | At most 5, top first, each meeting the definition of ready | `board start <n> design\|build` |
 | Design | Brainstorm, spec and plan | The maintainer approves the plan, then `board move <n> build` |
