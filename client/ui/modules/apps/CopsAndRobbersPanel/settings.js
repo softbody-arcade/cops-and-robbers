@@ -81,7 +81,7 @@ export const GROUPS = [
     { key: "copSpawnMaxMeters", label: "Start distance max", unit: "m", step: 10, min: 0,
       help: "Cops start at most this far from the runner, by road" },
     { key: "sightMaxMeters", label: "Sight range", unit: "m", step: 50, min: 0, offAtZero: true,
-      help: "How far cops can see the runner; off means no sight" },
+      help: "Clear-day distance in the direction a cop looks. Off disables ground sight." },
     { key: "sightLiveIntervalSeconds", label: "Live position every", unit: "s", step: 1, min: 1,
       help: "How often cops get the runner's position while one sees them" },
     { key: "sightGraceSeconds", label: "Sight grace", unit: "s", step: 0.5, min: 0,

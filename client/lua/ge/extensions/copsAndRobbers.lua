@@ -8,7 +8,7 @@ local vehicles = require("copsAndRobbers/vehicles")
 local ai = require("copsAndRobbers/ai")
 local hudfeed = require("copsAndRobbers/hudfeed")
 local apps = require("copsAndRobbers/apps")
-local sight = require("copsAndRobbers/sight")
+local groundSight = require("copsAndRobbers/groundSight")
 local buildDiff = require("copsAndRobbers/build")
 local modes = require("copsAndRobbers/modes")
 local nearby = require("copsAndRobbers/nearby")
@@ -29,7 +29,6 @@ local LIGHTS_OFF = "electrics.set_lightbar_signal(0)"
 local SETUP_DELAY = 0.5
 local FREEZE_REASSERT = 0.5
 local POSE_JUMP = 30
-local SIGHT_CHECK_INTERVAL = 0.25
 local CHANGE_CHECK_INTERVAL = 1
 local BASELINE_DELAY = 1.5
 local MODES_INTERVAL = 3
@@ -72,8 +71,7 @@ local hidingTarget
 local hidingBuiltAt = -math.huge
 local evolving = false
 local sightMax = 0
-local sightState = sight.new()
-local lastSightCheck = 0
+local retiredCar
 local infoTag
 local spotted, nearestParts
 local buildBaselineAt, buildBaseline
@@ -93,6 +91,11 @@ local lastLightSync, lightSyncCount = 0, 0
 local function roundVehicle()
   if pendingPlacement then return getObjectByID(pendingPlacement.gameId) end
   return personalCarId and getObjectByID(personalCarId)
+end
+
+local function localRunnerId()
+  local car = role == "runner" and roundVehicle()
+  return car and car:getID() or nil
 end
 
 local function enterCar(veh)
@@ -121,9 +124,18 @@ local function teleport(veh, pos, rot)
   spawn.safeTeleport(veh, pos, rot)
 end
 
+local function retireRoundCar(id)
+  personalCarId, pendingPlacement, nextCarCleanup = nil, nil, nil
+  if active and not drivingPractice then
+    if id then retiredCar = { id = id, key = traffic.roundCar(MPConfig.getPlayerServerID()) } end
+    nextCarCleanup = clock + 1
+  end
+end
+
 local function placeVehicle(model, config, pos, rot, color, initialGrid, personal)
-  nextCarCleanup = nil
+  groundSight.replaced(role)
   local opt = vehicles.options(config, color)
+  local previousId = personal and personal:getID() or personalCarId
   local veh
   if personal then
     rot = rot or game.uprightRotation(personal)
@@ -135,11 +147,12 @@ local function placeVehicle(model, config, pos, rot, color, initialGrid, persona
     veh = core_vehicles.spawnNewVehicle(model, opt)
   end
   if not veh then
-    pendingPlacement = nil
+    retireRoundCar(previousId)
     hudfeed.event("Could not spawn your round car", clock, "warn")
     return
   end
-  personalCarId = veh:getID()
+  nextCarCleanup = nil
+  personalCarId, retiredCar = veh:getID(), nil
   if initialGrid then pos, rot = nil, nil end
   pendingPlacement = { at = clock + SETUP_DELAY, pos = pos, rot = rot, gameId = personalCarId, rebuild = rebuildId }
 end
@@ -200,8 +213,12 @@ local function onSetupAI(data)
   inputs.lockSpawns(watchingAI)
   hidingBuiltAt = -math.huge
   if not ok then error(err, 0) end
+  if watchingAI or (active and drivingPractice) then
+    sightMax = tonumber(d.sightMaxMeters) or sightMax
+    groundSight.configure(sightMax, active and role == "cop", d.ai)
+  end
   if runnerOut then ai.releaseRunner() end
-  if statusActive then ai.releaseCops() end
+  if statusActive then ai.releaseCops(localRunnerId()) end
 end
 
 local function onPickVehicle(data)
@@ -297,7 +314,8 @@ local function onRoundSetup(data)
   buildBaseline, lastChangeKey, lastChanges = nil, nil, {}
   buildBaselineAt = (evolving and d.role == "runner" and d.phase == "prep") and (clock + BASELINE_DELAY) or nil
   sightMax = tonumber(d.sightMaxMeters) or 0
-  sightState = sight.new()
+  statusActive = false
+  groundSight.configure(sightMax, role == "cop")
   roundModel, roundColor = d.model, d.color
   roundConfig = d.role == "cop" and vehicles.copConfig(d.model, d.config) or d.config
   resetAllowed, serverResetAllowed, resetLockUntil = false, false, nil
@@ -358,7 +376,8 @@ local function onSpectate(data)
   hudfeed.clearRound()
   hudfeed.clearResult()
   setHeli(d.heli)
-  spectating = true
+  spectating, statusActive, sightMax = true, false, 0
+  groundSight.configure(0)
   runnerId = d.runnerId
   inputs.lock(true, requestReset, true, true)
   inputs.setPartsMenu(false)
@@ -528,7 +547,7 @@ end
 
 local function onPenaltyEnd(data)
   local d = jsonDecode(data or "{}") or {}
-  if d.aiId then return ai.penaltyEnd(d.aiId) end
+  if d.aiId then return ai.penaltyEnd(d.aiId, localRunnerId()) end
   penaltyActive = false
   lastHint = nil
   timerEnd = nil
@@ -615,7 +634,7 @@ local function onNotice(data)
 end
 
 local function onRelease()
-  ai.releaseCops()
+  ai.releaseCops(localRunnerId())
   hudfeed.headStart(nil)
   if role == "runner" and sightMax > 0 and spotted == nil then spotted = false end
   timerEnd = nil
@@ -646,7 +665,8 @@ end
 
 local function endRound(leaving)
   spectating, parkingBystander, nextCarCleanup, pendingAISetup = false, false, nil, nil
-  watchedId = nil
+  watchedId, sightMax, retiredCar = nil, 0, nil
+  groundSight.configure(0)
   ai.remove()
   inputs.lockSpawns(false)
   if leaving then
@@ -804,7 +824,7 @@ local function updatePendingPlacement()
   if not p or (p.at and clock < p.at) then return end
   local veh = getObjectByID(p.gameId)
   if not veh then
-    pendingPlacement = nil
+    retireRoundCar(p.gameId)
     hudfeed.event("Your round car disappeared before placement", clock, "warn")
     return
   end
@@ -893,8 +913,8 @@ local function updateLightSync()
   for _, obj in ipairs(traffic.objects()) do obj:queueLuaCommand(cmd) end
 end
 
-runnerObject = function()
-  local aiRunner = ai.runnerObject()
+runnerObject = function(registeredOnly)
+  local aiRunner = not registeredOnly and ai.runnerObject()
   if aiRunner then return aiRunner end
   if not runnerId or not MPVehicleGE or not MPVehicleGE.getVehicles then return nil end
   local prefix = tostring(runnerId) .. "-"
@@ -905,7 +925,7 @@ runnerObject = function()
     return getObjectByID(v.gameVehicleID)
   end
   local round = traffic.roundCar(runnerId)
-  if round then return usable(round) end
+  if round or registeredOnly then return usable(round) end
   local players = MPVehicleGE.getPlayers and MPVehicleGE.getPlayers() or {}
   local runner = players[runnerId] or players[tostring(runnerId)]
   local key = type(runner) == "table" and runner.activeVehicleID
@@ -958,20 +978,9 @@ local function updateHiding(obj)
   hiding.tick(clock)
 end
 
-local function updateSight(target)
-  if role ~= "cop" or not statusActive or sightMax <= 0 or clock - lastSightCheck < SIGHT_CHECK_INTERVAL then return end
-  lastSightCheck = clock
-  local veh = ownVehicle()
-  local seen, dist = false, nil
-  if veh and target and castRayStatic then
-    seen, dist = sight.visible(veh:getPosition(), target:getPosition(), target:getDirectionVector(), sightMax, castRayStatic)
-  end
-  local changed = seen ~= sightState.seen
-  if not sight.step(sightState, clock, seen) then return end
-  if changed and log then
-    log("I", "cnr_sight", string.format("runner %s (%s m)", seen and "in sight" or "out of sight", dist and string.format("%.0f", dist) or "?"))
-  end
-  sendServer("cnr_sight", { seen = seen })
+local function humanSightTarget()
+  if role == "runner" then return roundVehicle() end
+  return runnerObject(true)
 end
 
 local function castUp(pos, range)
@@ -1043,6 +1052,7 @@ local function replacementRoundId()
   local key = traffic.roundCar(MPConfig.getPlayerServerID())
   local entry = key and MPVehicleGE.getVehicles()[key]
   local id = entry and not entry.isDeleted and entry.isSpawned ~= false and tonumber(entry.gameVehicleID)
+  if retiredCar and retiredCar.id == id and retiredCar.key == key then return nil end
   if id and getObjectByID(id) and MPVehicleGE.isOwn(id) then return id end
 end
 
@@ -1092,7 +1102,7 @@ local function onUpdate(dtReal, dtSim)
     local p, lo, hi, covered, intersectsStorm = sky.lightningFrame()
     lightning.tick(lightningState, p, lo, hi, prefs.lightning ~= false, covered, intersectsStorm)
   end
-  updateSight(runnerObj)
+  groundSight.update(clock, statusActive, roundVehicle, humanSightTarget)
   updateHiding(runnerObj)
   updateHeli(target)
   updateBuild()
@@ -1157,6 +1167,7 @@ end
 
 local function leaveServer()
   endRound(true)
+  groundSight.leaveMission()
   sirensAllowed, heliOn = true, false
   hudfeed.clearResult()
   hudfeed.leave()
@@ -1199,7 +1210,16 @@ local function onExtensionLoaded()
     traffic.start(d.count, not runnerOut, clock)
   end)
   AddEventHandler("cnr_roundCars", function(data)
+    local pid = MPConfig and MPConfig.getPlayerServerID()
+    local previousOwn, previousRunner = traffic.roundCar(pid), traffic.roundCar(runnerId)
     traffic.setRoundCars((jsonDecode(data) or {}).keys)
+    local own = traffic.roundCar(pid)
+    if previousRunner ~= traffic.roundCar(runnerId) then
+      groundSight.replaced("runner")
+    elseif role == "cop" and previousOwn ~= own then
+      groundSight.replaced("cop")
+    end
+    if retiredCar and own ~= retiredCar.key then retiredCar = nil end
     hidingBuiltAt = -math.huge
   end)
   AddEventHandler("cnr_runnerShown", function(data)
@@ -1356,7 +1376,8 @@ M.onVehicleSpawned = spectator.vehicleSpawned
 M.onBeforeVehicleReplaced = spectator.forgetVehicle
 M.onVehicleDestroyed = function(id)
   spectator.forgetVehicle(id)
-  if id == personalCarId then personalCarId = nil end
+  ai.destroyed(id)
+  if id == personalCarId then retireRoundCar(id) end
 end
 M.onVehicleResetted = onVehicleResetted
 M.onVehicleCycleSwitchPerformedByUser = onVehicleCycleSwitchPerformedByUser

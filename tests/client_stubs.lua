@@ -21,7 +21,7 @@ local function fakeVehicle(env, id, pos)
   function veh:getID() return self.id end
   function veh:getPosition() return self.pos end
   function veh:getVelocity() return v3(0, 0, 0) end
-  function veh:getDirectionVector() return v3(0, 1, 0) end
+  function veh:getDirectionVector() return self.direction or v3(0, 1, 0) end
   function veh:getJBeamFilename() return self.model or "pickup" end
   function veh:queueLuaCommand(cmd) self.commands[#self.commands + 1] = cmd end
   function veh:delete() env.objects[self.id] = nil end

@@ -721,6 +721,8 @@ end)
 local function copInChase(env)
   local setup = copy(SETUP)
   setup.sightMaxMeters = 400
+  setup.sky = { time = "noon", weather = "clear" }
+  core_environment.getFogDensity = function() return 0.0004, {} end
   env.fire("cnr_roundSetup", setup)
   env.tick(1)
   env.addObject(300, vec3(0, 100, 0))
@@ -6145,3 +6147,620 @@ test("a moving camera on a rain poll and an open pulse shares the one roof sampl
     assertEq(rays(), 3)
   end)
 end)
+
+do
+local function sightFixture()
+  local env = bootClient()
+  local camera = { mode = "orbit", direction = vec3(0, 1, 0) }
+  core_camera.getActiveCamName = function(player)
+    assertEq(player, 0)
+    return camera.mode
+  end
+  core_camera.getForward = function() return camera.direction end
+  core_environment.getFogDensity = function() return 0.0004, {} end
+  local rays = {}
+  local sight = require("copsAndRobbers/sight")
+  local visible = sight.visible
+  sight.visible = function(eye, runner, dir, meters, cast)
+    return visible(eye, runner, dir, meters, function(origin, direction, length)
+      rays[#rays + 1] = origin
+      return cast(origin, direction, length)
+    end)
+  end
+  return env, camera, rays
+end
+
+local function sample(env)
+  env.tick(0.25, 0.25)
+end
+
+local function reportsSince(env, cursor)
+  local reports = {}
+  for i = cursor + 1, #env.sent do
+    local packet = env.sent[i]
+    if packet.ev == "cnr_sight" then
+      local slot = packet.data.aiId or "human"
+      assertEq(reports[slot], nil, "duplicate observation for " .. slot)
+      reports[slot] = packet.data
+    end
+  end
+  return reports
+end
+
+test("a cop reports a brief sighting as soon as their late VID is confirmed after GO", function()
+  local env = bootClient()
+  local resolve = MPVehicleGE.getVehicleByGameID
+  MPVehicleGE.getVehicleByGameID = function() end
+  copInChase(env)
+  sample(env)
+  assertEq(env.lastSent("cnr_myVehicle"), nil)
+  MPVehicleGE.getVehicleByGameID = resolve
+  sample(env)
+  local vid = env.lastSent("cnr_myVehicle").vid
+  local cursor = #env.sent
+  env.fire("cnr_roundCars", {keys={"2-0", "1-" .. vid}})
+  sample(env)
+  local report = reportsSince(env, cursor).human
+  assertEq(report and report.seen, true)
+  cursor = #env.sent
+  env.fire("cnr_roundCars", {keys={"1-" .. vid, "2-0"}})
+  env.fire("cnr_roundCars", {keys={"1-" .. vid, "2-0", "3-7"}})
+  sample(env)
+  assertEq(reportsSince(env, cursor).human, nil)
+  env.blockAt = 5
+  sample(env)
+  assertEq(reportsSince(env, cursor).human.seen, false)
+end)
+
+test("runner registration changes between frames renew sight even with a reused GE object ID", function()
+  local env = bootClient()
+  copInChase(env)
+  env.fire("cnr_roundCars", {keys={"1-100", "2-0"}})
+  sample(env)
+  assertEq(env.lastSent("cnr_sight").seen, true)
+  for _, newKey in ipairs({"2-0", "2-1"}) do
+    local cursor = #env.sent
+    if newKey == "2-0" then env.fire("cnr_roundCars", {keys={"1-100"}}) end
+    env.objects[300]:delete()
+    env.addObject(300, vec3(0, 120, 0))
+    env.mpVehicles[newKey] = {gameVehicleID=300, isSpawned=true}
+    env.fire("cnr_roundCars", {keys={"1-100", newKey}})
+    sample(env)
+    local row = reportsSince(env, cursor).human
+    assertEq(row and row.seen, true, newKey)
+  end
+end)
+
+test("attached driving views look down the side street from the assigned car", function()
+  withCamera(function(free)
+    local env, camera, rays = sightFixture()
+    copInChase(env)
+    env.veh.pos = vec3(0, 0, 0)
+    env.objects[300].pos = vec3(290, 0, 0)
+    local previous
+    local function check(seen, count)
+      local cursor, before = countSentEv(env, "cnr_sight"), #rays
+      sample(env)
+      assertEq(countSentEv(env, "cnr_sight"), cursor + (previous == seen and 0 or 1), camera.mode)
+      assertEq(env.lastSent("cnr_sight").seen, seen, camera.mode)
+      assertEq(#rays - before, count, camera.mode)
+      if count > 0 then assertNear(rays[before + 1]:distance(vec3(0, 0, 1.2)), 0, 1e-6) end
+      previous = seen
+    end
+    check(false, 0)
+    camera.direction = vec3(1, 0, 0)
+    for _, mode in ipairs({"orbit", "chase", "driver", "occupant.driver", "onboard.hood"}) do
+      camera.mode = mode
+      check(true, 2)
+    end
+    for _, mode in ipairs({"path", "map", "cinematic", "relative", "unknown"}) do
+      camera.mode = mode
+      check(false, 0)
+    end
+    camera.mode, free.free = "orbit", true
+    check(false, 0)
+    free.free = false
+    env.player = env.addObject(301, vec3(100, 0, 0))
+    check(false, 0)
+    env.player = env.veh
+    env.cameraPos, env.blockAt = vec3(10, 0, 3), 5
+    check(false, 3)
+    env.blockAt = nil
+    camera.direction = vec3(0.0001, 0, 1)
+    check(false, 0)
+    core_camera.getActiveCamName = function() error("mode unavailable") end
+    camera.direction = vec3(1, 0, 0)
+    check(false, 0)
+  end)
+end)
+
+test("a rear mirror follows the assigned car while a turned camera can look farther", function()
+  withCamera(function()
+    local env, camera = sightFixture()
+    copInChase(env)
+    env.veh.pos = vec3(0, 0, 0)
+    local function check(x, y, dx, dy, expected)
+      env.objects[300].pos, camera.direction = vec3(x, y, 0), vec3(dx, dy, 0)
+      sample(env)
+      assertEq(env.lastSent("cnr_sight").seen, expected)
+    end
+    check(0, -180, 0, 1, true)
+    env.blockAt = 1
+    check(0, -180, 0, 1, false)
+    env.blockAt = nil
+    check(0, -260, 0, 1, false)
+    check(0, -260, 0, -1, true)
+    check(180, 0, -1, 0, false)
+    env.veh.getDirectionVector = function() return nil end
+    check(0, -180, 0, 1, false)
+    check(0, 260, 0, 1, true)
+  end)
+end)
+
+test("ground sight uses inclusive eye-centre 3D range and guarded two-way rays to three points", function()
+  bootClient()
+  local sight = require("copsAndRobbers/sight")
+  local eye, target, heading = vec3(0, 0, 0), vec3(0, 10, 0.2), vec3(0, 1, 0)
+  local points, blockReturn = {}, false
+  local function cast(origin, dir, len)
+    assertNear(origin.z, 1.2, 1e-8)
+    local other = origin + dir * len
+    points[#points + 1] = string.format("%.0f>%.0f", origin.y, other.y)
+    return (origin.y == 8 and not blockReturn or origin.y == 0 and other.y == 8) and len - 0.5 or len - 0.51
+  end
+  assertEq(sight.visible(eye, target, heading, 10, cast), true)
+  assertEq(table.concat(points, ","), "0>10,0>12,0>8,8>0")
+  blockReturn = true
+  assertEq(sight.visible(eye, target, heading, 10, cast), false)
+  for _, p in ipairs({vec3(0, 10.001, 0.2), vec3(0, 9, 10), vec3(0/0, 0, 0)}) do
+    local n = #points
+    assertEq(sight.visible(eye, p, heading, 10, cast), false)
+    assertEq(#points, n)
+  end
+  assertEq(sight.visible(nil, target, heading, 10, cast), false)
+  assertEq(sight.visible(eye, nil, heading, 10, cast), false)
+  for _, bad in ipairs({function() end, function() error("bad cast") end, function() return math.huge end, function() return 0/0 end}) do
+    assertEq(sight.visible(eye, target, heading, 10, bad), false)
+  end
+  assertEq(sight.visible(eye, target, heading, 10, nil), false)
+end)
+
+test("unreadable positions miss and an unreadable camera vector uses the assigned car heading", function()
+  withCamera(function()
+    local env, camera = sightFixture()
+    local sight = require("copsAndRobbers/sight")
+    local unreadable = setmetatable({}, {__index = function() error("engine vector expired") end})
+    local eye = vec3(0, 0, 0)
+    for _, value in ipairs({unreadable, io.stdout}) do
+      local casts = 0
+      assertEq(sight.visible(eye, value, vec3(0, 1, 0), 400, function() casts = casts + 1; return 1000 end), false)
+      assertEq(casts, 0)
+      camera.direction = value
+      local gaze, heading = sight.lookDirection(env.veh, true)
+      assertEq(gaze:distance(heading), 0)
+      assertEq(heading.y, 1)
+    end
+  end)
+end)
+
+test("only a live GE object for the registered remote round car permits clearance work", function()
+  withCamera(function()
+    local env, _, rays = sightFixture()
+    copInChase(env)
+    env.veh.pos = vec3(0, 0, 0)
+    env.addObject(301, vec3(0, 50, 0))
+    env.mpVehicles["2-1"] = {gameVehicleID = 301, isSpawned = true}
+    env.mpPlayers[2] = {activeVehicleID = "2-1"}
+    local function check(keys, seen, casts)
+      env.fire("cnr_roundCars", {keys = keys})
+      local before = #rays
+      sample(env)
+      assertEq(env.lastSent("cnr_sight").seen, seen)
+      assertEq(#rays - before, casts)
+    end
+    check({}, false, 0)
+    check({"2-0"}, true, 2)
+    env.mpVehicles["2-0"].isSpawned = false
+    check({"2-0"}, false, 0)
+    env.mpVehicles["2-0"].isSpawned, env.mpVehicles["2-0"].isDeleted = true, true
+    check({"2-0"}, false, 0)
+    env.mpVehicles["2-0"].isDeleted, env.objects[300] = nil, nil
+    check({"2-0"}, false, 0)
+    check({}, false, 0)
+  end)
+end)
+
+test("personal placement, repaint and rebuild bind sight even after a seat change", function()
+  withCamera(function()
+    for _, kind in ipairs({"replace", "spawn", "cnr_paint", "cnr_rebuild", "failed", "destroyed", "pending"}) do
+      local env, _, rays = sightFixture()
+      local assigned = env.addObject(350, vec3(12, 0, 0))
+      if kind == "spawn" then env.objects[100] = nil end
+      core_vehicles.replaceVehicle = function() return assigned end
+      if kind == "pending" then MPVehicleGE.getVehicleByGameID = function() end end
+      copInChase(env)
+      if kind == "spawn" then assigned = env.spawned[1].veh end
+      if kind == "cnr_paint" or kind == "cnr_rebuild" then
+        assigned = env.addObject(351, vec3(12, 0, 0))
+        env.fire(kind, {config = {parts = {}}, color = {r = 0, g = 1, b = 0}})
+      elseif kind == "failed" then
+        core_vehicles.replaceVehicle = function() end
+        env.fire("cnr_paint", {color = {r = 0, g = 1, b = 0}})
+      elseif kind == "pending" or kind == "destroyed" then
+        assigned:delete()
+        env.M.onVehicleDestroyed(assigned.id)
+        env.addObject(assigned.id, vec3(12, 0, 0))
+        MPVehicleGE.getVehicleByGameID = function(id) return {serverVehicleString = "1-" .. id} end
+      end
+      assigned.pos = vec3(12, 0, 0)
+      env.player = env.addObject(345, vec3(800, 800, 0))
+      sample(env)
+      local live = kind ~= "failed" and kind ~= "destroyed" and kind ~= "pending"
+      assertEq(env.lastSent("cnr_sight").seen, live, kind)
+      if live then assertEq(rays[1].x, 12, kind) else assertEq(#rays, 0, kind) end
+      if kind == "pending" then assertEq(env.lastSent("cnr_myVehicle"), nil) end
+    end
+  end)
+end)
+
+for _, loss in ipairs({"destruction", "failed repaint", "pending disappearance"}) do
+  test("public sight waits for a fresh registration after " .. loss, function()
+    withCamera(function()
+      local env, _, rays = sightFixture()
+      if loss == "pending disappearance" then MPVehicleGE.getVehicleByGameID = function() end end
+      copInChase(env)
+      env.veh.pos = vec3(0, 0, 0)
+      env.mpVehicles["1-0"] = {gameVehicleID = 100, isSpawned = true}
+      env.fire("cnr_roundCars", {keys = {"1-0", "2-0"}})
+      sample(env)
+      assertEq(env.lastSent("cnr_sight").seen, true)
+      local before = #rays
+      if loss == "failed repaint" then
+        core_vehicles.replaceVehicle = function() return nil end
+        env.fire("cnr_paint", {color = {r = 0, g = 1, b = 0}})
+        env.tick(2, 0.25)
+        assertEq(env.lastSent("cnr_sight").seen, false)
+      end
+      env.veh:delete()
+      if loss == "pending disappearance" then
+        sample(env)
+        assertEq(env.lastSent("cnr_myVehicle"), nil)
+      else
+        env.M.onVehicleDestroyed(100)
+      end
+      env.player = env.addObject(100, vec3(10, 0, 0))
+      env.tick(2, 0.25)
+      assertEq(env.lastSent("cnr_sight").seen, false)
+      assertEq(#rays, before)
+      env.mpVehicles["1-7"] = {gameVehicleID = 100, isSpawned = true}
+      env.fire("cnr_roundCars", {keys = {"1-7", "2-0"}})
+      env.tick(1, 0.25)
+      assertEq(env.lastSent("cnr_sight").seen, true)
+      assertEq(rays[before + 1].x, 10)
+    end)
+  end)
+end
+
+local function practice(env, role, maximum, lateSetup)
+  local setup = aiOnlySetup()
+  setup.sightMaxMeters, setup.aiOnly = maximum, role == "watch"
+  local sky = {time = "noon", weather = "clear"}
+  if role == "watch" then
+    spectate(env, {runnerId = -10, sky = sky})
+  else
+    local d = copy(SETUP)
+    d.practice, d.role, d.inPlace, d.sky = true, role, true, sky
+    d.sightMaxMeters = 0
+    d.runnerId = role == "runner" and 1 or -10
+    setup.runnerId = d.runnerId
+    table.remove(setup.ai, role == "runner" and 1 or 3)
+    env.fire("cnr_roundSetup", d)
+  end
+  if not lateSetup then env.fire("cnr_setupAI", setup) end
+  env.tick(1, 0.25)
+  return setup
+end
+
+local function registered(env)
+  local result = {}
+  for _, e in ipairs(env.sent) do
+    if e.ev == "cnr_aiVehicles" then
+      for _, item in ipairs(e.data.ai) do result[item.id] = item end
+    end
+  end
+  return result
+end
+
+test("a Practice human cop's registration renews only their sight report", function()
+  local env = bootClient()
+  practice(env, "cop", 400)
+  local runner, cop = env.spawned[1].veh, env.spawned[2].veh
+  runner.pos = vec3(0, 90, 0)
+  env.veh.pos, cop.pos = vec3(0, 0, 0), vec3(0, 0, 0)
+  env.fire("cnr_release", {})
+  sample(env)
+  local aiId = -11
+  assertEq(reportsSince(env, 0)[aiId].seen, true)
+  local cursor = #env.sent
+  env.fire("cnr_roundCars", {keys={"1-100"}})
+  sample(env)
+  local rows = reportsSince(env, cursor)
+  assertEq(rows.human and rows.human.seen, true)
+  assertEq(rows[aiId], nil)
+  cursor = #env.sent
+  env.tick(4.75, 0.25)
+  assertEq(reportsSince(env, cursor)[aiId].seen, true)
+  assertEq(reportsSince(env, cursor).human, nil)
+end)
+
+test("confirming a human Practice runner renews sight for every registered AI cop", function()
+  local env = bootClient()
+  practice(env, "runner", 400)
+  env.veh.pos = vec3(0, 30, 0)
+  for _, car in ipairs(env.spawned) do car.veh.pos = vec3(0, 0, 0) end
+  env.fire("cnr_release", {})
+  sample(env)
+  local cursor = #env.sent
+  env.fire("cnr_roundCars", {keys={"1-100"}})
+  sample(env)
+  local rows = reportsSince(env, cursor)
+  for _, id in ipairs({-11, -12}) do assertEq(rows[id] and rows[id].seen, true) end
+end)
+
+test("watching Practice reports independent AI sight changes, keepalives and disappearance", function()
+  withCamera(function()
+    local env = sightFixture()
+    practice(env, "watch", 400)
+    local runner, cop, partner = env.spawned[1].veh, env.spawned[2].veh, env.spawned[3].veh
+    runner.pos, cop.pos, partner.pos = vec3(0, 290, 0), vec3(0, 0, 0), vec3(0, 580, 0)
+    env.fire("cnr_runnerGo", {headStartSeconds = 5})
+    sample(env)
+    assertEq(countSentEv(env, "cnr_sight"), 0)
+    local ids, cursor = registered(env), #env.sent
+    local function check(elapsed, first, second)
+      env.tick(elapsed, 0.25)
+      local reports = reportsSince(env, cursor)
+      for id, name in pairs({[-11] = "first", [-12] = "second"}) do
+        local seen = first
+        if name == "second" then seen = second end
+        local row = reports[id]
+        assertEq(row and row.seen, seen, name)
+        if row then assert(row.instance > 0); assertEq(row.instance, ids[id].instance) end
+      end
+      assertEq(reports.human, nil)
+      cursor = #env.sent
+    end
+    env.fire("cnr_release", {})
+    check(0.25, true, false)
+    partner.direction = vec3(0, -1, 0)
+    check(0.25, nil, true)
+    check(4.5, nil, nil)
+    check(0.25, true, nil)
+    check(0.25, nil, true)
+    cop:delete()
+    env.M.onVehicleDestroyed(cop.id)
+    env.addObject(cop.id, vec3(0, 0, 0))
+    check(0.25, false, nil)
+  end)
+end)
+
+test("AI mirrors follow each car heading and ignore the issuer camera", function()
+  withCamera(function()
+    local env, camera = sightFixture()
+    practice(env, "watch", 400)
+    local runner, cop = env.spawned[1].veh, env.spawned[2].veh
+    cop.pos, runner.pos = vec3(0, 0, 0), vec3(0, -180, 0)
+    env.fire("cnr_release", {})
+    local cursor = #env.sent
+    sample(env)
+    assertEq(reportsSince(env, cursor)[-11].seen, true)
+    camera.direction = vec3(0, -1, 0)
+    runner.pos = vec3(0, -210, 0)
+    cursor = #env.sent
+    sample(env)
+    assertEq(reportsSince(env, cursor)[-11].seen, false)
+    cursor = #env.sent
+    cop.direction = camera.direction
+    sample(env)
+    assertEq(reportsSince(env, cursor)[-11].seen, true)
+  end)
+end)
+
+test("a late AI observer or target registers before the next acquisition, including after rebuild", function()
+  withCamera(function()
+    for _, late in ipairs({-10, -11, "rebuild"}) do
+      local env = sightFixture()
+      local held = late == -11 and 202 or late == -10 and 201 or nil
+      MPVehicleGE.getVehicleByGameID = function(id)
+        if id ~= held then return {serverVehicleString = "1-" .. id} end
+      end
+      practice(env, late == "rebuild" and "cop" or "watch", 400)
+      local runner, cop = env.spawned[1].veh, env.spawned[2].veh
+      runner.pos, cop.pos = vec3(0, 290, 0), vec3(0, 0, 0)
+      env.fire("cnr_release", {})
+      local observer = late == "rebuild" and "human" or -11
+      if late == "rebuild" then
+        env.veh.pos = cop.pos
+        local before = #env.sent
+        sample(env)
+        assertEq(reportsSince(env, before).human.seen, true)
+        env.fire("cnr_rebuild", {rebuild = 2, config = {parts = {}}})
+        local ai = require("copsAndRobbers/ai")
+        held = ai.runnerObject():getID()
+        ai.runnerObject().pos = vec3(0, 290, 0)
+      end
+      local cursor = #env.sent
+      env.tick(0.5, 0.25)
+      local row = reportsSince(env, cursor)[observer]
+      if late == -11 then assertEq(row, nil) else assertEq(row and row.seen, false) end
+      held = nil
+      cursor = #env.sent
+      sample(env)
+      local regIndex, sightIndex
+      for i = cursor + 1, #env.sent do
+        local e = env.sent[i]
+        if e.ev == "cnr_aiVehicles" then
+          for _, item in ipairs(e.data.ai) do
+            if item.id == (late == -11 and -11 or -10) then regIndex = i end
+          end
+        elseif e.ev == "cnr_sight" and (e.data.aiId or "human") == observer and e.data.seen then sightIndex = i end
+      end
+      assert(regIndex and sightIndex and regIndex < sightIndex, tostring(late))
+    end
+  end)
+end)
+
+test("Practice cops chase the assigned human runner through cover and seat changes", function()
+  withCamera(function()
+    for _, case in ipairs({{400, false}, {0, false}, {400, true}}) do
+      local env = sightFixture()
+      local maximum, late = case[1], case[2]
+      local setup = practice(env, "runner", maximum, late)
+      local runner = env.veh
+      env.player = env.addObject(333, vec3(900, 0, 0))
+      env.fire("cnr_release", {})
+      if late then env.fire("cnr_setupAI", setup) end
+      runner.pos = vec3(0, 90, 0)
+      local cursors = {}
+      for i, spawn in ipairs(env.spawned) do
+        spawn.veh.pos = vec3(0, 0, 0)
+        local targets = targetsOf(spawn.veh)
+        assertEq(targets[#targets], runner.id)
+        assert(table.concat(spawn.veh.commands, "\n"):find('ai.setMode("chase")', 1, true))
+        cursors[i] = #spawn.veh.commands
+      end
+      for _, seen in ipairs({true, false, true}) do
+        env.blockAt = nil
+        if not seen then env.blockAt = 1 end
+        local cursor = #env.sent
+        sample(env)
+        local reports = reportsSince(env, cursor)
+        assertEq(reports.human, nil)
+        for _, slot in ipairs({-11, -12}) do
+          if maximum > 0 then assertEq(reports[slot].seen, seen) else assertEq(reports[slot], nil) end
+        end
+      end
+      for i, spawn in ipairs(env.spawned) do
+        for n = cursors[i] + 1, #spawn.veh.commands do
+          assert(not spawn.veh.commands[n]:match("^ai%.set"))
+        end
+      end
+      env.fire("cnr_penalty", {aiId = -11})
+      env.fire("cnr_penaltyEnd", {aiId = -11})
+      local resumed = targetsOf(env.spawned[1].veh)
+      assertEq(resumed[#resumed], runner.id)
+    end
+  end)
+end)
+
+test("Practice shares runner conditions and lighting and gives rebuilt cars new serials", function()
+  withCamera(function()
+    local env, camera, rays = sightFixture()
+    practice(env, "cop", 400)
+    local conditions = require("copsAndRobbers/sightConditions")
+    local street = require("copsAndRobbers/streetLights")
+    local calls, lights = 0, 0
+    local day = 1
+    conditions.sample = function(runner)
+      calls = calls + 1
+      assertEq(runner, require("copsAndRobbers/ai").runnerObject())
+      return day, false, 0.0004, 1
+    end
+    street.strength = function(center)
+      lights = lights + 1
+      assertEq(center.z, 1)
+      return 0
+    end
+    local runner, partner = env.spawned[1].veh, env.spawned[2].veh
+    env.veh.pos, partner.pos, runner.pos = vec3(0, 0, 0), vec3(0, 0, 0), vec3(290, 0, 0)
+    partner.direction = vec3(1, 0, 0)
+    env.fire("cnr_release", {})
+    local cursor = #env.sent
+    sample(env)
+    local rows = reportsSince(env, cursor)
+    assertEq(rows[-11].seen, true); assertEq(rows.human.seen, false)
+    assertEq(calls, 1); assertEq(lights, 0)
+    cursor = #env.sent
+    camera.direction = partner.direction
+    sample(env)
+    rows = reportsSince(env, cursor)
+    assertEq(rows.human.seen, true); assertEq(rows[-11], nil)
+    assertEq(calls, 2); assertEq(lights, 0)
+    day = 0
+    runner.pos = vec3(70, 0, 0)
+    sample(env)
+    assertEq(calls, 3); assertEq(lights, 1)
+    runner.pos = vec3(900, 0, 0)
+    local before = #rays
+    cursor = #env.sent
+    sample(env)
+    rows = reportsSince(env, cursor)
+    assertEq(rows.human.seen, false); assertEq(rows[-11].seen, false)
+    assertEq(calls, 3); assertEq(lights, 1); assertEq(#rays, before)
+    local ids = registered(env)
+    local highest = math.max(ids[-10].instance, ids[-11].instance)
+    cursor = #env.sent
+    env.fire("cnr_rebuild", {config = {parts = {}}, rebuild = 2})
+    sample(env)
+    rows = reportsSince(env, cursor)
+    local newIds = registered(env)
+    for _, slot in ipairs({-10, -11}) do assert(newIds[slot].instance > highest) end
+    assertEq(rows.human.seen, false); assertEq(rows[-11].instance, newIds[-11].instance)
+    assertEq(rows[-11].seen, false)
+    require("copsAndRobbers/ai").runnerObject():delete()
+    sample(env)
+    assertEq(calls, 3); assertEq(lights, 1); assertEq(#rays, before)
+    env.fire("cnr_roundEnd", {reason = "cancelled"})
+    cursor = #env.sent
+    spectate(env, {phase = "running"})
+    env.tick(6, 0.25)
+    assertEq(next(reportsSince(env, cursor)), nil)
+    env.fire("cnr_roundEnd", {reason = "cancelled"})
+    env.fire("cnr_parkBystanderCars", {on = true})
+    env.tick(6, 0.25)
+    assertEq(next(reportsSince(env, cursor)), nil)
+  end)
+end)
+
+test("streetlight discovery pauses across idle rounds and is cleared at each mission exit", function()
+  for _, exit in ipairs({"onClientEndMission", "onBeamMPServerLeave", "onExtensionUnloaded"}) do
+    withCamera(function()
+      local env = sightFixture()
+      local street = require("copsAndRobbers/streetLights")
+      local advances, scans = 0, 0
+      local advance, find = street.advance, scenetree.findClassObjects
+      street.advance = function() advances = advances + 1; advance() end
+      scenetree.findClassObjects = function(class)
+        if class == "TSStatic" then scans = scans + 1 end
+        return find and find(class) or {}
+      end
+      local function setup(maximum)
+        local d = copy(SETUP)
+        d.sightMaxMeters = maximum
+        env.fire("cnr_roundSetup", d)
+        sample(env)
+      end
+      setup(0)
+      assertEq(advances, 0); assertEq(scans, 0)
+      env.fire("cnr_roundEnd", {reason = "cancelled"})
+      spectate(env)
+      sample(env)
+      env.fire("cnr_roundEnd", {reason = "cancelled"})
+      env.fire("cnr_parkBystanderCars", {on = true})
+      sample(env)
+      assertEq(advances, 0); assertEq(scans, 0)
+      env.fire("cnr_parkBystanderCars", {on = false})
+      setup(400)
+      assertEq(advances, 1); assertEq(scans, 1)
+      env.fire("cnr_roundEnd", {reason = "cancelled"})
+      sample(env)
+      assertEq(advances, 1)
+      setup(400)
+      assertEq(advances, 2); assertEq(scans, 1)
+      env.M[exit]()
+      street.beginMissionIndex()
+      assertEq(scans, 2, exit)
+    end)
+  end
+end)
+end

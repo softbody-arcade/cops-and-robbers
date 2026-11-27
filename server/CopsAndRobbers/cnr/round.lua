@@ -23,7 +23,7 @@ local COLOR_COPS = { "#1f6fe0", "#6fb0ff" }
 M.AI_FIRST = -10
 
 function M.isAI(id)
-  return type(id) == "number" and id <= M.AI_FIRST
+  return type(id) == "number" and id <= M.AI_FIRST and id % 1 == 0
 end
 local SETUP_GRACE_SECONDS = 5
 local MAX_TIMELINE = 50
@@ -94,6 +94,8 @@ function Round:clear()
   self.teleportAnnounced = {}
   self.lastTickAt = nil
   self.sight = sight.new()
+  self.lastGroundObservers = {}
+  self.sightTargetChanged = false
   self.queued = nil
   self.inSight = false
   self.liveAt = nil
@@ -470,6 +472,7 @@ function Round:tick(now, cars, stations, traffic)
       local nearest = runnerCar and self:nearestCop(cars, runnerCar, copPids)
       local seeing = self:sightTick(now, cars, runnerCar, copPids, fx)
       self:trackTick(now, cars, runnerCar, seeing, nearest, fx)
+      self.sightTargetChanged = false
       if nearest and now - self.nearestAt >= NEAREST_COP_SECONDS - 1e-9 then
         self.nearestAt = now
         fx[#fx + 1] = { kind = "nearestCop", dist = nearest }
@@ -563,7 +566,24 @@ end
 
 function Round:sightReport(now, pid, seen)
   if self.state ~= "running" or self.players[pid] == nil or pid == self.runnerId or M.isAI(pid) then return end
-  sight.report(self.sight, pid, seen == true, now)
+  if type(seen) == "boolean" then sight.report(self.sight, pid, seen, now) end
+end
+
+function Round:aiSightReport(now, issuerPid, aiId, seen)
+  if self.state ~= "running" or not self.test or issuerPid ~= self.issuerId or self.cfg.sightMaxMeters <= 0 then return end
+  if not M.isAI(aiId) or not self.players[aiId] or aiId == self.runnerId or type(seen) ~= "boolean" then return end
+  sight.report(self.sight, aiId, seen, now)
+end
+
+function Round:forgetVehicleSight(id)
+  if id == self.runnerId then
+    for pid in pairs(self.players) do sight.forget(self.sight, pid) end
+    self.lastGroundObservers = {}
+    self.sightTargetChanged = true
+  else
+    sight.forget(self.sight, id)
+    self.lastGroundObservers[id] = nil
+  end
 end
 
 function Round:copPids()
@@ -590,19 +610,26 @@ end
 function Round:sightTick(now, cars, runnerCar, pids, fx)
   local cfg = self.cfg
   local seeing = {}
-  if not runnerCar or cfg.sightMaxMeters <= 0 then return seeing end
+  if cfg.sightMaxMeters <= 0 then return seeing end
   local dt = self.sightTickAt and math.min(MAX_SIGHT_STEP, math.max(0, now - self.sightTickAt)) or 0
   self.sightTickAt = now
+  if not runnerCar then
+    if not self.inSight then return seeing end
+    for pid in pairs(self.lastGroundObservers) do
+      if sight.sees(self.sight, pid, now, cfg.sightGraceSeconds) then return seeing end
+    end
+  end
   local inSight = false
   for _, pid in ipairs(pids) do
     local car = cars[pid]
-    local d = car and car.pos and vec.dist(runnerCar.pos, car.pos)
+    local d = runnerCar and car and car.pos and vec.dist(runnerCar.pos, car.pos)
     if d and d <= cfg.sightMaxMeters + SIGHT_RANGE_MARGIN and sight.sees(self.sight, pid, now, cfg.sightGraceSeconds) then
       seeing[pid] = true
       inSight = true
       self.copSight[pid] = (self.copSight[pid] or 0) + dt
     end
   end
+  self.lastGroundObservers = seeing
   if not inSight then self.hiddenSeconds = self.hiddenSeconds + dt end
   if inSight and not self.inSight then
     self.inSight = true
@@ -634,7 +661,7 @@ function Round:trackTick(now, cars, runnerCar, seeing, nearest, fx)
     end
     fx[#fx + 1] = { kind = "live", pos = runnerCar.pos, noRoute = noRoute, nearestCop = nearest }
   elseif self.lastTrackedCar then
-    local last = (self.prevCars[self.runnerId] and runnerCar) or self.lastTrackedCar
+    local last = (not self.sightTargetChanged and self.prevCars[self.runnerId] and runnerCar) or self.lastTrackedCar
     self.lastTrackedCar = nil
     self.liveAt = nil
     fx[#fx + 1] = { kind = "lastSeen", pos = last.pos, nearestCop = nearest }

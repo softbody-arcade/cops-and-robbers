@@ -38,7 +38,10 @@ local trafficVids = {}
 local lastRoundCars
 local stationsRequested = {}
 local partsBaseline = {}
-local aiVid = {}
+local aiCars = {}
+local aiSlotSerial, aiVidSerial = {}, {}
+local connectionSerial = {}
+local previousRoundSerial = 0
 local runCounts = {}
 local lastRunnerKey
 local plannedRunnerKey
@@ -338,10 +341,20 @@ local function extraCars(pid)
   return n
 end
 
+local function confirmedVid(pid)
+  return registeredRoundCar[pid] and activeVid[pid]
+end
+
+local function setRoundVid(pid, vid)
+  if registeredRoundCar[pid] and activeVid[pid] ~= vid then current:forgetVehicleSight(pid) end
+  activeVid[pid] = vid
+end
+
 local function roundCarKeys()
   local keys = {}
   for p in pairs(current.players) do
-    if not round.isAI(p) and activeVid[p] then keys[#keys + 1] = p .. "-" .. activeVid[p] end
+    local vid = confirmedVid(p)
+    if vid then keys[#keys + 1] = p .. "-" .. vid end
   end
   table.sort(keys)
   return keys
@@ -362,11 +375,24 @@ local function clearRoundCars()
   lastRoundCars = nil
 end
 
+local function aiSlotForVid(vid)
+  for id, car in pairs(aiCars) do
+    if car.vid == vid then return id end
+  end
+end
+
+local function removeAICar(id)
+  if id and aiCars[id] then
+    aiCars[id] = nil
+    current:forgetVehicleSight(id)
+  end
+end
+
 local function carFor(pid)
   if pid == nil then return nil end
   local owner, vid = pid, nil
   if round.isAI(pid) then
-    owner, vid = current.issuerId, aiVid[pid]
+    owner, vid = current.issuerId, aiCars[pid] and aiCars[pid].vid
   else
     vid = vidFor(pid)
   end
@@ -582,7 +608,7 @@ local function applyEffects(effects)
       local payload = {
         model = current.vehicle.model, config = current.vehicle.config, ai = list,
         runnerId = current.runnerId, copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
-        aiOnly = e.aiOnly,
+        aiOnly = e.aiOnly, sightMaxMeters = cfg.sightMaxMeters,
       }
       pendingAISetup = { pid = e.pid, payload = payload, deadline = now() + AI_SETUP_WAIT_SECONDS,
         capacity = capacity and capacity >= #list + (e.aiOnly and 0 or 1) and capacity or nil }
@@ -638,7 +664,7 @@ local function applyEffects(effects)
       if not current.test and not e.to and e.reason ~= "cancelled" then
         lastResult = { runner = e.runnerName, seconds = e.survivedSeconds, reason = e.reason }
       end
-      aiVid = {}
+      aiCars, aiSlotSerial, aiVidSerial = {}, {}, {}
       if autoNext then autoNextAt = now() + cfg.autoNextDelaySeconds end
     elseif e.kind == "live" then
       for pid in pairs(current.players) do
@@ -793,7 +819,7 @@ function handlers.test(pid, cmd)
   trafficVids = {}
   partsBaseline = {}
   missingCount = {}
-  aiVid = {}
+  previousRoundSerial = connectionSerial[pid] or 0
   local role = cmd.args[1] and cmd.args[1]:lower()
   if cfg.carMode == "evolving" and not currentBuild then return refuse(pid, "Start a new build first") end
   local opts = { gridPlanner = gridClients[pid] and pid, test = true, role = role, aiOnly = sitOut[pid] == true, build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random) }
@@ -1233,7 +1259,7 @@ function cnrOnVehicleSpawn(pid, vid, data)
   end
   if preRoundVehicles[pid] then preRoundVehicles[pid][vid] = nil end
   if roundSpawn then
-    activeVid[pid] = vid
+    setRoundVid(pid, vid)
     allowRoundSpawn[pid] = nil
     if registeredRoundCar[pid] then pushRoundCars() end
   elseif tracksActive(pid) and not registeredRoundCar[pid] and not trafficOpen[pid] then
@@ -1245,14 +1271,7 @@ end
 function cnrOnVehicleEdited(pid, vid, data)
   if preRoundVehicles[pid] and preRoundVehicles[pid][vid] then return 0 end
   if registeredRoundCar[pid] and activeVid[pid] ~= vid then
-    local isRoundAI = false
-    for _, ai in pairs(aiVid) do
-      if ai == vid then
-        isRoundAI = true
-        break
-      end
-    end
-    if not isRoundAI then return 0 end
+    if pid ~= current.issuerId or not aiSlotForVid(vid) then return 0 end
   end
   local allowed, decoded, why = vehicleAllowed(pid, vid, data, false)
   if not allowed then
@@ -1267,9 +1286,10 @@ function cnrOnVehicleEdited(pid, vid, data)
 end
 
 function cnrOnVehicleDeleted(pid, vid)
+  if pid == current.issuerId then removeAICar(aiSlotForVid(vid)) end
   if preRoundVehicles[pid] then preRoundVehicles[pid][vid] = nil end
   if activeVid[pid] == vid then
-    activeVid[pid] = nil
+    setRoundVid(pid, nil)
     if registeredRoundCar[pid] then pushRoundCars() end
   end
 end
@@ -1330,6 +1350,7 @@ function cnrOnPlayerJoin(pid)
 end
 
 function cnrOnPlayerDisconnect(pid)
+  connectionSerial[pid] = nil
   gridClients[pid] = nil
   stationsRequested[pid] = nil
   refusalLoggedAt[pid] = nil
@@ -1427,11 +1448,17 @@ function cnrOnVehiclePicked(pid, data)
   applyEffects(current:vehiclePicked(now(), pid, decoded.model, decoded.config, MP.GetPlayers() or {}))
 end
 
+local function integer(n)
+  return finite(n) and n % 1 == 0
+end
+
 function cnrOnMyVehicle(pid, data)
   local ok, decoded = pcall(Util.JsonDecode, data)
   local vid = ok and type(decoded) == "table" and tonumber(decoded.vid)
-  if not vid or not current:isActive() or current.players[pid] == nil then return end
-  activeVid[pid] = vid
+  if not integer(vid) or vid < 0 or not roundCarActive() or current.players[pid] == nil then return end
+  local owned = MP.GetPlayerVehicles(pid)
+  if type(owned) ~= "table" or not owned[vid] or (pid == current.issuerId and aiSlotForVid(vid)) then return end
+  setRoundVid(pid, vid)
   registeredRoundCar[pid] = true
   preRoundVehicles[pid] = nil
   allowRoundSpawn[pid] = nil
@@ -1449,7 +1476,7 @@ function cnrOnTrafficCars(pid, data)
   if not ok or type(d) ~= "table" or type(d.vids) ~= "table" then return end
   local ai = {}
   if current.test and pid == current.issuerId then
-    for _, v in pairs(aiVid) do ai[v] = true end
+    for _, car in pairs(aiCars) do ai[car.vid] = true end
   end
   local set, n = {}, 0
   for _, raw in ipairs(d.vids) do
@@ -1462,17 +1489,46 @@ function cnrOnTrafficCars(pid, data)
   trafficVids[pid] = set
 end
 
+local function registerAICar(pid, a, owned)
+  if type(a) ~= "table" then return end
+  local id, vid, serial = a.id, a.vid, a.instance
+  if not round.isAI(id) or not current.players[id] then return end
+  if not integer(vid) or vid < 0 or not owned[vid] or (registeredRoundCar[pid] and activeVid[pid] == vid) then return end
+  if serial ~= nil then
+    local latest = math.max(previousRoundSerial, aiSlotSerial[id] or 0, aiVidSerial[vid] or 0)
+    if not integer(serial) or serial <= latest then return end
+    aiSlotSerial[id], aiVidSerial[vid] = serial, serial
+    connectionSerial[pid] = math.max(connectionSerial[pid] or 0, serial)
+  elseif aiSlotSerial[id] or aiVidSerial[vid] or (aiCars[id] and aiCars[id].vid == vid) then
+    return
+  end
+  removeAICar(id)
+  removeAICar(aiSlotForVid(vid))
+  aiCars[id] = {vid=vid, instance=serial}
+  if preRoundVehicles[pid] then preRoundVehicles[pid][vid] = nil end
+end
+
+local function decodeObservationPacket(data)
+  if type(data) ~= "string" then return end
+  if data:find("null", 1, true) then
+    local quoted = false
+    data = data:gsub('([^"]*)("?)', function(chunk, quote)
+      local value = quoted and chunk or chunk:gsub("null", "[]")
+      if quote ~= "" and #chunk:match("\\*$") % 2 == 0 then quoted = not quoted end
+      return value .. quote
+    end)
+  end
+  local ok, packet = pcall(Util.JsonDecode, data)
+  if ok and type(packet) == "table" then return packet end
+end
+
 function cnrOnAiVehicles(pid, data)
   if not current.test or pid ~= current.issuerId then return end
-  local ok, decoded = pcall(Util.JsonDecode, data)
-  if not ok or type(decoded) ~= "table" or type(decoded.ai) ~= "table" then return end
-  for _, a in ipairs(decoded.ai) do
-    local id, vid = tonumber(a.id), tonumber(a.vid)
-    if id and vid and round.isAI(id) and current.players[id] then
-      aiVid[id] = vid
-      if preRoundVehicles[pid] then preRoundVehicles[pid][vid] = nil end
-    end
-  end
+  local decoded = decodeObservationPacket(data)
+  if not decoded or type(decoded.ai) ~= "table" then return end
+  local owned = MP.GetPlayerVehicles(pid)
+  if type(owned) ~= "table" then return end
+  for _, a in ipairs(decoded.ai) do registerAICar(pid, a, owned) end
 end
 
 function cnrOnBoard(pid, data)
@@ -1498,9 +1554,18 @@ function cnrOnBoard(pid, data)
 end
 
 function cnrOnSight(pid, data)
-  local ok, d = pcall(Util.JsonDecode, data)
-  if not ok or type(d) ~= "table" then return end
-  current:sightReport(now(), pid, d.seen == true)
+  local d = decodeObservationPacket(data)
+  if not d or type(d.seen) ~= "boolean" then return end
+  if not confirmedVid(current.runnerId) and not aiCars[current.runnerId] then return end
+  if d.aiId ~= nil or d.instance ~= nil then
+    if not current.test or pid ~= current.issuerId or not round.isAI(d.aiId) or not integer(d.instance) then return end
+    local car = aiCars[d.aiId]
+    if not car or car.instance ~= d.instance then return end
+    local owned = MP.GetPlayerVehicles(pid)
+    if type(owned) == "table" and owned[car.vid] then current:aiSightReport(now(), pid, d.aiId, d.seen) end
+  elseif confirmedVid(pid) then
+    current:sightReport(now(), pid, d.seen)
+  end
 end
 
 function cnrOnCover(pid, data)
