@@ -18,6 +18,7 @@ Car limits, upgrades and the host panel are in [Hosting](docs/HOSTING.md).
 - [Settings](docs/CONFIG.md): every `config.json` setting
 - [Features](docs/FEATURES.md): every rule and feature in detail
 - [Development](docs/DEVELOPMENT.md): prerequisites, tests, releases and code layout
+- [Roles](docs/ROLES.md): who can do what
 - [Contributing](CONTRIBUTING.md) and [Security](SECURITY.md)
 
 All documentation lives in [`docs/`](docs/README.md), which is also an Obsidian vault.

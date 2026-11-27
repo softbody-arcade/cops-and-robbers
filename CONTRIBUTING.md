@@ -2,7 +2,7 @@
 
 Thanks for helping. Cops and Robbers is a chase minigame for BeamNG.drive multiplayer (BeamMP), part of [Softbody Arcade](https://github.com/softbody-arcade).
 
-The full rules, for people and for coding agents alike, are in [AGENTS.md](AGENTS.md). This page is the short version.
+The full rules, for people and for coding agents alike, are in [AGENTS.md](AGENTS.md). This page is the short version, and [Roles](docs/ROLES.md) explains what each team can do.
 
 ## Set up
 
