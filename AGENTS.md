@@ -111,8 +111,10 @@ Add source comments or emojis only when the maintainer asks for them.
 ## Trusted code
 
 Hooks, Make targets and scripts run with the credentials of whoever runs them, and `make hooks` points git at the checked-out `.githooks`. So with the maintainer's credentials:
-- Run `make version`, `make deploy`, `scripts/board` and pushes only from the maintainer's checkout of `main`, or from a worktree of a branch the maintainer or their agent wrote.
+- Run `scripts/board`, `make version` and `make deploy` only from the maintainer's checkout of `main`.
+- Push only from that checkout or from a worktree of a branch the maintainer or their agent wrote.
 - Never check out, build, test or push from a contributor's branch. Review it as a diff on GitHub or with `git diff`; to try it, use a checkout without credentials (no `gh` login, no SSH agent).
+- Staging a contributor's PR on the test server runs its mod code there by design. Stage it only after reviewing the whole diff, and build it with `main`'s tooling, never the branch's: the steps under **Staging** below.
 
 ## Privacy
 
@@ -142,10 +144,11 @@ Hooks, Make targets and scripts run with the credentials of whoever runs them, a
   - A deferred check becomes an `In-game check` issue in Playtest, filed by `board result <n> defer --checks-file F`.
 - **Staging on the local test server (maintainer-only).**
   1. Extract `git archive <reviewed-sha>` into a disposable directory and work from that snapshot.
-  2. Set `test_server=<repo>/.testserver`.
-  3. If it has an installed config, first run `cp "$test_server/Resources/Server/CopsAndRobbers/config.json" server/CopsAndRobbers/config.json` in the snapshot.
-  4. Run `make install-local TESTSERVER="$test_server"`.
-  5. Restart the local BeamMP server. Then, from the maintainer's checkout of `main` (not the snapshot), record the SHA with `scripts/board move <n> playtest --staged <sha>`.
+  2. For a contributor's PR, replace the snapshot's `Makefile` with `main`'s (`git show main:Makefile > Makefile` from the maintainer's checkout), so only the mod files come from the branch. Keep the test server's config out of a contributor snapshot: let the mod start with its defaults.
+  3. Set `test_server=<repo>/.testserver`.
+  4. For the maintainer's own branches only: if the test server has an installed config, first run `cp "$test_server/Resources/Server/CopsAndRobbers/config.json" server/CopsAndRobbers/config.json` in the snapshot.
+  5. Run `make install-local TESTSERVER="$test_server"`.
+  6. Restart the local BeamMP server. Then, from the maintainer's checkout of `main` (not the snapshot), record the SHA with `scripts/board move <n> playtest --staged <sha>`.
   The maintainer handles game and launcher restarts.
 - **Engine probes (maintainer-only).**
   - Use a temporary GE extension in the game's user folder (`current/lua/ge/extensions/`), and read its tagged output in `current/beamng.log`.
