@@ -6,55 +6,56 @@ The repo is `softbody-arcade/cops-and-robbers`, in the `softbody-arcade` organiz
 
 ## Tickets are the ledger
 
-GitHub Issues and the organization board **Softbody Arcade** (project 1) record all work: ideas, bugs, in-game checks, and what is in progress. An issue is the single place that says what happened to a piece of work and why.
+GitHub Issues and the organization board **Softbody Arcade** (project 1) record all work: ideas, bugs, in-game checks, and what is in progress. An issue is the single place that says what happened to a piece of work and why. Use what GitHub provides natively; never mirror the same fact twice.
 
-- **Labels.** Every issue outside Inbox has one kind and one priority.
-  - Kinds: `idea`, `bug`, `in-game-check`.
-  - Priorities: `p0` (highest), `p1`, `p2`, `p3`. Rank by player impact, then host or panel problems, then cosmetics, then maintainer-only work.
-  - Add `needs-decision` while an issue waits on the maintainer, and `needs-playtest` to a PR whose change a player would see, hear or feel.
-  - The label is the source of truth for priority. `scripts/board` mirrors it into the board's Priority field.
-- **Links.** A `## Links` section in each ticket lists its spec, plan, related issues and PRs. Whoever writes a spec or plan links it the same day.
+- **Type** (the org's issue types): `Feature` for ideas and new functionality, `Bug`, `Task` for maintenance and tooling, `In-game check` for something to verify in game. Every issue outside Inbox has one.
+- **Priority** (the org's issue field): `Urgent`, `High`, `Medium` or `Low`. Rank by player impact, then host or panel problems, then cosmetics, then maintainer-only work. Every issue outside Inbox has one.
+- **Milestone**: the release version an issue is targeted at, named `x.y.z`. The maintainer assigns it when committing to a release. A release ships when its milestone's issues are closed or moved on, and `release.yml` closes the milestone.
+- **Parent and sub-issues** give the structure: a large feature is a parent with its parts as sub-issues, and the issues folded into a fix batch become sub-issues of the batch's ticket. Progress rolls up on the parent.
+- **Blocked by / blocking** (issue dependencies) records order: `scripts/board block <n> --by <m>`. Never use a label or prose for it.
+- **Labels** remain only where nothing native exists: `needs-decision` while an issue waits on the maintainer, `needs-playtest` on a PR whose change a player would see, hear or feel, and `good first issue` / `help wanted` for contributors. Close duplicates and dropped work with GitHub's "duplicate" and "not planned" close reasons.
+- **Links.** A `## Links` section in each ticket lists its spec, plan and related issues; GitHub links PRs and relations itself. Whoever writes a spec or plan links it the same day.
 - **Decisions.** Every maintainer decision becomes a comment on the ticket: `**Decision (YYYY-MM-DD):**` followed by what was decided, the options and the reason (`scripts/board decide`). An agent posts decisions made in a chat before its turn ends. Nothing is decided only in chat.
 - **Events.** Playtest results, deferred review findings (as links to new issues), deploys and scope changes also go on the ticket.
-- **Findings.**
-  - A finding about a branch's own unmerged code goes in its PR, and is fixed or filed before merge.
-  - Anything else found in passing becomes a new issue right away, including deferred review findings, with the affected file and the observable problem.
-- **Blocked work** uses GitHub's issue dependencies (`scripts/board block <n> --by <m>`), never a label or prose.
-- **Sub-issues** split large work. Issues folded into a fix batch become sub-issues of the batch's ticket.
+- **Findings.** A finding about a branch's own unmerged code goes in its PR and is fixed or filed before merge. Anything else found in passing becomes a new issue right away, including deferred review findings, with the affected file and the observable problem.
 - **Claiming.** A PR lists every issue it handles as `Fixes #n`.
 
 ### Lanes
 
 | Lane | Holds | Leaves when |
 |---|---|---|
-| Inbox | New, untriaged issues | `board triage` sets kind and priority, moving it to Backlog |
+| Inbox | New, untriaged issues | `board triage <n> <type> <priority>` sets type and priority, moving it to Backlog |
 | Backlog | Triaged; a simple ticket is fine | The maintainer picks it for Next |
 | Next | At most 5, top first, each meeting the definition of ready | `board start <n> design\|build` |
 | Design | Brainstorm, spec and plan | The maintainer approves the plan, then `board move <n> build` |
 | Build | Branch, worktree, draft PR; per-task implement and review | The PR is ready: `board move <n> review` |
 | Review | Whole-branch review, fixes, CI | With `needs-playtest`: `board move <n> playtest --staged <sha>`. Without it, the PR merges |
-| Playtest | Waiting on the maintainer's in-game result, plus deferred `in-game-check` issues | `board result <n> pass\|fail\|defer` |
+| Playtest | Waiting on the maintainer's in-game result, plus `In-game check` issues | `board result <n> ...` (below) |
 | Done | Closed issues, for any reason | Archived after 14 days without updates |
 
 **Definition of ready for Next.** The ticket body has these sections: `## Goal`, `## Why`, `## Scope`, `## Done when`, `## Constraints and known facts`, `## Open questions`, `## Links`. The **Ready** issue template provides them, and `board move <n> next` refuses without them.
 
-**Agent rules the script cannot check:**
-- Run `board move <n> build` only after the maintainer approved the plan.
-- Run `board result` only with a result the maintainer reported.
-- Never move a card out of Playtest by hand.
+**Playtest results.**
+- On a work card: `board result <n> pass`, `board result <n> fail`, or `board result <n> defer --checks-file F`, where F holds one check per line, each starting with its priority (`Urgent:`, `High:`, `Medium:` or `Low:`). `defer` files one `In-game check` issue with those checks as tasks. Results are bound to the staged SHA.
+- On an `In-game check` issue: `pass` or `fail` only. Both close it; `fail` also files a `Bug` that links the check.
 
-Use `scripts/board` for all board work. `scripts/board --help` lists the commands. It needs only `gh`, with the `project` scope, and `git`.
+**Who runs board writes.** Only the maintainer, or an agent acting for the maintainer, runs `triage`, `start`, `move`, `result`, `block`, `unblock`, `decide` and `sync`, and only from the maintainer's own checkout of `main`, never from a branch under review (a branch's `scripts/board` is untrusted code). Contributors file issues with the templates (`gh issue create` or the web) and use read-only commands (`list`, `waiting`, `show`), which need only the `read:project` scope. `scripts/board --help` lists the commands.
+
+**Agent rules the script cannot check:**
+- Run `board move <n> build` only after the maintainer approved that plan in the current session.
+- Run `board result` only with a result the maintainer reported in the current session.
+- Never move a card out of Playtest by hand.
 
 ## Roles
 
 | Team | Repo | Board |
 |---|---|---|
 | `maintainers` | Admin | Admin |
-| `contributors` | Write: `feature/*` and `fixes/*` branches and PRs | Write: their own cards |
-| `playtesters` | Triage: comment, label, file issues | Read |
+| `contributors` | Write: `feature/*` and `fixes/*` branches and PRs | Read |
+| `playtesters` | Triage: comment and file issues | Read |
 
-- **Playtesters** take `in-game-check` issues and post what they saw as a comment. The maintainer records the result.
-- **Maintainer-only:** triage, ordering Next, merging, releases, staging on `.testserver`, the in-game probe extensions and deploys. A contributor's agent skips these and says in its PR what still needs doing.
+- **Playtesters** take `In-game check` issues and post what they saw as a comment. The maintainer records the result.
+- **Maintainer-only:** board writes, triage, ordering Next, milestones, merging, releases, staging on `.testserver`, the in-game probe extensions and deploys. A contributor's agent skips these and says in its PR what still needs doing.
 
 ## Design and implementation
 
@@ -62,7 +63,7 @@ Use `scripts/board` for all board work. `scripts/board --help` lists the command
 - **Specs and plans.**
   - For new features, agree on the design with the maintainer.
   - Write the spec in `docs/superpowers/specs/` and the task plan in `docs/superpowers/plans/`, and link both from the ticket.
-  - Have the spec and plan reviewed and fix the findings, then hand them to the maintainer to read.
+  - Have the spec reviewed and fix the findings, then hand the spec to the maintainer before drafting the plan, unless the maintainer asks for a combined handoff. Then the same for the plan.
   - Implementation starts once the maintainer approves the plan and authorizes the build. Subagent-driven development is the default. An agent that cannot start subagents uses `executing-plans` inline, and gets each task reviewed in a separate, fresh session.
 - **Writing a feature spec.**
   - Write it for the person deciding how the game should play.
@@ -77,10 +78,10 @@ Use `scripts/board` for all board work. `scripts/board --help` lists the command
     - The [Pigeon helicopter spec](docs/superpowers/specs/2026-11-17-pigeon-helicopter-design.md) records what was proven in game.
 - **Writing a plan.** Another agent must be able to execute each task from its files, input fixtures, expected observations and verification commands. Break up steps that combine several decisions or checks. The [player settings plan](docs/superpowers/plans/2026-11-16-player-settings.md) shows the expected detail.
 - **Running the work.**
-  - The coordinator moves the ticket's card, tracks the plan, and dispatches a fresh implementer per task with the worktree, requirements and context. The implementer tests, commits and self-reviews.
+  - The coordinator moves the ticket's card, tracks the plan (for longer jobs, a progress checklist the maintainer can see, such as the task list on the ticket), and dispatches a fresh implementer per task with the worktree, requirements and context. The implementer tests, commits and self-reviews.
   - A separate reviewer checks each task for requirements and code quality. Fixes go back to an implementer and are re-reviewed.
   - Before merge, a fresh reviewer examines the whole branch diff and posts the review on the PR.
-- **Parallel fix batches.** While the main work is being implemented or reviewed, pick clear, independently testable bugs from the Backlog for a parallel fix batch, on its own `fixes/<topic>` branch and PR.
+- **Parallel fix batches.** While the main work is being implemented or reviewed, and no other fix batch is running, pick clear, independently testable bugs from the Backlog whose files do not overlap the main work, for a parallel fix batch on its own `fixes/<topic>` branch and PR. Issues needing a maintainer decision or an in-game check stay out of it and get `needs-decision` or a playtest.
 
 Add source comments or emojis only when the maintainer asks for them.
 
@@ -97,15 +98,15 @@ Add source comments or emojis only when the maintainer asks for them.
   1. Remove the worktree.
   2. `gh pr merge <pr> --merge --delete-branch --match-head-commit <sha>`.
   3. Pull `main`.
-- **Direct commits on `main`.** While the repo is private, docs-only changes such as specs, plans and this file may go straight to `main`. Everything that changes game or server behaviour goes through a PR. Once the repo is public, everything goes through a PR. Version bumps always do (see Releases).
-- **Identity.** The maintainer commits as `ReinderN` with the GitHub noreply address, and SSH-signs. Contributors keep their own identities.
+- **Direct commits on `main`.** While the repo is private, the maintainer (or an agent acting for the maintainer) may push docs-only changes such as specs, plans and this file straight to `main`. Contributors always use PRs. Everything that changes game or server behaviour goes through a PR. Once the repo is public, everything goes through a PR. Version bumps always do (see Releases).
+- **Identity.** Everyone commits with their GitHub noreply address (`ID+login@users.noreply.github.com`), never a personal or work email; the privacy check rejects others. The maintainer commits as `ReinderN` and SSH-signs.
 
 ## Privacy
 
 - Write commits, files and messages as if the repo were public.
-- **Never include:** IP addresses, personal email addresses, SSH login targets, URLs with credentials, absolute home paths, or anything about how or where the live server runs (type, hosting, containers, paths). Use `<repo>` for the checkout root and `~` for home. Keep machine-specific values in environment variables or git-ignored files.
+- **Never include:** IP addresses, email addresses other than GitHub noreply ones, SSH login targets, URLs with credentials, absolute home paths, or anything about how or where the live server runs (type, hosting, containers, paths). Use `<repo>` for the checkout root and `~` for home. Keep machine-specific values in environment variables or git-ignored files.
 - **`scripts/privacy-check`** enforces this:
-  - The pre-push hook runs it on every outgoing commit. Enable it once per clone with `make hooks`.
+  - The pre-push hook runs it on every outgoing commit. Enable it once per clone with `make hooks`, from a checkout of `main` you trust.
   - `make privacy` scans the tree.
   - CI checks every PR commit, and the full history on `main`.
   - Exact exceptions go in `.github/privacy-allow.txt` as `path:text`.
@@ -141,10 +142,10 @@ Add source comments or emojis only when the maintainer asks for them.
 - **Releases.**
   - `make version V=x.y.z` on an up-to-date `main` opens the PR **Release x.y.z**.
   - Merging it is the approval to release: `release.yml` tags the merge commit and publishes the GitHub Release with the ZIP, tarball and checksums.
-  - Agents merge a release PR only after the maintainer said to release that version.
+  - Agents merge a release PR only after the maintainer said, in the current session, to release that version.
   - Version numbers stay out of feature plans and branches. Tests use `CNR_VERSION`.
 - **Deploy.**
   - The live server's setup is kept out of this repo.
-  - Until the server-side updater exists (its own ticket), the maintainer deploys by hand, or with `make deploy` and a local `CNR_DEPLOY_SCRIPT`.
+  - Until the server-side updater exists (its own ticket), the maintainer deploys by hand, or with `make deploy` and a local `CNR_DEPLOY_SCRIPT`. An agent runs `make deploy` only when the maintainer explicitly asks for that deploy in the current session.
   - After a deploy, check that the server log shows the expected version loaded, and check for Lua errors.
   - A previous release's approval applies to that release alone.
