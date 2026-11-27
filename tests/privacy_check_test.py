@@ -19,6 +19,7 @@ DENY = pc.compile_deny(["secret-host", "re:\\bcontainer-x\\d\\b"])
 MUST_FLAG = [
     "ssh ops@gamebox:/games",
     "Admin@box",
+    "run: ssh deploy@gamebox",
     "HOST=user@10.1.2.3",
     "ping 10.1.2.3",
     "fe80::1",
@@ -52,6 +53,8 @@ MUST_PASS = [
     "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
     "git@github.com:softbody-arcade/cops-and-robbers.git",
     "@update:model-value",
+    "uses: actions/checkout@v7",
+    "uses: owner/some-action@0123456789abcdef0123456789abcdef01234567",
     '"@vue/compiler-sfc"',
     "local x = a.b:c()",
     "time 12:30:45",
