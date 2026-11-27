@@ -16,7 +16,9 @@ local build = require("cnr.build")
 local panel = require("cnr.panel")
 local sky = require("cnr.sky")
 local strikeSchedule = require("cnr.strikeSchedule")
-local traffic = require("cnr.traffic")
+local traffic = require("arcade.traffic")
+local trafficService = traffic.new(r, messages)
+local trafficNote = require("cnr.traffic").note
 
 local VERSION = "2.15.1"
 local log, send, notify = messages.log, messages.send, messages.notify
@@ -38,8 +40,6 @@ local activeVid = r:perPlayer("activeVid", "late")
 local registeredRoundCar = r:perPlayer("registeredRoundCar", "late")
 local allowRoundSpawn = r:perPlayer("allowRoundSpawn", "late")
 local preRoundVehicles = r:perPlayer("preRoundVehicles", "late")
-local trafficOpen = r:perPlayer("trafficOpen", "late")
-local trafficVids = r:perPlayer("trafficVids", "late")
 local lastRoundCars
 local stationsRequested = r:perPlayer("stationsRequested", "early")
 local partsBaseline = {}
@@ -217,39 +217,17 @@ end
 local function vidFor(pid)
   local vid = activeVid[pid]
   if vid then return vid end
-  if registeredRoundCar[pid] or trafficOpen[pid] then return nil end
+  if registeredRoundCar[pid] or trafficService:openCount(pid) then return nil end
   vid = firstVid(pid)
   activeVid[pid] = vid
   return vid
 end
 
-local function maxCars()
-  if not MP.Settings or MP.Settings.MaxCars == nil then return nil end
-  local ok, value = pcall(MP.Get, MP.Settings.MaxCars)
-  return ok and tonumber(value) or nil
-end
-
-local function trafficFor(pid)
-  if cfg.trafficRunnerOnly and not current.test and pid ~= current.runnerId then return 0 end
-  return traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), current.test and pid == current.issuerId)
-end
-
 local function openTraffic(pid)
-  if trafficOpen[pid] or not current:isActive() or current.players[pid] == nil then return end
-  local n = trafficFor(pid)
-  if n <= 0 then return end
-  trafficOpen[pid] = n
-  send(pid, "cnr_trafficStart", { count = n })
-end
-
-local function extraCars(pid)
-  local vehicles = MP.GetPlayerVehicles(pid)
-  local n = 0
-  if type(vehicles) ~= "table" then return n end
-  for vid in pairs(vehicles) do
-    if vid ~= activeVid[pid] then n = n + 1 end
-  end
-  return n
+  if not current:isActive() or current.players[pid] == nil or trafficService:openCount(pid) then return end
+  local eligible = current.test or not cfg.trafficRunnerOnly or pid == current.runnerId
+  local practice = current.test and pid == current.issuerId
+  trafficService:open(pid, trafficService:allowance(pid, cfg, practice, eligible))
 end
 
 local function confirmedVid(pid)
@@ -337,20 +315,6 @@ local function announceLightning(runner)
   end
   s.lightningPositions = positions
   send(current.test and current.issuerId or -1, "cnr_lightningPositions", {lightningSeed = s.lightningSeed, positions = positions})
-end
-
-local function trafficCars()
-  local list = {}
-  for pid, set in pairs(trafficVids) do
-    for vid in pairs(set) do
-      local raw, err = MP.GetPositionRaw(pid, vid)
-      if not (err and err ~= "") and type(raw) == "table" then
-        local pos, vel = vec.toVec(raw.pos), vec.toVec(raw.vel)
-        if pos and vel then list[#list + 1] = { pos = pos, vel = vel, traffic = true } end
-      end
-    end
-  end
-  return list
 end
 
 local function normalizeConfig(path)
@@ -515,7 +479,7 @@ local function applyEffects(effects)
       end
       if e.aiOnly then rememberPreRoundVehicles(e.pid) end
       aiSpawnsLeft = 0
-      local capacity = maxCars()
+      local capacity = traffic.maxCars()
       local payload = {
         model = current.vehicle.model, config = current.vehicle.config, ai = list,
         runnerId = current.runnerId, copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
@@ -719,7 +683,7 @@ function handlers.start(pid, cmd)
   missingCount = {}
   lastResult = nil
   local sittingOut = r:perPlayer("sitOut", "early")
-  applyEffects(current:start(now(), runnerId, pid, players, { gridPlanner = gridClients[runnerId] and runnerId, build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random), traffic = traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), false), trafficRunnerOnly = cfg.trafficRunnerOnly == true, sittingOut = sittingOut }))
+  applyEffects(current:start(now(), runnerId, pid, players, { gridPlanner = gridClients[runnerId] and runnerId, build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random), traffic = traffic.perPlayer(cfg.trafficPerPlayer, traffic.maxCars(), false), trafficRunnerOnly = cfg.trafficRunnerOnly == true, sittingOut = sittingOut }))
 end
 
 function handlers.test(pid, cmd)
@@ -737,7 +701,7 @@ function handlers.test(pid, cmd)
 end
 
 local function pushRules(pid)
-  send(pid or -1, "cnr_rules", rules.payload(cfg, traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), false)))
+  send(pid or -1, "cnr_rules", rules.payload(cfg, traffic.perPlayer(cfg.trafficPerPlayer, traffic.maxCars(), false)))
 end
 
 local function lobbyState()
@@ -912,7 +876,7 @@ local function panelState()
     loading = loading, autoNext = autoNext, lastResult = lastResult,
     stationCount = #stations,
     skyRandom = sky.hasRandom(cfg),
-    trafficNote = traffic.note(cfg.trafficPerPlayer, maxCars(), count, cfg.trafficRunnerOnly == true),
+    trafficNote = trafficNote(cfg.trafficPerPlayer, traffic.maxCars(), count, cfg.trafficRunnerOnly == true),
   })
 end
 
@@ -1098,16 +1062,17 @@ local function vehicleAllowed(pid, vid, data, isSpawn)
     return true, decoded
   end
   local own = activeVid[pid]
+  local trafficCount = trafficService:openCount(pid)
   local roundPlayer = roundCarActive() and current.players[pid] ~= nil
   if isSpawn and roundPlayer and not current.test and (allowRoundSpawn[pid] or (registeredRoundCar[pid] and not own)) then
     local decoded = parseVehicleData(data)
     if matchesRoundVehicle(decoded) then return true, decoded, nil, true end
-    if not own or not trafficOpen[pid] then return false, decoded end
+    if not own or not trafficCount then return false, decoded end
   end
-  if current:isActive() and trafficOpen[pid] and current.players[pid] ~= nil and vid ~= own then
+  if current:isActive() and trafficCount and current.players[pid] ~= nil and vid ~= own then
     if current.test and pid == current.issuerId then return true end
     if not isSpawn then return true end
-    return own ~= nil and extraCars(pid) < trafficOpen[pid]
+    return own ~= nil and trafficService:extraCars(pid, own) < trafficCount
   end
   if not roundPlayer then return true end
   local decoded = parseVehicleData(data)
@@ -1166,7 +1131,7 @@ function cnrOnVehicleSpawn(pid, vid, data)
     setRoundVid(pid, vid)
     allowRoundSpawn[pid] = nil
     if registeredRoundCar[pid] then pushRoundCars() end
-  elseif tracksActive(pid) and not registeredRoundCar[pid] and not trafficOpen[pid] then
+  elseif tracksActive(pid) and not registeredRoundCar[pid] and not trafficService:openCount(pid) then
     activeVid[pid] = vid
   end
   return 0
@@ -1183,9 +1148,9 @@ function cnrOnVehicleEdited(pid, vid, data)
     refuse(pid, why or "Only the round car is allowed")
     return 1
   end
-  local notOwn = vid ~= activeVid[pid] and (current.test or trafficOpen[pid])
+  local notOwn = vid ~= activeVid[pid] and (current.test or trafficService:openCount(pid))
   if roundCarActive() and current.players[pid] and not notOwn then checkParts(pid, decoded) end
-  if tracksActive(pid) and not trafficOpen[pid] then activeVid[pid] = vid end
+  if tracksActive(pid) and not trafficService:openCount(pid) then activeVid[pid] = vid end
   return 0
 end
 
@@ -1199,7 +1164,7 @@ function cnrOnVehicleDeleted(pid, vid)
 end
 
 function cnrOnVehicleReset(pid, vid)
-  if (activeVid[pid] or registeredRoundCar[pid] or trafficOpen[pid]) and activeVid[pid] ~= vid then return end
+  if (activeVid[pid] or registeredRoundCar[pid] or trafficService:openCount(pid)) and activeVid[pid] ~= vid then return end
   applyEffects(current:vehicleReset(now(), pid))
 end
 
@@ -1353,23 +1318,12 @@ function cnrOnMyVehicle(pid, data)
 end
 
 function cnrOnTrafficCars(pid, data)
-  local limit = trafficOpen[pid]
-  if not limit then return end
+  if not trafficService:openCount(pid) then return end
   local ok, d = pcall(Util.JsonDecode, data)
   if not ok or type(d) ~= "table" or type(d.vids) ~= "table" then return end
-  local ai = {}
-  if current.test and pid == current.issuerId then
-    for _, car in pairs(aiCars) do ai[car.vid] = true end
-  end
-  local set, n = {}, 0
-  for _, raw in ipairs(d.vids) do
-    local vid = tonumber(raw)
-    if vid and n < limit and vid ~= activeVid[pid] and not ai[vid] and not set[vid] then
-      set[vid] = true
-      n = n + 1
-    end
-  end
-  trafficVids[pid] = set
+  trafficService:report(pid, d.vids, activeVid[pid], function(vid)
+    return current.test and pid == current.issuerId and aiSlotForVid(vid)
+  end)
 end
 
 local function registerAICar(pid, a, owned)
@@ -1507,7 +1461,7 @@ function cnrTick()
   local cars = {}
   for pid in pairs(current.players) do cars[pid] = carFor(pid) end
   announceLightning(cars[current.runnerId])
-  applyEffects(current:tick(now(), cars, stations, trafficCars()))
+  applyEffects(current:tick(now(), cars, stations, trafficService:cars()))
 end
 
 FS.CreateDirectory(stationsDir)
