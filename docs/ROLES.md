@@ -13,14 +13,14 @@ This page covers the [Softbody Arcade](https://github.com/softbody-arcade) organ
 | Edit and close their own issues | Yes | Yes | Yes | Yes |
 | Set labels, type, Priority, Effort, milestone and assignee on any issue; close and reopen it | No | Yes | Yes | Yes |
 | Push branches to the repo itself | No | No | Yes, except `main` and `release/*` | Yes, except `main` |
-| Review a PR, including an approving review | Yes | Yes | Yes | Yes |
+| Review a PR, including an approving review | Yes, unless reviews are limited to people with access | Yes | Yes | Yes |
 | Merge into `main` | No | No | No | Yes, through a PR with green CI |
 | Push straight to `main` | No | No | No | No |
 | Start a release (`release/*` branch) | No | No | No | Yes |
 | Move or delete a `v*` tag | No | No | No | Yes |
 | Move cards on the board | No | No | No | Yes |
 | Change repo and board settings | No | No | No | Yes |
-| Change org settings and teams | No | No | No | Org owner only |
+| Change org-wide settings and create or delete teams | No | No | No | Org owner only |
 
 Teams give the extra rights: `playtesters` is Triage on the repo, `contributors` is Write and `maintainers` is Admin. On the board, `maintainers` is Admin and everyone else can read.
 
@@ -29,7 +29,7 @@ Teams give the extra rights: `playtesters` is Triage on the repo, `contributors`
 Anyone with a GitHub account can:
 - read the code, the issues, the pull requests and the board
 - open an issue with one of the templates (Bug, Idea, In-game check, Ready ticket), comment on any issue or PR, and edit or close their own issues
-- fork the repo and open a PR from the fork. CI on a PR from someone outside the teams waits until someone with Write approves the run, and the run gets a read-only token.
+- fork the repo and open a PR from the fork. CI on a PR from an external contributor (someone outside the organization) waits until someone with Write approves the run, and the run gets a read-only token.
 - review PRs. Reviews are advice: GitHub requires no approving review, and the merge gate in [AGENTS.md](../AGENTS.md) decides instead.
 - report a security problem privately with **Report a vulnerability** on the Security tab (see [SECURITY.md](../SECURITY.md))
 
@@ -56,7 +56,7 @@ Contributors write code and docs.
 
 On top of what a playtester can do, they can:
 - push branches to the repo itself (by convention `feature/<topic>` and `fixes/<topic>`) and open PRs from them, so CI runs without waiting for approval
-- approve CI runs on PRs from people outside the teams
+- approve CI runs on PRs from external contributors
 - delete their own branches. Merged branches are deleted automatically.
 
 They can't:
@@ -75,7 +75,7 @@ What they normally do:
 
 ## Maintainers
 
-The `maintainers` team has Admin on the repo and on the board. Org settings, teams and billing belong to the organization owner, which is a separate role.
+The `maintainers` team has Admin on the repo and on the board. Org-wide settings, creating and deleting teams, and billing belong to the organization owner, which is a separate role (a team maintainer can still manage their own team).
 
 Only maintainers:
 - triage new issues, order the Next lane and move cards between lanes
@@ -100,7 +100,7 @@ An agent (Claude, Codex or any other) acts with the GitHub login of the person r
 | CI (`ci.yml`) | Runs the five checks on every PR and on `main` | Read-only token |
 | Release (`release.yml`) | When a PR from this repo's `release/x.y.z` branch merges into `main` (or on a manual run for an already merged one): tests and packages without write access, then tags `vx.y.z`, publishes the release with the ZIP, server archive and checksums, and closes milestone `x.y.z` | Writes only in the publish job |
 | Dependabot | Opens a PR each week when a GitHub Action or a `tools/vuecheck` npm package has a new version, and raises security alerts | Opens PRs; a maintainer merges them |
-| Secret scanning | Blocks a push that contains a supported secret pattern, unless the pusher requests a bypass | Push protection on |
+| Secret scanning | Blocks a push that contains a supported secret pattern, unless push protection is bypassed | Push protection on |
 
 ## Enforced on GitHub
 
