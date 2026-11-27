@@ -10,13 +10,7 @@ The board's one auto-add workflow covers this repo: an issue filed here lands in
 
 ## Required checks
 
-`develop-checks` and `main-checks` require the five CI checks: `test`, `luajit`, `vuecheck`, `privacy` and `package`. A maintainer merges a PR only when all five are green.
-
-## Maintainers
-
-On top of what the shared page lists, only maintainers:
-- start a release with `make version V=x.y.z` and merge the `Release x.y.z` PR, which tags and publishes it
-- stage builds on the local test server and deploy to the live server
+`develop-checks` and `main-checks` require the five CI checks: `test`, `luajit`, `vuecheck`, `privacy` and `package`. A maintainer merges a PR only when all five are green. arcade-base currently requires only `test` and `privacy`.
 
 ## Automations
 

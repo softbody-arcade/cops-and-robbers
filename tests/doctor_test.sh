@@ -172,7 +172,7 @@ expect_line 'missing base submodule.*merge conflict.*'
 expect_pin=no run_doctor 1 BASE_REPORT=
 expect_line 'missing base submodule.*git submodule update --init.*'
 run_doctor 1 BASE_PIN=0123456789abcdef0123456789abcdef01234567
-expect_line 'missing base submodule.*differs from the commit.*'
+expect_line 'missing base submodule.*differs from the commit.*git restore --staged -- base.*git submodule update -- base.*'
 
 run_doctor 0 "GH_SCOPES='repo', 'project'" NODE_REPORT=24.1.0
 expect_line 'ok gh project access'

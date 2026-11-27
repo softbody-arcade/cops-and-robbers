@@ -133,7 +133,7 @@ case ${base_status:0:1} in
         if [[ $(git -C base rev-parse HEAD 2>/dev/null) == "$(git rev-parse HEAD:base 2>/dev/null)" ]]; then
             report ok 'base submodule'
         else
-            report missing 'base submodule — base/ differs from the commit this branch pins; run git submodule update, or commit the new pin on purpose'
+            report missing 'base submodule — base/ differs from the commit this branch pins; if you didn'"'"'t mean to move it, run git restore --staged -- base && git submodule update -- base'
         fi ;;
     '' | -) report missing 'base submodule — run git submodule update --init (base/ holds the shared rules)' ;;
     U) report missing 'base submodule — base/ has a merge conflict; pick the commit with git add base, then run git submodule update' ;;
