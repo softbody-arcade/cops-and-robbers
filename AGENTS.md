@@ -114,7 +114,7 @@ Hooks, Make targets and scripts run with the credentials of whoever runs them, a
 - Run `scripts/board`, `make version` and `make deploy` only from the maintainer's checkout of `main`.
 - Push only from that checkout or from a worktree of a branch the maintainer or their agent wrote.
 - Never check out, build, test or push from a contributor's branch. Review it as a diff on GitHub or with `git diff`; to try it, use a checkout without credentials (no `gh` login, no SSH agent).
-- Staging a contributor's PR on the test server runs its mod code there by design. Stage it only after reviewing the whole diff, and build it with `main`'s tooling, never the branch's: the steps under **Staging** below.
+- Agents never stage a contributor's PR on the test server; see **Staging** below.
 
 ## Privacy
 
@@ -148,15 +148,8 @@ Hooks, Make targets and scripts run with the credentials of whoever runs them, a
     2. Set `test_server=<repo>/.testserver`.
     3. If it has an installed config, first run `cp "$test_server/Resources/Server/CopsAndRobbers/config.json" server/CopsAndRobbers/config.json` in the snapshot.
     4. Run `make install-local TESTSERVER="$test_server"`.
-  - **A contributor's PR** runs on a throwaway copy of the test server, built with `main`'s tooling, so its code never touches the real `.testserver`, its config or the maintainer's files:
-    1. Review the whole diff first.
-    2. Extract `git archive <reviewed-sha>` into a disposable directory `$snapshot`.
-    3. Check that every symlink stays inside the snapshot. `find "$snapshot" -type l -exec realpath -m {} + | grep -v "^$snapshot/"` must print nothing; otherwise don't stage it.
-    4. Write `main`'s Makefile outside the snapshot, for example `git show main:Makefile > "$trusted_makefile"` with `trusted_makefile` in a temp directory.
-    5. Copy the test server: `cp -a <repo>/.testserver "$test_server"`, with `test_server` in a temp directory.
-    6. Run `make -C "$snapshot" -f "$trusted_makefile" install-local TESTSERVER="$test_server"`.
-    7. Start BeamMP from `$test_server`, not `.testserver`, and delete both copies after the playtest.
-  - Then restart the local BeamMP server and, from the maintainer's checkout of `main` (not the snapshot), record the SHA with `scripts/board move <n> playtest --staged <sha>`. The maintainer handles game and launcher restarts.
+  - **A contributor's PR:** staging it runs its Makefile, packaging and server Lua under the maintainer's account, and no recipe on that account makes this safe. Agents never stage a contributor's PR. Until an isolated test server exists (#40), the maintainer decides per PR, after reviewing the whole diff, whether to playtest it and how.
+  - After installing, restart the local BeamMP server and, from the maintainer's checkout of `main` (not the snapshot), record the SHA with `scripts/board move <n> playtest --staged <sha>`. The maintainer handles game and launcher restarts.
 - **Engine probes (maintainer-only).**
   - Use a temporary GE extension in the game's user folder (`current/lua/ge/extensions/`), and read its tagged output in `current/beamng.log`.
   - Give the maintainer one comment-free GE console line, with statements separated by `;`.
