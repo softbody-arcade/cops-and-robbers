@@ -27,6 +27,13 @@ case "$*" in
   'api graphql '*mutation*) echo '{}' ;;
   'api graphql '*latestRelease*) echo "${RELEASE_TAG-v1.2.3}" ;;
   'api graphql '*releaseCards*) cat "$RELEASE_CARDS" ;;
+  'api graphql '*openLinkedPrs*)
+    [[ " $* " == *' --paginate '* && "$*" == *'nodes{url state}'* ]] || exit 9
+    jq -n --arg prs "${PRS:-}" --arg merged "${MERGED_PRS:-}" '
+      def links($urls; $state): [$urls | split(",")[] | select(. != "" and . != "-") | {url: ., state:$state}];
+      {data:{repository:{issue:{closedByPullRequestsReferences:{
+        nodes:(links($merged; "MERGED") + links($prs; "OPEN"))}}}}}' | jq -r "${!#}"
+    ;;
   'api graphql '*includeClosedPrs*)
     case " $* " in
       *' issue=4 '*) printf '%s\n' - merged-sha ;;
@@ -49,7 +56,7 @@ case "$*" in
     fi
     jq -n --arg lane "$status" --arg priority "${FIELD-High}" --arg effort "${SIZE-Low}" \
       --arg type "${TYPE-Feature}" --arg state "${STATE:-OPEN}" --arg label "${TAGS:-}" \
-      --arg assigned "$ASSIGNED" --arg prs "${PRS:-}" --argjson blockers "$BLOCKERS" \
+      --arg assigned "$ASSIGNED" --arg prs "${PRS:-}" --arg merged "${MERGED_PRS:-}" --argjson blockers "$BLOCKERS" \
       --argjson count "${CARD_COUNT:-1}" --argjson others "${OTHER_COUNT:-0}" --arg owner "${OWNER_TYPE:-Organization}" '
       def nodes($values; key): {nodes: [$values | split(",")[] | select(. != "" and . != "-") | key]};
       {data: {($owner|ascii_downcase): {projectV2: {items: {nodes: [
@@ -63,7 +70,7 @@ case "$*" in
               ({field: {name: "Priority"}, name: $priority}, {field: {name: "Effort"}, name: $effort})
               | select(.name != "-")]},
             labels: nodes($label; {name: .}), assignees: nodes($assigned; {login: .}),
-            closedByPullRequestsReferences: nodes($prs; {url: .}),
+            closedByPullRequestsReferences: {nodes: (nodes($merged; {url: .}).nodes + nodes($prs; {url: .}).nodes)[:20]},
             issueDependenciesSummary: {blockedBy: $blockers}}})]}}}}}' | jq -r "${!#}"
     ;;
   'issue view '*--json\ number*) echo '{"number":1,"title":"Card","issueType":{"name":"Feature"},"milestone":{"title":"v1"},"parent":{"number":3},"subIssues":{"nodes":[{"number":4}]},"blockedBy":{"nodes":[{"number":5}]},"closedByPullRequestsReferences":[{"url":"https://example.com/pr"}],"body":"First\nSecond"}' ;;
@@ -73,7 +80,7 @@ case "$*" in
   'api --paginate '*'/comments'*)
     jq -n --arg staged "${STAGED-}" --arg other "${OTHER_STAGED-}" \
       --arg comment "${EXISTING_COMMENT-}" --arg author "${COMMENT_AUTHOR:-me}" '
-      [($staged | select(length > 0) | {user:{login:"me"}, author_association:"OWNER", body:("Staged for playtest (#1): " + .)}),
+      [($staged | split(",")[] | select(length > 0) | {user:{login:"me"}, author_association:"OWNER", body:("Staged for playtest (#1): " + .)}),
        ($other | select(length > 0) | {user:{login:"peer"}, author_association:"MEMBER", body:("Staged for playtest (#1): " + .)}),
        ($comment | select(length > 0) | {user:{login:$author}, author_association:"COLLABORATOR", body:.})]' | api_response "${@:4}"
     ;;
@@ -166,10 +173,15 @@ expect 0 Card list
 wrote 'items(first:50,after:$endCursor)'
 wrote 'pageInfo{hasNextPage endCursor}'
 expect 0 'Usage:' --help
+for route in 'Review, Playtest or Accepted' 're-stage' 'In-game check' 'Playtest to Backlog' 'move N done'; do
+  grep -Fiq -- "$route" "$tmp/out"
+done
 expect 0 'Usage:' -h
 GH_VERSION=2.105.9 expect 2 'requires gh' list
 OWNER_TYPE=User expect 0 Card list --all
 wrote 'user(login:$owner)'
+LANE=Accepted expect 0 '' move 1 build
+wrote '--field Status --value Build'
 LANE=Review expect 0 '' move 1 build
 wrote '--field Status --value Build'
 ASSIGNED=peer,me,another expect 0 '' start 1 build
@@ -316,7 +328,14 @@ TYPE='In-game check' expect 2 'Unexpected --staged' move 1 playtest --staged "$H
 guard 'Staged SHA differs from PR head' move 1 playtest --staged "$(git rev-parse HEAD^)"
 expect 0 '' move 1 playtest --staged "$HEAD_SHA"
 wrote "Staged for playtest (#1): $HEAD_SHA"
+merged_history=$(for id in {1..20}; do printf '%s/%s,' "${PRS%/*}" "$id"; done)
+MERGED_PRS=$merged_history expect 0 '' move 1 playtest --staged "$HEAD_SHA"
+wrote "pr comment 42 --body Staged for playtest (#1): $HEAD_SHA"
+MERGED_PRS=$PRS PRS= guard 'Requires one linked open PR in this repository' move 1 playtest --staged "$HEAD_SHA"
 recovery='Use board move 1 build for rework, or board move 1 playtest --staged <full sha> after staging the current linked PR head.'
+STAGED="$HEAD_SHA,other" LANE=Playtest guard "PR head differs from staged SHA. $recovery" result 1 pass
+STAGED="other,$HEAD_SHA" MERGED_PRS=${PRS%/*}/41 LANE=Playtest expect 0 '' result 1 defer --checks-file "$tmp/note"
+wrote "Build: $HEAD_SHA ($PRS), work card #1"
 STAGED=other LANE=Playtest guard "PR head differs from staged SHA. $recovery" result 1 pass
 STAGED= LANE=Playtest guard "No staged comment from me. $recovery" result 1 pass
 STAGED= OTHER_STAGED=$HEAD_SHA LANE=Playtest guard "No staged comment from me. $recovery" result 1 pass
@@ -329,6 +348,8 @@ for links in '' "$PRS,${PRS%/*}/43"; do
 done
 LANE=Playtest expect 0 '' move 1 playtest --staged "$HEAD_SHA"
 wrote "pr comment 42 --body Staged for playtest (#1): $HEAD_SHA"
+LANE=Playtest TYPE='In-game check' expect 0 '' move 1 backlog
+wrote '--field Status --value Backlog'
 LANE=Playtest expect 1 'Playtest' move 1 backlog
 for source in Inbox Backlog Next; do
   TYPE='In-game check' SIZE=- LANE=$source READY=/dev/null expect 0 '' move 1 playtest
