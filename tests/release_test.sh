@@ -4,6 +4,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+unset GIT_SSH_COMMAND GIT_SSH GIT_SSH_VARIANT
 export GIT_AUTHOR_NAME=Tester GIT_AUTHOR_EMAIL=tester@users.noreply.github.com
 export GIT_COMMITTER_NAME=Tester GIT_COMMITTER_EMAIL=tester@users.noreply.github.com
 failures=0
@@ -63,7 +64,7 @@ fixture() {
     git add -A
     git commit -qm fixture
     git remote add origin "git${at}github.com:test/repo.git"
-    git config core.sshCommand "$tmp/bin/fake-ssh $dir/root"
+    git config core.sshCommand "$(printf '%q %q' "$tmp/bin/fake-ssh" "$dir/root")"
     git config ssh.variant ssh
     git push -q origin main
   )
@@ -242,7 +243,7 @@ cat > "$pub/bin/gh" <<'STUB'
 state="$PUB_STATE"
 echo "$*" >> "$state/log"
 case "$*" in
-  "api repos/test/repo/git/matching-refs/"*) [[ -z ${FAIL_LOOKUP:-} ]] || exit 1; ref="refs/${2#repos/test/repo/git/matching-refs/}"; [[ ! -f $state/$ref ]] || echo "commit $(cat "$state/$ref")" ;;
+  "api repos/test/repo/git/matching-refs/"*) [[ -z ${FAIL_LOOKUP:-}${FAIL_TAG_LOOKUP:-} ]] || exit 1; ref="refs/${2#repos/test/repo/git/matching-refs/}"; [[ ! -f $state/$ref ]] || echo "commit $(cat "$state/$ref")" ;;
   "api --paginate repos/test/repo/releases "*) [[ -z ${FAIL_LOOKUP:-} ]] || exit 1; [[ ! -d $state/release ]] || echo "$(cat "$state/draft") $(cat "$state/pre")" ;;
   "api --method POST repos/test/repo/git/refs"*)
     for a in "$@"; do case $a in ref=*) ref="${a#ref=}" ;; sha=*) sha="${a#sha=}" ;; esac; done
@@ -288,6 +289,10 @@ check "publish refuses a prerelease before creating its tag" '[[ $(cat "$tmp/sta
 state="$pub/outage"; mkdir -p "$state/release"; echo true > "$state/draft"; echo true > "$state/pre"
 FAIL_LOOKUP=1 publish "$state"
 check "publish creates no tag when the release lookup fails" '[[ $(cat "$tmp/status") == 1 && ! -e $state/refs/tags/v1.1.0 ]]'
+
+state="$pub/tag-outage"; mkdir -p "$state"
+FAIL_TAG_LOOKUP=1 publish "$state"
+check "publish writes nothing when the tag lookup fails" '[[ $(cat "$tmp/status") == 1 && ! -e $state/refs/tags/v1.1.0 && ! -d $state/release ]] && ! grep -q -- "--method POST" "$state/log"'
 
 state="$pub/differs"; mkdir -p "$state/release"; mkdir -p "$state/refs/tags"; echo "$sha" > "$state/refs/tags/v1.1.0"; echo true > "$state/draft"; echo false > "$state/pre"; printf other > "$state/release/CopsAndRobbers.zip"
 publish "$state"
