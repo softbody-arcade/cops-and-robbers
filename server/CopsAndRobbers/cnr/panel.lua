@@ -1,3 +1,4 @@
+local arcadePanel = require("arcade.panel")
 local settings = require("arcade.settings")
 local config = require("cnr.config")
 
@@ -95,17 +96,7 @@ function M.snapshot(info)
   }
 end
 
-function M.signature(t)
-  if type(t) ~= "table" then
-    return type(t) == "string" and string.format("%q", t) or tostring(t)
-  end
-  local keys = {}
-  for k in pairs(t) do keys[#keys + 1] = k end
-  table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
-  local parts = {}
-  for _, k in ipairs(keys) do parts[#parts + 1] = tostring(k) .. "=" .. M.signature(t[k]) end
-  return "{" .. table.concat(parts, ",") .. "}"
-end
+M.signature = arcadePanel.signature
 
 function M.applyValues(raw, values)
   return settings.applyValues(raw, values, config.declaration)

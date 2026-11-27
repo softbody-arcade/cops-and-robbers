@@ -14,6 +14,9 @@ local colors = require("arcade.colors")
 local tables = require("cnr.tables")
 local build = require("cnr.build")
 local panel = require("cnr.panel")
+local panelService = require("arcade.panel").new(messages, r)
+local autoRounds = require("arcade.autoRounds")
+local schedule = autoRounds.new()
 local sky = require("cnr.sky")
 local strikeSchedule = require("cnr.strikeSchedule")
 local traffic = require("arcade.traffic")
@@ -53,8 +56,6 @@ local plannedRunnerKey
 local missingCount = {}
 local lastResult
 local currentRunnerKey
-local autoNextAt
-local startAutoRound
 local lastIssuer
 local rawConfig = {}
 local PARTS_PLACING_SECONDS, PARTS_SETTLE_SECONDS = 10, 3
@@ -88,13 +89,8 @@ end
 
 local boardSubs = r:perPlayer("boardSubs", "early")
 local leaderboardLocked = false
-local panelSubs = r:perPlayer("panelSubs", "early")
-local lastPanelSig
-local lastLobbySig
-local lastPanelError
-local lastLobbyError
 
-local function loadConfig()
+local function readSettings()
   local warnings
   cfg, warnings, rawConfig = settings:load()
 end
@@ -540,7 +536,7 @@ local function applyEffects(effects)
         lastResult = { runner = e.runnerName, seconds = e.survivedSeconds, reason = e.reason }
       end
       aiCars, aiSlotSerial, aiVidSerial = {}, {}, {}
-      if autoNext then autoNextAt = now() + cfg.autoNextDelaySeconds end
+      if autoNext then schedule:schedule(now() + cfg.autoNextDelaySeconds) end
     elseif e.kind == "live" then
       for pid in pairs(current.players) do
         if pid ~= current.runnerId and not round.isAI(pid) then
@@ -644,15 +640,13 @@ local function plannedRunner(players)
   return pid
 end
 
-local handlers = {}
-
-function handlers.start(pid, cmd)
+panelService:command("start", function(pid, cmd)
   if current:isActive() and current.test then
     applyEffects(current:stop(now(), current.issuerId))
   end
   if current:isActive() then return refuse(pid, "A round is already running") end
   if cfg.carMode == "evolving" and not currentBuild then return refuse(pid, "Start a new build first") end
-  autoNextAt = nil
+  schedule:cancel()
   lastIssuer = pid
   local players = MP.GetPlayers() or {}
   local candidates, count = r:playing(players)
@@ -684,9 +678,9 @@ function handlers.start(pid, cmd)
   lastResult = nil
   local sittingOut = r:perPlayer("sitOut", "early")
   applyEffects(current:start(now(), runnerId, pid, players, { gridPlanner = gridClients[runnerId] and runnerId, build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random), traffic = traffic.perPlayer(cfg.trafficPerPlayer, traffic.maxCars(), false), trafficRunnerOnly = cfg.trafficRunnerOnly == true, sittingOut = sittingOut }))
-end
+end)
 
-function handlers.test(pid, cmd)
+panelService:command("test", function(pid, cmd)
   if current:isActive() then return refuse(pid, "A round is already running") end
   r:clear("activeVid")
   r:clear("trafficOpen")
@@ -698,7 +692,7 @@ function handlers.test(pid, cmd)
   if cfg.carMode == "evolving" and not currentBuild then return refuse(pid, "Start a new build first") end
   local opts = { gridPlanner = gridClients[pid] and pid, test = true, role = role, aiOnly = r:sittingOut(pid), build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random) }
   applyEffects(current:start(now(), nil, pid, MP.GetPlayers() or {}, opts))
-end
+end)
 
 local function pushRules(pid)
   send(pid or -1, "cnr_rules", rules.payload(cfg, traffic.perPlayer(cfg.trafficPerPlayer, traffic.maxCars(), false)))
@@ -713,56 +707,25 @@ local function lobbyState()
   return { online = online, practice = practice, active = current:isActive() and not current.test or false }
 end
 
-local function pushLobby(pid)
-  local state = lobbyState()
-  if pid then return send(pid, "cnr_lobby", state) end
-  local sig = panel.signature(state)
-  if sig ~= lastLobbySig then
-    lastLobbySig = sig
-    send(-1, "cnr_lobby", state)
-  end
-end
-
-function handlers.auto(pid, cmd)
-  local arg = cmd.args[1] and cmd.args[1]:lower()
-  if arg ~= "on" and arg ~= "off" then arg = cfg.autoNextRound and "off" or "on" end
-  local updated = config.setValue(rawConfig, "autoNextRound", arg)
-  settings:save(updated)
-  loadConfig()
-  current.cfg = cfg
-  pushRules()
-  if arg == "off" then
-    autoNextAt = nil
-    send(-1, "cnr_autoNext", {})
-  end
-  reply(pid, "Automatic next round: " .. arg)
-end
-
-function handlers.go(pid)
+panelService:command("go", function(pid)
   applyEffects(current:go(now(), pid))
-end
+end)
 
-function handlers.next(pid)
-  if not autoNextAt then return refuse(pid, "No round is scheduled") end
-  startAutoRound()
-end
-
-function handlers.stop(pid)
+panelService:command("stop", function(pid)
   local wasActive = current:isActive()
   applyEffects(current:stop(now(), pid))
   if not wasActive then send(-1, "cnr_roundEnd", { reason = "cancelled" }) end
-end
+end)
 
-
-handlers["end"] = function(pid)
+panelService:command("end", function(pid)
   applyEffects(current:endCalled(now(), pid))
-end
+end)
 
-function handlers.reroll(pid)
+panelService:command("reroll", function(pid)
   applyEffects(current:reroll(now(), pid))
-end
+end)
 
-function handlers.sky(pid)
+panelService:command("sky", function(pid)
   if current.state ~= "prep" and current.state ~= "ready" then return refuse(pid, "You can only change the sky before GO") end
   if not sky.hasRandom(cfg) then return refuse(pid, "Set time of day or weather to random first") end
   local before = current.sky or {}
@@ -775,18 +738,17 @@ function handlers.sky(pid)
   local data = sky.payload(current.sky, cfg, nil)
   local targets = current.test and { [current.issuerId] = true } or MP.GetPlayers() or {}
   for p in pairs(targets) do send(p, "cnr_sky", data) end
-end
+end)
 
-
-function handlers.addstation(pid)
+panelService:command("addstation", function(pid)
   local car = carFor(pid)
   if not car then return refuse(pid, "You need to be in a vehicle") end
   stations[#stations + 1] = { x = car.pos.x, y = car.pos.y, z = car.pos.z, r = 0 }
   saveStations()
   reply(pid, string.format("Gas station added (%d on %s)", #stations, mapName))
-end
+end)
 
-function handlers.removestation(pid)
+panelService:command("removestation", function(pid)
   local car = carFor(pid)
   if not car then return refuse(pid, "You need to be in a vehicle") end
   local bestIndex, bestDist
@@ -798,24 +760,7 @@ function handlers.removestation(pid)
   table.remove(stations, bestIndex)
   saveStations()
   reply(pid, string.format("Gas station removed (%d left on %s)", #stations, mapName))
-end
-
-
-function handlers.reload(pid)
-  if current:isActive() then return refuse(pid, "Stop the round before reloading") end
-  loadConfig()
-  current = round.new(cfg)
-  pushRules()
-  reply(pid, "Config reloaded")
-end
-
-
-local function runCommand(pid, text)
-  local cmd = commands.parse("/cnr " .. text)
-  local handler = cmd and handlers[cmd.name]
-  if handler then handler(pid, cmd) end
-end
-
+end)
 
 local function nextRunnerName(players)
   local pid = plannedRunner(players)
@@ -856,6 +801,7 @@ local function panelState()
   local nextName = not realRound and nextRunnerName(candidates) or nil
   local lastPid = lastRunnerKey and r:pidForKey(lastRunnerKey)
   local autoNext
+  local autoNextAt = schedule:pending()
   if autoNextAt and not realRound then
     autoNext = { seconds = math.max(0, math.ceil(autoNextAt - now())), runner = nextName }
   end
@@ -880,28 +826,13 @@ local function panelState()
   })
 end
 
-local function pushPanel(opener)
-  if opener then panelSubs[opener] = nil end
-  if not next(panelSubs) and not opener then return end
-  local state = panelState()
-  local sig = panel.signature(state)
-  if sig ~= lastPanelSig then
-    for p in pairs(panelSubs) do send(p, "cnr_panelState", state) end
-    lastPanelSig = sig
-  end
-  if opener then
-    panelSubs[opener] = true
-    send(opener, "cnr_panelState", state)
-  end
-end
-
 local function panelBuild(pid, msg)
   local function answer(text, tone) send(pid, "cnr_panelReply", { text = text, tone = tone }) end
   if current:isActive() then return answer("Stop the round first", "warn") end
   if msg.op == "reset" then
     backupBuild()
     currentBuild = nil
-    pushPanel()
+    panelService:push(panelState)
     return answer("Build reset")
   end
   if msg.op ~= "new" then return end
@@ -910,8 +841,13 @@ local function panelBuild(pid, msg)
   backupBuild()
   currentBuild = build.new(nb.model, nb.name, nb.parts, nb.vars, type(msg.from) == "string" and msg.from or "random", os.time())
   saveBuild()
-  pushPanel()
+  panelService:push(panelState)
   answer("New build: " .. build.label(currentBuild))
+end
+
+local function reloadRound()
+  readSettings()
+  current = round.new(cfg)
 end
 
 local function panelSettings(pid, values, id)
@@ -921,11 +857,10 @@ local function panelSettings(pid, values, id)
   local updated, keys = panel.applyValues(rawConfig, values)
   if not updated then return answer(false, keys) end
   settings:save(updated)
-  loadConfig()
-  current = round.new(cfg)
+  reloadRound()
   answer(true, "Saved", keys)
   pushRules()
-  pushPanel()
+  panelService:push(panelState)
   pushBoard()
 end
 
@@ -933,21 +868,19 @@ function cnrOnPanel(pid, data)
   local ok, msg = pcall(Util.JsonDecode, data)
   if not ok or type(msg) ~= "table" or type(msg.action) ~= "string" then return end
   if msg.action == "open" then
-    pushPanel(pid)
+    panelService:push(panelState, pid)
   elseif msg.action == "close" then
-    panelSubs[pid] = nil
+    panelService:close(pid)
   elseif msg.action == "command" then
     local text = panel.allow(msg.text)
     if not text then return send(pid, "cnr_panelReply", { text = "Not available from the panel", tone = "warn" }) end
-    local ran, err = messages.mirrored(pid, runCommand, pid, text)
-    pushPanel()
+    local ran, err = messages.mirrored(pid, panelService.run, panelService, pid, text)
+    panelService:push(panelState)
     if not ran then error(err, 0) end
   elseif msg.action == "station" then
     if msg.op ~= "add" and msg.op ~= "remove" then return end
-    local handler = handlers.removestation
-    if msg.op == "add" then handler = handlers.addstation end
-    local ran, err = messages.mirrored(pid, handler, pid)
-    pushPanel()
+    local ran, err = messages.mirrored(pid, panelService.run, panelService, pid, msg.op .. "station")
+    panelService:push(panelState)
     if not ran then error(err, 0) end
   elseif msg.action == "stations" then
     local list = {}
@@ -962,7 +895,7 @@ function cnrOnPanel(pid, data)
   elseif msg.action == "apply" then
     if pid ~= current.runnerId then return send(pid, "cnr_panelReply", { text = "Only the runner can apply the change", tone = "warn" }) end
     local ran, err = messages.mirrored(pid, function() applyEffects(current:apply(now(), pid)) end)
-    pushPanel()
+    panelService:push(panelState)
     if not ran then error(err, 0) end
   end
 end
@@ -1013,7 +946,7 @@ function cnrOnSetup(pid, data)
   end
   local cfgTable = { format = 2, model = current.vehicle.model, parts = setup.parts, vars = setup.vars }
   applyEffects(current:setupReceived(now(), pid, cfgTable))
-  pushPanel()
+  panelService:push(panelState)
 end
 
 function cnrOnChange(pid, data)
@@ -1199,7 +1132,7 @@ function cnrOnPlayerJoin(pid)
   send(pid, "cnr_mode", { version = VERSION, startGrid = true })
   playerColors:sendMine(pid)
   pushRules(pid)
-  pushLobby(pid)
+  panelService:pushLobby(lobbyState, pid)
   requestStations(pid)
   applyEffects(current:playerJoined(now(), pid, MP.GetPlayerName(pid)))
   if current.test and current.vehicle then parkBystander(pid) end
@@ -1427,9 +1360,7 @@ function cnrOnStations(pid, data)
   end
 end
 
-function startAutoRound()
-  autoNextAt = nil
-  if current:isActive() then return end
+local function startNext()
   local players = MP.GetPlayers() or {}
   local issuer = lastIssuer and players[lastIssuer] and lastIssuer
   if not issuer then
@@ -1437,17 +1368,29 @@ function startAutoRound()
       if not issuer or p < issuer then issuer = p end
     end
   end
-  if issuer then handlers.start(issuer, { name = "start", args = { "next" }, rest = "next" }) end
+  if issuer then panelService:run(issuer, "start next") end
 end
 
+local startScheduled = autoRounds.register(panelService, {
+  settings = {
+    get = function(key) return cfg[key] end,
+    set = function(key, text) settings:save(config.setValue(rawConfig, key, text)) end,
+  },
+  a = schedule,
+  pushRules = pushRules,
+  startNext = startNext,
+  refreshConfig = function()
+    readSettings()
+    current.cfg = cfg
+  end,
+  reloadRound = reloadRound,
+  isActive = function() return current:isActive() end,
+  send = send,
+})
+
 function cnrTick()
-  local panelOk, panelErr = pcall(pushPanel)
-  if not panelOk and panelErr ~= lastPanelError then log("panel update failed: " .. tostring(panelErr)) end
-  lastPanelError = not panelOk and panelErr or nil
-  local lobbyOk, lobbyErr = pcall(pushLobby)
-  if not lobbyOk and lobbyErr ~= lastLobbyError then log("lobby update failed: " .. tostring(lobbyErr)) end
-  lastLobbyError = not lobbyOk and lobbyErr or nil
-  if autoNextAt and now() >= autoNextAt then startAutoRound() end
+  panelService:tick(panelState, lobbyState)
+  if schedule:due(now()) then startScheduled() end
   if not current:isActive() then return end
   dispatchAISetup()
   if pendingAISetup and now() >= pendingAISetup.deadline then
@@ -1465,7 +1408,7 @@ function cnrTick()
 end
 
 FS.CreateDirectory(stationsDir)
-loadConfig()
+readSettings()
 loadLeaderboard()
 loadBuild()
 playerColors:load()
@@ -1504,5 +1447,5 @@ MP.CreateEventTimer("cnr_tick", 250)
 send(-1, "cnr_roundEnd", { reason = "cancelled" })
 send(-1, "cnr_mode", { version = VERSION, startGrid = true })
 pushRules()
-pushLobby()
+panelService:pushLobby(lobbyState)
 log("Cops and Robbers " .. VERSION .. " loaded on " .. mapName .. " (" .. pluginDir .. ")")
