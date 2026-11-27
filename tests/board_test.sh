@@ -284,9 +284,9 @@ expect 0 '' unblock 1 --by 2
 wrote 'DELETE repos/softbody-arcade/cops-and-robbers/issues/1/dependencies/blocked_by/123'
 expect 0 '' labels
 [[ $(grep -c '^label create ' "$LOG") == 3 ]]
-wrote 'label create accessibility --repo softbody-arcade/cops-and-robbers --force'
-wrote 'label create needs-decision --repo softbody-arcade/cops-and-robbers --force'
-wrote 'label create needs-playtest --repo softbody-arcade/cops-and-robbers --force'
+wrote 'label create accessibility --repo softbody-arcade/cops-and-robbers --force --color f143ab --description Barrier affecting people with disabilities'
+wrote 'label create needs-decision --repo softbody-arcade/cops-and-robbers --force --color D93F0B --description Waiting on a maintainer decision'
+wrote 'label create needs-playtest --repo softbody-arcade/cops-and-robbers --force --color 5319E7 --description PR changes something a player sees, hears or feels'
 printf 'Low: Observe.\nHigh: Keep it.\n' > "$tmp/note"
 expect 0 '' decide 1 --file "$tmp/note"
 wrote "**Decision ($(date +%F)):**"

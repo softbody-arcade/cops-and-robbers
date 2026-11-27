@@ -321,9 +321,9 @@ case $cmd in
   while IFS='|' read -r name color description; do
     gh label create "$name" --repo "$repo" --force --color "$color" --description "$description"
   done <<'LABELS'
-needs-decision|fbca04|Waiting for a maintainer decision
-needs-playtest|c5def5|Requires an in-game playtest
-accessibility|0075ca|Barrier affecting players with disabilities
+needs-decision|D93F0B|Waiting on a maintainer decision
+needs-playtest|5319E7|PR changes something a player sees, hears or feels
+accessibility|f143ab|Barrier affecting people with disabilities
 LABELS
   ;;
  new)
