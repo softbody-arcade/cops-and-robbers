@@ -143,13 +143,20 @@ Hooks, Make targets and scripts run with the credentials of whoever runs them, a
   - Ask for a second player only when observing a second client is essential.
   - A deferred check becomes an `In-game check` issue in Playtest, filed by `board result <n> defer --checks-file F`.
 - **Staging on the local test server (maintainer-only).**
-  1. Extract `git archive <reviewed-sha>` into a disposable directory and work from that snapshot.
-  2. For a contributor's PR, replace the snapshot's `Makefile` with `main`'s (`git show main:Makefile > Makefile` from the maintainer's checkout), so only the mod files come from the branch. Keep the test server's config out of a contributor snapshot: let the mod start with its defaults.
-  3. Set `test_server=<repo>/.testserver`.
-  4. For the maintainer's own branches only: if the test server has an installed config, first run `cp "$test_server/Resources/Server/CopsAndRobbers/config.json" server/CopsAndRobbers/config.json` in the snapshot.
-  5. Run `make install-local TESTSERVER="$test_server"`.
-  6. Restart the local BeamMP server. Then, from the maintainer's checkout of `main` (not the snapshot), record the SHA with `scripts/board move <n> playtest --staged <sha>`.
-  The maintainer handles game and launcher restarts.
+  - **The maintainer's own branches:**
+    1. Extract `git archive <reviewed-sha>` into a disposable directory and work from that snapshot.
+    2. Set `test_server=<repo>/.testserver`.
+    3. If it has an installed config, first run `cp "$test_server/Resources/Server/CopsAndRobbers/config.json" server/CopsAndRobbers/config.json` in the snapshot.
+    4. Run `make install-local TESTSERVER="$test_server"`.
+  - **A contributor's PR** runs on a throwaway copy of the test server, built with `main`'s tooling, so its code never touches the real `.testserver`, its config or the maintainer's files:
+    1. Review the whole diff first.
+    2. Extract `git archive <reviewed-sha>` into a disposable directory `$snapshot`.
+    3. Check that every symlink stays inside the snapshot. `find "$snapshot" -type l -exec realpath -m {} + | grep -v "^$snapshot/"` must print nothing; otherwise don't stage it.
+    4. Write `main`'s Makefile outside the snapshot, for example `git show main:Makefile > "$trusted_makefile"` with `trusted_makefile` in a temp directory.
+    5. Copy the test server: `cp -a <repo>/.testserver "$test_server"`, with `test_server` in a temp directory.
+    6. Run `make -C "$snapshot" -f "$trusted_makefile" install-local TESTSERVER="$test_server"`.
+    7. Start BeamMP from `$test_server`, not `.testserver`, and delete both copies after the playtest.
+  - Then restart the local BeamMP server and, from the maintainer's checkout of `main` (not the snapshot), record the SHA with `scripts/board move <n> playtest --staged <sha>`. The maintainer handles game and launcher restarts.
 - **Engine probes (maintainer-only).**
   - Use a temporary GE extension in the game's user folder (`current/lua/ge/extensions/`), and read its tagged output in `current/beamng.log`.
   - Give the maintainer one comment-free GE console line, with statements separated by `;`.
