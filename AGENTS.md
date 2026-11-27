@@ -28,25 +28,25 @@ GitHub Issues and the organization board **Softbody Arcade** (project 1) record 
 |---|---|---|
 | Inbox | New, untriaged issues | `board triage <n> <type> <priority> [effort]` sets type, priority and effort, moving it to Backlog |
 | Backlog | Triaged; a simple ticket is fine | The maintainer picks it for Next |
-| Next | At most 5, top first, each meeting the definition of ready | `board start <n> design\|build` |
+| Next | At most 5 (`board check` warns above that), top first, each meeting the definition of ready | `board start <n> design\|build` |
 | Design | Brainstorm, spec and plan | The maintainer approves the plan, then `board move <n> build` |
-| Build | Branch, worktree, draft PR; per-task implement and review | The PR is ready: `board move <n> review` |
-| Review | Whole-branch review, fixes, CI | With `needs-playtest`: `board move <n> playtest --staged <sha>`. Without it, the PR merges |
-| Playtest | Waiting on the maintainer's in-game result, plus `In-game check` issues | `board result <n> ...` (below) |
-| Done | Closed issues, for any reason | Archived after 14 days without updates |
+| Build | Branch, worktree, draft PR; per-task implement and review | The PR is ready: `board move <n> review`, or `board move <n> playtest --staged <sha>` when a player check comes first |
+| Review | Whole-branch review, fixes, CI | With `needs-playtest`: `board move <n> playtest --staged <sha>`. Without it, the PR merges. Rework goes back with `board move <n> build` |
+| Playtest | Waiting on the maintainer's in-game result, plus `In-game check` issues (moved in from Inbox, Backlog or Next with `board move <n> playtest`) | `board result <n> ...` (below). After a new push, re-stage with `board move <n> playtest --staged <sha>`; for rework, `board move <n> build` |
+| Done | Closed issues, for any reason; the board moves an issue here when it closes, never `board move` | Archived after 14 days without updates |
 
-**Definition of ready for Next.** The ticket body has these sections: `## Goal`, `## Why`, `## Scope`, `## Done when`, `## Constraints and known facts`, `## Open questions`, `## Links`. The **Ready** issue template provides them, and `board move <n> next` refuses without them.
+**Definition of ready for Next.** The ticket body has these sections: `## Goal`, `## Why`, `## Scope`, `## Done when`, `## Constraints and known facts`, `## Open questions`, `## Links`. The **Ready ticket** issue template provides them, and `board move <n> next` refuses without them.
 
 **Playtest results.**
 - On a work card: `board result <n> pass`, `board result <n> fail`, or `board result <n> defer --checks-file F`, where F holds one check per line, each starting with its priority (`Urgent:`, `High:`, `Medium:` or `Low:`). `defer` files one `In-game check` issue with those checks as tasks; its Priority is the highest priority among the checks. Results are bound to the staged SHA.
 - On an `In-game check` issue: `pass` or `fail` only. Both close it; `fail` also files a `Bug` that links the check.
 
-**Who runs board commands.** Only the maintainer, or an agent acting for the maintainer, runs the board's write commands: `new`, `triage`, `start`, `move`, `result`, `block`, `unblock`, `parent`, `unparent`, `milestone`, `decide`, `labels` and `check`. Run `scripts/board`, for writes and authenticated reads alike, only from the maintainer's own checkout of `main`, never from a branch or snapshot under review, because a branch's `scripts/board` is untrusted code. Contributors file issues with the templates (`gh issue create` or the web), read the board on GitHub or with `list`, `waiting` and `show` from their own trusted checkout (scope `read:project`), and ask the maintainer on the ticket to move their card when their work changes lanes. `scripts/board --help` lists the commands.
+**Who runs board commands.** Only the maintainer, or an agent acting for the maintainer, runs the board's write commands: `new`, `triage`, `priority`, `effort`, `start`, `move`, `result`, `block`, `unblock`, `parent`, `unparent`, `milestone`, `decide` and `labels`. Run `scripts/board`, for writes and authenticated reads alike, only from the maintainer's own checkout of `main`, never from a branch or snapshot under review, because a branch's `scripts/board` is untrusted code. Contributors file issues with the templates (`gh issue create` or the web), read the board on GitHub or with `list`, `waiting`, `show` and `check` from their own trusted checkout (scope `read:project`), and ask the maintainer on the ticket to move their card when their work changes lanes. `scripts/board --help` lists the commands.
 
 **Agent rules the script cannot check:**
 - Run `board start <n> build` or `board move <n> build` only after the maintainer approved that plan (for a fix batch without a spec: that batch) in the current session.
 - Run `board result` only with a result the maintainer reported in the current session.
-- Never move a card out of Playtest by hand.
+- Never move a card out of Playtest by hand on the board; use `board result`, or `board move` for re-staging and rework.
 
 ## Roles
 
