@@ -32,8 +32,8 @@ GitHub Issues and the organization board **Softbody Arcade** (project 1) record 
 | Design | Brainstorm, spec and plan | The maintainer approves the plan, then `board move <n> build` |
 | Build | Branch, worktree, draft PR; per-task implement and review | The PR is ready: `board move <n> review`, or `board move <n> playtest --staged <sha>` when a player check comes first |
 | Review | Whole-branch review, fixes, CI | With `needs-playtest`: `board move <n> playtest --staged <sha>`. Without it, the PR merges. Rework goes back with `board move <n> build` |
-| Playtest | Waiting on the maintainer's in-game result, plus `In-game check` issues (moved in from Inbox, Backlog or Next with `board move <n> playtest`; from Inbox, set `board priority <n> ...` first) | `board result <n> ...` (below). After a new push, re-stage with `board move <n> playtest --staged <sha>`; for rework, `board move <n> build` |
-| Accepted | Merged work waiting for a release, and closed tickets not yet tidied. Cards arrive when their issue closes (the board does this; a staged PR that passed its playtest arrives when it merges), or when a playtester accepts merged work they tested on `develop` | `board release` (after each release, or any time) moves released work, not-planned and duplicate closes, closed checks and no-code tickets to Done. For rework, the maintainer reopens the issue and runs `board move <n> build` (or drags the card back to Build) |
+| Playtest | Waiting on the maintainer's in-game result, plus `In-game check` issues (moved in from Inbox, Backlog or Next with `board move <n> playtest`; from Inbox, set `board priority <n> ...` first) | `board result <n> ...` (below). After a new push, re-stage with `board move <n> playtest --staged <sha>`; for rework, `board move <n> build`. To postpone an `In-game check`, `board move <n> backlog` |
+| Accepted | Merged work waiting for a release, and closed tickets not yet tidied. Cards arrive when their issue closes (the board does this; a staged PR that passed its playtest arrives when it merges), or when a playtester accepts merged work they tested on `develop` | `board release` (after each release, or any time) moves released work, not-planned and duplicate closes, closed checks and no-code tickets to Done. For rework, the maintainer runs `board move <n> build`: it reopens the issue and waits for the board to put the card back in Inbox before moving it to Build. Dragging the card instead races that automation |
 | Done | Released work; closed as not planned or duplicate; closed checks; no-code tickets. Only `board release` moves cards here, never `board move` | `board release` archives closed cards unchanged for 14 days |
 
 **Definition of ready for Next.** The ticket body has these sections: `## Goal`, `## Why`, `## Scope`, `## Done when`, `## Constraints and known facts`, `## Open questions`, `## Links`. The **Ready ticket** issue template provides them, and `board move <n> next` refuses without them.
@@ -55,7 +55,7 @@ GitHub Issues and the organization board **Softbody Arcade** (project 1) record 
 - Run a board write only for something the maintainer asked for or decided in the current session (a standing instruction such as "triage the new issues" counts for that session).
 - Run `board start <n> build` or `board move <n> build` only after the maintainer approved that plan (for a fix batch without a spec: that batch) in the current session.
 - Run `board result` only with a result the maintainer reported in the current session.
-- An agent never drags a card out of Playtest on the board; it uses `board result`, or `board move` for re-staging and rework. (People in the playtesters team may drag merged work, as above.)
+- An agent never drags a card out of Playtest on the board; it uses `board result`, or `board move` for re-staging, rework and postponing an `In-game check`. (People in the playtesters team may drag merged work, as above.)
 
 ## Roles
 

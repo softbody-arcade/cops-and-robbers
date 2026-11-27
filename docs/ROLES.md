@@ -98,7 +98,7 @@ An agent (Claude, Codex or any other) acts with the GitHub login of the person r
 
 | Automation | What it does | Rights |
 |---|---|---|
-| Board workflows | Add new issues to the board in Inbox, move closed issues to Accepted and reopened ones back to Inbox, add sub-issues. `scripts/board release` (run by the maintainer) moves released and finished work to Done and archives Done cards after 14 days without updates | Board only |
+| Board workflows | Add new issues to the board in Inbox, move closed issues to Accepted and reopened ones back to Inbox, add sub-issues. `scripts/board release` (run by the maintainer) moves released and finished work to Done and archives closed Done cards after 14 days without updates | Board only |
 | CI (`ci.yml`) | Runs the five checks on every PR and on pushes to `develop` and `main` | Read-only token |
 | Release (`release.yml`) | When a PR from this repo's `release/x.y.z` branch merges into `main` (or on a manual run for an already merged one): tests and packages without write access, then tags `vx.y.z`, publishes the release with the ZIP, server archive and checksums, and closes milestone `x.y.z`, then opens **Sync main into develop** | Writes in the publish job (tag, release, milestone) and the sync job (opens a PR) |
 | Dependabot | Opens a PR each week when a GitHub Action or a `tools/vuecheck` npm package has a new version, and raises security alerts | Opens PRs; a maintainer merges them |
