@@ -8,7 +8,7 @@
 
 **Tech Stack:** Lua 5.3 (BeamMP Server 3.9.3; CI runs `lua5.3`), the existing `tests/run.lua` runner and the `test_main.lua` server boot.
 
-**Spec:** [arcade manager design](https://github.com/softbody-arcade/arcade-base/blob/df1f2f3/docs/superpowers/specs/2026-11-27-arcade-manager-design.md) (arcade-base#1, approved 2026-11-27), with the probe results on [arcade-base#1](https://github.com/softbody-arcade/arcade-base/issues/1). Ticket: #69.
+**Spec:** arcade manager design, `docs/superpowers/specs/2026-11-27-arcade-manager-design.md` on arcade-base's `develop` (arcade-base#1, approved 2026-11-27), with the probe results on [arcade-base#1](https://github.com/softbody-arcade/arcade-base/issues/1). Ticket: #69.
 
 ## Global Constraints
 
