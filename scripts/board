@@ -178,7 +178,7 @@ for arg in "$@"; do
 done
 case $cmd in
  new|triage|effort|priority|move|start|result|decide|labels|parent|unparent|milestone|block|unblock)
-  [[ $(git symbolic-ref --quiet --short HEAD) == main ]] || refuse 'Board writes require the main branch'
+  [[ $(git symbolic-ref --quiet --short HEAD) == develop ]] || refuse 'Board writes require the develop branch'
   [[ $(git rev-parse --show-toplevel) == "$(cd "$(dirname "$0")/.." && pwd -P)" ]] || refuse 'Run the board script from its own checkout'
   dirty=$(git status --porcelain --untracked-files=no)
   [[ -z $dirty ]] || refuse 'Board writes require a clean checkout'

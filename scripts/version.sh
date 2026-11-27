@@ -17,6 +17,8 @@ refuse() {
   exit 1
 }
 
+from="${RELEASE_FROM:-develop}"
+[[ "$from" == develop || "$from" == main ]] || refuse "FROM must be develop or main"
 release="release/$new"
 title="Release $new"
 body="Merging this PR publishes the release. Deployment is separate."
@@ -52,8 +54,8 @@ while IFS= read -r url; do
 done <<<"$fetch_urls"$'\n'"$push_urls"
 [[ -n "$repo" ]] || refuse "origin must fetch from and push to a GitHub repository"
 gh auth status >/dev/null 2>&1 || refuse "authenticate gh before starting a release"
-git fetch origin '+refs/heads/main:refs/remotes/origin/main'
-base="$(git rev-parse --verify --end-of-options refs/remotes/origin/main^{commit})"
+git fetch origin "+refs/heads/$from:refs/remotes/origin/$from"
+base="$(git rev-parse --verify --end-of-options "refs/remotes/origin/$from^{commit}")"
 set +e
 git ls-remote --exit-code --heads origin "refs/heads/$release" >/dev/null
 lookup=$?

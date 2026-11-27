@@ -6,7 +6,7 @@ trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/repo/scripts"
 cp scripts/{board,board.conf} "$tmp/repo/scripts"
 cd "$tmp/repo"
-git init -qb main
+git init -qb develop
 git add scripts
 git -c commit.gpgsign=false -c user.name=Tester -c user.email=tester@users.noreply.github.com commit -qm fixture
 git -c commit.gpgsign=false -c user.name=Tester -c user.email=tester@users.noreply.github.com commit --allow-empty -qm head
@@ -351,14 +351,14 @@ guard '#33 is a pull request' parent 1 33
 guard '#33 is a pull request' block 1 --by 33
 guard '#33 is a pull request' unblock 1 --by 33
 other="$tmp/other"
-git init -qb main "$other"
+git init -qb develop "$other"
 if (cd "$other" && "$tmp/repo/scripts/board" labels) >"$tmp/out" 2>&1; then exit 1; else rc=$?; fi
 [[ $rc == 1 && $(cat "$tmp/out") == 'Run the board script from its own checkout' ]]
 git switch -qc feature/test
-guard 'Board writes require the main branch' labels
-guard 'Board writes require the main branch' effort 1 High
-guard 'Board writes require the main branch' priority 1 Low
-git switch -q main
+guard 'Board writes require the develop branch' labels
+guard 'Board writes require the develop branch' effort 1 High
+guard 'Board writes require the develop branch' priority 1 Low
+git switch -q develop
 touch untracked
 expect 0 '' labels
 echo >> scripts/board

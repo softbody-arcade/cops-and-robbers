@@ -22,7 +22,7 @@ The full rules, for people and for coding agents alike, are in [AGENTS.md](AGENT
 
 ## Make a change
 
-1. Create a branch named `feature/<topic>` or `fixes/<topic>`.
+1. Create a branch from `develop` named `feature/<topic>` or `fixes/<topic>`. `develop` is the default branch, and every PR targets it; `main` only receives releases.
 2. Push early, and open a draft pull request that says `Fixes #<issue>`.
 3. Follow the design, test and review rules in [AGENTS.md](AGENTS.md#design-and-implementation).
    - New gameplay gets a short spec and plan first.
