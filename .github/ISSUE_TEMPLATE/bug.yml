@@ -1,6 +1,6 @@
 name: Bug
 description: Report an observable defect.
-labels: ["bug"]
+type: Bug
 body:
   - type: textarea
     id: file-and-line

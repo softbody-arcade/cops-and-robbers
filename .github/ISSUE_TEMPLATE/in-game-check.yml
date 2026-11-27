@@ -1,6 +1,6 @@
 name: In-game check
 description: Record an observation that needs a playtest.
-labels: ["in-game-check"]
+type: In-game check
 body:
   - type: textarea
     id: build

@@ -1,6 +1,6 @@
 name: Idea
 description: Suggest an improvement.
-labels: ["idea"]
+type: Feature
 body:
   - type: textarea
     id: what-the-player-gets
