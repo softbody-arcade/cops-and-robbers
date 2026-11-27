@@ -8,6 +8,10 @@ Priorities run from `!!!!` (highest) through `!!!` (high), `!!` (normal), and `!
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
 - [ ] !!! Migrate the project to GitHub (bootstrap pushed): scrubbed history and the privacy check are live in private `softbody-arcade/cops-and-robbers`. Next: CI, labels and the Softbody Arcade board, issues from this file, the `AGENTS.md` rewrite and releases, then go public the same day. The latest privacy-check fixes (bare CR, filename leaks, unicode quoting, message marker, submodules) are covered by tests but await the counterpart review on the CI PR. `make test` now also needs python3 (README prerequisite)
+  - `feature/ci`: CI workflow, Dependabot, npm ci and README prerequisites (Codex delegate). Its review also covers the latest privacy-check fixes
+  - `feature/board-script`: scripts/board, its test, and the issue and PR templates (Codex delegate)
+  - `feature/release-flow`: release PR from `make version`, tarball and checksums, release.yml (Codex delegate)
+  - main: Softbody Arcade board setup on GitHub and the `AGENTS.md` rewrite (coordinator)
 
 
 ## In-game checks
