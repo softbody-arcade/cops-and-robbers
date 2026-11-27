@@ -10,15 +10,17 @@ This page covers the [Softbody Arcade](https://github.com/softbody-arcade) organ
 | Open issues and comment | Yes | Yes | Yes | Yes |
 | Fork and open a PR from the fork | Yes | Yes | Yes | Yes |
 | Report a security problem privately | Yes | Yes | Yes | Yes |
-| Set labels, type, Priority, Effort, milestone and assignee; close and reopen issues | No | Yes | Yes | Yes |
+| Edit and close their own issues | Yes | Yes | Yes | Yes |
+| Set labels, type, Priority, Effort, milestone and assignee on any issue; close and reopen it | No | Yes | Yes | Yes |
 | Push branches to the repo itself | No | No | Yes, except `main` and `release/*` | Yes, except `main` |
-| Approve a PR | No | No | Yes, as advice | Yes, as advice |
+| Review a PR, including an approving review | Yes | Yes | Yes | Yes |
 | Merge into `main` | No | No | No | Yes, through a PR with green CI |
 | Push straight to `main` | No | No | No | No |
 | Start a release (`release/*` branch) | No | No | No | Yes |
 | Move or delete a `v*` tag | No | No | No | Yes |
 | Move cards on the board | No | No | No | Yes |
-| Change repo, board or org settings | No | No | No | Yes |
+| Change repo and board settings | No | No | No | Yes |
+| Change org settings and teams | No | No | No | Org owner only |
 
 Teams give the extra rights: `playtesters` is Triage on the repo, `contributors` is Write and `maintainers` is Admin. On the board, `maintainers` is Admin and everyone else can read.
 
@@ -26,19 +28,20 @@ Teams give the extra rights: `playtesters` is Triage on the repo, `contributors`
 
 Anyone with a GitHub account can:
 - read the code, the issues, the pull requests and the board
-- open an issue with one of the templates (Bug, Feature idea, In-game check, Ready ticket) and comment on any issue or PR
-- fork the repo and open a PR from the fork. CI runs on a fork PR only after a maintainer approves the run, and the run gets a read-only token.
+- open an issue with one of the templates (Bug, Idea, In-game check, Ready ticket), comment on any issue or PR, and edit or close their own issues
+- fork the repo and open a PR from the fork. CI on a PR from someone outside the teams waits until someone with Write approves the run, and the run gets a read-only token.
+- review PRs. Reviews are advice: GitHub requires no approving review, and the merge gate in [AGENTS.md](../AGENTS.md) decides instead.
 - report a security problem privately with **Report a vulnerability** on the Security tab (see [SECURITY.md](../SECURITY.md))
 
-They can't change anything in the repo or on the board.
+They can't change anything else in the repo or on the board.
 
 ## Playtesters
 
 Playtesters run in-game checks and report what they see.
 
 On top of what anyone can do, they can:
-- give an issue its type, Priority, Effort, labels and milestone, assign it, and close or reopen it
-- mark duplicates, and hide or lock unhelpful comments
+- give an issue its labels, Priority, Effort and milestone, assign it, and close or reopen it (and its type, in the web interface)
+- mark duplicates
 
 What they normally do:
 1. Pick an issue of type **In-game check**.
@@ -53,7 +56,7 @@ Contributors write code and docs.
 
 On top of what a playtester can do, they can:
 - push branches to the repo itself (by convention `feature/<topic>` and `fixes/<topic>`) and open PRs from them, so CI runs without waiting for approval
-- review and approve PRs. Nothing requires an approval to merge, so an approval is advice, not a gate.
+- approve CI runs on PRs from people outside the teams
 - delete their own branches. Merged branches are deleted automatically.
 
 They can't:
@@ -62,7 +65,7 @@ They can't:
 - move or delete a `v*` tag
 - move cards on the board. They comment on the issue and the maintainer moves the card.
 
-Known gap: a contributor can still create a new `v*` tag or publish a release by hand (#42). The server's updater only installs releases published by the release workflow (#25), so a hand-made release never deploys.
+Known gap: a contributor can still create a new `v*` tag or publish a release by hand (#42). Today releases are deployed by hand, so the maintainer decides what goes live. The planned updater (#25) will only install releases published by the release workflow.
 
 What they normally do:
 1. Comment on an issue to claim it. The maintainer starts the card and assigns it to them.
@@ -72,32 +75,32 @@ What they normally do:
 
 ## Maintainers
 
-The `maintainers` team has Admin on the repo and on the board. The organization owner can also change org settings, teams and billing.
+The `maintainers` team has Admin on the repo and on the board. Org settings, teams and billing belong to the organization owner, which is a separate role.
 
 Only maintainers:
 - triage new issues, order the Next lane and move cards between lanes
-- merge PRs into `main`. A merge needs a PR with the five CI checks green: `test`, `luajit`, `vuecheck`, `privacy` and `package`. Nobody can push to `main` directly, maintainers included.
+- merge PRs into `main`, after the merge gate in [AGENTS.md](../AGENTS.md): the maintainer's go, a final review of the head being merged, and a playtest result where needed. GitHub itself requires a PR with the five CI checks green: `test`, `luajit`, `vuecheck`, `privacy` and `package`. Nobody can push to `main` directly, maintainers included.
 - start a release with `make version V=x.y.z` and merge the `Release x.y.z` PR, which tags and publishes it
 - stage builds on the local test server and deploy to the live server
-- change repo settings, rulesets, teams, the board's fields, views and workflows, and org settings
+- change repo settings, rulesets, and the board's fields, views and workflows
 
 ## Coding agents
 
-An agent (Claude, Codex or any other) acts with the GitHub login of the person running it, so it gets exactly that person's rights. [AGENTS.md](../AGENTS.md) narrows that further:
+An agent (Claude, Codex or any other) acts with the GitHub login of the person running it, so it can do at most what that person can (its token may allow less). [AGENTS.md](../AGENTS.md) narrows that further:
 - An agent working for a contributor follows the contributor rules. It skips maintainer-only steps and lists them in its PR.
 - An agent working for the maintainer merges, releases, deploys or writes to the board only for what the maintainer asked or decided in the current session.
 - Agents never run a contributor's branch on the maintainer's machine. They review it as a diff, and CI runs it.
-- Every decision an agent hears in chat goes on the ticket as a dated comment, written for a public repo.
+- A decision the maintainer makes in a chat goes on the ticket as a dated comment, written for a public repo. When unsure whether something may be published, the agent asks first.
 
 ## Automations
 
 | Automation | What it does | Rights |
 |---|---|---|
-| Board workflows | Add new issues to the board in Inbox, move closed issues to Done and reopened ones back to Inbox, add sub-issues, archive Done cards after two weeks | Board only |
+| Board workflows | Add new issues to the board in Inbox, move closed issues to Done and reopened ones back to Inbox, add sub-issues, archive Done cards after 14 days without updates | Board only |
 | CI (`ci.yml`) | Runs the five checks on every PR and on `main` | Read-only token |
-| Release (`release.yml`) | When a `Release x.y.z` PR merges: tests and packages without write access, then tags `vx.y.z`, publishes the release with the ZIP, server archive and checksums, and closes milestone `x.y.z` | Writes only in the publish job |
+| Release (`release.yml`) | When a PR from this repo's `release/x.y.z` branch merges into `main` (or on a manual run for an already merged one): tests and packages without write access, then tags `vx.y.z`, publishes the release with the ZIP, server archive and checksums, and closes milestone `x.y.z` | Writes only in the publish job |
 | Dependabot | Opens a PR each week when a GitHub Action or a `tools/vuecheck` npm package has a new version, and raises security alerts | Opens PRs; a maintainer merges them |
-| Secret scanning | Blocks a push that contains a known secret format | Push protection on |
+| Secret scanning | Blocks a push that contains a supported secret pattern, unless the pusher requests a bypass | Push protection on |
 
 ## Enforced on GitHub
 
