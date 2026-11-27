@@ -125,6 +125,10 @@ case "$*" in
     if [[ ${MOVE_FAIL:-} ]]; then echo 'move failed' >&2; exit 7; fi
     echo '{}'
     ;;
+  'project item-add '*/issues/22)
+    if [[ ${ADD_FAIL:-} ]]; then echo 'add failed' >&2; exit 7; fi
+    echo '{}'
+    ;;
   'issue comment '*|'project item-add '*|'project item-edit '*) echo '{}' ;;
   *) echo "Unexpected gh $*" >&2; exit 9 ;;
 esac
@@ -409,7 +413,11 @@ wrote '- [ ] High: Keep it.'
 wrote 'select(.name=="High")'
 EXISTING_COMMENT=$'Playtest fail\n' EXISTING=22 TYPE='In-game check' expect 0 '' result 1 fail
 ! wrote 'issue create' || exit 1
+grep -Fxq -- 'project item-add 9 --owner softbody-arcade --url https://github.com/softbody-arcade/cops-and-robbers/issues/22' "$LOG" || exit 1
 ! wrote 'issue comment' || exit 1
+ADD_FAIL=1 EXISTING_COMMENT=$'Playtest fail\n' EXISTING=22 TYPE='In-game check' expect 2 'add failed' result 1 fail
+grep -Fxq -- 'project item-add 9 --owner softbody-arcade --url https://github.com/softbody-arcade/cops-and-robbers/issues/22' "$LOG" || exit 1
+! wrote 'issue close' || exit 1
 EXISTING_COMMENT="Playtest fail for #1 at $HEAD_SHA"$'\n' expect 0 '' result 1 fail
 ! wrote 'pr comment' || exit 1
 ! wrote 'issue comment' || exit 1
