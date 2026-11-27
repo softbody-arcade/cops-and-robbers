@@ -1,0 +1,39 @@
+name: In-game check
+description: Record an observation that needs a playtest.
+type: In-game check
+body:
+  - type: textarea
+    id: build
+    attributes:
+      label: Build
+      description: Release or staged commit SHA.
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Setup
+      description: Describe the shortest setup.
+    validations:
+      required: true
+  - type: textarea
+    id: action
+    attributes:
+      label: Action
+      description: What should the tester do?
+    validations:
+      required: true
+  - type: textarea
+    id: expected-observation
+    attributes:
+      label: Expected observation
+      description: What should they see, hear or feel?
+    validations:
+      required: true
+  - type: textarea
+    id: open-question
+    attributes:
+      label: Open question
+      description: What uncertainty does this resolve?
+    validations:
+      required: true

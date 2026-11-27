@@ -9,7 +9,8 @@ For contributors:
 - `lua5.3`, `luajit` and `python3` for tests and Lua checks
 - Node 22 with npm for UI checks
 - `zip` and `rsync` for packaging
-- `git` 2.41 or newer (the privacy check uses `--attr-source`), and `gh` for the board tooling in `scripts/board`
+- `git` 2.41 or newer (the privacy check uses `--attr-source`)
+- Bash 4.4+, `jq` and `gh` 2.106+ for `scripts/board` and its tests
 
 ## Install
 
@@ -186,8 +187,9 @@ to choose a different local BeamMP server directory.
 
 The version lives in four places (server `main.lua`, client `copsAndRobbers.lua`, `mod_info/.../info.json`, the
 `docs/FEATURES.md` heading); `tests/test_version.lua` checks they agree and the other tests read it from the server.
-Feature branches never change it, so branches built side by side don't conflict: after a branch merges, run
-`make version V=x.y.z` on main and commit the bump on its own. The target refuses on any other branch.
+Feature branches never change it, so branches built side by side don't conflict. To release, run
+`make version V=x.y.z`: it builds the version commit on top of `origin/main` (not your local branch), pushes it as
+`release/x.y.z` and opens the **Release x.y.z** PR, without touching your checkout. Merging that PR publishes the release.
 
 Client layout (`client/lua/ge/extensions/`): `copsAndRobbers.lua` holds round state, the server event handlers and the
 `onUpdate` steps; `copsAndRobbers/` has `game` (GE helpers), `inputs` (locks, reset hooks), `roads` (spawn spots),

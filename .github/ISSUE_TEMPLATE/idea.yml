@@ -1,0 +1,25 @@
+name: Idea
+description: Suggest an improvement.
+type: Feature
+body:
+  - type: textarea
+    id: what-the-player-gets
+    attributes:
+      label: What the player gets
+      description: Describe the change from the player’s perspective.
+    validations:
+      required: true
+  - type: textarea
+    id: who-asked-and-when
+    attributes:
+      label: Who asked and when
+      description: Record the source and date.
+    validations:
+      required: true
+  - type: textarea
+    id: links
+    attributes:
+      label: Links
+      description: Related issues, specs or plans.
+    validations:
+      required: false
