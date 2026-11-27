@@ -33,7 +33,7 @@ GitHub Issues and the organization board **Softbody Arcade** (project 1) record 
 | Build | Branch, worktree, draft PR; per-task implement and review | The PR is ready: `board move <n> review`, or `board move <n> playtest --staged <sha>` when a player check comes first |
 | Review | Whole-branch review, fixes, CI | With `needs-playtest`: `board move <n> playtest --staged <sha>`. Without it, the PR merges. Rework goes back with `board move <n> build` |
 | Playtest | Waiting on the maintainer's in-game result, plus `In-game check` issues (moved in from Inbox, Backlog or Next with `board move <n> playtest`; from Inbox, set `board priority <n> ...` first) | `board result <n> ...` (below). After a new push, re-stage with `board move <n> playtest --staged <sha>`; for rework, `board move <n> build` |
-| Accepted | Closed issues: merged work waiting for a release, and closed tickets not yet tidied. The board moves an issue here when it closes | `board release` (after each release, or any time) moves released work, not-planned and duplicate closes, closed checks and no-code tickets to Done; a playtester's feedback or a failed result sends work back to Build |
+| Accepted | Merged work waiting for a release, and closed tickets not yet tidied. Cards arrive when their issue closes (the board does this), after a passed `board result`, or when a playtester accepts merged work they tested on `develop` | `board release` (after each release, or any time) moves released work, not-planned and duplicate closes, closed checks and no-code tickets to Done. Rework goes back with a maintainer's `board move <n> build` |
 | Done | Released work; closed as not planned or duplicate; closed checks; no-code tickets. Only `board release` moves cards here, never `board move` | `board release` archives cards unchanged for 14 days |
 
 **Definition of ready for Next.** The ticket body has these sections: `## Goal`, `## Why`, `## Scope`, `## Done when`, `## Constraints and known facts`, `## Open questions`, `## Links`. The **Ready ticket** issue template provides them, and `board move <n> next` refuses without them.
@@ -42,11 +42,11 @@ GitHub Issues and the organization board **Softbody Arcade** (project 1) record 
 - On a work card: `board result <n> pass`, `board result <n> fail`, or `board result <n> defer --checks-file F`, where F holds one check per line, each starting with its priority (`Urgent:`, `High:`, `Medium:` or `Low:`). `defer` files one `In-game check` issue with those checks as tasks; its Priority is the highest priority among the checks. Results are bound to the staged SHA.
 - On an `In-game check` issue: `pass` or `fail` only. Both close it; `fail` also files a `Bug` that links the check.
 
-**Who runs board commands.** Only the maintainer, or an agent acting for the maintainer, runs the board's write commands: `new`, `triage`, `priority`, `effort`, `start`, `move`, `result`, `block`, `unblock`, `parent`, `unparent`, `milestone`, `decide` and `labels`. Run `scripts/board` only from a trusted checkout of `develop`, never from a branch or snapshot under review, because a branch's `scripts/board` is untrusted code: for the maintainer that is their own checkout of `develop` (reads and writes), for a contributor their own clone of `develop` (reads only). When a contributor takes a card, the maintainer runs `board start <n> design|build` (which assigns the maintainer) and then hands the issue over with `gh issue edit <n> --add-assignee <login> --remove-assignee @me`. Contributors file issues with the templates (`gh issue create` or the web), read the board on GitHub or with `list`, `waiting`, `show` and `check` from their own trusted checkout (scope `read:project`), and drag their own cards on the board within the moves below. `scripts/board --help` lists the commands.
+**Who runs board commands.** Only the maintainer, or an agent acting for the maintainer, runs the board's write commands: `new`, `triage`, `priority`, `effort`, `start`, `move`, `result`, `block`, `unblock`, `parent`, `unparent`, `milestone`, `decide`, `labels` and `release`. Run `scripts/board` only from a trusted checkout of `develop`, never from a branch or snapshot under review, because a branch's `scripts/board` is untrusted code: for the maintainer that is their own checkout of `develop` (reads and writes), for a contributor their own clone of `develop` (reads only). When a contributor takes a card, the maintainer runs `board start <n> design|build` (which assigns the maintainer) and then hands the issue over with `gh issue edit <n> --add-assignee <login> --remove-assignee @me`. Contributors file issues with the templates (`gh issue create` or the web), read the board on GitHub or with `list`, `waiting`, `show` and `check` from their own trusted checkout (scope `read:project`), and drag their own cards on the board within the moves below. `scripts/board --help` lists the commands.
 
 **Who may drag cards on the board.** The board doesn't enforce this; GitHub's history shows who moved what, and the maintainer fixes mistakes.
 - **Maintainers:** anything.
-- **Playtesters:** Playtest → Accepted when a playtest passed; Playtest → Build when it didn't, with a comment saying what they saw.
+- **Playtesters:** on a work card whose PR is already merged and was tested on `develop`: Playtest → Accepted when it passed, Playtest → Build when it didn't, with a comment saying what they saw. On an `In-game check` issue, or a staged PR that isn't merged, they only comment their result; the maintainer records it with `board result`, which needs the card in Playtest.
 - **Contributors:** their own assigned cards between Build and Review. Leaving Design stays the maintainer's call (plan approval).
 - **Everyone with board Write:** new minigame ideas go on the board as **draft items** (the **Game ideas** view). A draft becomes an issue in a game's repo once that game has one. Work on an existing game starts as an issue in its repo, which lands in Inbox by itself.
 - The green status badge on an issue page is GitHub's own issue status (Backlog, Done, …), not the board lane. Ignore it; the board lane is what counts.
@@ -55,7 +55,7 @@ GitHub Issues and the organization board **Softbody Arcade** (project 1) record 
 - Run a board write only for something the maintainer asked for or decided in the current session (a standing instruction such as "triage the new issues" counts for that session).
 - Run `board start <n> build` or `board move <n> build` only after the maintainer approved that plan (for a fix batch without a spec: that batch) in the current session.
 - Run `board result` only with a result the maintainer reported in the current session.
-- Never move a card out of Playtest by hand on the board; use `board result`, or `board move` for re-staging and rework.
+- An agent never drags a card out of Playtest on the board; it uses `board result`, or `board move` for re-staging and rework. (People in the playtesters team may drag merged work, as above.)
 
 ## Roles
 
@@ -67,8 +67,8 @@ GitHub Issues and the organization board **Softbody Arcade** (project 1) record 
 | `contributors` | Write: `feature/*` and `fixes/*` branches and PRs | Write: their own moves above, and game idea drafts |
 | `playtesters` | Triage: comment and file issues | Write: their own moves above, and game idea drafts |
 
-- **Playtesters** take `In-game check` issues and post what they saw as a comment. The maintainer records the result.
-- **Maintainer-only:** board writes, triage, ordering Next, milestones, merging, releases, staging on `.testserver`, the in-game probe extensions and deploys. A contributor's agent skips these and says in its PR what still needs doing.
+- **Playtesters** take `In-game check` issues and post what they saw as a comment; the maintainer records the result. They may drag merged work they tested, as above.
+- **Maintainer-only:** `scripts/board` writes, triage, ordering Next, every card move other than the playtester and contributor drags above, milestones, merging, releases, staging on `.testserver`, the in-game probe extensions and deploys. A contributor's agent skips these and says in its PR what still needs doing.
 
 ## Design and implementation
 
