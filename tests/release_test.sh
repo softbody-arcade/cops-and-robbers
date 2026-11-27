@@ -62,49 +62,66 @@ run_version() {
   set -e
 }
 
+same_checkout() {
+  [[ $(git -C "$1" branch --show-current) == main && $(git -C "$1" rev-parse HEAD) == "$2" ]] &&
+    ! git -C "$1" show-ref --verify --quiet refs/heads/release/1.1.0
+}
+
 work="$(fixture edit)"
-EDIT_DURING_TEST="$work/README.md" LUA_STATUS=23 run_version "$work"
+head="$(git -C "$work" rev-parse HEAD)"
+echo "my note" >> "$work/docs/FEATURES.md"
+echo "staged note" >> "$work/README.md"
+git -C "$work" add README.md
+EDIT_DURING_TEST="$work/server/CopsAndRobbers/main.lua" LUA_STATUS=23 run_version "$work"
 check "a failing version test keeps its exit status" '[[ $(cat "$tmp/status") == 23 ]]'
-check "a failing version test returns to main" '[[ $(git -C "$work" branch --show-current) == main ]]'
-check "a failing version test deletes the release branch" '! git -C "$work" show-ref --verify --quiet refs/heads/release/1.1.0'
-check "a failing version test keeps unrelated edits" 'grep -q "unrelated edit" "$work/README.md"'
-check "a failing version test restores the version files" '[[ -z $(git -C "$work" status --porcelain -- server client docs) ]]'
+check "a failing version test leaves the checkout on main" 'same_checkout "$work" "$head"'
+check "a failing version test pushes nothing" '! git -C "$work/../origin.git" show-ref --verify --quiet refs/heads/release/1.1.0'
+check "a failing version test keeps edits in version files" 'grep -q "my note" "$work/docs/FEATURES.md" && grep -q "unrelated edit" "$work/server/CopsAndRobbers/main.lua"'
+check "a failing version test keeps staged edits" '[[ $(git -C "$work" diff --cached --name-only) == README.md ]]'
 
-work="$(fixture hook-start)"
+work="$(fixture hooks)"
+head="$(git -C "$work" rev-parse HEAD)"
 mkdir -p "$work/../hooks"
-printf '#!/bin/sh\n[ "$(git branch --show-current)" = main ] || exit 1\n' > "$work/../hooks/post-checkout"
-chmod +x "$work/../hooks/post-checkout"
+printf '#!/bin/sh\necho hooked >> README.md\nexit 1\n' > "$work/../hooks/post-checkout"
+printf '#!/bin/sh\nexit 1\n' > "$work/../hooks/pre-commit"
+chmod +x "$work/../hooks/post-checkout" "$work/../hooks/pre-commit"
 git -C "$work" config core.hooksPath "$work/../hooks"
+echo "staged note" >> "$work/README.md"
+git -C "$work" add README.md
 run_version "$work"
-check "a failing checkout hook still fails the release" '[[ $(cat "$tmp/status") != 0 ]]'
-check "a failing checkout hook returns to main" '[[ $(git -C "$work" branch --show-current) == main ]]'
-check "a failing checkout hook deletes the release branch" '! git -C "$work" show-ref --verify --quiet refs/heads/release/1.1.0'
+check "a release start runs no checkout or commit hooks" '[[ $(cat "$tmp/status") == 0 ]] && ! grep -q hooked "$work/README.md"'
+check "a release start leaves the checkout on main" 'same_checkout "$work" "$head"'
+check "a release start leaves staged work out of the release" '[[ $(git -C "$work" diff --name-only main origin/release/1.1.0 2>/dev/null || git -C "$work/../origin.git" diff --name-only main release/1.1.0) == $'"'"'client/lua/ge/extensions/copsAndRobbers.lua\nclient/mod_info/CopsAndRobbers/info.json\ndocs/FEATURES.md\nserver/CopsAndRobbers/main.lua'"'"' ]]'
+check "a release start keeps staged work staged" '[[ $(git -C "$work" diff --cached --name-only) == README.md ]]'
 
-work="$(fixture hook-cleanup)"
-mkdir -p "$work/../hooks"
-printf '#!/bin/sh\n[ "$(git branch --show-current)" != main ] || exit 1\n' > "$work/../hooks/post-checkout"
-chmod +x "$work/../hooks/post-checkout"
-git -C "$work" config core.hooksPath "$work/../hooks"
-LUA_STATUS=23 run_version "$work"
-check "a failing hook during cleanup keeps the original status" '[[ $(cat "$tmp/status") == 23 ]]'
-check "a failing hook during cleanup still deletes the release branch" '! git -C "$work" show-ref --verify --quiet refs/heads/release/1.1.0'
-
-work="$(fixture existing)"
-git -C "$work" branch release/1.1.0
+work="$(fixture rejected)"
+head="$(git -C "$work" rev-parse HEAD)"
+printf '#!/bin/sh\nexit 1\n' > "$work/../origin.git/hooks/pre-receive"
+chmod +x "$work/../origin.git/hooks/pre-receive"
 run_version "$work"
-check "an existing local release branch is refused" '[[ $(cat "$tmp/status") == 1 ]] && grep -q "already exists locally" "$tmp/out"'
-check "an existing local release branch is kept" 'git -C "$work" show-ref --verify --quiet refs/heads/release/1.1.0'
+check "a rejected push fails the release" '[[ $(cat "$tmp/status") != 0 ]]'
+check "a rejected push leaves the checkout on main" 'same_checkout "$work" "$head"'
+
+work="$(fixture exists)"
+git -C "$work" push -q origin main:refs/heads/release/1.1.0
+run_version "$work"
+check "an existing release branch on origin is refused" '[[ $(cat "$tmp/status") == 1 ]] && grep -q "already exists on origin" "$tmp/out"'
 
 work="$(fixture pr)"
 GH_PR_STATUS=1 run_version "$work"
 check "a failed PR keeps the pushed branch" 'git -C "$work/../origin.git" show-ref --verify --quiet refs/heads/release/1.1.0'
 check "a failed PR prints a retry with title and body" 'grep -Fq -- "--title \"Release 1.1.0\" --body \"Merging this PR publishes the release. Deployment is separate.\"" "$tmp/out"'
-check "a failed PR returns to main" '[[ $(git -C "$work" branch --show-current) == main ]]'
+check "a failed PR fails the release" '[[ $(cat "$tmp/status") == 1 ]]'
 
 work="$(fixture ok)"
+git -C "$work" commit -q --allow-empty -m "local only"
 run_version "$work"
 check "a release start succeeds" '[[ $(cat "$tmp/status") == 0 ]]'
-check "a release start commits the new version" '[[ $(git -C "$work" show release/1.1.0:server/CopsAndRobbers/main.lua) == "local VERSION = \"1.1.0\"" ]]'
+check "a release starts from origin/main" '[[ $(git -C "$work/../origin.git" rev-parse release/1.1.0^) == $(git -C "$work/../origin.git" rev-parse main) ]]'
+check "a release start commits the new version" '[[ $(git -C "$work/../origin.git" show release/1.1.0:server/CopsAndRobbers/main.lua) == "local VERSION = \"1.1.0\"" && $(git -C "$work/../origin.git" show release/1.1.0:docs/FEATURES.md) == "# Cops and Robbers 1.1.0: features" ]]'
+work="$(fixture older)"
+(cd "$work" && scripts/version.sh 0.9.0) > "$tmp/out" 2>&1 && echo 0 > "$tmp/status" || echo $? > "$tmp/status"
+check "an older version is refused" '[[ $(cat "$tmp/status") == 1 ]] && grep -q "must be greater" "$tmp/out"'
 
 pkg="$tmp/package"
 mkdir -p "$pkg"
@@ -116,6 +133,21 @@ TZ=Asia/Tokyo make -s -C "$pkg" package SOURCE_DATE_EPOCH=1700000000 >/dev/null
 check "repackaging the same source gives the same checksums" 'cmp -s "$tmp/first" "$pkg/dist/release/SHA256SUMS"'
 check "packaging leaves file times in dist/Server alone" '[[ $(stat -c %Y "$pkg/dist/Server/CopsAndRobbers/main.lua") == $(stat -c %Y "$pkg/server/CopsAndRobbers/main.lua") ]]'
 check "the client zip holds the mod folders" 'unzip -Z1 "$pkg/dist/release/CopsAndRobbers.zip" | grep -x "mod_info/CopsAndRobbers/info.json" >/dev/null'
+for module in strikeSchedule groundingWeather; do
+  check "the client zip holds the shared $module module" 'cmp -s <(unzip -p "$pkg/dist/release/CopsAndRobbers.zip" lua/ge/extensions/copsAndRobbers/$module.lua) "$pkg/server/CopsAndRobbers/cnr/$module.lua"'
+done
+umask_pkg="$tmp/package-umask"
+mkdir -p "$umask_pkg"
+(umask 077 && cp -r "$ROOT/Makefile" "$ROOT/client" "$ROOT/server" "$umask_pkg/" && chmod -R go-rwx "$umask_pkg" && make -s -C "$umask_pkg" package SOURCE_DATE_EPOCH=1700000000 >/dev/null)
+check "a different umask gives the same checksums" 'cmp -s "$tmp/first" "$umask_pkg/dist/release/SHA256SUMS"'
+broken="$tmp/package-broken"
+mkdir -p "$broken/bin"
+cp -r "$ROOT/Makefile" "$ROOT/client" "$ROOT/server" "$broken/"
+printf '#!/bin/sh
+exit 2
+' > "$broken/bin/tar"
+chmod +x "$broken/bin/tar"
+check "a failing tar fails the package" '! PATH="$broken/bin:$PATH" make -s -C "$broken" package SOURCE_DATE_EPOCH=1700000000 >/dev/null 2>&1'
 
 if ((failures)); then
   echo "$failures release checks failed"
