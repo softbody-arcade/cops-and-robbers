@@ -20,7 +20,7 @@ This page covers the [Softbody Arcade](https://github.com/softbody-arcade) organ
 | Move or delete a `v*` tag | No | No | No | Yes |
 | Move cards on the board | No | No | No | Yes |
 | Change repo and board settings | No | No | No | Yes |
-| Change org-wide settings and create or delete teams | No | No | No | Org owner only |
+| Change org-wide settings and create teams | No | No | No | Org owner only |
 
 Teams give the extra rights: `playtesters` is Triage on the repo, `contributors` is Write and `maintainers` is Admin. On the board, `maintainers` is Admin and everyone else can read.
 
@@ -30,7 +30,7 @@ Anyone with a GitHub account can:
 - read the code, the issues, the pull requests and the board
 - open an issue with one of the templates (Bug, Idea, In-game check, Ready ticket), comment on any issue or PR, and edit or close their own issues
 - fork the repo and open a PR from the fork. CI on a PR from an external contributor (someone outside the organization) waits until someone with Write approves the run, and the run gets a read-only token.
-- review PRs. Reviews are advice: GitHub requires no approving review, and the merge gate in [AGENTS.md](../AGENTS.md) decides instead.
+- review PRs, unless reviews are limited to people with access. Reviews are advice: GitHub requires no approving review, and the merge gate in [AGENTS.md](../AGENTS.md) decides instead.
 - report a security problem privately with **Report a vulnerability** on the Security tab (see [SECURITY.md](../SECURITY.md))
 
 They can't change anything else in the repo or on the board.
@@ -75,7 +75,7 @@ What they normally do:
 
 ## Maintainers
 
-The `maintainers` team has Admin on the repo and on the board. Org-wide settings, creating and deleting teams, and billing belong to the organization owner, which is a separate role (a team maintainer can still manage their own team).
+The `maintainers` team has Admin on the repo and on the board. Org-wide settings, creating teams and billing belong to the organization owner, which is a separate role. A team maintainer can still manage, and delete, their own team.
 
 Only maintainers:
 - triage new issues, order the Next lane and move cards between lanes
