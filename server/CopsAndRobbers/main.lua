@@ -2,6 +2,7 @@ local pluginDir = (debug.getinfo(1, "S").source:match("^@?(.*[/\\])") or "./")
 package.path = pluginDir .. "?.lua;" .. package.path
 
 local store = require("arcade.store")
+local messages = require("arcade.messages").new({ prefix = "[CnR] " })
 local vec = require("cnr.vec")
 local config = require("cnr.config")
 local rules = require("cnr.rules")
@@ -17,7 +18,8 @@ local strikeSchedule = require("cnr.strikeSchedule")
 local traffic = require("cnr.traffic")
 
 local VERSION = "2.15.1"
-local PREFIX = "[CnR] "
+local log, send, notify = messages.log, messages.send, messages.notify
+local reply, refuse, broadcast = messages.reply, messages.refuse, messages.broadcast
 local dataDir = pluginDir .. "data/"
 local stationsDir = dataDir .. "stations/"
 local leaderboardPath = dataDir .. "leaderboard.json"
@@ -69,8 +71,6 @@ local serverClock = MP.CreateTimer()
 
 math.randomseed(os.time())
 
-local function log(msg) print(PREFIX .. msg) end
-
 local function now() return serverClock:GetCurrent() end
 
 local function placing(pid)
@@ -89,28 +89,10 @@ end
 local boardSubs = {}
 local leaderboardLocked = false
 local panelSubs = {}
-local panelMirror
 local lastPanelSig
 local lastLobbySig
 local lastPanelError
 local lastLobbyError
-
-local function send(pid, event, payload)
-  if type(pid) ~= "number" or (pid < 0 and pid ~= -1) then return end
-  return MP.TriggerClientEvent(pid, event, Util.JsonEncode(payload or {}))
-end
-local function notify(pid, msg, tone)
-  send(pid, "cnr_notice", { msg = msg, tone = tone or "info" })
-end
-local function reply(pid, msg, tone)
-  if panelMirror and pid == panelMirror then
-    send(pid, "cnr_panelReply", { text = msg, tone = tone })
-  else
-    notify(pid, msg, tone)
-  end
-end
-local function refuse(pid, msg) reply(pid, msg, "warn") end
-local function broadcast(msg, tone) notify(-1, msg, tone) end
 
 local function loadConfig()
   local raw, corrupt = store.decode(pluginDir .. "config.json")
@@ -1041,18 +1023,14 @@ function cnrOnPanel(pid, data)
   elseif msg.action == "command" then
     local text = panel.allow(msg.text)
     if not text then return send(pid, "cnr_panelReply", { text = "Not available from the panel", tone = "warn" }) end
-    panelMirror = pid
-    local ran, err = pcall(runCommand, pid, text)
-    panelMirror = nil
+    local ran, err = messages.mirrored(pid, runCommand, pid, text)
     pushPanel()
     if not ran then error(err, 0) end
   elseif msg.action == "station" then
     if msg.op ~= "add" and msg.op ~= "remove" then return end
-    panelMirror = pid
     local handler = handlers.removestation
     if msg.op == "add" then handler = handlers.addstation end
-    local ran, err = pcall(handler, pid)
-    panelMirror = nil
+    local ran, err = messages.mirrored(pid, handler, pid)
     pushPanel()
     if not ran then error(err, 0) end
   elseif msg.action == "stations" then
@@ -1067,9 +1045,7 @@ function cnrOnPanel(pid, data)
     panelBuild(pid, msg)
   elseif msg.action == "apply" then
     if pid ~= current.runnerId then return send(pid, "cnr_panelReply", { text = "Only the runner can apply the change", tone = "warn" }) end
-    panelMirror = pid
-    local ran, err = pcall(function() applyEffects(current:apply(now(), pid)) end)
-    panelMirror = nil
+    local ran, err = messages.mirrored(pid, function() applyEffects(current:apply(now(), pid)) end)
     pushPanel()
     if not ran then error(err, 0) end
   end
