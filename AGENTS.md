@@ -51,7 +51,7 @@ GitHub Issues and the organization board **Softbody Arcade** (project 1) record 
 
 ## Roles
 
-The teams exist; their grants below are applied when the repo goes public (#11). Until then only the maintainer has access.
+[docs/ROLES.md](docs/ROLES.md) explains for people what each role can do, and which rulesets GitHub enforces.
 
 | Team | Repo | Board |
 |---|---|---|
