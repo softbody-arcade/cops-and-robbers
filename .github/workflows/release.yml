@@ -11,8 +11,13 @@ on:
         required: true
         type: string
 
+defaults:
+  run:
+    shell: bash
+
 permissions:
   contents: write
+  issues: write
 
 jobs:
   select:
@@ -52,15 +57,12 @@ jobs:
       SHA: ${{ needs.select.outputs.sha }}
     steps:
       - name: Check out release commit with full history
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          git init
-          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
-          gh auth setup-git
-          git fetch origin "$SHA"
-          git checkout --detach FETCH_HEAD
-          [[ "$(git rev-parse HEAD)" == "$SHA" ]]
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SHA }}
+          fetch-depth: 0
+      - name: Verify release commit
+        run: '[[ "$(git rev-parse HEAD)" == "$SHA" ]]'
       - name: Check version
         run: |
           grep -Fx "local VERSION = \"$VERSION\"" server/CopsAndRobbers/main.lua
@@ -82,3 +84,12 @@ jobs:
           [[ "$remote_tag" == "$SHA"$'\t'"$ref" ]]
           gh release create "v$VERSION" --verify-tag --title "Cops and Robbers $VERSION" --generate-notes \
             dist/Client/CopsAndRobbers.zip dist/CopsAndRobbers-server.tar.gz dist/SHA256SUMS
+      - name: Close release milestone
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          milestone="$(gh api --paginate 'repos/{owner}/{repo}/milestones?state=open' |
+            jq -r --arg version "$VERSION" '.[] | select(.title == $version) | .number')"
+          if [[ -n "$milestone" ]]; then
+            gh api --method PATCH "repos/{owner}/{repo}/milestones/$milestone" -f state=closed
+          fi
