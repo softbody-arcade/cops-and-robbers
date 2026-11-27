@@ -19,6 +19,7 @@ DENY = pc.compile_deny(["secret-host", "re:\\bcontainer-x\\d\\b"])
 MUST_FLAG = [
     "ssh ops@gamebox:/games",
     "Admin@box",
+    "run: ssh deploy@gamebox",
     "HOST=user@10.1.2.3",
     "ping 10.1.2.3",
     "fe80::1",
@@ -35,6 +36,11 @@ MUST_FLAG = [
     "/opt/Game",
     "/srv/data",
     "/srv/2box",
+    "/srv/.cache/private",
+    "/opt/_service/bin",
+    "git clone git+ssh://user@host/repo",
+    "see https://user@host/",
+    "https://user:pw@example.org/x",
     "mail someone@example.org",
     "deploys to Secret-Host now",
     "restart container-x1",
@@ -50,8 +56,17 @@ MUST_PASS = [
     "2001:db8::42",
     "85369967+ReinderN@users.noreply.github.com",
     "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+    "Co-Authored-By: Codex <noreply@openai.com>",
+    "GitHub <noreply@github.com>",
+    "Signed-off-by: dependabot[bot] <support@github.com>",
+    "dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
     "git@github.com:softbody-arcade/cops-and-robbers.git",
+    "ssh://git@github.com/softbody-arcade/cops-and-robbers.git",
+    "ssh://git@github.com:22#@topic",
+    "https://github.com/softbody-arcade/cops-and-robbers",
     "@update:model-value",
+    "uses: actions/checkout@v7",
+    "uses: owner/some-action@0123456789abcdef0123456789abcdef01234567",
     '"@vue/compiler-sfc"',
     "local x = a.b:c()",
     "time 12:30:45",
@@ -86,6 +101,20 @@ def unit_tests():
     check(bool(pc.findings("BeamNG 0.40.5.0 mail a@b.org", DENY, "docs/x.md", allow)[0]),
           "allow entry hid an unrelated email on the same line")
     check(bool(pc.findings("1.2.3.4", DENY, "docs/x.md", ["*:1.2.3.4"])[0]), "wildcard allow path was honoured")
+    check(bool(pc.findings("C:/Users/...example", DENY, "s.sh", ["s.sh:C:/Users/..."])[0]),
+          "an allow entry hid a longer value that merely starts with it")
+    check(not pc.findings("print C:/Users/... rather", DENY, "s.sh", ["s.sh:C:/Users/..."])[0],
+          "an exact allow entry did not apply")
+    out = []
+    pc.report(out, "c", "f.md", "clone https://bob:hunter2@example.org/x", DENY, [])
+    check(len(out) == 1 and "hunter2" not in out[0][3] and "bob" not in out[0][3], "a URL credential was printed")
+    out = []
+    pc.report(out, "c", "f.md", "clone https://bob@corp:hunt@er2@example.org/x", DENY, [])
+    check(len(out) == 1 and "hunt" not in out[0][3] and "er2" not in out[0][3], "a URL credential containing @ was printed")
+    check(bool(pc.findings("host 10.40.5.0", DENY, "docs/x.md", ["docs/x.md:0.40.5.0"])[0]),
+          "an allow entry hid part of a different IP address")
+    check(not pc.findings("BeamNG 0.40.5.0", DENY, "docs/x.md", ["docs/x.md:0.40.5.0"])[0],
+          "an allow entry covering a whole finding did not apply")
     out = []
     pc.report(out, "c", "f.md", "secret-host mail a@b.org", DENY, [])
     check(len(out) == 1 and "secret" not in out[0][3].lower() and "a@b.org" not in out[0][3],
@@ -190,8 +219,39 @@ def history_tests():
         r = run_check(repo, "tree", "HEAD")
         check(r.returncode == 1 and "five@example.org" in r.stdout, "a submodule entry broke the tree scan")
 
+        write(repo, ".gitattributes", "nodiff.txt -diff\n")
+        write(repo, "nodiff.txt", "mail seven@example.org\n")
+        git(repo, "add", ".")
+        git(repo, "commit", "-q", "-m", "attributes")
+        r = run_check(repo, "history", "--", "HEAD")
+        check("seven@example.org" in r.stdout, "a file marked -diff hid its content from the history scan")
+
+        deny_file = os.path.join(repo, ".git", "info", "privacy-deny")
+        os.makedirs(os.path.dirname(deny_file), exist_ok=True)
+        with open(deny_file, "w") as f:
+            f.write("re:secretname\\.txt$\nsecrettag\n")
+        write(repo, "secretname.txt", "mail eight@example.org\n")
+        git(repo, "add", ".")
+        git(repo, "commit", "-q", "-m", "private name")
+        git(repo, "tag", "secrettag")
+        r = run_check(repo, "tree", "secrettag")
+        check(r.returncode == 1 and "secret" not in r.stdout.lower() and "eight@example.org" in r.stdout,
+              "tree mode printed a private file name or revision name")
+        r = run_check(repo, "--bogus-secrettag", "tree", "HEAD")
+        check(r.returncode == 2 and "secrettag" not in r.stderr, "an argument error echoed its input")
+        os.remove(deny_file)
+
         r = run_check(repo, "history", "--", "no-such-rev")
         check(r.returncode == 2 and "no-such-rev" not in r.stderr, "a git failure did not exit 2 cleanly")
+        r = run_check(repo, "tree", "HEAD^{tree}")
+        check(r.returncode == 1, "tree mode rejected a tree object")
+        os.makedirs(os.path.join(repo, "sub"), exist_ok=True)
+        write(repo, "sub/x.txt", "mail nine@example.org\n")
+        git(repo, "add", ".")
+        git(repo, "commit", "-q", "-m", "sub")
+        r = run_check(repo, "tree", "HEAD:sub")
+        check(r.returncode == 1 and "nine@example.org" in r.stdout, "tree mode rejected a path-qualified tree")
+        check("sub/x.txt" in r.stdout, "tree mode reported a subtree path relative to the subtree")
         r = run_check(repo, "tree", "no-such-rev")
         check(r.returncode == 2, "a tree read failure did not exit 2")
 

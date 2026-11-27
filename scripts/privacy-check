@@ -16,17 +16,28 @@ PATTERNS = [
     ("ipv4", re.compile(r"(?<![0-9.])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![0-9]|\.[0-9])")),
     ("ipv6", re.compile(BOUND_L + "(?:" + IPV6 + ")" + BOUND_R)),
     ("email", re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")),
-    ("login", re.compile(r"(?<![A-Za-z0-9._%+-])[A-Za-z_][A-Za-z0-9_.-]*@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*")),
+    ("login", re.compile(r"(?<![A-Za-z0-9._%+/-])[A-Za-z_][A-Za-z0-9_.-]*@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*")),
     ("home", re.compile(r"(?<![A-Za-z0-9])/home/[A-Za-z0-9._-]+|/Users/[^/\s]+|[A-Za-z]:\\+Users\\+")),
-    ("server-path", re.compile(r"(?<![A-Za-z0-9])/(?:opt|srv)/[A-Za-z0-9]")),
+    ("server-path", re.compile(r"(?<![A-Za-z0-9])/(?:opt|srv)/[A-Za-z0-9._-]")),
+    ("url-login", re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^/\s?#]*@[^/\s:@?#]+")),
 ]
 
 DOC_IPV4 = re.compile(r"^(?:127\.\d+\.\d+\.\d+|0\.0\.0\.0|192\.0\.2\.\d+|198\.51\.100\.\d+|203\.0\.113\.\d+)$")
-ADDRESS_OK = re.compile(r"(?:@users\.noreply\.github\.com|^noreply@anthropic\.com|^git@github\.com)$", re.I)
+URL_OK = re.compile(r"^(?:ssh|git\+ssh)://git@github\.com$", re.I)
+ADDRESS_OK = re.compile(r"(?:@users\.noreply\.github\.com|^noreply@anthropic\.com|^noreply@openai\.com|^noreply@github\.com|^support@github\.com|^git@github\.com)$", re.I)
 DOC_LOGIN = re.compile(r"@(?:192\.0\.2|198\.51\.100|203\.0\.113)\.\d+$")
-SKIP_PREFIXES = (".agents/skills/", ".claude/skills/")
+SKIP_PREFIXES = ()
 SKIP_FILES = ("scripts/privacy-check", ".github/privacy-allow.txt", "tests/privacy_check_test.py")
-GIT = ["git", "-c", "core.quotePath=false", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false"]
+GIT_BASE = ["git", "-c", "core.quotePath=false", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false",
+            "-c", "core.attributesFile=/dev/null"]
+GIT = list(GIT_BASE)
+
+
+def use_empty_attr_source():
+    empty = subprocess.run(["git", "hash-object", "-t", "tree", "/dev/null"], capture_output=True, text=True)
+    if empty.returncode != 0:
+        raise CheckError("git could not compute the empty tree (needs git 2.41 or newer)")
+    GIT[:] = GIT_BASE + [f"--attr-source={empty.stdout.strip()}"]
 
 
 class CheckError(Exception):
@@ -56,29 +67,45 @@ def benign(kind, s):
     if kind == "ipv6":
         low = s.lower()
         return low == "::1" or re.match(r"^2001:0*db8:", low) is not None
+    if kind == "url-login":
+        return bool(URL_OK.match(s))
     if kind in ("email", "login"):
         return bool(ADDRESS_OK.search(s)) or (kind == "login" and bool(DOC_LOGIN.search(s)))
     return False
 
 
-def strip_allowed(text, path, allow):
+def allowed_spans(text, path, allow):
+    spans = []
     for entry in allow:
         p, sep, t = entry.partition(":")
         if sep and t and p == path:
-            text = text.replace(t, " " * len(t))
-    return text
+            start = text.find(t)
+            while start != -1:
+                spans.append((start, start + len(t)))
+                start = text.find(t, start + 1)
+    return spans
+
+
+def covered(spans, start, end):
+    return any(a <= start and end <= b for a, b in spans)
+
+
+URL_USERINFO = re.compile(r"([A-Za-z][A-Za-z0-9+.-]*://)[^/\s?#]*@")
+
+
+def redact(text):
+    return URL_USERINFO.sub(r"\1***@", text)
 
 
 def findings(text, deny, path="", allow=()):
-    original = text
-    text = strip_allowed(text, path, allow)
+    spans = allowed_spans(text, path, allow)
     found = []
     for kind, rx in PATTERNS:
-        if any(not benign(kind, m.group(0)) for m in rx.finditer(text)):
+        if any(not benign(kind, m.group(0)) and not covered(spans, m.start(), m.end()) for m in rx.finditer(text)):
             found.append(kind)
-    if any(rx.search(text) for rx in deny):
+    if any(not covered(spans, m.start(), m.end()) for rx in deny for m in rx.finditer(text)):
         found.append("private term")
-    private = any(rx.search(original) for rx in deny)
+    private = any(rx.search(text) for rx in deny)
     return found, private
 
 
@@ -112,9 +139,9 @@ def skipped(path):
 def report(out, commit, path, text, deny, allow, where=None):
     kinds, private = findings(text, deny, path, allow)
     if kinds:
-        shown = "(line hidden: matches a private term)" if private else text.strip()[:200]
+        shown = "(line hidden: matches a private term)" if private else redact(text.strip())[:200]
         location = where or path
-        if any(rx.search(location) for rx in deny):
+        if any(rx.search(path) or rx.search(location) for rx in deny):
             location = "(path hidden: matches a private term)"
         out.append((commit, location, ",".join(kinds), shown))
 
@@ -157,13 +184,25 @@ def scan_history(revs, deny, allow):
 
 def scan_tree(rev, deny, allow):
     out = []
+    oid = subprocess.run(["git", "rev-parse", "--verify", "--quiet", "--end-of-options", rev], capture_output=True, text=True)
+    if oid.returncode != 0:
+        raise CheckError("the revision to scan could not be resolved")
+    oid = oid.stdout.strip()
+    tree = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{oid}^{{tree}}"], capture_output=True, text=True)
+    if tree.returncode != 0:
+        raise CheckError("the revision to scan is not a commit or tree")
+    commit = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{oid}^{{commit}}"], capture_output=True, text=True)
+    label = (commit.stdout.strip() if commit.returncode == 0 else tree.stdout.strip())[:12]
+    _, colon, sub = rev.partition(":")
+    prefix = sub.strip("/") + "/" if colon and sub.strip("/") else ""
+    rev = tree.stdout.strip()
     ls = subprocess.run(GIT + ["ls-tree", "-r", "-z", rev], capture_output=True)
     if ls.returncode != 0:
         raise CheckError(f"git ls-tree failed with exit code {ls.returncode}")
     for entry in filter(None, ls.stdout.split(b"\0")):
         meta, _, raw_path = entry.partition(b"\t")
         mode, kind, oid = meta.decode().split()
-        path = raw_path.decode("utf-8", "replace")
+        path = prefix + raw_path.decode("utf-8", "replace")
         if kind != "blob" or mode == "120000" or skipped(path):
             continue
         blob = subprocess.run(["git", "cat-file", "blob", oid], capture_output=True)
@@ -172,12 +211,17 @@ def scan_tree(rev, deny, allow):
         if b"\0" in blob.stdout[:8000]:
             continue
         for n, text in enumerate(blob.stdout.decode("utf-8", "replace").split("\n"), 1):
-            report(out, rev, path, text, deny, allow, where=f"{path}:{n}")
+            report(out, label, path, text, deny, allow, where=f"{path}:{n}")
     return out
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Report personal data or private server details in commits or a tree.")
+    class QuietParser(argparse.ArgumentParser):
+        def error(self, message):
+            print("privacy-check: invalid arguments (usage: privacy-check history -- <revs> | tree <rev>)", file=sys.stderr)
+            sys.exit(2)
+
+    ap = QuietParser(description="Report personal data or private server details in commits or a tree.")
     ap.add_argument("mode", choices=["history", "tree"])
     ap.add_argument("revs", nargs="+", help="history: git log revisions (put them after --); tree: one revision")
     ap.add_argument("--allow", default=".github/privacy-allow.txt")
@@ -189,6 +233,7 @@ def main():
             git_dir = subprocess.run(["git", "rev-parse", "--git-common-dir"], capture_output=True, text=True).stdout.strip()
             deny_path = os.path.join(git_dir, "info", "privacy-deny") if git_dir else None
         deny = compile_deny(read_lines(deny_path))
+        use_empty_attr_source()
         allow = read_lines(a.allow)
         if a.mode == "history":
             out = scan_history(a.revs, deny, allow)
