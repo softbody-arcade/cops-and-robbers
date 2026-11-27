@@ -6,3 +6,5 @@ server/CopsAndRobbers/data/
 tools/vuecheck/node_modules/
 .claude/worktrees/
 .claude/settings.local.json
+docs/.obsidian/*
+!docs/.obsidian/app.json

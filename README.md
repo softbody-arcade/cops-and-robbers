@@ -8,9 +8,12 @@ For contributors:
 
 - `lua5.3`, `luajit` and `python3` for tests and Lua checks
 - Node 22 with npm for UI checks
-- `zip` and `rsync` for packaging
+- `zip`, `unzip`, `rsync` and GNU tar for packaging
 - `git` 2.41 or newer (the privacy check uses `--attr-source`)
+- `ssh-keygen` for SSH commit signing
 - Bash 4.4+, `jq` and `gh` 2.106+ for `scripts/board` and its tests
+
+Run `make doctor` to check these prerequisites and your contributor setup.
 
 ## Install
 
@@ -178,6 +181,8 @@ The thunder clips use three CC0 originals. To recreate the shipped clips, use [t
 ## Development
 
 See the compatibility checks for BeamMP and BeamNG.drive updates. [Dependencies](docs/DEPENDENCIES.md)
+
+The `docs/` folder is also an [Obsidian](https://obsidian.md) vault for reading the specs, plans and other docs: open `docs/` with **Open folder as vault**. The shared `docs/.obsidian/app.json` keeps links in the plain Markdown format GitHub shows. Links to files outside `docs/`, such as the README or source files, work on GitHub but fall outside the Obsidian vault. Workspace layout, themes and plugins stay local.
 
 Run `python3 tools/previews/generate.py` to rebuild the app picker thumbnails from the mod logo and the names in each app's `app.json`. The generator uses Pillow and the DejaVu Sans Bold font.
 

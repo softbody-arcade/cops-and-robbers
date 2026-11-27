@@ -2,13 +2,17 @@ LUA := $(shell command -v lua5.3 2>/dev/null || command -v lua)
 TESTSERVER := .testserver
 ARCHIVE_EPOCH := 315532800
 
-.PHONY: test vuecheck package install-local clean deploy version hooks privacy
+.PHONY: test vuecheck package install-local clean deploy version hooks privacy doctor
 
 test:
 	$(LUA) tests/run.lua tests/test_*.lua
 	python3 -I tests/privacy_check_test.py
 	bash tests/board_test.sh
 	bash tests/release_test.sh
+	bash tests/doctor_test.sh
+
+doctor:
+	scripts/doctor
 
 privacy:
 	scripts/privacy-check tree HEAD
