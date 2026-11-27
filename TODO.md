@@ -7,7 +7,7 @@ Priorities run from `!!!!` (highest) through `!!!` (high), `!!` (normal), and `!
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
-- [ ] !!! Migrate the project to GitHub (design): rules drafted for review; no remote yet. Private repo `beammp-cops-and-robbers`, history scrubbed before the first push, TODO.md moves to GitHub Issues, PR per branch with merge commits, CI, release ZIPs and deploy from a release
+- [ ] !!! Migrate the project to GitHub (local scrub): rules reviewed (rev 12). Org `softbody-arcade` and teams are set up. Scrubbing history in a separate clone, with the backup and the hit report under `~/Backups/cnr-migration-2026-11-27/`. No push until the maintainer signs off on the removal list
 
 
 ## In-game checks
