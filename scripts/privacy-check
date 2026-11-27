@@ -19,7 +19,7 @@ PATTERNS = [
     ("login", re.compile(r"(?<![A-Za-z0-9._%+/-])[A-Za-z_][A-Za-z0-9_.-]*@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*")),
     ("home", re.compile(r"(?<![A-Za-z0-9])/home/[A-Za-z0-9._-]+|/Users/[^/\s]+|[A-Za-z]:\\+Users\\+")),
     ("server-path", re.compile(r"(?<![A-Za-z0-9])/(?:opt|srv)/[A-Za-z0-9._-]")),
-    ("url-login", re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^/\s@]+@[^/\s:]+")),
+    ("url-login", re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^/\s]*@[^/\s:@]+")),
 ]
 
 DOC_IPV4 = re.compile(r"^(?:127\.\d+\.\d+\.\d+|0\.0\.0\.0|192\.0\.2\.\d+|198\.51\.100\.\d+|203\.0\.113\.\d+)$")
@@ -74,15 +74,23 @@ def benign(kind, s):
     return False
 
 
-def strip_allowed(text, path, allow):
+def allowed_spans(text, path, allow):
+    spans = []
     for entry in allow:
         p, sep, t = entry.partition(":")
         if sep and t and p == path:
-            text = re.sub(re.escape(t) + r"(?![A-Za-z0-9_])", lambda m: " " * len(m.group(0)), text)
-    return text
+            start = text.find(t)
+            while start != -1:
+                spans.append((start, start + len(t)))
+                start = text.find(t, start + 1)
+    return spans
 
 
-URL_USERINFO = re.compile(r"([A-Za-z][A-Za-z0-9+.-]*://)[^/\s@]+@")
+def covered(spans, start, end):
+    return any(a <= start and end <= b for a, b in spans)
+
+
+URL_USERINFO = re.compile(r"([A-Za-z][A-Za-z0-9+.-]*://)[^/\s]*@")
 
 
 def redact(text):
@@ -90,15 +98,14 @@ def redact(text):
 
 
 def findings(text, deny, path="", allow=()):
-    original = text
-    text = strip_allowed(text, path, allow)
+    spans = allowed_spans(text, path, allow)
     found = []
     for kind, rx in PATTERNS:
-        if any(not benign(kind, m.group(0)) for m in rx.finditer(text)):
+        if any(not benign(kind, m.group(0)) and not covered(spans, m.start(), m.end()) for m in rx.finditer(text)):
             found.append(kind)
-    if any(rx.search(text) for rx in deny):
+    if any(not covered(spans, m.start(), m.end()) for rx in deny for m in rx.finditer(text)):
         found.append("private term")
-    private = any(rx.search(original) for rx in deny)
+    private = any(rx.search(text) for rx in deny)
     return found, private
 
 
@@ -177,10 +184,14 @@ def scan_history(revs, deny, allow):
 
 def scan_tree(rev, deny, allow):
     out = []
-    tree = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{rev}^{{tree}}"], capture_output=True, text=True)
-    if tree.returncode != 0:
+    oid = subprocess.run(["git", "rev-parse", "--verify", "--quiet", "--end-of-options", rev], capture_output=True, text=True)
+    if oid.returncode != 0:
         raise CheckError("the revision to scan could not be resolved")
-    commit = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}"], capture_output=True, text=True)
+    oid = oid.stdout.strip()
+    tree = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{oid}^{{tree}}"], capture_output=True, text=True)
+    if tree.returncode != 0:
+        raise CheckError("the revision to scan is not a commit or tree")
+    commit = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{oid}^{{commit}}"], capture_output=True, text=True)
     label = (commit.stdout.strip() if commit.returncode == 0 else tree.stdout.strip())[:12]
     rev = tree.stdout.strip()
     ls = subprocess.run(GIT + ["ls-tree", "-r", "-z", rev], capture_output=True)

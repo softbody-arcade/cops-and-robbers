@@ -108,6 +108,13 @@ def unit_tests():
     pc.report(out, "c", "f.md", "clone https://bob:hunter2@example.org/x", DENY, [])
     check(len(out) == 1 and "hunter2" not in out[0][3] and "bob" not in out[0][3], "a URL credential was printed")
     out = []
+    pc.report(out, "c", "f.md", "clone https://bob@corp:hunt@er2@example.org/x", DENY, [])
+    check(len(out) == 1 and "hunt" not in out[0][3] and "er2" not in out[0][3], "a URL credential containing @ was printed")
+    check(bool(pc.findings("host 10.40.5.0", DENY, "docs/x.md", ["docs/x.md:0.40.5.0"])[0]),
+          "an allow entry hid part of a different IP address")
+    check(not pc.findings("BeamNG 0.40.5.0", DENY, "docs/x.md", ["docs/x.md:0.40.5.0"])[0],
+          "an allow entry covering a whole finding did not apply")
+    out = []
     pc.report(out, "c", "f.md", "secret-host mail a@b.org", DENY, [])
     check(len(out) == 1 and "secret" not in out[0][3].lower() and "a@b.org" not in out[0][3],
           "a line with a private term was printed")
@@ -237,6 +244,12 @@ def history_tests():
         check(r.returncode == 2 and "no-such-rev" not in r.stderr, "a git failure did not exit 2 cleanly")
         r = run_check(repo, "tree", "HEAD^{tree}")
         check(r.returncode == 1, "tree mode rejected a tree object")
+        os.makedirs(os.path.join(repo, "sub"), exist_ok=True)
+        write(repo, "sub/x.txt", "mail nine@example.org\n")
+        git(repo, "add", ".")
+        git(repo, "commit", "-q", "-m", "sub")
+        r = run_check(repo, "tree", "HEAD:sub")
+        check(r.returncode == 1 and "nine@example.org" in r.stdout, "tree mode rejected a path-qualified tree")
         r = run_check(repo, "tree", "no-such-rev")
         check(r.returncode == 2, "a tree read failure did not exit 2")
 
