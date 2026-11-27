@@ -19,11 +19,12 @@ vuecheck:
 	cd tools/vuecheck && node --experimental-vm-modules panel-tabs.test.mjs
 
 package: clean
-	mkdir -p dist/Client dist/Server
+	mkdir -p dist/Client dist/Server dist/release
 	cd client && zip -qr ../dist/Client/CopsAndRobbers.zip scripts lua mod_info ui art
 	rsync -a --exclude data server/CopsAndRobbers dist/Server/
-	tar -czf dist/CopsAndRobbers-server.tar.gz -C dist/Server CopsAndRobbers
-	cd dist && sha256sum Client/CopsAndRobbers.zip CopsAndRobbers-server.tar.gz > SHA256SUMS
+	cp dist/Client/CopsAndRobbers.zip dist/release/
+	tar -czf dist/release/CopsAndRobbers-server.tar.gz -C dist/Server CopsAndRobbers
+	cd dist/release && sha256sum CopsAndRobbers.zip CopsAndRobbers-server.tar.gz > SHA256SUMS
 
 install-local: package
 	mkdir -p $(TESTSERVER)/Resources/Client $(TESTSERVER)/Resources/Server

@@ -5,7 +5,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 new="${1:-}"
-if [[ ! "$new" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+part="(0|[1-9][0-9]*)"
+pattern="^$part[.]$part[.]$part$"
+if [[ ! "$new" =~ $pattern ]]; then
   echo "usage: make version V=x.y.z" >&2
   exit 1
 fi
@@ -28,9 +30,18 @@ release="release/$new"
 remote_branch="$(git ls-remote --heads origin "refs/heads/$release")"
 [[ -z "$remote_branch" ]] || refuse "$release already exists on origin"
 command -v gh >/dev/null || refuse "gh is required to open the release PR"
+gh auth status >/dev/null 2>&1 || refuse "authenticate gh before starting a release"
 old="$(sed -n 's/^local VERSION = "\(.*\)"/\1/p' server/CopsAndRobbers/main.lua)"
-[[ "$old" != "$new" ]] || refuse "already at version $new"
+[[ "$old" =~ $pattern ]] || refuse "invalid current version: $old"
+printf '%s\n' "$old" "$new" | sort -VCu || refuse "version must be greater than $old"
+return_to_main() {
+  if ! git diff --quiet HEAD; then
+    git stash push -m "Uncommitted changes from $release" || exit 1
+  fi
+  git switch main || exit 1
+}
 git switch -c "$release"
+trap return_to_main EXIT
 sed -i -E "s/^(local VERSION = \")[^\"]+\"/\1$new\"/" server/CopsAndRobbers/main.lua
 sed -i -E "s/^(local CLIENT_VERSION = \")[^\"]+\"/\1$new\"/" client/lua/ge/extensions/copsAndRobbers.lua
 sed -i -E "s/(\"version_string\": *\")[^\"]+\"/\1$new\"/" client/mod_info/CopsAndRobbers/info.json
@@ -40,4 +51,4 @@ echo "$old -> $new"
 git add -- server/CopsAndRobbers/main.lua client/lua/ge/extensions/copsAndRobbers.lua client/mod_info/CopsAndRobbers/info.json docs/FEATURES.md
 git commit -m "chore: version $new"
 git push -u origin "$release"
-gh pr create --base main --head "$release" --title "Release $new" --body "Merging this PR publishes and deploys the release."
+gh pr create --base main --head "$release" --title "Release $new" --body "Merging this PR publishes the release. Deployment is separate."

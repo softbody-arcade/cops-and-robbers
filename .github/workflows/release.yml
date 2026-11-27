@@ -15,9 +15,7 @@ defaults:
   run:
     shell: bash
 
-permissions:
-  contents: write
-  issues: write
+permissions: {}
 
 jobs:
   select:
@@ -49,6 +47,12 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
   publish:
+    permissions:
+      contents: write
+      issues: write
+    concurrency:
+      group: release-${{ needs.select.outputs.version }}
+      cancel-in-progress: false
     needs: select
     if: needs.select.outputs.sha != ''
     runs-on: ubuntu-latest
@@ -82,8 +86,13 @@ jobs:
           git push origin "$SHA:$ref"
           remote_tag="$(git ls-remote --exit-code --refs origin "$ref")"
           [[ "$remote_tag" == "$SHA"$'\t'"$ref" ]]
-          gh release create "v$VERSION" --verify-tag --title "Cops and Robbers $VERSION" --generate-notes \
-            dist/Client/CopsAndRobbers.zip dist/CopsAndRobbers-server.tar.gz dist/SHA256SUMS
+          assets=(dist/release/*)
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            gh release upload "v$VERSION" --clobber "${assets[@]}"
+          else
+            gh release create "v$VERSION" --verify-tag --title "Cops and Robbers $VERSION" --generate-notes \
+              --notes "Upgrading: Extract the server archive with \`--exclude 'CopsAndRobbers/config.json'\` to preserve your existing settings." "${assets[@]}"
+          fi
       - name: Close release milestone
         env:
           GH_TOKEN: ${{ github.token }}
