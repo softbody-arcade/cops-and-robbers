@@ -1,0 +1,73 @@
+name: Ready ticket
+description: Prepare a ticket for the Next lane.
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What does the player or host get?
+      value: |
+        ## Goal
+
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: What problem does this solve? Who asked and when?
+      value: |
+        ## Why
+
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What is in scope and what is outside it?
+      value: |
+        ## Scope
+
+    validations:
+      required: true
+  - type: textarea
+    id: done-when
+    attributes:
+      label: Done when
+      description: List observable automated and in-game outcomes.
+      value: |
+        ## Done when
+
+    validations:
+      required: true
+  - type: textarea
+    id: constraints-and-known-facts
+    attributes:
+      label: Constraints and known facts
+      description: Link engine facts, related code and earlier findings.
+      value: |
+        ## Constraints and known facts
+
+    validations:
+      required: true
+  - type: textarea
+    id: open-questions
+    attributes:
+      label: Open questions
+      description: What does design need to settle? Write none if resolved.
+      value: |
+        ## Open questions
+
+    validations:
+      required: true
+  - type: textarea
+    id: links
+    attributes:
+      label: Links
+      description: Link specs, plans, decisions, related issues and PRs.
+      value: |
+        ## Links
+
+    validations:
+      required: true
