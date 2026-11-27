@@ -2,6 +2,15 @@
 
 Server plugin plus auto-downloaded client mod that enforces our cops-and-robbers rules.
 
+## Prerequisites
+
+For contributors:
+
+- `lua5.3`, `luajit` and `python3` for tests and Lua checks
+- Node 22 with npm for UI checks
+- `zip` and `rsync` for packaging
+- `git` for version control and `gh` for board tooling
+
 ## Install
 
 ```

@@ -1,0 +1,70 @@
+name: CI
+
+'on':
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update && sudo apt-get install -y lua5.3
+      - run: make test
+
+  luajit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: sudo apt-get update && sudo apt-get install -y luajit
+      - run: find client -name '*.lua' -print0 | xargs -0 -n1 sh -c 'luajit -bl "$0" >/dev/null'
+
+  vuecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: tools/vuecheck/package-lock.json
+      - run: make vuecheck
+
+  privacy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: scripts/privacy-check history -- "$BASE_SHA..$HEAD_SHA"
+      - if: github.event_name == 'push'
+        run: scripts/privacy-check tree HEAD
+      - if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: scripts/privacy-check history -- "$BEFORE_SHA..$HEAD_SHA"
+
+  package:
+    needs: [test, luajit, vuecheck, privacy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: make package
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cops-and-robbers-${{ github.sha }}
+          path: dist/
+          retention-days: 7
