@@ -13,7 +13,7 @@ GitHub Issues and the organization board **Softbody Arcade** (project 1) record 
 - **Milestone**: the release version an issue is targeted at, named `x.y.z`. The maintainer assigns it when committing to a release. A release ships when its milestone's issues are closed or moved on, and `release.yml` closes the milestone.
 - **Parent and sub-issues** give the structure: a large feature is a parent with its parts as sub-issues, and the issues folded into a fix batch become sub-issues of the batch's ticket. Progress rolls up on the parent.
 - **Blocked by / blocking** (issue dependencies) records order: `scripts/board block <n> --by <m>`. Never use a label or prose for it.
-- **Labels** remain only where nothing native exists: `needs-decision` while an issue waits on the maintainer, `needs-playtest` on a PR whose change a player would see, hear or feel, and `good first issue` / `help wanted` for contributors. Close duplicates and dropped work with GitHub's "duplicate" and "not planned" close reasons.
+- **Labels** remain only where nothing native exists: `needs-decision` while an issue waits on the maintainer, `needs-playtest` on a PR whose change a player would see, hear or feel, and `good first issue` / `help wanted` for contributors, and `accessibility` for barriers affecting players with disabilities. Close duplicates and dropped work with GitHub's "duplicate" and "not planned" close reasons.
 - **Links.** A `## Links` section in each ticket lists its spec, plan and related issues; GitHub links PRs and relations itself. Whoever writes a spec or plan links it the same day.
 - **Decisions.** Every maintainer decision becomes a comment on the ticket: `**Decision (YYYY-MM-DD):**` followed by what was decided, the options and the reason (`scripts/board decide`). An agent posts decisions made in a chat before its turn ends. Nothing is decided only in chat.
 - **Events.** Playtest results, deferred review findings (as links to new issues), deploys and scope changes also go on the ticket.
@@ -36,13 +36,13 @@ GitHub Issues and the organization board **Softbody Arcade** (project 1) record 
 **Definition of ready for Next.** The ticket body has these sections: `## Goal`, `## Why`, `## Scope`, `## Done when`, `## Constraints and known facts`, `## Open questions`, `## Links`. The **Ready** issue template provides them, and `board move <n> next` refuses without them.
 
 **Playtest results.**
-- On a work card: `board result <n> pass`, `board result <n> fail`, or `board result <n> defer --checks-file F`, where F holds one check per line, each starting with its priority (`Urgent:`, `High:`, `Medium:` or `Low:`). `defer` files one `In-game check` issue with those checks as tasks. Results are bound to the staged SHA.
+- On a work card: `board result <n> pass`, `board result <n> fail`, or `board result <n> defer --checks-file F`, where F holds one check per line, each starting with its priority (`Urgent:`, `High:`, `Medium:` or `Low:`). `defer` files one `In-game check` issue with those checks as tasks; its Priority is the highest priority among the checks. Results are bound to the staged SHA.
 - On an `In-game check` issue: `pass` or `fail` only. Both close it; `fail` also files a `Bug` that links the check.
 
-**Who runs board writes.** Only the maintainer, or an agent acting for the maintainer, runs `triage`, `start`, `move`, `result`, `block`, `unblock`, `decide` and `sync`, and only from the maintainer's own checkout of `main`, never from a branch under review (a branch's `scripts/board` is untrusted code). Contributors file issues with the templates (`gh issue create` or the web) and use read-only commands (`list`, `waiting`, `show`), which need only the `read:project` scope. `scripts/board --help` lists the commands.
+**Who runs board commands.** Only the maintainer, or an agent acting for the maintainer, runs the board's write commands: `new`, `triage`, `start`, `move`, `result`, `block`, `unblock`, `parent`, `unparent`, `milestone`, `decide`, `labels` and `check`. Run `scripts/board`, for writes and authenticated reads alike, only from the maintainer's own checkout of `main`, never from a branch or snapshot under review, because a branch's `scripts/board` is untrusted code. Contributors file issues with the templates (`gh issue create` or the web), read the board on GitHub or with `list`, `waiting` and `show` from their own trusted checkout (scope `read:project`), and ask the maintainer on the ticket to move their card when their work changes lanes. `scripts/board --help` lists the commands.
 
 **Agent rules the script cannot check:**
-- Run `board move <n> build` only after the maintainer approved that plan in the current session.
+- Run `board start <n> build` or `board move <n> build` only after the maintainer approved that plan (for a fix batch without a spec: that batch) in the current session.
 - Run `board result` only with a result the maintainer reported in the current session.
 - Never move a card out of Playtest by hand.
 
@@ -126,13 +126,13 @@ Add source comments or emojis only when the maintainer asks for them.
   - Ask the maintainer for a playtest (label the PR `needs-playtest`) only when an open question depends on what BeamNG or BeamMP actually does, or on what the player sees, hears or feels. Use an engine probe or logs first when they can answer it.
   - For each manual check, give the shortest setup and action, the observable pass condition, and the uncertainty it resolves.
   - Ask for a second player only when observing a second client is essential.
-  - A deferred check becomes an `in-game-check` issue in Playtest, filed by `board result <n> defer`.
+  - A deferred check becomes an `In-game check` issue in Playtest, filed by `board result <n> defer --checks-file F`.
 - **Staging on the local test server (maintainer-only).**
   1. Extract `git archive <reviewed-sha>` into a disposable directory and work from that snapshot.
   2. Set `test_server=<repo>/.testserver`.
   3. If it has an installed config, first run `cp "$test_server/Resources/Server/CopsAndRobbers/config.json" server/CopsAndRobbers/config.json` in the snapshot.
   4. Run `make install-local TESTSERVER="$test_server"`.
-  5. Restart the local BeamMP server, then record the SHA on the PR with `board move <n> playtest --staged <sha>`.
+  5. Restart the local BeamMP server. Then, from the maintainer's checkout of `main` (not the snapshot), record the SHA with `scripts/board move <n> playtest --staged <sha>`.
   The maintainer handles game and launcher restarts.
 - **Engine probes (maintainer-only).**
   - Use a temporary GE extension in the game's user folder (`current/lua/ge/extensions/`), and read its tagged output in `current/beamng.log`.
