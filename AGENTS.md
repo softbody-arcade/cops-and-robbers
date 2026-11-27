@@ -26,15 +26,15 @@ GitHub Issues and the organization board **Softbody Arcade** (project 1) record 
 
 | Lane | Holds | Leaves when |
 |---|---|---|
-| Inbox | New, untriaged issues | `board triage <n> <type> <priority> [effort]` sets type, priority and effort, moving it to Backlog |
+| Inbox | New, untriaged issues | `board triage <n> <type> <priority> [effort]` sets type, priority and effort, moving it to Backlog. In any later lane except Done, the same command corrects the fields without moving the card |
 | Backlog | Triaged; a simple ticket is fine | The maintainer picks it for Next |
 | Next | At most 5 (`board check` warns above that), top first, each meeting the definition of ready | `board start <n> design\|build` |
 | Design | Brainstorm, spec and plan | The maintainer approves the plan, then `board move <n> build` |
 | Build | Branch, worktree, draft PR; per-task implement and review | The PR is ready: `board move <n> review`, or `board move <n> playtest --staged <sha>` when a player check comes first |
 | Review | Whole-branch review, fixes, CI | With `needs-playtest`: `board move <n> playtest --staged <sha>`. Without it, the PR merges. Rework goes back with `board move <n> build` |
 | Playtest | Waiting on the maintainer's in-game result, plus `In-game check` issues (moved in from Inbox, Backlog or Next with `board move <n> playtest`; from Inbox, set `board priority <n> ...` first) | `board result <n> ...` (below). After a new push, re-stage with `board move <n> playtest --staged <sha>`; for rework, `board move <n> build` |
-| Accepted | Merged work waiting for a release, and closed tickets not yet tidied. Cards arrive when their issue closes (the board does this; a staged PR that passed its playtest arrives when it merges), or when a playtester accepts merged work they tested on `develop` | `board release` (after each release, or any time) moves released work, not-planned and duplicate closes, closed checks and no-code tickets to Done. For rework, the maintainer drags the card back to Build on the board and reopens the issue |
-| Done | Released work; closed as not planned or duplicate; closed checks; no-code tickets. Only `board release` moves cards here, never `board move` | `board release` archives cards unchanged for 14 days |
+| Accepted | Merged work waiting for a release, and closed tickets not yet tidied. Cards arrive when their issue closes (the board does this; a staged PR that passed its playtest arrives when it merges), or when a playtester accepts merged work they tested on `develop` | `board release` (after each release, or any time) moves released work, not-planned and duplicate closes, closed checks and no-code tickets to Done. For rework, the maintainer reopens the issue and runs `board move <n> build` (or drags the card back to Build) |
+| Done | Released work; closed as not planned or duplicate; closed checks; no-code tickets. Only `board release` moves cards here, never `board move` | `board release` archives closed cards unchanged for 14 days |
 
 **Definition of ready for Next.** The ticket body has these sections: `## Goal`, `## Why`, `## Scope`, `## Done when`, `## Constraints and known facts`, `## Open questions`, `## Links`. The **Ready ticket** issue template provides them, and `board move <n> next` refuses without them.
 
