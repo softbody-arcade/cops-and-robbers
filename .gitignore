@@ -5,6 +5,7 @@ server/CopsAndRobbers/data/
 .lightcheck/
 tools/vuecheck/node_modules/
 .claude/worktrees/
+.worktrees/
 .claude/settings.local.json
 docs/.obsidian/*
 !docs/.obsidian/app.json
