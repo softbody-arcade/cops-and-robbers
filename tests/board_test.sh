@@ -48,6 +48,7 @@ case "$*" in
       *' issue=13 '*) nodes='[{"merged":true,"mergeCommit":{"oid":"merged-sha"}}]' ;;
       *' issue=15 '*) nodes='[{"merged":true,"mergeCommit":null}]' ;;
       *' issue=17 '*) nodes='[{"merged":true,"mergeCommit":{"oid":"missing-sha"}}]' ;;
+      *' issue=18 '*) nodes='[{"merged":true,"mergeCommit":{"oid":"merged-sha"}},{"merged":true,"mergeCommit":{"oid":"unreleased-sha"}}]' ;;
       *) nodes='[]' ;;
     esac
     jq -nc --argjson nodes "$nodes" --arg args " $* " '
@@ -200,6 +201,9 @@ GH_VERSION=2.105.9 expect 2 'requires gh' list
 OWNER_TYPE=User expect 0 Card list --all
 wrote 'user(login:$owner)'
 LANE=Accepted STATE=CLOSED guard 'To rework merged work, reopen #1: the board returns it to Inbox, then triage it again' move 1 build
+LANE=Accepted guard '#1 is already open: move it to Inbox with board move 1 inbox, then triage it again' move 1 build
+LANE=Accepted expect 0 '' move 1 inbox
+wrote '--field Status --value Inbox'
 LANE=Inbox guard 'Use start from Next to enter Design or Build' move 1 build
 LANE=Review expect 0 '' move 1 build
 wrote '--field Status --value Build'
@@ -459,6 +463,7 @@ jq -nc '
     (card(14; "Done"; null; "Task") | .content.state = "OPEN"),
     card(15; "Accepted"; "COMPLETED"; "Task"),
     card(16; "Accepted"; null; "Task"),
+    card(18; "Accepted"; "COMPLETED"; "Task"),
     {id:"DRAFT", status:{name:"Accepted"}, content:{}},
     {id:"REDACTED", status:{name:"Accepted"}, content:null}
   ]}}}}} | (.data.organization.projectV2.items.nodes |= .[:4]), (.data.organization.projectV2.items.nodes |= .[4:])' > "$RELEASE_CARDS"
@@ -476,6 +481,7 @@ diff -u - "$tmp/out" <<'RELEASE'
 #13 is still open
 #15 waiting for a release
 #16 has no completion reason or linked PR
+#18 waiting for a release
 RELEASE
 cp "$tmp/out" "$tmp/release-output"
 [[ $(grep -c 'project item-edit .* --field Status --value Done' "$LOG") == 5 ]]
