@@ -29,6 +29,7 @@ STUB
 cat > "$tmp/bin/fake-lua" <<'STUB'
 #!/usr/bin/env bash
 [[ -z ${EDIT_DURING_TEST:-} ]] || echo "unrelated edit" >> "$EDIT_DURING_TEST"
+[[ -z ${RACE_ORIGIN:-} ]] || git -C "$RACE_ORIGIN" branch release/1.1.0 main
 exit "${LUA_STATUS:-0}"
 STUB
 chmod +x "$tmp/bin/gh" "$tmp/bin/fake-lua"
@@ -119,6 +120,26 @@ run_version "$work"
 check "a release start succeeds" '[[ $(cat "$tmp/status") == 0 ]]'
 check "a release starts from origin/main" '[[ $(git -C "$work/../origin.git" rev-parse release/1.1.0^) == $(git -C "$work/../origin.git" rev-parse main) ]]'
 check "a release start commits the new version" '[[ $(git -C "$work/../origin.git" show release/1.1.0:server/CopsAndRobbers/main.lua) == "local VERSION = \"1.1.0\"" && $(git -C "$work/../origin.git" show release/1.1.0:docs/FEATURES.md) == "# Cops and Robbers 1.1.0: features" ]]'
+work="$(fixture race)"
+racer="$(git -C "$work/../origin.git" rev-parse main)"
+RACE_ORIGIN="$work/../origin.git" run_version "$work"
+check "a release branch created during the run is not moved" '[[ $(cat "$tmp/status") != 0 && $(git -C "$work/../origin.git" rev-parse release/1.1.0) == "$racer" ]]'
+
+work="$(fixture lookup)"
+mkdir -p "$tmp/flaky"
+printf '#!/usr/bin/env bash\n[[ $1 == ls-remote ]] && exit 128\nexec %q "$@"\n' "$(command -v git)" > "$tmp/flaky/git"
+chmod +x "$tmp/flaky/git"
+PATH="$tmp/flaky:$PATH" run_version "$work"
+check "a failed branch lookup stops the release" '[[ $(cat "$tmp/status") == 1 ]] && grep -q "could not check" "$tmp/out" && ! git -C "$work/../origin.git" show-ref --verify --quiet refs/heads/release/1.1.0'
+
+work="$(fixture signed)"
+ssh-keygen -q -t ed25519 -N "" -f "$tmp/signing-key"
+git -C "$work" config gpg.format ssh
+git -C "$work" config user.signingkey "$tmp/signing-key.pub"
+git -C "$work" config commit.gpgsign true
+run_version "$work"
+check "a release commit is signed when signing is on" '[[ $(cat "$tmp/status") == 0 ]] && git -C "$work/../origin.git" cat-file commit release/1.1.0 | grep -q "^gpgsig "'
+
 work="$(fixture older)"
 (cd "$work" && scripts/version.sh 0.9.0) > "$tmp/out" 2>&1 && echo 0 > "$tmp/status" || echo $? > "$tmp/status"
 check "an older version is refused" '[[ $(cat "$tmp/status") == 1 ]] && grep -q "must be greater" "$tmp/out"'
@@ -140,6 +161,12 @@ umask_pkg="$tmp/package-umask"
 mkdir -p "$umask_pkg"
 (umask 077 && cp -r "$ROOT/Makefile" "$ROOT/client" "$ROOT/server" "$umask_pkg/" && chmod -R go-rwx "$umask_pkg" && make -s -C "$umask_pkg" package SOURCE_DATE_EPOCH=1700000000 >/dev/null)
 check "a different umask gives the same checksums" 'cmp -s "$tmp/first" "$umask_pkg/dist/release/SHA256SUMS"'
+setgid_pkg="$tmp/package-setgid"
+mkdir -p "$setgid_pkg"
+chmod g+s "$setgid_pkg"
+cp -r "$ROOT/Makefile" "$ROOT/client" "$ROOT/server" "$setgid_pkg/"
+make -s -C "$setgid_pkg" package SOURCE_DATE_EPOCH=1700000000 >/dev/null
+check "a setgid build folder gives the same checksums" 'cmp -s "$tmp/first" "$setgid_pkg/dist/release/SHA256SUMS"'
 broken="$tmp/package-broken"
 mkdir -p "$broken/bin"
 cp -r "$ROOT/Makefile" "$ROOT/client" "$ROOT/server" "$broken/"

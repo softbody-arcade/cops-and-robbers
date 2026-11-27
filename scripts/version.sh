@@ -26,7 +26,12 @@ command -v gh >/dev/null || refuse "gh is required to open the release PR"
 gh auth status >/dev/null 2>&1 || refuse "authenticate gh before starting a release"
 git fetch origin '+refs/heads/main:refs/remotes/origin/main'
 base="$(git rev-parse origin/main)"
-[[ -z "$(git ls-remote --heads origin "refs/heads/$release")" ]] || refuse "$release already exists on origin"
+set +e
+git ls-remote --exit-code --heads origin "refs/heads/$release" >/dev/null
+lookup=$?
+set -e
+((lookup != 0)) || refuse "$release already exists on origin"
+((lookup == 2)) || refuse "could not check whether $release exists on origin"
 old="$(git show "$base:server/CopsAndRobbers/main.lua" | sed -n 's/^local VERSION = "\(.*\)"/\1/p')"
 [[ "$old" =~ $pattern ]] || refuse "invalid current version: $old"
 printf '%s\n' "$old" "$new" | sort -VCu || refuse "version must be greater than $old"
@@ -52,10 +57,12 @@ for file in "${files[@]}"; do
   blob="$(git hash-object -w -- "$tmp/src/$file")"
   git update-index --cacheinfo "$mode,$blob,$file"
 done
-commit="$(git commit-tree "$(git write-tree)" -p "$base" -m "chore: version $new")"
+sign=()
+[[ "$(git config --type=bool commit.gpgsign || true)" != true ]] || sign=(-S)
+commit="$(git commit-tree "${sign[@]}" "$(git write-tree)" -p "$base" -m "chore: version $new")"
 unset GIT_INDEX_FILE
 
-git push origin "$commit:refs/heads/$release"
+git push --force-with-lease="refs/heads/$release:" origin "$commit:refs/heads/$release"
 if ! gh pr create --base main --head "$release" --title "$title" --body "$body"; then
   echo "$release is pushed but its PR was not opened; run: gh pr create --base main --head $release --title \"$title\" --body \"$body\"" >&2
   exit 1
