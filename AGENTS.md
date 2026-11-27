@@ -113,7 +113,7 @@ Add source comments or emojis only when the maintainer asks for them.
 Hooks, Make targets and scripts run with the credentials of whoever runs them, and `make hooks` points git at the checked-out `.githooks`. So with the maintainer's credentials:
 - Run `scripts/board`, `make version` and `make deploy` only from the maintainer's checkout of `main`.
 - Push only from that checkout or from a worktree of a branch the maintainer or their agent wrote.
-- Never check out, build, test or push from a contributor's branch. Review it as a diff on GitHub or with `git diff`; to try it, use a checkout without credentials (no `gh` login, no SSH agent).
+- Never check out, build, test, run or push a contributor's branch. Agents review contributor PRs by diff only, on GitHub or with `git diff`; CI runs their code.
 - Agents never stage a contributor's PR on the test server; see **Staging** below.
 
 ## Privacy
