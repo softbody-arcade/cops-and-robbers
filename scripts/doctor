@@ -129,8 +129,14 @@ fi
 
 base_status=$(git submodule status -- base 2>/dev/null)
 case ${base_status:0:1} in
-    ' ') report ok 'base submodule' ;;
+    ' ')
+        if [[ $(git -C base rev-parse HEAD 2>/dev/null) == "$(git rev-parse HEAD:base 2>/dev/null)" ]]; then
+            report ok 'base submodule'
+        else
+            report missing 'base submodule — base/ differs from the commit this branch pins; run git submodule update, or commit the new pin on purpose'
+        fi ;;
     '' | -) report missing 'base submodule — run git submodule update --init (base/ holds the shared rules)' ;;
+    U) report missing 'base submodule — base/ has a merge conflict; pick the commit with git add base, then run git submodule update' ;;
     *) report missing 'base submodule — base/ is not at the pinned commit; run git submodule update' ;;
 esac
 

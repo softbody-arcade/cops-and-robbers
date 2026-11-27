@@ -10,6 +10,7 @@ test:
 	bash tests/board_test.sh
 	bash tests/release_test.sh
 	bash tests/doctor_test.sh
+	bash tests/base_pin_test.sh
 
 doctor:
 	scripts/doctor

@@ -1,16 +1,16 @@
 # Cops and Robbers: agent rules
 
-**Read `base/AGENTS.md` first** ([on GitHub](https://github.com/softbody-arcade/arcade-base/blob/main/AGENTS.md)). It holds the rules every Softbody Arcade repo shares: the ticket ledger and board lanes, roles, design and implementation, branches and merging, trusted code, privacy, and the general verification and release rules. This file only adds what is specific to Cops and Robbers; it never contradicts the shared rules. If `base/` is empty, run `git submodule update --init` (or clone with `--recurse-submodules`); `make doctor` checks it.
+**Read `base/AGENTS.md` first** ([on GitHub](https://github.com/softbody-arcade/arcade-base/blob/6198cea32b7b8469a390bf2d12e012cafe35d8de/AGENTS.md)). It holds the rules every Softbody Arcade repo shares: the ticket ledger and board lanes, roles, design and implementation, branches and merging, trusted code, privacy, and the general verification and release rules. This file only adds what is specific to Cops and Robbers; it never contradicts the shared rules. If `base/` is empty, run `git submodule update --init` (or clone with `--recurse-submodules`); `make doctor` checks it.
 
 ## This repo
 
 - `softbody-arcade/cops-and-robbers` is a chase minigame for BeamNG.drive multiplayer (BeamMP).
 - **Board.** The board's one auto-add workflow covers this repo: issues filed here land in Inbox by themselves.
-- **The base.** `base/` is arcade-base as a submodule, pinned to a release; its `.gitmodules` entry and pin follow the shared **Trusted code** rule. This repo doesn't run on the base's library yet ([#56](https://github.com/softbody-arcade/cops-and-robbers/issues/56)).
+- **The base.** `base/` is arcade-base as a submodule, pinned to a release; its `.gitmodules` entry and pin follow the shared **Trusted code** rule. Links to arcade-base on GitHub use the pinned commit, so people read the rules this repo follows; moving the pin moves those links in the same PR (`tests/base_pin_test.sh` checks it). This repo doesn't run on the base's library yet ([#56](https://github.com/softbody-arcade/cops-and-robbers/issues/56)).
 - **Own copies of the shared tooling.** Until this repo moves onto the base's scripts and Actions, it keeps its own `scripts/board`, `scripts/privacy-check`, `scripts/doctor`, release scripts and workflows, issue templates and Superpowers skills (`.agents/skills/`, read by Claude Code through `.claude/skills/`). Run them from this repo, not from `base/`: `base/scripts/board` reads arcade-base's config ([arcade-base#8](https://github.com/softbody-arcade/arcade-base/issues/8)).
-- **Roles.** [docs/ROLES.md](docs/ROLES.md) covers what is specific to this repo; the shared roles are in arcade-base's [roles page](https://github.com/softbody-arcade/arcade-base/blob/main/docs/ROLES.md).
+- **Roles.** [docs/ROLES.md](docs/ROLES.md) covers what is specific to this repo; the shared roles are in arcade-base's [roles page](https://github.com/softbody-arcade/arcade-base/blob/6198cea32b7b8469a390bf2d12e012cafe35d8de/docs/ROLES.md).
 
-## Verification
+## Verification and release
 
 - **Automated tests.** Use recorded round data for leaderboard ranking and assist thresholds, and sampled positions and speeds for catch timing.
 - **Local checks.**
@@ -34,7 +34,7 @@
   - Use freeroam for console experiments, and request screenshots for placement or visual tuning.
   - Ask before deleting a probe from the maintainer's game folder.
 
-## Releases
+### Releases
 
 - `make version V=x.y.z` builds the version commit on top of `origin/develop` without touching the checkout, pushes `release/x.y.z` and opens the PR **Release x.y.z** into `main`.
 - **Hotfix:** `make version V=x.y.z FROM=main` starts the release branch from `main` instead, so unreleased work on `develop` stays out. Put the fix on `release/x.y.z` through a PR into that branch, then merge the release PR.
@@ -42,7 +42,7 @@
 - After publishing, run `scripts/board release` (from the maintainer's checkout of `develop`) to move the released work from Accepted to Done.
 - Tests use `CNR_VERSION`, never a literal version.
 
-## Deploy
+### Deploy
 
 - The live server's setup is kept out of this repo.
 - Until the server-side updater exists (its own ticket), the maintainer deploys by hand, or with `make deploy` and a local `CNR_DEPLOY_SCRIPT`. An agent runs `make deploy` only when the maintainer explicitly asks for that deploy in the current session.

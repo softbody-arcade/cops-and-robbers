@@ -2,7 +2,7 @@
 
 Thanks for helping. Cops and Robbers is a chase minigame for BeamNG.drive multiplayer (BeamMP), part of [Softbody Arcade](https://github.com/softbody-arcade).
 
-The full rules, for people and for coding agents alike, are the shared rules in [base/AGENTS.md](https://github.com/softbody-arcade/arcade-base/blob/main/AGENTS.md) plus this repo's [AGENTS.md](AGENTS.md). This page is the short version, and [Roles](docs/ROLES.md) explains what each team can do.
+The full rules, for people and for coding agents alike, are the shared rules in [base/AGENTS.md](https://github.com/softbody-arcade/arcade-base/blob/6198cea32b7b8469a390bf2d12e012cafe35d8de/AGENTS.md) plus this repo's [AGENTS.md](AGENTS.md). This page is the short version, and [Roles](docs/ROLES.md) explains what each team can do.
 
 ## Set up
 
@@ -26,7 +26,7 @@ The full rules, for people and for coding agents alike, are the shared rules in 
 
 1. Create a branch from `develop` named `feature/<topic>` or `fixes/<topic>`. `develop` is the default branch, and PRs target it; `main` only receives releases. The one exception is a fix for an open patch release: branch it from that release's `release/x.y.z` branch and target the PR there, so unreleased work from `develop` stays out.
 2. Push early, and open a draft pull request that says `Fixes #<issue>`.
-3. Follow the design, test and review rules in [base/AGENTS.md](https://github.com/softbody-arcade/arcade-base/blob/main/AGENTS.md#design-and-implementation).
+3. Follow the design, test and review rules in [base/AGENTS.md](https://github.com/softbody-arcade/arcade-base/blob/6198cea32b7b8469a390bf2d12e012cafe35d8de/AGENTS.md#design-and-implementation).
    - New gameplay gets a short spec and plan first.
    - Every change comes with tests where the result can be checked automatically.
 4. CI must be green: `test`, `luajit`, `vuecheck`, `privacy` and `package`.
