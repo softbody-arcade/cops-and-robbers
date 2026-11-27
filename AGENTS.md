@@ -115,8 +115,12 @@ Add source comments or emojis only when the maintainer asks for them.
   - for `needs-playtest` PRs, a `board result` of pass or defer for exactly that head SHA. A later push voids the result, the review and the go.
 - **Merging.** From the maintainer's main checkout (on `develop`):
   1. Remove the worktree.
-  2. `gh pr merge <pr> --merge --delete-branch --match-head-commit <sha>`.
+  2. `gh pr merge <pr> --admin --merge --delete-branch --match-head-commit <sha>`.
   3. Pull `develop`.
+
+  `develop-merge` and `main-merge` let only maintainers update those branches, so every merge into them is a maintainer bypass:
+  - On the command line, `--admin` claims that bypass. It skips only those `*-merge` rulesets: `develop-checks` and `main-checks` have no bypass, so CI still has to pass.
+  - In the web UI, tick "Merge without waiting for requirements to be met (bypass rules)" before merging.
 - **No direct commits on `develop` or `main`.** Every change, docs and this file included, goes through a PR. Version bumps always do (see Releases).
 - **Identity.** Everyone commits with their GitHub noreply address (`ID+login@users.noreply.github.com`), never a personal or work email. The privacy check rejects other personal addresses (it allows only noreply and a few GitHub service addresses). The maintainer commits as `ReinderN` and SSH-signs.
 
@@ -172,7 +176,7 @@ Hooks, Make targets and scripts run with the credentials of whoever runs them, a
   - `make version V=x.y.z` builds the version commit on top of `origin/develop` without touching the checkout, pushes `release/x.y.z` and opens the PR **Release x.y.z** into `main`.
   - **Hotfix:** `make version V=x.y.z FROM=main` starts the release branch from `main` instead, so unreleased work on `develop` stays out. Put the fix on `release/x.y.z` through a PR into that branch, then merge the release PR.
   - Before merging it, check that milestone `x.y.z` has no open issues (`gh issue list --milestone x.y.z --state open`); close them or move them to another milestone.
-  - Merging it is the approval to release: `release.yml` tags the merge commit and publishes the GitHub Release with the ZIP, tarball and checksums. It then opens **Sync main into develop**. A maintainer merges it with `gh pr merge <pr> --merge --match-head-commit <sha>`, without `--delete-branch`, because its head is `main`.
+  - Merging it is the approval to release: `release.yml` tags the merge commit and publishes the GitHub Release with the ZIP, tarball and checksums. It then opens **Sync main into develop**. A maintainer merges it with `gh pr merge <pr> --admin --merge --match-head-commit <sha>`, without `--delete-branch`, because its head is `main`. The release PR itself merges the same way, with `--delete-branch`.
   - After publishing, run `scripts/board release` (from the maintainer's checkout of `develop`) to move the released work from Accepted to Done.
   - Agents merge a release PR only after the maintainer said, in the current session, to release that version.
   - Version numbers stay out of feature plans and branches. Tests use `CNR_VERSION`.
