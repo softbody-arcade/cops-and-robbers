@@ -51,6 +51,7 @@ MUST_PASS = [
     "2001:db8::42",
     "85369967+ReinderN@users.noreply.github.com",
     "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>",
+    "Co-Authored-By: Codex <noreply@openai.com>",
     "git@github.com:softbody-arcade/cops-and-robbers.git",
     "@update:model-value",
     "uses: actions/checkout@v7",
