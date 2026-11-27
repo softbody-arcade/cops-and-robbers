@@ -1,11 +1,13 @@
 LUA := $(shell command -v lua5.3 2>/dev/null || command -v lua)
 TESTSERVER := .testserver
+SOURCE_DATE_EPOCH ?= $(or $(shell git log -1 --format=%ct 2>/dev/null),315532800)
 
 .PHONY: test vuecheck package install-local clean deploy version hooks privacy
 
 test:
 	$(LUA) tests/run.lua tests/test_*.lua
 	python3 -I tests/privacy_check_test.py
+	bash tests/release_test.sh
 
 privacy:
 	scripts/privacy-check tree HEAD
@@ -19,11 +21,14 @@ vuecheck:
 	cd tools/vuecheck && node --experimental-vm-modules panel-tabs.test.mjs
 
 package: clean
-	mkdir -p dist/Client dist/Server dist/release
-	cd client && zip -qr ../dist/Client/CopsAndRobbers.zip scripts lua mod_info ui art
+	mkdir -p dist/Client dist/Server dist/release dist/stage
+	rsync -a client/scripts client/lua client/mod_info client/ui client/art dist/stage/
+	find dist/stage -exec touch -h -d @$(SOURCE_DATE_EPOCH) {} +
+	cd dist/stage && find scripts lua mod_info ui art -print | LC_ALL=C sort | TZ=UTC zip -qX -@ ../Client/CopsAndRobbers.zip
+	rm -rf dist/stage
 	rsync -a --exclude data server/CopsAndRobbers dist/Server/
 	cp dist/Client/CopsAndRobbers.zip dist/release/
-	tar -czf dist/release/CopsAndRobbers-server.tar.gz -C dist/Server CopsAndRobbers
+	tar --sort=name --mtime=@$(SOURCE_DATE_EPOCH) --owner=0 --group=0 --numeric-owner -cf - -C dist/Server CopsAndRobbers | gzip -n > dist/release/CopsAndRobbers-server.tar.gz
 	cd dist/release && sha256sum CopsAndRobbers.zip CopsAndRobbers-server.tar.gz > SHA256SUMS
 
 install-local: package

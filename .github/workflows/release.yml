@@ -89,6 +89,13 @@ jobs:
           assets=(dist/release/*)
           if gh release view "v$VERSION" >/dev/null 2>&1; then
             existing="$(gh release view "v$VERSION" --json assets --jq '.assets[].name')"
+            if grep -Fxq SHA256SUMS <<<"$existing"; then
+              gh release download "v$VERSION" --pattern SHA256SUMS --output "$RUNNER_TEMP/published-SHA256SUMS" --clobber
+              if ! cmp -s "$RUNNER_TEMP/published-SHA256SUMS" dist/release/SHA256SUMS; then
+                echo "the rebuilt assets differ from the published SHA256SUMS; fix the release by hand" >&2
+                exit 1
+              fi
+            fi
             for asset in "${assets[@]}"; do
               if ! grep -Fxq "$(basename "$asset")" <<<"$existing"; then
                 gh release upload "v$VERSION" "$asset"
