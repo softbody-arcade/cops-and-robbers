@@ -109,7 +109,7 @@ An agent (Claude, Codex or any other) acts with the GitHub login of the person r
 | Ruleset | Applies to | Effect |
 |---|---|---|
 | `develop-checks`, `main-checks` | `develop`, `main` | PR required, the five CI checks must pass, merge commits only, no force-push or deletion. Nobody bypasses them. |
-| `develop-merge`, `main-merge` | `develop`, `main` | Only maintainers can update them, and only by merging a PR. |
+| `develop-merge`, `main-merge` | `develop`, `main` | Only maintainers can update them, and only by merging a PR. That merge counts as a bypass of this ruleset: `gh pr merge --admin`, or the "bypass rules" tick in the merge box. |
 | `release-branches` | `release/*` | Only maintainers can create, update or delete them. |
 | `release-tags` | `v*` tags | Only maintainers can move or delete them. |
 
