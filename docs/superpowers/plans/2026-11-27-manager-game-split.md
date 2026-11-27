@@ -35,7 +35,7 @@ Concerns follow the spec's "Who owns what" table. During 2.x the manager half li
 | Traffic: `perPlayer`, open, reported cars, extra-car counts | The traffic note text and "runner only" | 1 |
 | Panel plumbing, lobby push, command registry and parsing; automatic rounds (`auto`, `next`) and `reload` | Round commands: `start`, `test`, `go`, `stop`, `end`, `reroll`, `sky`, `addstation`, `removestation`; the panel's build and apply actions | 1 |
 | The cycle (lobby, round, results), spectating and parked bystanders, car tools, the round-vehicle list, vehicle callbacks asking the game | Answers to vehicle checks, minimum players, the game manifest | 2 |
-| Round conditions: `sky`, `weather`, `climate`, `strikeSchedule` (shared with the client through a symlink), lightning announcements and the strike clock; weather takes the round's release and end times as inputs instead of reading the game's countdown, head start and time limit | Which weather grounds the helicopter: `groundedAt` moves to the game unchanged, still returning a weather name or `nil` and keeping the previous weather for its 60-second transition | 3 |
+| Round conditions: `sky`, `weather`, `climate`, `strikeSchedule` (shared with the client through a symlink), lightning announcements and the strike clock; weather takes the round's release and end times as inputs instead of reading the game's countdown, head start and time limit | Which weather grounds the helicopter: `groundedAt` moves to the game unchanged, still returning a weather name or `nil`; a newly grounding weather takes effect at once, and a grounding weather persists for its 60-second transition only while clearing into a non-grounding one (`test_weather.lua`'s fog-to-snow case) | 3 |
 | Leaderboard store (load with its shape and legacy checks, move-aside, lock, save, add) and per-viewer board subscriptions | Leaderboard views, computed per viewer | 4 |
 | Session and sequence numbers, `pcall` around game calls, cleanup without the game | Lost-participant rules (a lost cop leaves, a lost runner ends the chase) | 5 |
 
@@ -75,7 +75,7 @@ Cleanup gaps step 3 verifies first (from a read-only inventory, not yet confirme
 4. **Data-driven apps and the leaderboard store**: settings, HUD parts, announcements, How to play and per-viewer leaderboard views as game data; the leaderboard store moves to the manager.
 5. **Sessions and failures**: session and sequence numbers, `pcall` around game calls, cleanup without the game, client errors as lost participants, tagged resets.
 
-Each later step gets its own plan after the step before it is released, and its own sub-issue under #69. The traces from Task 1 stay the parity baseline through every step: steps 1 to 4 keep them unchanged; step 5 adds session and sequence fields and the reset report, and its plan compares traces with those new fields removed, testing the new fields on their own.
+Each later step gets its own plan after the step before it is released, and its own sub-issue under #69. The traces from Task 1 stay the parity baseline through every step: steps 1 to 4 keep them unchanged; step 5 adds session and sequence fields and the reset report. Its plan replays the same scenarios through an adapter that tags each legitimate client input with the current session and sequence, compares the output with those new fields removed, and tests stale inputs and the new fields on their own.
 
 ## Review Focus
 
@@ -95,7 +95,8 @@ Each later step gets its own plan after the step before it is released, and its 
 - Create: `tests/trace.lua`, `tests/test_traces.lua`, `tests/traces/<scenario>.txt`
 
 **Interfaces:**
-- `server_boot.lua` ends with `serverBoot = { boot = boot, encode = encode }` (a global; `decodeJson` is already global). `test_main.lua` and `test_traces.lua` each start with `dofile("tests/server_boot.lua")` and `local boot = serverBoot.boot`.
+- `server_boot.lua` ends with `serverBoot = { boot = boot, encode = encode }` (a global; `decodeJson` is already global). `test_main.lua` and `test_traces.lua` each start with `dofile("tests/server_boot.lua")` and `local boot, encode = serverBoot.boot, serverBoot.encode`.
+- `boot` also gets `env.reload()` (runs the same `main.lua` chunk again in the same `env`, as a hot reload does) and `env.timerOps`, a list of every `MP.CancelEventTimer` and `MP.CreateEventTimer` call as `{ op, name, ms }`, kept across reloads.
 - `boot` also keeps `env.stream`, one list in call order: the fake `MP.TriggerClientEvent` appends `{ kind = "send", t = env.clock, to = pid, ev = ev, data = data }` and the captured `print` appends `{ kind = "log", t = env.clock, text = text }`, next to today's `env.sent` and `env.logs`, which stay as they are.
 - Produces: `traceLine(entry) -> string`, `traceRun(scenario) -> string`, `traceCheck(name, scenario)`; `UPDATE_TRACES=1` records.
 
@@ -103,26 +104,27 @@ Each later step gets its own plan after the step before it is released, and its 
 - [ ] **Step 2: Write the failing format tests** in `tests/test_traces.lua`:
   - `traceLine({ kind = "send", t = 1.25, to = 2, ev = "cnr_notice", data = '{"tone":"info","msg":"x"}' })` is `1.250 2 cnr_notice {"msg":"x","tone":"info"}` (clock with three decimals, recipient, event, payload re-encoded with keys sorted at every depth).
   - `traceLine({ kind = "log", t = 0, text = "[CnR] hi" })` is `0.000 log [CnR] hi`.
-  - Within one call group, consecutive sends of the same event to different recipients come out sorted by recipient; other lines keep their order.
+  - Within one call group, consecutive sends of the same event with the same payload to different recipients (a fan-out over `pairs`) come out sorted by recipient; other lines keep their order.
+  - Numbers in payloads are re-encoded with `string.format("%.10g", n)`, so `16.653397805827` and `16.653397805827389` give the same line.
 - [ ] **Step 3: Run** `lua tests/run.lua tests/test_traces.lua`. Expected: FAIL, `traceLine` is nil.
 - [ ] **Step 4: Implement `tests/trace.lua`.** `traceRun(scenario)` does the following, and restores every override and calls `env.cleanup()` in all cases, also when the scenario errors:
   1. Before `boot`: replace `os.time` (returns `1795000000` without an argument, else the real one) and `os.date` (formats `1795000000` when no time is given).
   2. Replace `math.random` and `math.randomseed` with a Lua-side generator so Lua 5.3 and newer give the same numbers: a 31-bit LCG (`state = (state * 1103515245 + 12345) % 2^31`, seeded with 1, `randomseed` ignored) with the standard `random()`, `random(m)` and `random(m, n)` semantics.
-  3. Boot with `scenario.boot`.
+  3. Clear every `package.loaded` entry whose name starts with `cnr.` or `arcade.` (module-level counters such as `cnr.round`'s `lastRebuildId` would otherwise depend on which tests ran first in the same process), then boot with `scenario.boot`. Clear them again afterwards.
   4. Wrap `env.call` so each call starts a group line `call <event>` and ends with `ret <values>` (its return values, `tostring`-ed).
   5. Run `scenario.steps(env)` and return `env.stream` as lines grouped by call, with `env.dir` replaced by `<dir>` and `CNR_VERSION` by `<version>` everywhere.
 
   `traceCheck` compares with `tests/traces/<name>.txt`, failing with the first differing line number and both lines; with `UPDATE_TRACES=1` it writes the file.
-- [ ] **Step 5: Write the scenarios**, built from the event sequences `test_main.lua` already uses. Each one asserts its required observations in the test, so a wrong golden can't be recorded:
-  - `lobby`: players 1 and 2 join; 1 opens the panel and saves `headStartSeconds = 9`; 1 opens the board and filters `map = "all"`. Required: one `cnr_panelReply` with `ok = true`; a `cnr_boardState` with `filter = "all"`.
-  - `round_caught`: `env.startRound()`, then the clock is advanced in 0.25-second ticks until `cnr_roundEnd`. Required: `reason = "caught"`.
-  - `round_escaped`: config `roundTimeLimitSeconds = 30`; `env.startRound()`; the runner's and cop's positions set 2000 m apart every tick; advance to past 30 seconds of chase. Required: `cnr_roundEnd` with `reason = "escaped"`.
-  - `late_joiner`: a round in the chase; player 3 joins. Required: `cnr_spectate` to 3. Then the runner disconnects. Required: `cnr_roundEnd` with the runner-left reason the code uses today.
-  - `practice_runner` and `practice_watch_ai`: `test runner`, and `test cop` while sitting out, each with the AI registration `cnr_aiVehicles` from the issuer. Required: `cnr_setupAI` to the issuer, then registration accepted (the AI ids appear in the next `cnr_roundCars`).
-  - `evolving`: config `carMode = "evolving"`; a round to preparation; the runner sends `cnr_change`, applies, the server rebuilds; one player reports `cnr_missing`. Required: `cnr_queued`, `cnr_applied`, `cnr_rebuild`, and the missing-parts notice.
-  - `auto_next`: `auto on`; a round ends; advance past `autoNextDelaySeconds`. Required: a second `cnr_roundSetup` without a new `start` command. Then `auto off`. Required: `cnr_autoNext`.
-  - `prep_actions`: a round in preparation; `reroll` (back to picking), the runner's `cnr_vehiclePicked` (back to preparation), `sky`, then `stop`. Required: `cnr_sky` after the pick, and `cnr_roundEnd` with `reason = "cancelled"`.
-  - `vehicle_rules`: config `trafficPerPlayer = 1`, boot with `opts.maxCars = 3` (a new `boot` option setting the fake `MP.Settings` max cars, default 2 as today); in the chase, a spectator's `onVehicleSpawn` (required: returns `1`), a round player's spawn of another model (required: `1`), the runner's traffic spawn within the allowance after `cnr_trafficCars` (required: `0`).
+- [ ] **Step 5: Write the scenarios**, each copying the inputs of the named existing `test_main.lua` test. Each scenario asserts its required observations in the test, so a wrong golden can't be recorded. "After GO" means after the start index of `env.go()`; boot's own cancelled `cnr_roundEnd` never counts. Tick loops advance 0.25 seconds per `cnr_tick` and stop at 2000 ticks with a failure.
+  - `lobby` (from "the board app gets state on open, after a run and on a filter change", 1408): players 1 and 2 join; 1 opens the panel and saves `headStartSeconds = 9`; 1 opens the board and filters `map = "all"`. Required: a `cnr_panelReply` with `ok = true`; a `cnr_boardState` with `filter = "all"`.
+  - `round_caught` (from "full round over main wiring", 280): player 1 has the board open; `env.startRound()`, `env.go()`, the cop's sight report as in that test, ticks until a `cnr_roundEnd` after GO. Required: `reason = "caught"` and a `cnr_boardState` to player 1 after it.
+  - `round_escaped` (same fixture): config `roundTimeLimitSeconds = 30`; `env.startRound()`, then `env.positions` set 2000 m apart, `env.go()`, ticks until a `cnr_roundEnd` after GO. Required: `reason = "escaped"`.
+  - `late_joiner` (from "a mid-chase rejoin gets chaseElapsed in the spectator event", 843): in the chase, player 3 joins. Required: `cnr_spectate` to 3 with `chaseElapsed`. Then the runner disconnects. Required: a new `cnr_roundEnd` with the reason that test's code path sends today.
+  - `practice_runner` (from "/cnr test runner: AI vehicles are tracked as cops", 412) and `practice_watch_ai` (from "practice while sitting out runs the AI alone, the issuer spectates and nothing is recorded", 3363): the issuer's AI vehicles registered and given known positions as in those tests. Required: the round outcome those tests observe (an AI cop's catch), which proves the registration.
+  - `evolving` (from "a full evolving round: prep, apply, rebuild, ready, GO", 1607): the saved build, change, apply, the `cnr_setup` reply and the vehicle acknowledgements with the rebuild id, then GO, all with the clock advanced less than 5 seconds between request and reply. Required: `cnr_queued`, `cnr_rebuild`, then `cnr_applied` before any timeout path, and the chase starting after GO. A separate player's `cnr_missing` gives the missing-parts notice.
+  - `auto_next` (from "auto next round prepares a new round but waits for go", 709): `auto on`, a round ends, ticks past `autoNextDelaySeconds`, the `cnr_pickVehicle` answered with `cnr_vehiclePicked`. Required: a `cnr_roundSetup` after the first round's end naming the new runner. Then (from "auto off tells clients to drop the next round countdown", 1316) `auto off` during the next chase, ticks until it ends. Required: `cnr_autoNext`, and that round's `cnr_roundEnd` without `autoNextSeconds`.
+  - `prep_actions` (from "New car keeps the sky", 880, and "New sky goes to the round's players before GO only", 892): in preparation, `reroll`, the runner's `cnr_vehiclePicked`, `sky`, then `stop`. Required: `cnr_sky` after the pick, and a `cnr_roundEnd` with `reason = "cancelled"` after the stop.
+  - `vehicle_rules` (from `trafficBoot` and "a traffic spawn before the go-ahead is refused", 2437 and 2512): `trafficBoot({ config = '{"trafficPerPlayer":1}', maxCars = 6 })` (`maxCars` is the existing option). In the chase: a spectator's `onVehicleSpawn` (required: returns `1`); a round player's spawn of another model before their traffic opens (required: `1`); the runner's own car confirmed with `cnr_myVehicle`, traffic opened, `cnr_trafficCars` reported, then a spawn within the allowance (required: `0`).
 - [ ] **Step 6:** Run `UPDATE_TRACES=1 lua tests/run.lua tests/test_traces.lua`, then `lua tests/run.lua tests/test_traces.lua` three times. Expected: all pass every time.
 - [ ] **Step 7:** Run `make test`. Expected: all pass.
 - [ ] **Step 8: Commit** `Traces: golden event traces of scripted rounds`, push, and check that the PR's CI `test` job (Lua 5.3) passes before Task 2. If CI's traces differ from the local ones, fix the source of the difference in `tests/trace.lua` and record again; Task 2 starts only from traces that match on both.
@@ -207,7 +209,7 @@ Each later step gets its own plan after the step before it is released, and its 
   - Combining two declarations that share a key errors; an `OVERRIDES` entry changes only that default.
   - `merge` of `{ lightningMinSeconds = 30, lightningMaxSeconds = 20, copSpawnMinMeters = 200, copSpawnMaxMeters = 100, clockSpeed = 2, weather = "map", zzz = 1, aaa = 1 }` gives today's `cfg`. Warnings compared as a set, except two orderings that exist today: unknown-key warnings sorted by key, and the cop-spawn correction before the timing-range corrections.
   - `setValue` with an invalid value returns `nil` and today's error text.
-  - Saving after `merge` drops `clockSpeed` and the retired `weather = "map"`, and keeps `zzz` and `aaa`.
+  - `s:save(settings.setValue(raw, "headStartSeconds", "9", decl))` on that raw table writes a file without `clockSpeed` and `weather`, with `zzz`, `aaa` and `headStartSeconds = 9`. `s:save` always receives the raw table returned by `setValue` or `applyValues`, never `cfg`.
 - [ ] **Step 2: Run** `lua tests/run.lua tests/test_arcade_settings.lua`. Expected: FAIL, module not found.
 - [ ] **Step 3: Implement** the validator, `GLOBAL`, `combine`, load and save in `arcade/settings.lua`; reduce `cnr/config.lua` to `GAME` plus the façade; `cnr/panel.lua`'s `applyValues` delegates; `main.lua` uses `s:load()` and `s:save(raw)`.
 - [ ] **Step 4: Run** the settings test, `test_config.lua`, `test_panel.lua`, then `make test`. Expected: all pass, traces identical.
@@ -221,7 +223,7 @@ Each later step gets its own plan after the step before it is released, and its 
 
 **Interfaces:**
 - Consumes: `arcade.roster` (`trafficOpen`, `trafficVids`), `arcade.messages`.
-- Produces: `traffic.perPlayer(setting, maxCars, practice) -> number` (moved unchanged), `traffic.maxCars() -> number|nil`, `traffic.new(r, m) -> t` with `t:allowance(pid, cfg, practice, eligible) -> number` (0 when `eligible` is false), `t:open(pid, count)` (today's guards: an active round participant, a positive count, not already open; sends `cnr_trafficStart { count }`), `t:openCount(pid) -> number|nil`, `t:report(pid, vids, ownVid, isAI)` (today's cap and exclusions), `t:extraCars(pid, ownVid) -> number`, `t:cars() -> list`.
+- Produces: `traffic.perPlayer(setting, maxCars, practice) -> number` (moved unchanged), `traffic.maxCars() -> number|nil`, `traffic.new(r, m) -> t` with `t:allowance(pid, cfg, practice, eligible) -> number` (0 when `eligible` is false), `t:open(pid, count)` (guards a positive count and not already open; sends `cnr_trafficStart { count }`). The participant guard stays in `main.lua`, which calls `t:open` only when `current:isActive()` and `current.players[pid] ~= nil`, as today, `t:openCount(pid) -> number|nil`, `t:report(pid, vids, ownVid, isAI)` (today's cap and exclusions), `t:extraCars(pid, ownVid) -> number`, `t:cars() -> list`.
 - The game passes `eligible = current.test or not cfg.trafficRunnerOnly or pid == current.runnerId`, so the runner-only rule applies to real rounds only, as now. The practice issuer's capacity stays computed where it is today.
 
 - [ ] **Step 1: Write the failing tests:** `allowance` is 0 when not eligible and `perPlayer(...)` otherwise; `open` sends nothing for a count of 0 or a second time; `report` keeps at most the open count and skips the own and AI vids; `extraCars` counts the player's vehicles other than the own one.
@@ -243,16 +245,16 @@ Each later step gets its own plan after the step before it is released, and its 
   - `p:pushLobby(stateFn, pid)`: with a `pid`, always sends `cnr_lobby` to that pid and leaves the broadcast signature alone; without one, broadcasts only on a changed signature.
   - `p:close(pid)`, `p:command(name, handler)`, `p:run(pid, text)` (today's `runCommand`).
   - `p:tick(panelStateFn, lobbyStateFn)`: today's two `pcall`s and their once-per-change error logs.
-- Produces: `autoRounds.new() -> a` with `a:schedule(at)`, `a:cancel()`, `a:pending() -> at|nil`, `a:due(now) -> boolean`, and `autoRounds.register(p, ctx)`, which registers the `auto`, `next` and `reload` commands with today's replies. `ctx = { settings, a, pushRules, startNext, reloadRound, isActive, send }`, where the last four are functions `main.lua` passes.
+- Produces: `autoRounds.new() -> a` with `a:schedule(at)`, `a:cancel()`, `a:pending() -> at|nil`, `a:due(now) -> boolean`, and `autoRounds.register(p, ctx)`, which registers the `auto`, `next` and `reload` commands with today's replies. `ctx = { settings, a, pushRules, startNext, refreshConfig, reloadRound, isActive, send }`. `refreshConfig()` reloads the effective config and sets the running round's `cfg` in place, as `handlers.auto` does today; `reloadRound()` creates a new round, as `handlers.reload` does. `auto` uses only `refreshConfig`.
 
 - [ ] **Step 1: Write the failing tests:**
   - `push` with no subscribers doesn't call `stateFn`.
-  - With subscribers 1 and 2 and opener 3 on a changed state: 1 and 2 get one copy each, then 3 gets one, in that order. On an unchanged state, only 3 gets a copy.
+  - With subscribers 4 and 5 and opener 2 on a changed state: 4 and 5 get exactly one copy each (in any order), and 2 gets exactly one, after both, on the recorded send order. On an unchanged state, only 2 gets a copy.
   - `pushLobby(fn, 4)` sends to 4 every time without changing what the next broadcast compares against.
   - A failing state function logs once until its error text changes.
   - `run` dispatches `start next` to the `start` handler with `args = { "next" }`.
   - `due` is true only at or after the scheduled time, and `cancel` clears it.
-  - `auto off` cancels the schedule and sends `cnr_autoNext`.
+  - `auto off` cancels the schedule and sends `cnr_autoNext`; `auto off` during a chase calls `refreshConfig` and not `reloadRound`.
 - [ ] **Step 2: Run** both tests. Expected: FAIL, modules not found.
 - [ ] **Step 3: Implement** and switch `main.lua`; the game's commands register through `p:command`.
 - [ ] **Step 4: Run** the tests, `test_panel.lua`, `test_commands.lua` and `make test`. Expected: all pass, traces identical.
@@ -265,9 +267,10 @@ Each later step gets its own plan after the step before it is released, and its 
 - Modify: `docs/DEPENDENCIES.md` (one short section on the `arcade/` folder and what moved)
 
 - [ ] **Step 1: Write the reload test:**
-  1. Boot with `serverBoot.boot`; open the panel for player 1; turn automatic rounds on and schedule one.
-  2. Load `main.lua` a second time in the same process, as BeamMP does on a hot reload (call the same chunk again on the same fake `MP`).
-  3. Required: the second load sends `cnr_roundEnd { reason = "cancelled" }` and `cnr_mode` again; a tick sends no `cnr_panelState` (no subscriber survived) and starts no round (no schedule survived); `MP.CreateEventTimer` was called once per load with `MP.CancelEventTimer` before it, as today.
+  1. Boot with `serverBoot.boot`; open the panel for player 1; turn automatic rounds on; run a round to its end so one is scheduled; note the scheduled time.
+  2. `env.reload()`.
+  3. Required: the reload sends `cnr_roundEnd { reason = "cancelled" }` and `cnr_mode` again; `env.timerOps` is `cancel cnr_tick`, `create cnr_tick 250`, twice in that order.
+  4. Advance the clock past the noted time and tick. Required: no `cnr_panelState` (no subscriber survived) and no `cnr_pickVehicle` (no schedule survived).
 - [ ] **Step 2: Run** `lua tests/run.lua tests/test_reload.lua`. Expected: PASS (the services keep no module-level state). If it fails, find the state a module keeps and move it into its `new()`.
 - [ ] **Step 3:** Check that `main.lua` no longer defines the moved functions: `grep -n 'local function \(readFile\|writeFile\|decodeFile\|send\|notify\|playerKey\|pidForKey\|playing\|loadColors\|saveColors\|maxCars\|openTraffic\|extraCars\|trafficCars\|pushPanel\|pushLobby\|runCommand\|loadConfig\)\b' server/CopsAndRobbers/main.lua`. Expected: no output.
 - [ ] **Step 4:** Check that no `arcade.*` module requires `cnr.*`: `grep -rn 'require("cnr\.' server/CopsAndRobbers/arcade/`. Expected: no output.
