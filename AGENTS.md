@@ -15,7 +15,8 @@ GitHub Issues and the organization board **Softbody Arcade** (project 1) record 
 - **Parent and sub-issues** give the structure: a large feature is a parent with its parts as sub-issues, and the issues folded into a fix batch become sub-issues of the batch's ticket. Progress rolls up on the parent.
 - **Blocked by / blocking** (issue dependencies) records order: `scripts/board block <n> --by <m>`. Never use a label or prose for it.
 - **Labels** remain only where nothing native exists: `needs-decision` while an issue waits on the maintainer, `needs-playtest` on a PR whose change a player would see, hear or feel, and `good first issue` / `help wanted` for contributors, and `accessibility` for barriers affecting players with disabilities. Close duplicates and dropped work with GitHub's "duplicate" and "not planned" close reasons.
-- **Links.** A `## Links` section in each ticket lists its spec, plan and related issues; GitHub links PRs and relations itself. Whoever writes a spec or plan links it the same day.
+- **Development.** Branches and PRs are linked through the issue's native Development section: create the branch with `gh issue develop <n> --name feature/<topic> --base main` (or `fixes/<topic>`), and the PR body says `Fixes #n`.
+- **Links.** A `## Links` section in each ticket lists only what GitHub cannot link natively: its spec, plan and decision records in the repo, and outside references. Related issues use parent/sub-issues and blocked-by. Whoever writes a spec or plan links it the same day.
 - **Decisions.** Every maintainer decision becomes a comment on the ticket: `**Decision (YYYY-MM-DD):**` followed by what was decided, the options and the reason (`scripts/board decide`). An agent posts decisions made in a chat before its turn ends. Nothing is decided only in chat.
 - **Events.** Playtest results, deferred review findings (as links to new issues), deploys and scope changes also go on the ticket.
 - **Findings.** A finding about a branch's own unmerged code goes in its PR and is fixed or filed before merge. Anything else found in passing becomes a new issue right away, including deferred review findings, with the affected file and the observable problem.
@@ -89,7 +90,7 @@ Add source comments or emojis only when the maintainer asks for them.
 ## Branches, pull requests and merging
 
 - **One branch per piece of work.**
-  - Each feature or fix batch gets its own branch and worktree, named `feature/<topic>` or `fixes/<topic>`.
+  - Each feature or fix batch gets its own branch and worktree, named `feature/<topic>` or `fixes/<topic>`, created with `gh issue develop <n>` so the issue's Development section shows it.
   - Push at the first commit and open a draft PR with `Fixes #n`.
 - **Merge gate:**
   - CI green on the PR's current head
