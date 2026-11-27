@@ -19,7 +19,7 @@ PATTERNS = [
     ("login", re.compile(r"(?<![A-Za-z0-9._%+/-])[A-Za-z_][A-Za-z0-9_.-]*@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*")),
     ("home", re.compile(r"(?<![A-Za-z0-9])/home/[A-Za-z0-9._-]+|/Users/[^/\s]+|[A-Za-z]:\\+Users\\+")),
     ("server-path", re.compile(r"(?<![A-Za-z0-9])/(?:opt|srv)/[A-Za-z0-9._-]")),
-    ("url-login", re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^/\s]*@[^/\s:@]+")),
+    ("url-login", re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^/\s?#]*@[^/\s:@?#]+")),
 ]
 
 DOC_IPV4 = re.compile(r"^(?:127\.\d+\.\d+\.\d+|0\.0\.0\.0|192\.0\.2\.\d+|198\.51\.100\.\d+|203\.0\.113\.\d+)$")
@@ -90,7 +90,7 @@ def covered(spans, start, end):
     return any(a <= start and end <= b for a, b in spans)
 
 
-URL_USERINFO = re.compile(r"([A-Za-z][A-Za-z0-9+.-]*://)[^/\s]*@")
+URL_USERINFO = re.compile(r"([A-Za-z][A-Za-z0-9+.-]*://)[^/\s?#]*@")
 
 
 def redact(text):
@@ -193,6 +193,8 @@ def scan_tree(rev, deny, allow):
         raise CheckError("the revision to scan is not a commit or tree")
     commit = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{oid}^{{commit}}"], capture_output=True, text=True)
     label = (commit.stdout.strip() if commit.returncode == 0 else tree.stdout.strip())[:12]
+    _, colon, sub = rev.partition(":")
+    prefix = sub.strip("/") + "/" if colon and sub.strip("/") else ""
     rev = tree.stdout.strip()
     ls = subprocess.run(GIT + ["ls-tree", "-r", "-z", rev], capture_output=True)
     if ls.returncode != 0:
@@ -200,7 +202,7 @@ def scan_tree(rev, deny, allow):
     for entry in filter(None, ls.stdout.split(b"\0")):
         meta, _, raw_path = entry.partition(b"\t")
         mode, kind, oid = meta.decode().split()
-        path = raw_path.decode("utf-8", "replace")
+        path = prefix + raw_path.decode("utf-8", "replace")
         if kind != "blob" or mode == "120000" or skipped(path):
             continue
         blob = subprocess.run(["git", "cat-file", "blob", oid], capture_output=True)

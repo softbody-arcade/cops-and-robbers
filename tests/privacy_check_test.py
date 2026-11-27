@@ -62,6 +62,7 @@ MUST_PASS = [
     "dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
     "git@github.com:softbody-arcade/cops-and-robbers.git",
     "ssh://git@github.com/softbody-arcade/cops-and-robbers.git",
+    "ssh://git@github.com:22#@topic",
     "https://github.com/softbody-arcade/cops-and-robbers",
     "@update:model-value",
     "uses: actions/checkout@v7",
@@ -250,6 +251,7 @@ def history_tests():
         git(repo, "commit", "-q", "-m", "sub")
         r = run_check(repo, "tree", "HEAD:sub")
         check(r.returncode == 1 and "nine@example.org" in r.stdout, "tree mode rejected a path-qualified tree")
+        check("sub/x.txt" in r.stdout, "tree mode reported a subtree path relative to the subtree")
         r = run_check(repo, "tree", "no-such-rev")
         check(r.returncode == 2, "a tree read failure did not exit 2")
 
