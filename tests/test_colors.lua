@@ -1,4 +1,4 @@
-local colors = require("cnr.colors")
+local colors = require("arcade.colors")
 
 test("parseHex accepts #rrggbb, rrggbb and #rgb", function()
   local c = colors.parseHex("#ff8000")

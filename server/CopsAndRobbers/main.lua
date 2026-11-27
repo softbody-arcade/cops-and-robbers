@@ -10,7 +10,7 @@ local rules = require("cnr.rules")
 local round = require("cnr.round")
 local leaderboard = require("cnr.leaderboard")
 local commands = require("cnr.commands")
-local colors = require("cnr.colors")
+local colors = require("arcade.colors")
 local tables = require("cnr.tables")
 local build = require("cnr.build")
 local panel = require("cnr.panel")
@@ -26,7 +26,7 @@ local stationsDir = dataDir .. "stations/"
 local leaderboardPath = dataDir .. "leaderboard.json"
 local buildPath = dataDir .. "build.json"
 local currentBuild
-local colorsPath = dataDir .. "colors.json"
+local playerColors = require("arcade.playerColors").new(dataDir .. "colors.json", r, messages)
 
 local cfg
 local current
@@ -59,7 +59,6 @@ local rawConfig = {}
 local PARTS_PLACING_SECONDS, PARTS_SETTLE_SECONDS = 10, 3
 local REFUSAL_LOG_SECONDS = 10
 local refusalLoggedAt = r:perPlayer("refusalLoggedAt", "early")
-local colorStore = {}
 local parkedBystanders = r:perPlayer("parkedBystanders", "early")
 local aiSpawnsLeft = 0
 local pendingAISetup
@@ -167,23 +166,6 @@ end
 local function saveLeaderboard()
   if leaderboardLocked then return log("leaderboard not saved: the old file could not be moved aside") end
   store.write(leaderboardPath, Util.JsonPrettify(Util.JsonEncode(board)))
-end
-
-local function loadColors()
-  colorStore = colors.load((store.decode(colorsPath)))
-end
-
-local function saveColors()
-  store.write(colorsPath, Util.JsonPrettify(Util.JsonEncode(colorStore)))
-end
-
-local function colorTable(c)
-  return c and { hex = c.hex, r = c.r, g = c.g, b = c.b } or nil
-end
-
-local function colorFor(pid)
-  local c = colors.get(colorStore, r:key(pid)) or colors.get(colorStore, MP.GetPlayerName(pid) or "")
-  return colorTable(c)
 end
 
 local function roundCarActive()
@@ -496,7 +478,7 @@ local function applyEffects(effects)
         model = current.vehicle.model, config = current.vehicle.config,
         phase = e.phase, countdownRemaining = e.countdownRemaining, chaseElapsed = e.chaseElapsed,
         headStartRemaining = e.headStartRemaining, inPlace = e.inPlace,
-        color = e.colorHex and colorTable((colors.parseHex(e.colorHex))) or colorFor(e.pid),
+        color = e.colorHex and colors.parseHex(e.colorHex) or playerColors:get(e.pid),
         runnerPos = anchor and anchor.pos or runnerCar and runnerCar.pos or nil,
         copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
         sightMaxMeters = cfg.sightMaxMeters,
@@ -532,7 +514,7 @@ local function applyEffects(effects)
       for pid in pairs(MP.GetPlayers() or {}) do parkBystander(pid) end
       local list = {}
       for _, a in ipairs(e.ai) do
-        list[#list + 1] = { id = a.id, role = a.role, index = current.startGrid and a.index or #list + 1, startPose = a.startPose, name = a.name, color = colorTable((colors.parseHex(a.colorHex))) }
+        list[#list + 1] = { id = a.id, role = a.role, index = current.startGrid and a.index or #list + 1, startPose = a.startPose, name = a.name, color = colors.parseHex(a.colorHex) }
       end
       if e.aiOnly then rememberPreRoundVehicles(e.pid) end
       aiSpawnsLeft = 0
@@ -1224,29 +1206,20 @@ function cnrOnVehicleReset(pid, vid)
   applyEffects(current:vehicleReset(now(), pid))
 end
 
-local function sendMyColor(pid, err)
-  local c = colorFor(pid)
-  send(pid, "cnr_myColor", { hex = c and c.hex, error = err })
-end
-
 function cnrOnColor(pid, data)
   local ok, msg = pcall(Util.JsonDecode, data)
   if not ok or type(msg) ~= "table" then return end
   local hex = type(msg.hex) == "string" and msg.hex or ""
   if hex == "" then
-    colors.clear(colorStore, r:key(pid))
-    colors.clear(colorStore, MP.GetPlayerName(pid) or "")
-    saveColors()
-    return sendMyColor(pid)
+    playerColors:clear(pid)
+    return playerColors:sendMine(pid)
   end
-  local c, err = colors.parseHex(hex)
-  if not c then return sendMyColor(pid, err) end
-  colors.set(colorStore, r:key(pid), c.hex)
-  saveColors()
-  sendMyColor(pid)
+  local saved, err = playerColors:set(pid, hex)
+  playerColors:sendMine(pid, err)
+  if not saved then return end
   if current.state == "prep" and current.players[pid] then
     placing(pid)
-    send(pid, "cnr_paint", { color = colorFor(pid) })
+    send(pid, "cnr_paint", { color = playerColors:get(pid) })
   end
 end
 
@@ -1262,7 +1235,7 @@ end
 
 function cnrOnPlayerJoin(pid)
   send(pid, "cnr_mode", { version = VERSION, startGrid = true })
-  sendMyColor(pid)
+  playerColors:sendMine(pid)
   pushRules(pid)
   pushLobby(pid)
   requestStations(pid)
@@ -1544,7 +1517,7 @@ FS.CreateDirectory(stationsDir)
 loadConfig()
 loadLeaderboard()
 loadBuild()
-loadColors()
+playerColors:load()
 mapName = (tostring(MP.Get(MP.Settings.Map) or ""):match("levels/([^/]+)/")) or "unknown"
 loadStations()
 current = round.new(cfg)
