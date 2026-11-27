@@ -18,11 +18,12 @@ This page covers the [Softbody Arcade](https://github.com/softbody-arcade) organ
 | Push straight to `develop` or `main` | No | No | No | No |
 | Start a release (`release/*` branch) | No | No | No | Yes |
 | Move or delete a `v*` tag | No | No | No | Yes |
-| Move cards on the board | No | No | No | Yes |
+| Move cards on the board | No | Merged work: Playtest → Accepted or Build | Own cards, Build ↔ Review | Anything |
+| Add game idea drafts to the board | No | Yes | Yes | Yes |
 | Change repo and board settings | No | No | No | Yes |
 | Change org-wide settings and create teams | No | No | No | Org owner only |
 
-Teams give the extra rights: `playtesters` is Triage on the repo, `contributors` is Write and `maintainers` is Admin. On the board, `maintainers` is Admin and everyone else can read.
+Teams give the extra rights: `playtesters` is Triage on the repo, `contributors` is Write and `maintainers` is Admin. On the board, `playtesters` and `contributors` have Write and `maintainers` Admin. Board Write can't be limited per lane, so the allowed moves are a rule, not enforced; GitHub's history shows who moved what.
 
 ## Anyone on GitHub
 
@@ -46,9 +47,10 @@ On top of what anyone can do, they can:
 What they normally do:
 1. Pick an issue of type **In-game check**.
 2. Follow its setup and action, and post a comment: pass or fail, and what happened.
-3. File a **Bug** for anything else they notice.
+3. For merged work they tested on `develop`, move the card: **Playtest → Accepted** when it passed, **Playtest → Build** when it didn't. For `In-game check` issues and unmerged changes, the comment is enough; the maintainer records the result.
+4. File a **Bug** for anything else they notice.
 
-The maintainer records the result and moves the card.
+They can also add new minigame ideas to the board as draft items (the **Game ideas** view). Bugs and ideas for an existing game start as an issue in its repo, which lands in Inbox by itself. The green status badge on an issue page is GitHub's own issue status, not the board lane; the board lane is what counts.
 
 ## Contributors
 
@@ -63,7 +65,7 @@ They can't:
 - merge into `develop` or `main`, push to them, force-push them or delete them
 - create, change or delete `release/*` branches
 - move or delete a `v*` tag
-- move cards on the board. They comment on the issue and the maintainer moves the card.
+- move cards other than their own between Build and Review. The maintainer moves the rest.
 
 Known gap: a contributor can still create a new `v*` tag or publish a release by hand (#42). Today releases are deployed by hand, so the maintainer decides what goes live. The planned updater (#25) will only install releases published by the release workflow.
 
@@ -78,7 +80,7 @@ What they normally do:
 The `maintainers` team has Admin on the repo and on the board. Org-wide settings, creating teams and billing belong to the organization owner, which is a separate role. A team maintainer can still manage, and delete, their own team.
 
 Only maintainers:
-- triage new issues, order the Next lane and move cards between lanes
+- triage new issues, order the Next lane, and make every card move other than the playtester and contributor drags above
 - merge PRs into `develop`, and release PRs into `main`, after the merge gate in [AGENTS.md](../AGENTS.md): the maintainer's go, a final review of the head being merged, and a playtest result where needed. GitHub itself requires a PR with the five CI checks green: `test`, `luajit`, `vuecheck`, `privacy` and `package`. Nobody can push to `develop` or `main` directly, maintainers included.
 - start a release with `make version V=x.y.z` and merge the `Release x.y.z` PR, which tags and publishes it
 - stage builds on the local test server and deploy to the live server
@@ -96,7 +98,7 @@ An agent (Claude, Codex or any other) acts with the GitHub login of the person r
 
 | Automation | What it does | Rights |
 |---|---|---|
-| Board workflows | Add new issues to the board in Inbox, move closed issues to Done and reopened ones back to Inbox, add sub-issues, archive Done cards after 14 days without updates | Board only |
+| Board workflows | Add new issues to the board in Inbox, move closed issues to Accepted and reopened ones back to Inbox, add sub-issues. `scripts/board release` (run by the maintainer) moves released and finished work to Done and archives Done cards after 14 days without updates | Board only |
 | CI (`ci.yml`) | Runs the five checks on every PR and on pushes to `develop` and `main` | Read-only token |
 | Release (`release.yml`) | When a PR from this repo's `release/x.y.z` branch merges into `main` (or on a manual run for an already merged one): tests and packages without write access, then tags `vx.y.z`, publishes the release with the ZIP, server archive and checksums, and closes milestone `x.y.z`, then opens **Sync main into develop** | Writes in the publish job (tag, release, milestone) and the sync job (opens a PR) |
 | Dependabot | Opens a PR each week when a GitHub Action or a `tools/vuecheck` npm package has a new version, and raises security alerts | Opens PRs; a maintainer merges them |

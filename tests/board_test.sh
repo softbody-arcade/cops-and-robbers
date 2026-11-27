@@ -25,6 +25,21 @@ case "$*" in
   *'select(.name=="Effort")'*) printf 'SIZEFIELD\tSIZEOPTION\n' ;;
   'api graphql '*issueFields\(first*) printf 'FIELD\tOPTION\n' ;;
   'api graphql '*mutation*) echo '{}' ;;
+  'api graphql '*latestRelease*) echo "${RELEASE_TAG-v1.2.3}" ;;
+  'api graphql '*releaseCards*) cat "$RELEASE_CARDS" ;;
+  'api graphql '*includeClosedPrs*)
+    case " $* " in
+      *' issue=4 '*) printf '%s\n' - merged-sha ;;
+      *' issue=5 '*) echo unreleased-sha ;;
+      *' issue=6 '*) echo - ;;
+    esac
+    ;;
+  'api repos/'*'/compare/'*...merged-sha*) echo "${MERGED_COMPARISON:-identical}" ;;
+  'api repos/'*'/compare/'*...unreleased-sha*)
+    if [[ ${COMPARE_FAIL:-} ]]; then echo 'compare failed' >&2; exit 7; fi
+    echo ahead
+    ;;
+  'api repos/'*'/releases/tags/v2.0.0'*) echo '{}' ;;
   'api graphql '*projectV2*)
     status=$LANE
     if grep -q 'issue create --title Deferred' "$LOG"; then status=Inbox; fi
@@ -79,6 +94,10 @@ case "$*" in
   'api repos/'*) echo 123 ;;
   'api -X '*|'issue edit '*|'label create '*|'issue close '*|'pr edit '*) echo '{}' ;;
   'issue create '*) echo https://github.com/softbody-arcade/cops-and-robbers/issues/1 ;;
+  'project item-edit '*--value\ Done)
+    if [[ ${MOVE_FAIL:-} ]]; then echo 'move failed' >&2; exit 7; fi
+    echo '{}'
+    ;;
   'issue comment '*|'project item-add '*|'project item-edit '*) echo '{}' ;;
   *) echo "Unexpected gh $*" >&2; exit 9 ;;
 esac
@@ -123,7 +142,13 @@ ASSIGNED=someone guard 'Already assigned to someone' start 1 design
 LANE=Backlog guard 'Start requires Next' start 1 build
 guard 'Use start from Next to enter Design or Build' move 1 build
 TYPE=- guard 'Set type and priority first' move 1 review
-LANE=Playtest guard 'Close the issue to move it to Done through board automation' move 1 done
+LANE=Playtest guard 'Use board release to move Accepted cards to Done' move 1 done
+LANE=Review expect 0 '' move 1 accepted
+wrote '--field Status --value Accepted'
+LANE=Accepted expect 0 '#1 Card' list accepted
+grep -Fxq Accepted "$tmp/out"
+LANE=Accepted TYPE=- FIELD=- SIZE=- expect 0 '' check
+[[ ! -s $tmp/out ]]
 guard 'Result requires Playtest' result 1 pass
 expect 2 'Unknown lane: elsewhere' move 1 elsewhere
 expect 0 Card list next
@@ -350,12 +375,70 @@ guard '#33 is a pull request' unblock 33 --by 1
 guard '#33 is a pull request' parent 1 33
 guard '#33 is a pull request' block 1 --by 33
 guard '#33 is a pull request' unblock 1 --by 33
+export RELEASE_CARDS="$tmp/release-cards"
+jq -n '
+  def card($number; $lane; $reason; $type):
+    {id: "ITEM-\($number)", updatedAt: "2000-01-01T00:00:00Z", isArchived: false, status: {name: $lane},
+     content: {number: $number, state: "CLOSED", stateReason: $reason, issueType: {name: $type},
+       updatedAt: "2000-01-01T00:00:00Z", repository: {nameWithOwner: "softbody-arcade/cops-and-robbers"}}};
+  {data:{organization:{projectV2:{id:"PROJECT",items:{nodes:[
+    card(1; "Accepted"; "NOT_PLANNED"; "Feature"),
+    card(2; "Accepted"; "COMPLETED"; "In-game check"),
+    card(3; "Accepted"; "COMPLETED"; "Task"),
+    card(4; "Accepted"; "COMPLETED"; "Bug"),
+    card(5; "Accepted"; "COMPLETED"; "Bug"),
+    card(6; "Accepted"; "COMPLETED"; "Task"),
+    card(7; "Done"; "COMPLETED"; "Task"),
+    (card(8; "Done"; "COMPLETED"; "Task") | .updatedAt = (now - 13*86400 | todateiso8601)),
+    (card(9; "Done"; "COMPLETED"; "Task") | .content.updatedAt = (now - 13*86400 | todateiso8601)),
+    (card(10; "Accepted"; "DUPLICATE"; "Task") | .content.repository.nameWithOwner = "softbody-arcade/other"),
+    card(11; "Accepted"; "DUPLICATE"; "Task"),
+    (card(12; "Done"; "COMPLETED"; "Task") | .isArchived = true),
+    (card(13; "Accepted"; null; "Task") | .content.state = "OPEN")
+  ]}}}}}' > "$RELEASE_CARDS"
+expect 0 '#1 moved to Done' release
+diff -u - "$tmp/out" <<'RELEASE'
+#1 moved to Done
+#2 moved to Done
+#3 moved to Done
+#4 moved to Done
+#5 waiting for a release
+#6 waiting for a release
+#7 archived
+#11 moved to Done
+#13 waiting for a release
+RELEASE
+cp "$tmp/out" "$tmp/release-output"
+[[ $(grep -c 'project item-edit .* --field Status --value Done' "$LOG") == 5 ]]
+wrote 'item=ITEM-7'
+[[ $(grep -c 'archiveProjectV2Item' "$LOG") == 1 ]]
+wrote '/compare/v1.2.3...merged-sha'
+expect 0 '#1 moved to Done' release --dry-run
+diff -u "$tmp/release-output" "$tmp/out"
+! wrote 'project item-edit' || exit 1
+! wrote 'archiveProjectV2Item' || exit 1
+MERGED_COMPARISON=behind expect 0 '#4 moved to Done' release v2.0.0 --dry-run
+wrote '/compare/v2.0.0...merged-sha'
+! wrote 'latestRelease' || exit 1
+: > "$LOG"
+RELEASE_TAG= expect 0 'No published release yet' release --dry-run
+grep -qx '#1 moved to Done' "$tmp/out"
+grep -qx '#4 waiting for a release' "$tmp/out"
+! wrote '/compare/' || exit 1
+COMPARE_FAIL=1 expect 2 'compare failed' release
+! wrote 'project item-edit' || exit 1
+! wrote 'archiveProjectV2Item' || exit 1
+MOVE_FAIL=1 expect 2 'move failed' release
+[[ $(grep -c '^project item-edit ' "$LOG") == 1 ]]
+! wrote 'archiveProjectV2Item' || exit 1
 other="$tmp/other"
 git init -qb develop "$other"
 if (cd "$other" && "$tmp/repo/scripts/board" labels) >"$tmp/out" 2>&1; then exit 1; else rc=$?; fi
 [[ $rc == 1 && $(cat "$tmp/out") == 'Run the board script from its own checkout' ]]
 git switch -qc feature/test
 guard 'Board writes require the develop branch' labels
+guard 'Board writes require the develop branch' release
+expect 0 '#1 moved to Done' release --dry-run
 guard 'Board writes require the develop branch' effort 1 High
 guard 'Board writes require the develop branch' priority 1 Low
 git switch -q develop
@@ -363,3 +446,4 @@ touch untracked
 expect 0 '' labels
 echo >> scripts/board
 guard 'Board writes require a clean checkout' labels
+guard 'Board writes require a clean checkout' release
