@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+remote="$1"
+zero=0000000000000000000000000000000000000000
+status=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [ "$local_sha" = "$zero" ]; then
+    continue
+  fi
+  if [ "$remote_sha" = "$zero" ]; then
+    scripts/privacy-check history -- "$local_sha" --not --remotes="$remote" || status=1
+  else
+    scripts/privacy-check history -- "$remote_sha..$local_sha" || status=1
+  fi
+done
+exit "$status"

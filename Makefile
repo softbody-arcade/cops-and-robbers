@@ -1,10 +1,17 @@
 LUA := $(shell command -v lua5.3 2>/dev/null || command -v lua)
 TESTSERVER := .testserver
 
-.PHONY: test vuecheck package install-local clean deploy version
+.PHONY: test vuecheck package install-local clean deploy version hooks privacy
 
 test:
 	$(LUA) tests/run.lua tests/test_*.lua
+	python3 -I tests/privacy_check_test.py
+
+privacy:
+	scripts/privacy-check tree HEAD
+
+hooks:
+	git config core.hooksPath .githooks
 
 vuecheck:
 	cd tools/vuecheck && npm install --silent --no-audit --no-fund && node check.mjs ../../client/ui
