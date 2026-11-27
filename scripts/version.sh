@@ -17,6 +17,8 @@ refuse() {
   exit 1
 }
 
+from="${RELEASE_FROM:-develop}"
+[[ "$from" == develop || "$from" == main ]] || refuse "FROM must be develop or main"
 release="release/$new"
 title="Release $new"
 body="Merging this PR publishes the release. Deployment is separate."
@@ -52,8 +54,8 @@ while IFS= read -r url; do
 done <<<"$fetch_urls"$'\n'"$push_urls"
 [[ -n "$repo" ]] || refuse "origin must fetch from and push to a GitHub repository"
 gh auth status >/dev/null 2>&1 || refuse "authenticate gh before starting a release"
-git fetch origin '+refs/heads/main:refs/remotes/origin/main'
-base="$(git rev-parse --verify --end-of-options refs/remotes/origin/main^{commit})"
+git fetch origin "+refs/heads/$from:refs/remotes/origin/$from" "+refs/heads/main:refs/remotes/origin/main"
+base="$(git rev-parse --verify --end-of-options "refs/remotes/origin/$from^{commit}")"
 set +e
 git ls-remote --exit-code --heads origin "refs/heads/$release" >/dev/null
 lookup=$?
@@ -63,6 +65,15 @@ set -e
 old="$(git show "$base:server/CopsAndRobbers/main.lua" | sed -n 's/^local VERSION = "\(.*\)"/\1/p')"
 [[ "$old" =~ $pattern ]] || refuse "invalid current version: $old"
 printf '%s\n' "$old" "$new" | sort -VCu || refuse "version must be greater than $old"
+released="$(git show "refs/remotes/origin/main:server/CopsAndRobbers/main.lua" | sed -n 's/^local VERSION = "\(.*\)"/\1/p')"
+[[ "$released" =~ $pattern ]] || refuse "invalid released version on main: $released"
+printf '%s\n' "$released" "$new" | sort -VCu || refuse "version must be greater than $released (the latest release on main)"
+set +e
+git ls-remote --exit-code --tags origin "refs/tags/v$new" >/dev/null
+tag_lookup=$?
+set -e
+((tag_lookup != 0)) || refuse "tag v$new already exists on origin"
+((tag_lookup == 2)) || refuse "could not check whether tag v$new exists on origin"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT

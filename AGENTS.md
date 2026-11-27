@@ -15,7 +15,7 @@ GitHub Issues and the organization board **Softbody Arcade** (project 1) record 
 - **Parent and sub-issues** give the structure: a large feature is a parent with its parts as sub-issues, and the issues folded into a fix batch become sub-issues of the batch's ticket. Progress rolls up on the parent.
 - **Blocked by / blocking** (issue dependencies) records order: `scripts/board block <n> --by <m>`. Never use a label or prose for it.
 - **Labels** (the workflow labels; Dependabot adds its own) remain only where nothing native exists: `needs-decision` while an issue waits on the maintainer, `needs-playtest` on a PR whose change a player would see, hear or feel, and `good first issue` / `help wanted` for contributors, and `accessibility` for barriers affecting players with disabilities. Close duplicates and dropped work with GitHub's "duplicate" and "not planned" close reasons.
-- **Development.** Branches and PRs are linked through the issue's native Development section: create the branch with `gh issue develop <n> --name feature/<topic> --base main` (or `fixes/<topic>`), and the PR body says `Fixes #n`.
+- **Development.** Branches and PRs are linked through the issue's native Development section: create the branch with `gh issue develop <n> --name feature/<topic> --base develop` (or `fixes/<topic>`), and the PR body says `Fixes #n`.
 - **Links.** A `## Links` section in each ticket lists only what GitHub cannot link natively: its spec, plan and decision records in the repo, and outside references. Related issues use parent/sub-issues and blocked-by. Whoever writes a spec or plan links it the same day.
 - **Decisions.** Every maintainer decision becomes a comment on the ticket: `**Decision (YYYY-MM-DD):**` followed by what was decided, the options and the reason (`scripts/board decide`). An agent posts a decision made in a chat before its turn ends, written for a public repo: only what was decided and why, never private details from the conversation. When unsure whether something may be published, the agent asks first. Nothing is decided only in chat.
 - **Events.** Playtest results, deferred review findings (as links to new issues), deploys and scope changes also go on the ticket.
@@ -41,7 +41,7 @@ GitHub Issues and the organization board **Softbody Arcade** (project 1) record 
 - On a work card: `board result <n> pass`, `board result <n> fail`, or `board result <n> defer --checks-file F`, where F holds one check per line, each starting with its priority (`Urgent:`, `High:`, `Medium:` or `Low:`). `defer` files one `In-game check` issue with those checks as tasks; its Priority is the highest priority among the checks. Results are bound to the staged SHA.
 - On an `In-game check` issue: `pass` or `fail` only. Both close it; `fail` also files a `Bug` that links the check.
 
-**Who runs board commands.** Only the maintainer, or an agent acting for the maintainer, runs the board's write commands: `new`, `triage`, `priority`, `effort`, `start`, `move`, `result`, `block`, `unblock`, `parent`, `unparent`, `milestone`, `decide` and `labels`. Run `scripts/board` only from a trusted checkout of `main`, never from a branch or snapshot under review, because a branch's `scripts/board` is untrusted code: for the maintainer that is their own checkout of `main` (reads and writes), for a contributor their own clone of `main` (reads only). When a contributor takes a card, the maintainer runs `board start <n> design|build` (which assigns the maintainer) and then hands the issue over with `gh issue edit <n> --add-assignee <login> --remove-assignee @me`. Contributors file issues with the templates (`gh issue create` or the web), read the board on GitHub or with `list`, `waiting`, `show` and `check` from their own trusted checkout (scope `read:project`), and ask the maintainer on the ticket to move their card when their work changes lanes. `scripts/board --help` lists the commands.
+**Who runs board commands.** Only the maintainer, or an agent acting for the maintainer, runs the board's write commands: `new`, `triage`, `priority`, `effort`, `start`, `move`, `result`, `block`, `unblock`, `parent`, `unparent`, `milestone`, `decide` and `labels`. Run `scripts/board` only from a trusted checkout of `develop`, never from a branch or snapshot under review, because a branch's `scripts/board` is untrusted code: for the maintainer that is their own checkout of `develop` (reads and writes), for a contributor their own clone of `develop` (reads only). When a contributor takes a card, the maintainer runs `board start <n> design|build` (which assigns the maintainer) and then hands the issue over with `gh issue edit <n> --add-assignee <login> --remove-assignee @me`. Contributors file issues with the templates (`gh issue create` or the web), read the board on GitHub or with `list`, `waiting`, `show` and `check` from their own trusted checkout (scope `read:project`), and ask the maintainer on the ticket to move their card when their work changes lanes. `scripts/board --help` lists the commands.
 
 **Agent rules the script cannot check:**
 - Run a board write only for something the maintainer asked for or decided in the current session (a standing instruction such as "triage the new issues" counts for that session).
@@ -93,6 +93,10 @@ Add source comments or emojis only when the maintainer asks for them.
 
 ## Branches, pull requests and merging
 
+- **Branch model.**
+  - `develop` is the default branch. Every ticket's PR targets it, and merged tickets wait there, so several can be staged and playtested together.
+  - `main` only changes through releases and always matches the latest release.
+  - `release/x.y.z` carries a release from `develop` (or, for a hotfix, from `main`) into `main`. After it merges, `release.yml` opens a PR that merges `main` back into `develop`.
 - **One branch per piece of work.**
   - Each feature or fix batch gets its own branch and worktree, named `feature/<topic>` or `fixes/<topic>`, created with `gh issue develop <n>` so the issue's Development section shows it.
   - Push at the first commit and open a draft PR with `Fixes #n`.
@@ -101,17 +105,17 @@ Add source comments or emojis only when the maintainer asks for them.
   - CI green on the PR's current head
   - the final review done on that same head SHA, with its blocking findings resolved
   - for `needs-playtest` PRs, a `board result` of pass or defer for exactly that head SHA. A later push voids the result, the review and the go.
-- **Merging.** From the main checkout:
+- **Merging.** From the maintainer's main checkout (on `develop`):
   1. Remove the worktree.
   2. `gh pr merge <pr> --merge --delete-branch --match-head-commit <sha>`.
-  3. Pull `main`.
-- **No direct commits on `main`.** Every change, docs and this file included, goes through a PR. Version bumps always do (see Releases).
+  3. Pull `develop`.
+- **No direct commits on `develop` or `main`.** Every change, docs and this file included, goes through a PR. Version bumps always do (see Releases).
 - **Identity.** Everyone commits with their GitHub noreply address (`ID+login@users.noreply.github.com`), never a personal or work email. The privacy check rejects other personal addresses (it allows only noreply and a few GitHub service addresses). The maintainer commits as `ReinderN` and SSH-signs.
 
 ## Trusted code
 
 Hooks, Make targets and scripts run with the credentials of whoever runs them, and `make hooks` points git at the checked-out `.githooks`. So with the maintainer's credentials:
-- Run `scripts/board`, `make version` and `make deploy` only from the maintainer's checkout of `main`.
+- Run `scripts/board` and `make version` only from the maintainer's checkout of `develop`, and `make deploy` only from a clean checkout of `main`.
 - Push only from that checkout or from a worktree of a branch the maintainer or their agent wrote.
 - Never check out, build, test, run or push a contributor's branch. Agents review contributor PRs by diff only, on GitHub or with `git diff`; CI runs their code.
 - Agents never stage a contributor's PR on the test server; see **Staging** below.
@@ -121,9 +125,9 @@ Hooks, Make targets and scripts run with the credentials of whoever runs them, a
 - Write commits, files and messages as if the repo were public.
 - **Never include:** IP addresses, email addresses other than GitHub noreply ones, SSH login targets, URLs with credentials, absolute home paths, or anything about how or where the live server runs (type, hosting, containers, paths). Use `<repo>` for the checkout root and `~` for home. Keep machine-specific values in environment variables or git-ignored files.
 - **`scripts/privacy-check`** enforces this:
-  - The pre-push hook runs it on every outgoing commit. Enable it once per clone with `make hooks`, from a checkout of `main` you trust.
+  - The pre-push hook runs it on every outgoing commit. Enable it once per clone with `make hooks`, from a checkout of `develop` you trust.
   - `make privacy` scans the tree.
-  - CI checks every PR commit, and the full history on `main`.
+  - CI checks every PR commit, and the full history on `develop` and `main`.
   - Exact exceptions go in `.github/privacy-allow.txt` as `path:text`.
   - Private terms live only in the uncommitted `.git/info/privacy-deny`.
 - **Never rewrite history** that has been pushed.
@@ -136,7 +140,7 @@ Hooks, Make targets and scripts run with the credentials of whoever runs them, a
   - Run `make test` for Lua changes and `make vuecheck` for UI changes.
   - `make package` builds the client ZIP, server payload, tarball and checksums.
   - `docs/DEVELOPMENT.md` lists the prerequisites (`make doctor` checks them). `docs/DEPENDENCIES.md` locates upstream APIs and compatibility checks.
-- **CI** runs `test`, `luajit`, `vuecheck`, `privacy` and `package` on every PR and push to `main`.
+- **CI** runs `test`, `luajit`, `vuecheck`, `privacy` and `package` on every PR and every push to `develop` and `main`.
 - **Playtests.**
   - Ask the maintainer for a playtest (label the PR `needs-playtest`) only when an open question depends on what BeamNG or BeamMP actually does, or on what the player sees, hears or feels. Use an engine probe or logs first when they can answer it.
   - For each manual check, give the shortest setup and action, the observable pass condition, and the uncertainty it resolves.
@@ -149,16 +153,18 @@ Hooks, Make targets and scripts run with the credentials of whoever runs them, a
     3. If it has an installed config, first run `cp "$test_server/Resources/Server/CopsAndRobbers/config.json" server/CopsAndRobbers/config.json` in the snapshot.
     4. Run `make install-local TESTSERVER="$test_server"`.
   - **A contributor's PR:** staging it runs its Makefile, packaging and server Lua under the maintainer's account, and no recipe on that account makes this safe. Agents never stage a contributor's PR. Until an isolated test server exists (#40), the maintainer decides per PR, after reviewing the whole diff, whether to playtest it and how.
-  - After installing, restart the local BeamMP server and, from the maintainer's checkout of `main` (not the snapshot), record the SHA with `scripts/board move <n> playtest --staged <sha>`. The maintainer handles game and launcher restarts.
+  - **`develop` itself:** to test several merged tickets together, follow the same steps with `git archive origin/develop` (after `git fetch`). Their PRs are merged, so record the session as an `In-game check` issue that lists the tickets and checks (`board new in-game-check <priority> "<title>" --body-file F`, then `board move <n> playtest`), and report it with `board result <n> pass|fail`; skip `--staged`.
+  - After installing, restart the local BeamMP server. When staging a single PR, record its head SHA from the maintainer's checkout of `develop` (not the snapshot) with `scripts/board move <n> playtest --staged <sha>`. The maintainer handles game and launcher restarts.
 - **Engine probes (maintainer-only).**
   - Use a temporary GE extension in the game's user folder (`current/lua/ge/extensions/`), and read its tagged output in `current/beamng.log`.
   - Give the maintainer one comment-free GE console line, with statements separated by `;`.
   - Use freeroam for console experiments, and request screenshots for placement or visual tuning.
   - Ask before deleting a probe from the maintainer's game folder.
 - **Releases.**
-  - `make version V=x.y.z` builds the version commit on top of `origin/main` without touching the checkout, pushes `release/x.y.z` and opens the PR **Release x.y.z**.
+  - `make version V=x.y.z` builds the version commit on top of `origin/develop` without touching the checkout, pushes `release/x.y.z` and opens the PR **Release x.y.z** into `main`.
+  - **Hotfix:** `make version V=x.y.z FROM=main` starts the release branch from `main` instead, so unreleased work on `develop` stays out. Put the fix on `release/x.y.z` through a PR into that branch, then merge the release PR.
   - Before merging it, check that milestone `x.y.z` has no open issues (`gh issue list --milestone x.y.z --state open`); close them or move them to another milestone.
-  - Merging it is the approval to release: `release.yml` tags the merge commit and publishes the GitHub Release with the ZIP, tarball and checksums.
+  - Merging it is the approval to release: `release.yml` tags the merge commit and publishes the GitHub Release with the ZIP, tarball and checksums. It then opens **Sync main into develop**. A maintainer merges it with `gh pr merge <pr> --merge --match-head-commit <sha>`, without `--delete-branch`, because its head is `main`.
   - Agents merge a release PR only after the maintainer said, in the current session, to release that version.
   - Version numbers stay out of feature plans and branches. Tests use `CNR_VERSION`.
 - **Deploy.**

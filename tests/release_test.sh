@@ -24,7 +24,7 @@ cat > "$tmp/bin/gh" <<'STUB'
 #!/usr/bin/env bash
 case "$1 $2" in
   'auth status') exit 0 ;;
-  'pr create') all=" $* "; [[ "${all,,}" == *" --repo test/repo "* ]] || exit 3; exit "${GH_PR_STATUS:-0}" ;;
+  'pr create') echo "$*" >> "${GH_LOG:-/dev/null}"; all=" $* "; [[ "${all,,}" == *" --repo test/repo "* ]] || exit 3; exit "${GH_PR_STATUS:-0}" ;;
 esac
 exit 1
 STUB
@@ -43,7 +43,7 @@ cmd="${cmd/\'\//\'}"
 cd "$root" && eval "git ${cmd#git-}"
 STUB
 chmod +x "$tmp/bin/gh" "$tmp/bin/fake-lua" "$tmp/bin/fake-ssh"
-export PATH="$tmp/bin:$PATH" VERSION_LUA=fake-lua
+export PATH="$tmp/bin:$PATH" VERSION_LUA=fake-lua GH_LOG="$tmp/gh.log"
 
 fixture() {
   local dir="$tmp/$1"
@@ -56,6 +56,7 @@ fixture() {
     cd "$dir/work"
     mkdir -p scripts server/CopsAndRobbers client/lua/ge/extensions client/mod_info/CopsAndRobbers docs
     cp "$ROOT/scripts/version.sh" scripts/
+    cp "$ROOT/Makefile" .
     echo 'local VERSION = "1.0.0"' > server/CopsAndRobbers/main.lua
     echo 'local CLIENT_VERSION = "1.0.0"' > client/lua/ge/extensions/copsAndRobbers.lua
     echo '{ "version_string": "1.0.0" }' > client/mod_info/CopsAndRobbers/info.json
@@ -66,7 +67,7 @@ fixture() {
     git remote add origin "git${at}github.com:test/repo.git"
     git config core.sshCommand "$(printf '%q %q' "$tmp/bin/fake-ssh" "$dir/root")"
     git config ssh.variant ssh
-    git push -q origin main
+    git push -q origin main main:develop
   )
   echo "$dir/work"
 }
@@ -133,7 +134,7 @@ work="$(fixture ok)"
 git -C "$work" commit -q --allow-empty -m "local only"
 run_version "$work"
 check "a release start succeeds" '[[ $(cat "$tmp/status") == 0 ]]'
-check "a release starts from origin/main" '[[ $(git -C "$work/../origin.git" rev-parse release/1.1.0^) == $(git -C "$work/../origin.git" rev-parse main) ]]'
+check "a release starts from origin/develop" '[[ $(git -C "$work/../origin.git" rev-parse release/1.1.0^) == $(git -C "$work/../origin.git" rev-parse develop) ]]'
 check "a release start commits the new version" '[[ $(git -C "$work/../origin.git" show release/1.1.0:server/CopsAndRobbers/main.lua) == "local VERSION = \"1.1.0\"" && $(git -C "$work/../origin.git" show release/1.1.0:docs/FEATURES.md) == "# Cops and Robbers 1.1.0: features" ]]'
 work="$(fixture race)"
 racer="$(git -C "$work/../origin.git" rev-parse main)"
@@ -157,9 +158,9 @@ check "a release commit is signed when signing is on" '[[ $(cat "$tmp/status") =
 
 work="$(fixture shadow)"
 git -C "$work" commit -q --allow-empty -m "local only"
-git -C "$work" branch origin/main
+git -C "$work" branch origin/develop
 run_version "$work"
-check "a local branch named origin/main is not the release base" '[[ $(git -C "$work/../origin.git" rev-parse release/1.1.0^) == $(git -C "$work/../origin.git" rev-parse main) ]]'
+check "a local branch named origin/develop is not the release base" '[[ $(git -C "$work/../origin.git" rev-parse release/1.1.0^) == $(git -C "$work/../origin.git" rev-parse develop) ]]'
 
 work="$(fixture not-github)"
 git -C "$work" remote set-url origin "$work/../origin.git"
@@ -196,6 +197,42 @@ work="$(fixture case)"
 git -C "$work" config remote.origin.pushurl "git${at}github.com:Test/Repo.git"
 run_version "$work"
 check "repository names compare without case" '[[ $(cat "$tmp/status") == 0 ]]'
+
+work="$(fixture ahead)"
+git -C "$work" commit -q --allow-empty -m "ticket on develop"
+git -C "$work" push -q origin HEAD:develop
+git -C "$work" reset -q --hard HEAD^
+run_version "$work"
+check "a release branches from develop, not main" '[[ $(cat "$tmp/status") == 0 && $(git -C "$work/../origin.git" rev-parse release/1.1.0^) == $(git -C "$work/../origin.git" rev-parse develop) && $(git -C "$work/../origin.git" rev-parse develop) != $(git -C "$work/../origin.git" rev-parse main) ]]'
+
+work="$(fixture hotfix)"
+git -C "$work" commit -q --allow-empty -m "ticket on develop"
+git -C "$work" push -q origin HEAD:develop
+git -C "$work" reset -q --hard HEAD^
+: > "$tmp/gh.log"
+set +e
+make -s -C "$work" version V=1.1.0 FROM=main LUA=fake-lua > "$tmp/out" 2>&1
+echo $? > "$tmp/status"
+set -e
+check "a hotfix release with FROM=main branches from main" '[[ $(cat "$tmp/status") == 0 && $(git -C "$work/../origin.git" rev-parse release/1.1.0^) == $(git -C "$work/../origin.git" rev-parse main) ]]'
+check "a release PR always targets main" 'grep -q "^pr create.*--base main" "$tmp/gh.log"'
+
+work="$(fixture reuse)"
+sed -i 's/1.0.0/1.1.0/' "$work/server/CopsAndRobbers/main.lua"
+git -C "$work" commit -qam "release 1.1.0"
+git -C "$work" push -q origin HEAD:main
+git -C "$work" reset -q --hard HEAD^
+run_version "$work"
+check "a version already released on main is refused" '[[ $(cat "$tmp/status") == 1 ]] && grep -q "must be greater than 1.1.0" "$tmp/out" && ! git -C "$work/../origin.git" show-ref --verify --quiet refs/heads/release/1.1.0'
+
+work="$(fixture tagged)"
+git -C "$work" push -q origin HEAD:refs/tags/v1.1.0
+run_version "$work"
+check "an existing v1.1.0 tag is refused" '[[ $(cat "$tmp/status") == 1 ]] && grep -q "v1.1.0 already exists" "$tmp/out"'
+
+work="$(fixture badfrom)"
+RELEASE_FROM=feature run_version "$work"
+check "an unknown FROM is refused" '[[ $(cat "$tmp/status") == 1 ]] && grep -q "FROM must be develop or main" "$tmp/out"'
 
 work="$(fixture older)"
 (cd "$work" && scripts/version.sh 0.9.0) > "$tmp/out" 2>&1 && echo 0 > "$tmp/status" || echo $? > "$tmp/status"
