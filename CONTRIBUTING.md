@@ -16,7 +16,7 @@ The full rules, for people and for coding agents alike, are in [AGENTS.md](AGENT
 - The [Softbody Arcade board](https://github.com/orgs/softbody-arcade/projects/1) shows all work.
   - The **Quick wins** view lists important issues that need little effort.
   - Issues labelled `good first issue` or `help wanted` are open for contributors.
-- Comment on the issue before you start, so the maintainer can assign it and move its card.
+- Comment on the issue before you start. The maintainer starts the card and assigns it to you.
 - Contributors don't move cards themselves.
 - Have an idea or found a bug? Open an issue with one of the templates.
 
@@ -28,7 +28,7 @@ The full rules, for people and for coding agents alike, are in [AGENTS.md](AGENT
    - New gameplay gets a short spec and plan first.
    - Every change comes with tests where the result can be checked automatically.
 4. CI must be green: `test`, `luajit`, `vuecheck`, `privacy` and `package`.
-5. If players would see, hear or feel your change, say so in the pull request. The maintainer then playtests it before merging.
+5. If players would see, hear or feel your change, say so in the pull request. The maintainer decides whether it needs a playtest before merging, or defers the check to an In-game check issue.
 
 ## Playtesting
 

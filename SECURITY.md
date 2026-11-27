@@ -4,6 +4,8 @@ Please report security problems privately, not in a public issue.
 
 Use GitHub's **Report a vulnerability** button on this repository's Security tab. It opens a private advisory that only the maintainers can see. Include what an attacker could do, how to reproduce it, and which version you tested.
 
+If the button isn't there (for example while the repository is private), contact the maintainer [ReinderN](https://github.com/ReinderN) directly on GitHub and ask for a private channel before sharing details.
+
 Security reports could cover, for example:
 - a way for a player to crash or take over a server through the mod
 - a way to run code on another player's game

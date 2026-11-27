@@ -14,12 +14,12 @@ GitHub Issues and the organization board **Softbody Arcade** (project 1) record 
 - **Milestone**: the release version an issue is targeted at, named `x.y.z`. The maintainer assigns it when committing to a release. A release ships when its milestone's issues are closed or moved on, and `release.yml` closes the milestone.
 - **Parent and sub-issues** give the structure: a large feature is a parent with its parts as sub-issues, and the issues folded into a fix batch become sub-issues of the batch's ticket. Progress rolls up on the parent.
 - **Blocked by / blocking** (issue dependencies) records order: `scripts/board block <n> --by <m>`. Never use a label or prose for it.
-- **Labels** remain only where nothing native exists: `needs-decision` while an issue waits on the maintainer, `needs-playtest` on a PR whose change a player would see, hear or feel, and `good first issue` / `help wanted` for contributors, and `accessibility` for barriers affecting players with disabilities. Close duplicates and dropped work with GitHub's "duplicate" and "not planned" close reasons.
+- **Labels** (the workflow labels; Dependabot adds its own) remain only where nothing native exists: `needs-decision` while an issue waits on the maintainer, `needs-playtest` on a PR whose change a player would see, hear or feel, and `good first issue` / `help wanted` for contributors, and `accessibility` for barriers affecting players with disabilities. Close duplicates and dropped work with GitHub's "duplicate" and "not planned" close reasons.
 - **Development.** Branches and PRs are linked through the issue's native Development section: create the branch with `gh issue develop <n> --name feature/<topic> --base main` (or `fixes/<topic>`), and the PR body says `Fixes #n`.
 - **Links.** A `## Links` section in each ticket lists only what GitHub cannot link natively: its spec, plan and decision records in the repo, and outside references. Related issues use parent/sub-issues and blocked-by. Whoever writes a spec or plan links it the same day.
-- **Decisions.** Every maintainer decision becomes a comment on the ticket: `**Decision (YYYY-MM-DD):**` followed by what was decided, the options and the reason (`scripts/board decide`). An agent posts decisions made in a chat before its turn ends. Nothing is decided only in chat.
+- **Decisions.** Every maintainer decision becomes a comment on the ticket: `**Decision (YYYY-MM-DD):**` followed by what was decided, the options and the reason (`scripts/board decide`). An agent posts a decision made in a chat before its turn ends, written for a public repo: only what was decided and why, never private details from the conversation. When unsure whether something may be published, the agent asks first. Nothing is decided only in chat.
 - **Events.** Playtest results, deferred review findings (as links to new issues), deploys and scope changes also go on the ticket.
-- **Findings.** A finding about a branch's own unmerged code goes in its PR and is fixed or filed before merge. Anything else found in passing becomes a new issue right away, including deferred review findings, with the affected file and the observable problem.
+- **Findings.** A finding about a branch's own unmerged code goes in its PR and is fixed or filed before merge. Anything else found in passing becomes a new issue right away, including deferred review findings, with the affected file and the observable problem. Security problems are the exception: never file them in a public issue or PR, report them as `SECURITY.md` says.
 - **Claiming.** A PR lists every issue it handles as `Fixes #n`.
 
 ### Lanes
@@ -41,14 +41,17 @@ GitHub Issues and the organization board **Softbody Arcade** (project 1) record 
 - On a work card: `board result <n> pass`, `board result <n> fail`, or `board result <n> defer --checks-file F`, where F holds one check per line, each starting with its priority (`Urgent:`, `High:`, `Medium:` or `Low:`). `defer` files one `In-game check` issue with those checks as tasks; its Priority is the highest priority among the checks. Results are bound to the staged SHA.
 - On an `In-game check` issue: `pass` or `fail` only. Both close it; `fail` also files a `Bug` that links the check.
 
-**Who runs board commands.** Only the maintainer, or an agent acting for the maintainer, runs the board's write commands: `new`, `triage`, `priority`, `effort`, `start`, `move`, `result`, `block`, `unblock`, `parent`, `unparent`, `milestone`, `decide` and `labels`. Run `scripts/board`, for writes and authenticated reads alike, only from the maintainer's own checkout of `main`, never from a branch or snapshot under review, because a branch's `scripts/board` is untrusted code. Contributors file issues with the templates (`gh issue create` or the web), read the board on GitHub or with `list`, `waiting`, `show` and `check` from their own trusted checkout (scope `read:project`), and ask the maintainer on the ticket to move their card when their work changes lanes. `scripts/board --help` lists the commands.
+**Who runs board commands.** Only the maintainer, or an agent acting for the maintainer, runs the board's write commands: `new`, `triage`, `priority`, `effort`, `start`, `move`, `result`, `block`, `unblock`, `parent`, `unparent`, `milestone`, `decide` and `labels`. Run `scripts/board` only from a trusted checkout of `main`, never from a branch or snapshot under review, because a branch's `scripts/board` is untrusted code: for the maintainer that is their own checkout of `main` (reads and writes), for a contributor their own clone of `main` (reads only). When a contributor takes a card, the maintainer runs `board start <n> design|build` (which assigns the maintainer) and then hands the issue over with `gh issue edit <n> --add-assignee <login> --remove-assignee @me`. Contributors file issues with the templates (`gh issue create` or the web), read the board on GitHub or with `list`, `waiting`, `show` and `check` from their own trusted checkout (scope `read:project`), and ask the maintainer on the ticket to move their card when their work changes lanes. `scripts/board --help` lists the commands.
 
 **Agent rules the script cannot check:**
+- Run a board write only for something the maintainer asked for or decided in the current session (a standing instruction such as "triage the new issues" counts for that session).
 - Run `board start <n> build` or `board move <n> build` only after the maintainer approved that plan (for a fix batch without a spec: that batch) in the current session.
 - Run `board result` only with a result the maintainer reported in the current session.
 - Never move a card out of Playtest by hand on the board; use `board result`, or `board move` for re-staging and rework.
 
 ## Roles
+
+The teams exist; their grants below are applied when the repo goes public (#11). Until then only the maintainer has access.
 
 | Team | Repo | Board |
 |---|---|---|
@@ -94,15 +97,22 @@ Add source comments or emojis only when the maintainer asks for them.
   - Each feature or fix batch gets its own branch and worktree, named `feature/<topic>` or `fixes/<topic>`, created with `gh issue develop <n>` so the issue's Development section shows it.
   - Push at the first commit and open a draft PR with `Fixes #n`.
 - **Merge gate:**
+  - the maintainer's go to merge that PR, given in the current session (a go for a named set of PRs counts for each of them)
   - CI green on the PR's current head
-  - the final review resolved
-  - for `needs-playtest` PRs, a `board result` of pass or defer for exactly that head SHA. A later push voids the result.
+  - the final review done on that same head SHA, with its blocking findings resolved
+  - for `needs-playtest` PRs, a `board result` of pass or defer for exactly that head SHA. A later push voids the result, the review and the go.
 - **Merging.** From the main checkout:
   1. Remove the worktree.
   2. `gh pr merge <pr> --merge --delete-branch --match-head-commit <sha>`.
   3. Pull `main`.
-- **Direct commits on `main`.** While the repo is private, the maintainer (or an agent acting for the maintainer) may push docs-only changes such as specs, plans and this file straight to `main`. Contributors always use PRs. Everything that changes game or server behaviour goes through a PR. Once the repo is public, everything goes through a PR. Version bumps always do (see Releases).
-- **Identity.** Everyone commits with their GitHub noreply address (`ID+login@users.noreply.github.com`), never a personal or work email; the privacy check rejects others. The maintainer commits as `ReinderN` and SSH-signs.
+- **No direct commits on `main`.** Every change, docs and this file included, goes through a PR. Version bumps always do (see Releases).
+- **Identity.** Everyone commits with their GitHub noreply address (`ID+login@users.noreply.github.com`), never a personal or work email. The privacy check rejects other personal addresses (it allows only noreply and a few GitHub service addresses). The maintainer commits as `ReinderN` and SSH-signs.
+
+## Trusted code
+
+Hooks, Make targets and scripts run with the credentials of whoever runs them, and `make hooks` points git at the checked-out `.githooks`. So with the maintainer's credentials:
+- Run `make version`, `make deploy`, `scripts/board` and pushes only from the maintainer's checkout of `main`, or from a worktree of a branch the maintainer or their agent wrote.
+- Never check out, build, test or push from a contributor's branch. Review it as a diff on GitHub or with `git diff`; to try it, use a checkout without credentials (no `gh` login, no SSH agent).
 
 ## Privacy
 
@@ -144,6 +154,7 @@ Add source comments or emojis only when the maintainer asks for them.
   - Ask before deleting a probe from the maintainer's game folder.
 - **Releases.**
   - `make version V=x.y.z` builds the version commit on top of `origin/main` without touching the checkout, pushes `release/x.y.z` and opens the PR **Release x.y.z**.
+  - Before merging it, check that milestone `x.y.z` has no open issues (`gh issue list --milestone x.y.z --state open`); close them or move them to another milestone.
   - Merging it is the approval to release: `release.yml` tags the merge commit and publishes the GitHub Release with the ZIP, tarball and checksums.
   - Agents merge a release PR only after the maintainer said, in the current session, to release that version.
   - Version numbers stay out of feature plans and branches. Tests use `CNR_VERSION`.
