@@ -3,6 +3,7 @@ package.path = pluginDir .. "?.lua;" .. package.path
 
 local store = require("arcade.store")
 local messages = require("arcade.messages").new({ prefix = "[CnR] " })
+local r = require("arcade.roster").new()
 local vec = require("cnr.vec")
 local config = require("cnr.config")
 local rules = require("cnr.rules")
@@ -32,18 +33,18 @@ local current
 local board
 local mapName
 local stations = {}
-local activeVid = {}
-local registeredRoundCar = {}
-local allowRoundSpawn = {}
-local preRoundVehicles = {}
-local trafficOpen = {}
-local trafficVids = {}
+local activeVid = r:perPlayer("activeVid", "late")
+local registeredRoundCar = r:perPlayer("registeredRoundCar", "late")
+local allowRoundSpawn = r:perPlayer("allowRoundSpawn", "late")
+local preRoundVehicles = r:perPlayer("preRoundVehicles", "late")
+local trafficOpen = r:perPlayer("trafficOpen", "late")
+local trafficVids = r:perPlayer("trafficVids", "late")
 local lastRoundCars
-local stationsRequested = {}
+local stationsRequested = r:perPlayer("stationsRequested", "early")
 local partsBaseline = {}
 local aiCars = {}
 local aiSlotSerial, aiVidSerial = {}, {}
-local connectionSerial = {}
+local connectionSerial = r:perPlayer("connectionSerial", "early")
 local previousRoundSerial = 0
 local runCounts = {}
 local lastRunnerKey
@@ -57,14 +58,13 @@ local lastIssuer
 local rawConfig = {}
 local PARTS_PLACING_SECONDS, PARTS_SETTLE_SECONDS = 10, 3
 local REFUSAL_LOG_SECONDS = 10
-local refusalLoggedAt = {}
+local refusalLoggedAt = r:perPlayer("refusalLoggedAt", "early")
 local colorStore = {}
-local sitOut = {}
-local parkedBystanders = {}
+local parkedBystanders = r:perPlayer("parkedBystanders", "early")
 local aiSpawnsLeft = 0
 local pendingAISetup
 local AI_SETUP_WAIT_SECONDS = 15
-local gridClients = {}
+local gridClients = r:perPlayer("gridClients", "early")
 local START_ROAD_SEARCH = 2000
 local WATCHING_AI = "You can't spawn a car while watching the AI"
 local serverClock = MP.CreateTimer()
@@ -86,9 +86,9 @@ local function placed(pid)
   end
 end
 
-local boardSubs = {}
+local boardSubs = r:perPlayer("boardSubs", "early")
 local leaderboardLocked = false
-local panelSubs = {}
+local panelSubs = r:perPlayer("panelSubs", "early")
 local lastPanelSig
 local lastLobbySig
 local lastPanelError
@@ -181,39 +181,13 @@ local function colorTable(c)
   return c and { hex = c.hex, r = c.r, g = c.g, b = c.b } or nil
 end
 
-local function playerKey(pid)
-  local ids = MP.GetPlayerIdentifiers and MP.GetPlayerIdentifiers(pid)
-  if type(ids) == "table" and ids.beammp and tostring(ids.beammp) ~= "" then
-    return "beammp:" .. tostring(ids.beammp)
-  end
-  return "name:" .. tostring(MP.GetPlayerName(pid) or pid)
-end
-
-local function pidForKey(key)
-  for pid in pairs(MP.GetPlayers() or {}) do
-    if playerKey(pid) == key then return pid end
-  end
-  return nil
-end
-
 local function colorFor(pid)
-  local c = colors.get(colorStore, playerKey(pid)) or colors.get(colorStore, MP.GetPlayerName(pid) or "")
+  local c = colors.get(colorStore, r:key(pid)) or colors.get(colorStore, MP.GetPlayerName(pid) or "")
   return colorTable(c)
 end
 
 local function roundCarActive()
   return current.vehicle ~= nil and current.state ~= "idle" and current.state ~= "picking"
-end
-
-local function playing(players)
-  local list, count = {}, 0
-  for pid, name in pairs(players) do
-    if not sitOut[pid] then
-      list[pid] = name
-      count = count + 1
-    end
-  end
-  return list, count
 end
 
 local function stationsPath() return stationsDir .. mapName .. ".json" end
@@ -458,7 +432,7 @@ local function boardState(sub, viewerKey)
 end
 
 local function sendBoard(pid)
-  local ok, state = pcall(boardState, boardSubs[pid], playerKey(pid))
+  local ok, state = pcall(boardState, boardSubs[pid], r:key(pid))
   if ok then send(pid, "cnr_boardState", state) else log("board update failed: " .. tostring(state)) end
 end
 
@@ -540,7 +514,7 @@ local function applyEffects(effects)
         allowRoundSpawn[e.pid] = true
         log(string.format("setup sent to %s: %s, %s", MP.GetPlayerName(e.pid) or tostring(e.pid), e.role, tostring(e.phase)))
         if e.role == "runner" and not current.test then
-          local key = playerKey(e.pid)
+          local key = r:key(e.pid)
           lastRunnerKey = key
           plannedRunnerKey = nil
           currentRunnerKey = key
@@ -601,19 +575,19 @@ local function applyEffects(effects)
       send(e.pid, "cnr_state", { resetAllowed = e.resetAllowed, resetHint = e.resetHint, catchProgress = e.catchProgress })
     elseif e.kind == "roundEnd" then
       for pid in pairs(parkedBystanders) do send(pid, "cnr_parkBystanderCars", { on = false }) end
-      parkedBystanders = {}
+      r:clear("parkedBystanders")
       local autoNext = cfg.autoNextRound and e.reason ~= "cancelled" and not e.to
       send(e.to or -1, "cnr_roundEnd", {
         runnerId = e.runnerId, runnerName = e.runnerName, survivedSeconds = e.survivedSeconds,
         reason = e.reason, explode = e.explode, catchers = e.catchers, message = e.message,
         autoNextSeconds = autoNext and cfg.autoNextDelaySeconds or nil,
       })
-      activeVid = {}
-      registeredRoundCar = {}
-      allowRoundSpawn = {}
-      preRoundVehicles = {}
-      trafficOpen = {}
-      trafficVids = {}
+      r:clear("activeVid")
+      r:clear("registeredRoundCar")
+      r:clear("allowRoundSpawn")
+      r:clear("preRoundVehicles")
+      r:clear("trafficOpen")
+      r:clear("trafficVids")
       aiSpawnsLeft = 0
       pendingAISetup = nil
       clearRoundCars()
@@ -680,7 +654,7 @@ local function applyEffects(effects)
       plannedRunnerKey = nil
       run.cops, run.copNames, run.copSightSeconds = {}, {}, {}
       for i, pid in ipairs(run.copIds or {}) do
-        run.cops[i] = playerKey(pid)
+        run.cops[i] = r:key(pid)
         run.copNames[i] = MP.GetPlayerName(pid) or tostring(pid)
         run.copSightSeconds[i] = math.floor((run.copSight[i] or 0) * 10 + 0.5) / 10
       end
@@ -691,7 +665,7 @@ local function applyEffects(effects)
         run.catcherKeys = {}
         for i, name in ipairs(run.catchers) do
           local pid = byName[name]
-          run.catcherKeys[i] = pid and playerKey(pid) or ("name:" .. name)
+          run.catcherKeys[i] = pid and r:key(pid) or ("name:" .. name)
         end
       end
       leaderboard.add(board, run)
@@ -700,7 +674,7 @@ local function applyEffects(effects)
       pushBoard()
       local top = leaderboard.runners(board, mapName, 3)
       for pid in pairs(MP.GetPlayers() or {}) do
-        local viewerKey = playerKey(pid)
+        local viewerKey = r:key(pid)
         local rows = {}
         for i, e in ipairs(top) do
           rows[i] = { rank = i, player = e.player, time = leaderboard.formatTime(e.survivedSeconds), me = e.key == viewerKey or nil }
@@ -713,17 +687,17 @@ end
 
 local function plannedRunner(players)
   local countsByName = {}
-  for p, name in pairs(players) do countsByName[name] = runCounts[playerKey(p)] or 0 end
-  local lastPid = lastRunnerKey and pidForKey(lastRunnerKey)
+  for p, name in pairs(players) do countsByName[name] = runCounts[r:key(p)] or 0 end
+  local lastPid = lastRunnerKey and r:pidForKey(lastRunnerKey)
   local lastName = lastPid and MP.GetPlayerName(lastPid) or nil
   local eligible = commands.eligibleNext(players, countsByName, lastName)
   if plannedRunnerKey then
     for _, p in ipairs(eligible) do
-      if playerKey(p) == plannedRunnerKey then return p end
+      if r:key(p) == plannedRunnerKey then return p end
     end
   end
   local pid = commands.matchPlayer("next", players, nil, countsByName, lastName)
-  plannedRunnerKey = pid and playerKey(pid) or nil
+  plannedRunnerKey = pid and r:key(pid) or nil
   return pid
 end
 
@@ -738,12 +712,12 @@ function handlers.start(pid, cmd)
   autoNextAt = nil
   lastIssuer = pid
   local players = MP.GetPlayers() or {}
-  local candidates, count = playing(players)
+  local candidates, count = r:playing(players)
   if count == 0 then return refuse(pid, "Everyone is sitting out") end
   local query = cmd.rest
   local runnerId, err
   if query and query:lower() == "again" then
-    runnerId = lastRunnerKey and pidForKey(lastRunnerKey)
+    runnerId = lastRunnerKey and r:pidForKey(lastRunnerKey)
     if not runnerId then return refuse(pid, "No previous runner online") end
   else
     if query and query:lower() == "next" then
@@ -753,34 +727,33 @@ function handlers.start(pid, cmd)
     end
     if not runnerId then
       local anyone = commands.matchPlayer(query, players)
-      if anyone and sitOut[anyone] then runnerId = anyone end
+      if anyone and r:sittingOut(anyone) then runnerId = anyone end
     end
   end
   if not runnerId then return refuse(pid, err) end
-  if sitOut[runnerId] then return refuse(pid, string.format("%s is sitting out", players[runnerId] or tostring(runnerId))) end
+  if r:sittingOut(runnerId) then return refuse(pid, string.format("%s is sitting out", players[runnerId] or tostring(runnerId))) end
   requestStations(pid)
-  activeVid = {}
-  trafficOpen = {}
-  trafficVids = {}
+  r:clear("activeVid")
+  r:clear("trafficOpen")
+  r:clear("trafficVids")
   partsBaseline = {}
   missingCount = {}
   lastResult = nil
-  local sittingOut = {}
-  for p in pairs(sitOut) do sittingOut[p] = true end
+  local sittingOut = r:perPlayer("sitOut", "early")
   applyEffects(current:start(now(), runnerId, pid, players, { gridPlanner = gridClients[runnerId] and runnerId, build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random), traffic = traffic.perPlayer(cfg.trafficPerPlayer, maxCars(), false), trafficRunnerOnly = cfg.trafficRunnerOnly == true, sittingOut = sittingOut }))
 end
 
 function handlers.test(pid, cmd)
   if current:isActive() then return refuse(pid, "A round is already running") end
-  activeVid = {}
-  trafficOpen = {}
-  trafficVids = {}
+  r:clear("activeVid")
+  r:clear("trafficOpen")
+  r:clear("trafficVids")
   partsBaseline = {}
   missingCount = {}
   previousRoundSerial = connectionSerial[pid] or 0
   local role = cmd.args[1] and cmd.args[1]:lower()
   if cfg.carMode == "evolving" and not currentBuild then return refuse(pid, "Start a new build first") end
-  local opts = { gridPlanner = gridClients[pid] and pid, test = true, role = role, aiOnly = sitOut[pid] == true, build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random) }
+  local opts = { gridPlanner = gridClients[pid] and pid, test = true, role = role, aiOnly = r:sittingOut(pid), build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random) }
   applyEffects(current:start(now(), nil, pid, MP.GetPlayers() or {}, opts))
 end
 
@@ -909,7 +882,7 @@ end
 local function playerEntries(players, realRound)
   local entries, loading = {}, 0
   for pid, name in pairs(players) do
-    local entry = { name = name, runs = runCounts[playerKey(pid)] or 0, sitOut = sitOut[pid] or nil }
+    local entry = { name = name, runs = runCounts[r:key(pid)] or 0, sitOut = r:sittingOut(pid) or nil }
     if realRound and current.players[pid] ~= nil then
       local isRunner = pid == current.runnerId
       entry.role = isRunner and "runner" or "cop"
@@ -934,11 +907,11 @@ end
 local function panelState()
   local running = current.state == "running"
   local players = MP.GetPlayers() or {}
-  local candidates, count = playing(players)
+  local candidates, count = r:playing(players)
   local realRound = current:isActive() and not current.test
   local entries, loading = playerEntries(players, realRound)
   local nextName = not realRound and nextRunnerName(candidates) or nil
-  local lastPid = lastRunnerKey and pidForKey(lastRunnerKey)
+  local lastPid = lastRunnerKey and r:pidForKey(lastRunnerKey)
   local autoNext
   if autoNextAt and not realRound then
     autoNext = { seconds = math.max(0, math.ceil(autoNextAt - now())), runner = nextName }
@@ -1261,14 +1234,14 @@ function cnrOnColor(pid, data)
   if not ok or type(msg) ~= "table" then return end
   local hex = type(msg.hex) == "string" and msg.hex or ""
   if hex == "" then
-    colors.clear(colorStore, playerKey(pid))
+    colors.clear(colorStore, r:key(pid))
     colors.clear(colorStore, MP.GetPlayerName(pid) or "")
     saveColors()
     return sendMyColor(pid)
   end
   local c, err = colors.parseHex(hex)
   if not c then return sendMyColor(pid, err) end
-  colors.set(colorStore, playerKey(pid), c.hex)
+  colors.set(colorStore, r:key(pid), c.hex)
   saveColors()
   sendMyColor(pid)
   if current.state == "prep" and current.players[pid] then
@@ -1280,7 +1253,7 @@ end
 function cnrOnSitOut(pid, data)
   local ok, d = pcall(Util.JsonDecode, data)
   if not ok or type(d) ~= "table" or type(d.on) ~= "boolean" then return end
-  sitOut[pid] = d.on or nil
+  r:setSitOut(pid, d.on)
   send(pid, "cnr_sitOut", { on = d.on })
   if current:isActive() and not current.test then
     notify(pid, d.on and "You sit out from the next round" or "You play again from the next round")
@@ -1302,21 +1275,9 @@ function cnrOnPlayerJoin(pid)
 end
 
 function cnrOnPlayerDisconnect(pid)
-  connectionSerial[pid] = nil
-  gridClients[pid] = nil
-  stationsRequested[pid] = nil
-  refusalLoggedAt[pid] = nil
-  sitOut[pid] = nil
-  parkedBystanders[pid] = nil
-  panelSubs[pid] = nil
-  boardSubs[pid] = nil
+  r:leaveEarly(pid)
   applyEffects(current:playerLeft(now(), pid))
-  activeVid[pid] = nil
-  registeredRoundCar[pid] = nil
-  allowRoundSpawn[pid] = nil
-  preRoundVehicles[pid] = nil
-  trafficOpen[pid] = nil
-  trafficVids[pid] = nil
+  r:leaveLate(pid)
   pushRoundCars()
 end
 
