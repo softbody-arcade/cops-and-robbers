@@ -7,12 +7,11 @@ Priorities run from `!!!!` (highest) through `!!!` (high), `!!` (normal), and `!
 ## In progress
 One entry per piece of work that has started: what it is, its branch (or "design" before there is one) and where it stands. Add it on main when the work starts (move it out of Ideas), move the Issues it folds in under it as sub-items (so no one else picks them up), keep it current, and delete it with its sub-items once the work is merged and checked.
 
-- [ ] ! Directional cop sight and weather visibility (`feat/cop-visibility`). Reviewed `ed6d475` is staged locally. The playtest is queued under **In-game checks**. [Design](docs/superpowers/specs/2026-11-18-cop-visibility-design.md) · [Plan](docs/superpowers/plans/2026-11-18-cop-visibility.md)
 
 ## In-game checks
 Use the [playtest criteria in AGENTS.md](AGENTS.md#verification-and-release) to decide what needs a player. Record deferred checks here with the action, expected observation and open question. Remove a check once verified and record failures under Issues.
 
-Run these together on the local West Coast USA server at port 30814. The staged build is 2.14.8, cop-sight commit `ed6d475`. For individual cop readings during a sight check, run `extensions.load("cnrCopSightProbe"); cnrCopSightProbe.trace()` in the GE console after joining.
+Deferred by the user on 2026-11-27 so the cop sight branch (`ed6d475`) could merge into main as 2.15.0. Run these together on the local West Coast USA server at port 30814 once it carries a build with that merge. For individual cop readings during a sight check, run `extensions.load("cnrCopSightProbe"); cnrCopSightProbe.trace()` in the GE console after joining.
 
 - [ ] !!! Park a hitched truck and trailer at an angle beside a landmark. Sit out, watch an AI Practice round, then end it. Both should return at their original angles and the trailer should follow when you pull away.
 - [ ] !!! With Play selected, bring the hitched rig and a spare car into driving Practice with traffic enabled. After placement, the rig and spare should be gone, AI and round traffic should remain, and you should keep the round car at the end.
@@ -44,3 +43,7 @@ Run these together on the local West Coast USA server at port 30814. The staged 
 - [ ] ! Workflow request. Make it easy to see which subagents are currently working when the session list also contains completed agents.
 
 ## Issues
+- [ ] ! Practice AI cops may stop registering sight after the issuer's client Lua reloads without a reconnect (`client/lua/ge/extensions/copsAndRobbers/ai.lua:16`, `server/CopsAndRobbers/main.lua:1496-1504`). `lastInstance` restarts at 1 while the server rejects any serial at or below the connection's last one, so every AI cop would have no sight until the issuer reconnects. Unverified in game. A normal leave and rejoin works.
+- [ ] ! A rebuild or repaint of the player's round car may drop its placement registration (`client/lua/ge/extensions/copsAndRobbers.lua:1377-1380`). `onVehicleDestroyed` now clears `pendingPlacement` through `retireRoundCar` as well as `personalCarId`. This matters only if BeamNG fires a destroy event for a same-ID `replaceVehicle` after `placeVehicle` set the new state. Check with a rebuild or repaint during the first cop sight playtest.
+- [ ] ! Practice AI cops now guide the helicopter, because `inSight` includes AI observers. FEATURES and HowToPlay say so. Decide whether the helicopter should follow only human cops' sight.
+- [ ] ! After a human runner's car is replaced, a cop's already-sent true sight report is accepted against the new car (`server/CopsAndRobbers/main.lua:348-351`). The cop could see SPOTTED for about one round trip plus 0.25 s before it corrects. Human reports carry no instance token.
