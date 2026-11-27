@@ -1,0 +1,116 @@
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to publish (x.y.z)
+        required: true
+        type: string
+
+defaults:
+  run:
+    shell: bash
+
+permissions: {}
+
+jobs:
+  select:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged &&
+      github.event.pull_request.head.repo.full_name == github.repository)
+    permissions:
+      pull-requests: read
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.select.outputs.sha }}
+      version: ${{ steps.select.outputs.version }}
+    steps:
+      - id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            [[ "$HEAD_REF" =~ ^release/([0-9]+\.[0-9]+\.[0-9]+)$ ]] || exit 0
+            VERSION="${BASH_REMATCH[1]}"
+            sha="$MERGE_SHA"
+          else
+            [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Expected version x.y.z' >&2; exit 1; }
+            sha="$(gh pr list --repo "$GITHUB_REPOSITORY" --state merged --base main --head "release/$VERSION" --limit 1000 \
+              --json mergeCommit,isCrossRepository --jq '.[] | select(.isCrossRepository | not) | .mergeCommit.oid')"
+            [[ "$(wc -w <<<"$sha")" == 1 ]] || { echo "Expected exactly one merged PR from release/$VERSION" >&2; exit 1; }
+          fi
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: select
+    if: needs.select.outputs.sha != ''
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.select.outputs.version }}
+      SHA: ${{ needs.select.outputs.sha }}
+    steps:
+      - name: Check out release commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SHA }}
+          persist-credentials: false
+      - name: Verify release commit
+        run: '[[ "$(git rev-parse HEAD)" == "$SHA" ]]'
+      - name: Check version
+        run: |
+          grep -Fx "local VERSION = \"$VERSION\"" server/CopsAndRobbers/main.lua
+          grep -Fx "local CLIENT_VERSION = \"$VERSION\"" client/lua/ge/extensions/copsAndRobbers.lua
+      - name: Test and package
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua5.3 luajit
+          make test
+          find client -name '*.lua' -print0 | xargs -0 -n1 sh -c 'luajit -bl "$0" >/dev/null'
+          make package
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ env.VERSION }}-${{ env.SHA }}
+          path: dist/release/
+          retention-days: 7
+
+  publish:
+    needs: [select, build]
+    permissions:
+      contents: write
+      issues: write
+    concurrency:
+      group: release-${{ needs.select.outputs.version }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.select.outputs.version }}
+      SHA: ${{ needs.select.outputs.sha }}
+    steps:
+      - name: Check out the publish script
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.SHA }}
+          persist-credentials: false
+          sparse-checkout: scripts/publish-release
+          sparse-checkout-cone-mode: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-${{ env.VERSION }}-${{ env.SHA }}
+          path: ${{ runner.temp }}/release
+      - name: Tag, publish and close the milestone
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: scripts/publish-release "$VERSION" "$SHA" "$RUNNER_TEMP/release"
