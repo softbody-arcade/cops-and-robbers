@@ -97,6 +97,13 @@ def unit_tests():
     check(bool(pc.findings("BeamNG 0.40.5.0 mail a@b.org", DENY, "docs/x.md", allow)[0]),
           "allow entry hid an unrelated email on the same line")
     check(bool(pc.findings("1.2.3.4", DENY, "docs/x.md", ["*:1.2.3.4"])[0]), "wildcard allow path was honoured")
+    check(bool(pc.findings("C:/Users/...example", DENY, "s.sh", ["s.sh:C:/Users/..."])[0]),
+          "an allow entry hid a longer value that merely starts with it")
+    check(not pc.findings("print C:/Users/... rather", DENY, "s.sh", ["s.sh:C:/Users/..."])[0],
+          "an exact allow entry did not apply")
+    out = []
+    pc.report(out, "c", "f.md", "clone https://bob:hunter2@example.org/x", DENY, [])
+    check(len(out) == 1 and "hunter2" not in out[0][3] and "bob" not in out[0][3], "a URL credential was printed")
     out = []
     pc.report(out, "c", "f.md", "secret-host mail a@b.org", DENY, [])
     check(len(out) == 1 and "secret" not in out[0][3].lower() and "a@b.org" not in out[0][3],
@@ -225,6 +232,8 @@ def history_tests():
 
         r = run_check(repo, "history", "--", "no-such-rev")
         check(r.returncode == 2 and "no-such-rev" not in r.stderr, "a git failure did not exit 2 cleanly")
+        r = run_check(repo, "tree", "HEAD^{tree}")
+        check(r.returncode == 1, "tree mode rejected a tree object")
         r = run_check(repo, "tree", "no-such-rev")
         check(r.returncode == 2, "a tree read failure did not exit 2")
 

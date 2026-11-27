@@ -28,9 +28,16 @@ ADDRESS_OK = re.compile(r"(?:@users\.noreply\.github\.com|^noreply@anthropic\.co
 DOC_LOGIN = re.compile(r"@(?:192\.0\.2|198\.51\.100|203\.0\.113)\.\d+$")
 SKIP_PREFIXES = ()
 SKIP_FILES = ("scripts/privacy-check", ".github/privacy-allow.txt", "tests/privacy_check_test.py")
-EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-GIT = ["git", "-c", "core.quotePath=false", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false",
-       "-c", "core.attributesFile=/dev/null", f"--attr-source={EMPTY_TREE}"]
+GIT_BASE = ["git", "-c", "core.quotePath=false", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false",
+            "-c", "core.attributesFile=/dev/null"]
+GIT = list(GIT_BASE)
+
+
+def use_empty_attr_source():
+    empty = subprocess.run(["git", "hash-object", "-t", "tree", "/dev/null"], capture_output=True, text=True)
+    if empty.returncode != 0:
+        raise CheckError("git could not compute the empty tree (needs git 2.41 or newer)")
+    GIT[:] = GIT_BASE + [f"--attr-source={empty.stdout.strip()}"]
 
 
 class CheckError(Exception):
@@ -71,8 +78,15 @@ def strip_allowed(text, path, allow):
     for entry in allow:
         p, sep, t = entry.partition(":")
         if sep and t and p == path:
-            text = text.replace(t, " " * len(t))
+            text = re.sub(re.escape(t) + r"(?![A-Za-z0-9_])", lambda m: " " * len(m.group(0)), text)
     return text
+
+
+URL_USERINFO = re.compile(r"([A-Za-z][A-Za-z0-9+.-]*://)[^/\s@]+@")
+
+
+def redact(text):
+    return URL_USERINFO.sub(r"\1***@", text)
 
 
 def findings(text, deny, path="", allow=()):
@@ -118,7 +132,7 @@ def skipped(path):
 def report(out, commit, path, text, deny, allow, where=None):
     kinds, private = findings(text, deny, path, allow)
     if kinds:
-        shown = "(line hidden: matches a private term)" if private else text.strip()[:200]
+        shown = "(line hidden: matches a private term)" if private else redact(text.strip())[:200]
         location = where or path
         if any(rx.search(path) or rx.search(location) for rx in deny):
             location = "(path hidden: matches a private term)"
@@ -163,10 +177,12 @@ def scan_history(revs, deny, allow):
 
 def scan_tree(rev, deny, allow):
     out = []
-    resolved = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}"], capture_output=True, text=True)
-    if resolved.returncode != 0:
+    tree = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{rev}^{{tree}}"], capture_output=True, text=True)
+    if tree.returncode != 0:
         raise CheckError("the revision to scan could not be resolved")
-    label = resolved.stdout.strip()[:12]
+    commit = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}"], capture_output=True, text=True)
+    label = (commit.stdout.strip() if commit.returncode == 0 else tree.stdout.strip())[:12]
+    rev = tree.stdout.strip()
     ls = subprocess.run(GIT + ["ls-tree", "-r", "-z", rev], capture_output=True)
     if ls.returncode != 0:
         raise CheckError(f"git ls-tree failed with exit code {ls.returncode}")
@@ -204,6 +220,7 @@ def main():
             git_dir = subprocess.run(["git", "rev-parse", "--git-common-dir"], capture_output=True, text=True).stdout.strip()
             deny_path = os.path.join(git_dir, "info", "privacy-deny") if git_dir else None
         deny = compile_deny(read_lines(deny_path))
+        use_empty_attr_source()
         allow = read_lines(a.allow)
         if a.mode == "history":
             out = scan_history(a.revs, deny, allow)
