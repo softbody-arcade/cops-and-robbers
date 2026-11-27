@@ -23,7 +23,7 @@ cat > "$tmp/bin/gh" <<'STUB'
 #!/usr/bin/env bash
 case "$1 $2" in
   'auth status') exit 0 ;;
-  'pr create') [[ " $* " == *" --repo test/repo "* ]] || exit 3; exit "${GH_PR_STATUS:-0}" ;;
+  'pr create') all=" $* "; [[ "${all,,}" == *" --repo test/repo "* ]] || exit 3; exit "${GH_PR_STATUS:-0}" ;;
 esac
 exit 1
 STUB
@@ -33,12 +33,23 @@ cat > "$tmp/bin/fake-lua" <<'STUB'
 [[ -z ${RACE_ORIGIN:-} ]] || git -C "$RACE_ORIGIN" branch release/1.1.0 main
 exit "${LUA_STATUS:-0}"
 STUB
-chmod +x "$tmp/bin/gh" "$tmp/bin/fake-lua"
+cat > "$tmp/bin/fake-ssh" <<'STUB'
+#!/usr/bin/env bash
+root="$1"
+shift
+cmd="${*: -1}"
+cmd="${cmd/\'\//\'}"
+cd "$root" && eval "git ${cmd#git-}"
+STUB
+chmod +x "$tmp/bin/gh" "$tmp/bin/fake-lua" "$tmp/bin/fake-ssh"
 export PATH="$tmp/bin:$PATH" VERSION_LUA=fake-lua
 
 fixture() {
   local dir="$tmp/$1"
   git init -q --bare "$dir/origin.git"
+  mkdir -p "$dir/root/test" "$dir/root/Test"
+  ln -s "$dir/origin.git" "$dir/root/test/repo.git"
+  ln -s "$dir/origin.git" "$dir/root/Test/Repo.git"
   git init -q -b main "$dir/work"
   (
     cd "$dir/work"
@@ -51,8 +62,9 @@ fixture() {
     echo readme > README.md
     git add -A
     git commit -qm fixture
-    git remote add origin https://github.com/test/repo.git
-    git config url."$dir/origin.git".insteadOf https://github.com/test/repo.git
+    git remote add origin "git${at}github.com:test/repo.git"
+    git config core.sshCommand "$tmp/bin/fake-ssh $dir/root"
+    git config ssh.variant ssh
     git push -q origin main
   )
   echo "$dir/work"
@@ -155,7 +167,6 @@ check "an origin outside GitHub is refused" '[[ $(cat "$tmp/status") == 1 ]] && 
 
 work="$(fixture ssh443)"
 git -C "$work" remote set-url origin "ssh://git${at}ssh.github.com:443/test/repo.git"
-git -C "$work" config url."$work/../origin.git".insteadOf "ssh://git${at}ssh.github.com:443/test/repo.git"
 run_version "$work"
 check "GitHub SSH over port 443 is accepted" '[[ $(cat "$tmp/status") == 0 ]]'
 
@@ -173,6 +184,17 @@ work="$(fixture split)"
 git -C "$work" config remote.origin.pushurl https://github.com/other/repo.git
 run_version "$work"
 check "an origin that pushes to another repository is refused" '[[ $(cat "$tmp/status") == 1 ]] && grep -q "more than one repository" "$tmp/out" && ! git -C "$work/../origin.git" show-ref --verify --quiet refs/heads/release/1.1.0'
+
+work="$(fixture rewrite)"
+git init -q --bare "$work/../elsewhere.git"
+git -C "$work" config url."$work/../elsewhere.git/".pushInsteadOf "git${at}github.com:"
+run_version "$work"
+check "a push URL rewritten away from GitHub is refused" '[[ $(cat "$tmp/status") == 1 ]] && ! git -C "$work/../elsewhere.git" show-ref --quiet'
+
+work="$(fixture case)"
+git -C "$work" config remote.origin.pushurl "git${at}github.com:Test/Repo.git"
+run_version "$work"
+check "repository names compare without case" '[[ $(cat "$tmp/status") == 0 ]]'
 
 work="$(fixture older)"
 (cd "$work" && scripts/version.sh 0.9.0) > "$tmp/out" 2>&1 && echo 0 > "$tmp/status" || echo $? > "$tmp/status"
@@ -220,12 +242,12 @@ cat > "$pub/bin/gh" <<'STUB'
 state="$PUB_STATE"
 echo "$*" >> "$state/log"
 case "$*" in
-  "api repos/test/repo/git/ref/"*) ref="refs/${2#repos/test/repo/git/ref/}"; [[ -f $state/$ref ]] || exit 1; echo "commit $(cat "$state/$ref")" ;;
+  "api repos/test/repo/git/matching-refs/"*) [[ -z ${FAIL_LOOKUP:-} ]] || exit 1; ref="refs/${2#repos/test/repo/git/matching-refs/}"; [[ ! -f $state/$ref ]] || echo "commit $(cat "$state/$ref")" ;;
+  "api --paginate repos/test/repo/releases "*) [[ -z ${FAIL_LOOKUP:-} ]] || exit 1; [[ ! -d $state/release ]] || echo "$(cat "$state/draft") $(cat "$state/pre")" ;;
   "api --method POST repos/test/repo/git/refs"*)
     for a in "$@"; do case $a in ref=*) ref="${a#ref=}" ;; sha=*) sha="${a#sha=}" ;; esac; done
     [[ ! -f $state/$ref ]] || exit 1
     mkdir -p "$state/$(dirname "$ref")"; echo "$sha" > "$state/$ref" ;;
-  "release view "*"isDraft,isPrerelease"*) [[ -d $state/release ]] || exit 1; echo "$(cat "$state/draft") $(cat "$state/pre")" ;;
   "release view "*"assets"*) ls "$state/release" ;;
   "release download "*) cp "$state/release/$5" "$7/" ;;
   "release upload "*) cp "$4" "$state/release/" ;;
@@ -262,6 +284,10 @@ check "publish refuses a prerelease draft" '[[ $(cat "$tmp/status") == 1 && $(ca
 state="$pub/pre-untagged"; mkdir -p "$state/release"; echo true > "$state/draft"; echo true > "$state/pre"
 publish "$state"
 check "publish refuses a prerelease before creating its tag" '[[ $(cat "$tmp/status") == 1 && ! -e $state/refs/tags/v1.1.0 ]]'
+
+state="$pub/outage"; mkdir -p "$state/release"; echo true > "$state/draft"; echo true > "$state/pre"
+FAIL_LOOKUP=1 publish "$state"
+check "publish creates no tag when the release lookup fails" '[[ $(cat "$tmp/status") == 1 && ! -e $state/refs/tags/v1.1.0 ]]'
 
 state="$pub/differs"; mkdir -p "$state/release"; mkdir -p "$state/refs/tags"; echo "$sha" > "$state/refs/tags/v1.1.0"; echo true > "$state/draft"; echo false > "$state/pre"; printf other > "$state/release/CopsAndRobbers.zip"
 publish "$state"

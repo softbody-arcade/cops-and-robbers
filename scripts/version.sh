@@ -42,12 +42,12 @@ github_repo() {
 }
 
 repo=""
-fetch_urls="$(git config --get-all remote.origin.url || true)"
-push_urls="$(git config --get-all remote.origin.pushurl || true)"
+fetch_urls="$(git remote get-url --all origin 2>/dev/null || true)"
+push_urls="$(git remote get-url --push --all origin 2>/dev/null || true)"
 while IFS= read -r url; do
   [[ -n "$url" ]] || continue
   found="$(github_repo "$url")" || refuse "origin must fetch from and push to a GitHub repository"
-  [[ -z "$repo" || "$found" == "$repo" ]] || refuse "origin fetches from or pushes to more than one repository ($repo and $found)"
+  [[ -z "$repo" || "${found,,}" == "${repo,,}" ]] || refuse "origin fetches from or pushes to more than one repository ($repo and $found)"
   repo="$found"
 done <<<"$fetch_urls"$'\n'"$push_urls"
 [[ -n "$repo" ]] || refuse "origin must fetch from and push to a GitHub repository"

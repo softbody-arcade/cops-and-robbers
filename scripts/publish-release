@@ -19,15 +19,19 @@ for asset in "${assets[@]}"; do
   [[ -f "$asset" ]] || refuse "missing asset: $asset"
 done
 
-state=""
-if state="$(gh release view "$tag" --json isDraft,isPrerelease --jq '[.isDraft, .isPrerelease] | map(tostring) | join(" ")' 2>/dev/null)"; then
+state="$(gh api --paginate "repos/$GH_REPO/releases" \
+  --jq ".[] | select(.tag_name == \"$tag\") | [.draft, .prerelease] | map(tostring) | join(\" \")")" ||
+  refuse "could not list the releases of $GH_REPO"
+[[ "$(grep -c . <<<"$state")" -le 1 ]] || refuse "more than one release uses $tag; fix it by hand"
+if [[ -n "$state" ]]; then
   read -r draft prerelease <<<"$state"
   [[ "$prerelease" == false ]] || refuse "$tag is a prerelease; fix it by hand"
-else
-  state=""
 fi
 
-if current="$(gh api "repos/$GH_REPO/git/ref/tags/$tag" --jq '.object.type + " " + .object.sha' 2>/dev/null)"; then
+current="$(gh api "repos/$GH_REPO/git/matching-refs/tags/$tag" \
+  --jq ".[] | select(.ref == \"refs/tags/$tag\") | .object.type + \" \" + .object.sha")" ||
+  refuse "could not look up tag $tag"
+if [[ -n "$current" ]]; then
   [[ "$current" == "commit $sha" ]] || refuse "tag $tag already points at $current, not $sha; fix it by hand"
 else
   gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$sha" >/dev/null
