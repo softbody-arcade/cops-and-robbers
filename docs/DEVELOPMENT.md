@@ -8,7 +8,7 @@ For contributors:
 
 - `lua5.3`, `luajit` and `python3` for tests and Lua checks
 - Node 22 with npm for UI checks
-- `zip`, `unzip`, `rsync` and GNU tar for packaging
+- `zip`, `unzip`, `rsync`, `gzip`, `sha256sum` (GNU coreutils) and GNU tar for packaging
 - `git` 2.41 or newer (the privacy check uses `--attr-source`)
 - `ssh-keygen` for SSH commit signing
 - Bash 4.4+, `jq` and `gh` 2.106+ for `scripts/board` and its tests

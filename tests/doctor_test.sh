@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 bin=$(mktemp -d)
 trap 'rm -rf "$bin"' EXIT
 runner=$BASH
+repo=$PWD
 failures=0
 valid_email="123+contributor@"
 valid_email+="users.noreply.github.com"
@@ -36,8 +37,10 @@ case $tool in
         case "$*" in
             --version) echo "gh version ${GH_REPORT:-2.106.0} (2026-01-01)" ;;
             'auth status --active --hostname github.com --no-refresh')
+                [[ ${GH_PROMPT_DISABLED:-} == 1 && ${NO_COLOR:-} == 1 ]] || exit 2
                 case ${GH_LOGGED_IN:-yes} in
                     no) exit 1 ;;
+                    network) printf "Failed to log in: The token in keyring is invalid\n- Error: %s\n" "$GH_ERROR" >&2; exit 1 ;;
                     offline)
                         printf '%s\n' 'error connecting to api.github.com' 'Check your internet connection or https://githubstatus.com' >&2
                         exit 1 ;;
@@ -66,7 +69,7 @@ case $tool in
 esac
 STUB
 chmod +x "$bin/tool"
-for tool in bash git lua5.3 lua luajit python3 node npm zip unzip rsync tar jq gh ssh-keygen; do
+for tool in bash git lua5.3 lua luajit python3 node npm zip unzip rsync tar jq gh ssh-keygen gzip sha256sum; do
     ln -s tool "$bin/$tool"
 done
 
@@ -79,7 +82,7 @@ run_doctor() {
     local expected=$1 status=0 lua=lua5.3
     shift
     : > "$bin/calls"
-    output=$(env PATH="$bin" CALL_LOG="$bin/calls" "$@" "$runner" scripts/doctor 2>&1) || status=$?
+    output=$(env PATH="$bin" CALL_LOG="$bin/calls" "$@" "$runner" "$repo/scripts/doctor" 2>&1) || status=$?
     if [[ $status != "$expected" ]]; then
         fail "Expected doctor exit $expected, got $status ($*)"
     fi
@@ -87,8 +90,10 @@ run_doctor() {
     [[ -e $bin/lua5.3 ]] || lua=lua
     {
         printf '%s\n' 'bash --version' 'git --version' "$lua -v" 'luajit -v' \
-            'python3 --version' 'node --version' 'npm --version' 'zip -v' \
-            'unzip -v' 'rsync --version' 'tar --version'
+            'python3 --version' 'node --version' 'npm --version' 'zip -v'
+        [[ ! -e $bin/gzip ]] || printf '%s\n' 'gzip --version'
+        [[ ! -e $bin/sha256sum ]] || printf '%s\n' 'sha256sum --version'
+        printf '%s\n' 'unzip -v' 'rsync --version' 'tar --version'
         if [[ -e $bin/jq ]]; then
             printf '%s\n' 'jq --version'
         fi
@@ -119,7 +124,10 @@ assert_private() {
     fi
 }
 
+(cd /tmp; run_doctor 0)
 run_doctor 0
+expect_line 'ok gzip.*'
+expect_line 'ok sha256sum.*'
 expect_line 'ok git 2\.56\.1'
 expect_line 'ok node 22\.1\.0'
 expect_line 'ok gh 2\.106\.0'
@@ -167,11 +175,19 @@ expect_line 'missing node.*brew install node.*'
 run_doctor 0 CLICOLOR_FORCE=1
 expect_line 'ok gh project access'
 
+for error in 'dial tcp' 'no such host' 'connection refused' 'i/o timeout' 'network is unreachable'; do
+    run_doctor 1 GH_LOGGED_IN=network GH_ERROR="$error"
+    expect_line 'missing gh project access.*network.*'
+done
+
 run_doctor 1 GH_LOGGED_IN=offline
 expect_line 'missing gh project access.*network.*'
 
 run_doctor 1 GH_LOGGED_IN=no
 expect_line 'missing gh project access.*gh auth login.*'
+
+run_doctor 1 GH_SCOPES=
+expect_line 'missing gh project access.*token.*'
 
 run_doctor 1 "GH_SCOPES='repo', 'project:read'"
 expect_line 'missing gh project access.*gh auth refresh.*'
@@ -188,6 +204,11 @@ for email in '@users.noreply.github.com' "${valid_email}.example.invalid" "prefi
     expect_line 'missing git noreply email.*'
     assert_private "$email"
 done
+
+rm "$bin/gzip" "$bin/sha256sum"
+run_doctor 1
+expect_line 'missing gzip.*'
+expect_line 'missing sha256sum.*'
 
 rm "$bin/lua5.3" "$bin/jq" "$bin/ssh-keygen"
 run_doctor 1
