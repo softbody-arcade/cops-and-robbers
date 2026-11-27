@@ -34,11 +34,20 @@ gh auth status >/dev/null 2>&1 || refuse "authenticate gh before starting a rele
 old="$(sed -n 's/^local VERSION = "\(.*\)"/\1/p' server/CopsAndRobbers/main.lua)"
 [[ "$old" =~ $pattern ]] || refuse "invalid current version: $old"
 printf '%s\n' "$old" "$new" | sort -VCu || refuse "version must be greater than $old"
+pushed=0
 return_to_main() {
-  if ! git diff --quiet HEAD; then
-    git stash push -m "Uncommitted changes from $release" || exit 1
+  status=$?
+  if [[ $status -ne 0 && $pushed -eq 0 ]]; then
+    git switch -f main >/dev/null 2>&1 || exit 1
+    git branch -D "$release" >/dev/null 2>&1 || true
+    echo "release $new aborted; nothing was pushed and main is unchanged" >&2
+  else
+    git switch main >/dev/null 2>&1 || exit 1
+    if [[ $status -ne 0 ]]; then
+      echo "$release is pushed but its PR was not opened; run: gh pr create --base main --head $release --title \"Release $new\"" >&2
+    fi
   fi
-  git switch main || exit 1
+  exit "$status"
 }
 git switch -c "$release"
 trap return_to_main EXIT
@@ -51,4 +60,5 @@ echo "$old -> $new"
 git add -- server/CopsAndRobbers/main.lua client/lua/ge/extensions/copsAndRobbers.lua client/mod_info/CopsAndRobbers/info.json docs/FEATURES.md
 git commit -m "chore: version $new"
 git push -u origin "$release"
+pushed=1
 gh pr create --base main --head "$release" --title "Release $new" --body "Merging this PR publishes the release. Deployment is separate."

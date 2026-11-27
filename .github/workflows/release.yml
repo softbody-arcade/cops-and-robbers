@@ -88,7 +88,13 @@ jobs:
           [[ "$remote_tag" == "$SHA"$'\t'"$ref" ]]
           assets=(dist/release/*)
           if gh release view "v$VERSION" >/dev/null 2>&1; then
-            gh release upload "v$VERSION" --clobber "${assets[@]}"
+            existing="$(gh release view "v$VERSION" --json assets --jq '.assets[].name')"
+            for asset in "${assets[@]}"; do
+              if ! grep -Fxq "$(basename "$asset")" <<<"$existing"; then
+                gh release upload "v$VERSION" "$asset"
+              fi
+            done
+            gh release edit "v$VERSION" --draft=false
           else
             gh release create "v$VERSION" --verify-tag --title "Cops and Robbers $VERSION" --generate-notes \
               --notes "Upgrading: Extract the server archive with \`--exclude 'CopsAndRobbers/config.json'\` to preserve your existing settings." "${assets[@]}"
