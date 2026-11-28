@@ -5,7 +5,7 @@ dofile("tests/server_boot.lua")
 
 local env = serverBoot.boot({ files = {
   ["legacy.json"] = '{"Reinder":"#0088ff"}',
-  ["clear.json"] = '{"beammp:42":"#ff0000","Reinder":"#00ff00","Bob":"#0000ff"}',
+  ["clear.json"] = '{"beammp:42":"#ff0000","Reinder":"#00ff00","name:Bob":"#0000ff"}',
 } })
 env.ids = { [1] = { beammp = 42 } }
 
@@ -30,14 +30,17 @@ test("set saves the normalized colour under the roster key", function()
   assertEq(color.b, 0)
 end)
 
-test("get falls back to a legacy bare name", function()
-  assertEq(loadColors("legacy.json"):get(1).hex, "#0088ff")
+test("get ignores a colour saved under the bare player name", function()
+  assertEq(loadColors("legacy.json"):get(1), nil)
 end)
 
-test("clear removes both the preferred key and legacy name across reloads", function()
+test("clear removes only the identity-keyed colour across reloads", function()
   local c = loadColors("clear.json")
   assertEq(c:get(1).hex, "#ff0000")
   c:clear(1)
+  local saved = require("arcade.store").decode(env.dir .. "clear.json")
+  assertEq(saved["beammp:42"], nil)
+  assertEq(saved.Reinder, "#00ff00")
   assertEq(c:get(1), nil)
   local reloaded = loadColors("clear.json")
   assertEq(reloaded:get(1), nil)

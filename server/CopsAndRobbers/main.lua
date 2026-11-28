@@ -97,24 +97,14 @@ end
 
 local function loadLeaderboard()
   local decoded, corrupt = store.decode(leaderboardPath)
-  if not corrupt and not leaderboard.validShape(decoded) then
-    corrupt = true
-    decoded = nil
-  end
-  local aside, why
-  if corrupt then
-    aside, why = leaderboardPath .. ".corrupt-" .. os.time(), "was unreadable"
-  elseif not leaderboard.isCurrent(decoded) then
-    aside, why = dataDir .. "leaderboard-1.6.json", "is the old format"
-    if FS.Exists(aside) then aside = dataDir .. "leaderboard-1.6-" .. os.time() .. ".json" end
-  end
-  if aside then
+  if corrupt or not leaderboard.validShape(decoded) then
+    local aside = leaderboardPath .. ".corrupt-" .. os.time()
     local moved, err = FS.Rename(leaderboardPath, aside)
     if moved == false then
       leaderboardLocked = true
-      log(string.format("leaderboard.json %s but could not be moved to %s (%s): runs are not saved until this is fixed", why, aside, tostring(err)))
+      log(string.format("leaderboard.json was unreadable but could not be moved to %s (%s): runs are not saved until this is fixed", aside, tostring(err)))
     else
-      log(string.format("leaderboard.json %s, moved to %s; starting a fresh one", why, aside))
+      log(string.format("leaderboard.json was unreadable, moved to %s; starting a fresh one", aside))
     end
     decoded = nil
   end

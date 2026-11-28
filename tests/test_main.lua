@@ -1182,11 +1182,22 @@ local function readFileAt(path)
   return text
 end
 
-test("an old leaderboard is moved aside and the board starts fresh", function()
-  local env = boot({ leaderboard = '{"runs":[{"player":"Old","survivedSeconds":999,"map":"west_coast_usa","endedAt":1}]}' })
-  assertEq(readFileAt(env.dir .. "data/leaderboard-1.6.json"):find("Old", 1, true) ~= nil, true)
+test("an old leaderboard is moved aside as unreadable and the board starts empty", function()
+  local old = '{"runs":[{"player":"Old","survivedSeconds":999,"map":"west_coast_usa","endedAt":1}]}'
+  local env = boot({ leaderboard = old })
+  local data = env.dir .. "data/"
+  local files = assert(io.popen('ls "' .. data .. '"'))
+  local boards = {}
+  for name in files:lines() do
+    if name:match("^leaderboard") then boards[#boards + 1] = name end
+  end
+  assert(files:close())
+  assertEq(#boards, 1)
+  assertEq(boards[1]:match("^leaderboard%.json%.corrupt%-%d+$"), boards[1])
+  assertEq(readFileAt(data .. boards[1]), old)
+  assertEq(env.logHas("leaderboard.json was unreadable, moved to " .. data .. boards[1]), true)
   env.call("cnr_board", 1, '{"action":"open"}')
-  assertEq(env.lastSent("cnr_boardState").data:find("Old", 1, true), nil)
+  assertEq(#decodeJson(env.lastSent("cnr_boardState").data).rounds, 0)
   env.cleanup()
 end)
 
@@ -1239,18 +1250,6 @@ test("if the old leaderboard can't be moved aside, it is never overwritten", fun
   for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
   env.panel(1, "end")
   assertEq(readFileAt(env.dir .. "data/leaderboard.json"):find("Old", 1, true) ~= nil, true)
-  env.cleanup()
-end)
-
-test("an existing backup name is never reused", function()
-  local env = boot({ leaderboard = '{"runs":[{"player":"Second","survivedSeconds":5,"map":"x","endedAt":1}]}',
-    files = { ["data/leaderboard-1.6.json"] = "first backup" } })
-  assertEq(readFileAt(env.dir .. "data/leaderboard-1.6.json"), "first backup")
-  local found = false
-  for name in io.popen('ls "' .. env.dir .. 'data"'):lines() do
-    if name:match("^leaderboard%-1%.6%-%d+%.json$") then found = true end
-  end
-  assertEq(found, true)
   env.cleanup()
 end)
 
@@ -1671,13 +1670,10 @@ test("no colour clears it", function()
   env.cleanup()
 end)
 
-test("no colour also clears a colour saved under the old name key", function()
+test("joining with a colour saved only under the bare name sends no colour", function()
   local env = boot({ files = { ["data/colors.json"] = '{"Reinder":"#ff0000"}' } })
   env.call("onPlayerJoin", 1)
-  assertEq(sentTo(env, "cnr_myColor", 1):find('"hex":"#ff0000"', 1, true) ~= nil, true)
-  env.call("cnr_color", 1, '{"hex":""}')
-  assertEq(sentTo(env, "cnr_myColor", 1):find('"hex"', 1, true), nil)
-  assertEq(assert(io.open(env.dir .. "data/colors.json")):read("*a"):find("Reinder", 1, true), nil)
+  assertEq(decodeJson(sentTo(env, "cnr_myColor", 1)).hex, nil)
   env.cleanup()
 end)
 
