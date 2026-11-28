@@ -275,7 +275,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 
 ## Quiet
 
-- **No chat commands.** `/cnr color`, `/cnr addstation`, `/cnr removestation`, `/cnr help` and `/cnr version` are gone. Their jobs moved to the colour picker, the Map tab, How to play and the panel header. A typed `/cnr ...` is hidden from chat, and the sender gets a notice pointing to the Cops and Robbers card.
+- **No chat commands.** `/cnr color`, `/cnr addstation`, `/cnr removestation`, `/cnr help` and `/cnr version` are gone. Their jobs moved to the colour picker, the Map tab, How to play and the panel header. The mod doesn't read chat: a typed `/cnr ...` is an ordinary chat message.
 - **No chat messages and no pop-ups.** Round flow, results, rule breaks and build changes show in the apps as they happen (see HUD). The Leaderboard's Rounds tab keeps each round's result and timeline; for the build, the Car tab shows the last change and the full history stays in `data/build.json`. Replies to the host's clicks show in the panel's reply line.
 
 ## Settings (`config.json`, or the panel)
