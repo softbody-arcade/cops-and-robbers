@@ -23,7 +23,7 @@ local traffic = require("arcade.traffic")
 local trafficService = traffic.new(roster, messages)
 local trafficNote = require("cnr.traffic").note
 
-local VERSION = "2.15.1"
+local VERSION = "2.16.0"
 local log, send, notify = messages.log, messages.send, messages.notify
 local reply, refuse, broadcast = messages.reply, messages.refuse, messages.broadcast
 local dataDir = pluginDir .. "data/"
