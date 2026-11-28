@@ -281,3 +281,14 @@ test("the last-seen interval is retired", function()
   assertEq(config.DEFAULTS.lastSeenIntervalSeconds, nil)
   assertEq(config.setValue({ lastSeenIntervalSeconds = 30 }, "headStartSeconds", "9").lastSeenIntervalSeconds, nil)
 end)
+
+test("the game declaration contains only data", function()
+  local function check(t)
+    for key, value in pairs(t) do
+      assert(type(value) ~= "function", key)
+      if type(value) == "table" then check(value) end
+    end
+  end
+  check(config.declaration)
+  assertEq(config.declaration.RANGES.copSpawnMinMeters, "copSpawnMaxMeters")
+end)

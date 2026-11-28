@@ -136,6 +136,9 @@ test("merge preserves the corrected config, warnings and their defined order", f
   assert(index["unknown setting aaa ignored"] < index["unknown setting clockSpeed ignored"])
   assert(index["unknown setting clockSpeed ignored"] < index["unknown setting zzz ignored"])
   assert(index[cop] < index[timing])
+  local corrected, ordered = settings.merge({ copSpawnMaxMeters = 10, lightningMinSeconds = 30 }, decl)
+  assertEq(corrected.copSpawnMaxMeters, 50)
+  sameValues(ordered, { "copSpawnMaxMeters (10) is below copSpawnMinMeters, using 50", timing })
 end)
 
 test("an invalid value keeps the original error text", function()
@@ -254,4 +257,94 @@ test("saving a raw edit preserves unknowns and drops retired entries", function(
     headStartSeconds = 9, lightningMinSeconds = 30, lightningMaxSeconds = 20,
     copSpawnMinMeters = 200, copSpawnMaxMeters = 100, zzz = 1, aaa = 1,
   })
+end)
+
+for _, case in ipairs({
+  { "fooSeconds", { DEFAULTS = { fooSeconds = -1 }, POSITIVE = { fooSeconds = true } } },
+  { "bMeters", { DEFAULTS = { aMeters = 10, bMeters = 5 }, RANGES = { aMeters = "bMeters" } } },
+  { "bMeters", { DEFAULTS = { aMeters = 10, bMeters = false }, RANGES = { aMeters = "bMeters" } } },
+  { "nightChancePercent", { OVERRIDES = { nightChancePercent = 150 } } },
+  { "lightningMinSeconds", { OVERRIDES = { lightningMinSeconds = 0.5 } } },
+  { "lightningMinSeconds", { OVERRIDES = { lightningMinSeconds = 60 } } },
+  { "excludedModels", { OVERRIDES = { excludedModels = { a = 1 } } } },
+  { "missingSeconds", { DEFAULTS = { endSeconds = 5 }, TIMING_RANGES = { missingSeconds = "endSeconds" } } },
+  { "laps", { DEFAULTS = { laps = "one" }, WHOLE = { laps = true } } },
+  { "unsupported", { DEFAULTS = { unsupported = function() end } } },
+}) do
+  test("combine rejects invalid defaults naming " .. case[1], function()
+    local ok, err = pcall(settings.combine, settings.GLOBAL, case[2])
+    assertEq(ok, false)
+    assert(err:find(case[1], 1, true), err)
+  end)
+end
+
+test("set reads later disk edits and drops retired entries", function()
+  withSettings('{"headStartSeconds":3}', function(service, path)
+    service:load()
+    store.write(path, '{"headStartSeconds":3,"clockSpeed":2,"lastSeenIntervalSeconds":3,"timeOfDay":"map","weather":"map","catchRadiusMeters":18,"custom":"host"}')
+    assertEq(service:set("headStartSeconds", "9"), true)
+    sameValues(store.decode(path), { headStartSeconds = 9, catchRadiusMeters = 18, custom = "host" })
+    assertEq(service:get("catchRadiusMeters"), 18)
+    assertEq(service:effective().headStartSeconds, 9)
+  end)
+end)
+
+test("apply starts from an empty object when the file is missing", function()
+  withSettings(nil, function(service, path)
+    service:load()
+    sameValues(service:apply({ headStartSeconds = 9, weather = "rain" }), { "headStartSeconds", "weather" })
+    sameValues(store.decode(path), { headStartSeconds = 9, weather = "rain" })
+    assertEq(service:get("weather"), "rain")
+  end)
+end)
+
+for _, action in ipairs({ "set", "apply" }) do
+  for _, failure in ipairs({ "corrupt", "unreadable", "rename" }) do
+    test(action .. " keeps the file and live value on " .. failure, function()
+      local bytes = '{"headStartSeconds":3}'
+      withSettings(bytes, function(service, path, _, logs)
+        service:load()
+        if failure == "corrupt" then
+          bytes = "{broken"
+          store.write(path, bytes)
+        end
+        local open, rename = io.open, FS.Rename
+        if failure == "unreadable" then
+          io.open = function(name, mode)
+            if name == path then return nil, "read denied", 13 end
+            return open(name, mode)
+          end
+        elseif failure == "rename" then
+          FS.Rename = function() return false, "rename denied" end
+        end
+        local called, ok, err = pcall(function()
+          if action == "set" then return service:set("headStartSeconds", "9") end
+          return service:apply({ headStartSeconds = 9 })
+        end)
+        io.open, FS.Rename = open, rename
+        assert(called, ok)
+        assertEq(ok, nil)
+        assertEq(type(err), "string")
+        assertEq(service:get("headStartSeconds"), 3)
+        assertEq(store.read(path), bytes)
+        assertEq(logs[#logs], "could not save game.json: " .. err)
+      end)
+    end)
+  end
+end
+
+test("a snapshot owns its settings and its model list", function()
+  withSettings('{"excludedModels":["pickup"]}', function(service)
+    service:load()
+    local snapshot = service:snapshot()
+    snapshot.excludedModels[1] = "pigeon"
+    snapshot.headStartSeconds = 100
+    assertEq(service:get("excludedModels")[1], "pickup")
+    assertEq(service:get("headStartSeconds"), 7)
+  end)
+end)
+
+test("a declaration without general ranges still enforces its timing ranges", function()
+  local cfg = settings.merge({ lightningMinSeconds = 30 }, settings.GLOBAL)
+  assertEq(cfg.lightningMaxSeconds, 30)
 end)

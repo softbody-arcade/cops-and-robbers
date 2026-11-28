@@ -123,19 +123,28 @@ local function loadBuild()
   end
 end
 
-local function saveBuild()
-  if currentBuild then store.write(buildPath, Util.JsonPrettify(Util.JsonEncode(currentBuild))) end
+local function saveError(path, err)
+  log("could not save " .. path:match("[^/\\]+$") .. ": " .. err)
+  return nil, err
+end
+
+local function saveJson(path, value)
+  local ok, err = store.writeJson(path, value)
+  if not ok then return saveError(path, err) end
+  return true
 end
 
 local function backupBuild()
-  if not FS.Exists(buildPath) then return end
+  if not FS.Exists(buildPath) then return true end
   local base = dataDir .. "build-" .. os.time()
   local aside, n = base .. ".json", 1
   while FS.Exists(aside) do
     n = n + 1
     aside = string.format("%s-%d.json", base, n)
   end
-  FS.Rename(buildPath, aside)
+  local moved, err = FS.Rename(buildPath, aside)
+  if not moved then return saveError(buildPath, err or "rename failed") end
+  return true, aside
 end
 
 local function buildOpts()
@@ -146,9 +155,12 @@ local function buildOpts()
   }
 end
 
-local function saveLeaderboard()
-  if leaderboardLocked then return log("leaderboard not saved: the old file could not be moved aside") end
-  store.write(leaderboardPath, Util.JsonPrettify(Util.JsonEncode(board)))
+local function saveLeaderboard(run)
+  if leaderboardLocked then return saveError(leaderboardPath, "the old file could not be moved aside") end
+  leaderboard.add(board, run)
+  local saved, err = saveJson(leaderboardPath, board)
+  if not saved then table.remove(board.runs) end
+  return saved, err
 end
 
 local function roundCarActive()
@@ -170,8 +182,11 @@ local function loadStations()
   log(string.format("%d gas stations loaded for %s", #stations, mapName))
 end
 
-local function saveStations()
-  store.write(stationsPath(), Util.JsonPrettify(Util.JsonEncode({ stations = stations })))
+local function saveStations(updated)
+  local ok, err = saveJson(stationsPath(), { stations = updated })
+  if not ok then return nil, err end
+  stations = updated
+  return true
 end
 
 local function requestStations(pid)
@@ -579,8 +594,6 @@ local function applyEffects(effects)
       run.releasedAt = endedAt - math.floor(run.survivedSeconds + 0.5)
       run.endedAt = endedAt
       run.key = currentRunnerKey
-      if currentRunnerKey then runCounts[currentRunnerKey] = (runCounts[currentRunnerKey] or 0) + 1 end
-      plannedRunnerKey = nil
       run.cops, run.copNames, run.copSightSeconds = {}, {}, {}
       for i, pid in ipairs(run.copIds or {}) do
         run.cops[i] = roster:key(pid)
@@ -597,9 +610,10 @@ local function applyEffects(effects)
           run.catcherKeys[i] = pid and roster:key(pid) or ("name:" .. name)
         end
       end
-      leaderboard.add(board, run)
-      local ok, err = pcall(saveLeaderboard)
-      if not ok then log("failed to save leaderboard: " .. tostring(err)) end
+      if saveLeaderboard(run) then
+        if currentRunnerKey then runCounts[currentRunnerKey] = (runCounts[currentRunnerKey] or 0) + 1 end
+        plannedRunnerKey = nil
+      end
       pushBoard()
       local top = leaderboard.runners(board, mapName, 3)
       for pid in pairs(MP.GetPlayers() or {}) do
@@ -733,8 +747,10 @@ end)
 panelService:command("addstation", function(pid)
   local car = carFor(pid)
   if not car then return refuse(pid, "You need to be in a vehicle") end
-  stations[#stations + 1] = { x = car.pos.x, y = car.pos.y, z = car.pos.z, r = 0 }
-  saveStations()
+  local updated = table.move(stations, 1, #stations, 1, {})
+  updated[#updated + 1] = { x = car.pos.x, y = car.pos.y, z = car.pos.z, r = 0 }
+  local ok, err = saveStations(updated)
+  if not ok then return refuse(pid, err) end
   reply(pid, string.format("Gas station added (%d on %s)", #stations, mapName))
 end)
 
@@ -747,8 +763,10 @@ panelService:command("removestation", function(pid)
     if d <= 50 and (not bestDist or d < bestDist) then bestIndex, bestDist = i, d end
   end
   if not bestIndex then return refuse(pid, "No gas station within 50 m") end
-  table.remove(stations, bestIndex)
-  saveStations()
+  local updated = table.move(stations, 1, #stations, 1, {})
+  table.remove(updated, bestIndex)
+  local ok, err = saveStations(updated)
+  if not ok then return refuse(pid, err) end
   reply(pid, string.format("Gas station removed (%d left on %s)", #stations, mapName))
 end)
 
@@ -819,20 +837,32 @@ end
 local function panelBuild(pid, msg)
   local function answer(text, tone) send(pid, "cnr_panelReply", { text = text, tone = tone }) end
   if current:isActive() then return answer("Stop the round first", "warn") end
-  if msg.op == "reset" then
-    backupBuild()
-    currentBuild = nil
-    panelService:push(panelState)
-    return answer("Build reset")
+  local replacement
+  if msg.op == "new" then
+    local nb = build.normalize({ model = msg.model, name = msg.name, parts = msg.parts, vars = msg.vars })
+    if not nb then return answer("That car can't start a build", "warn") end
+    replacement = build.new(nb.model, nb.name, nb.parts, nb.vars, type(msg.from) == "string" and msg.from or "random", os.time())
+  elseif msg.op ~= "reset" then
+    return
   end
-  if msg.op ~= "new" then return end
-  local nb = build.normalize({ model = msg.model, name = msg.name, parts = msg.parts, vars = msg.vars })
-  if not nb then return answer("That car can't start a build", "warn") end
-  backupBuild()
-  currentBuild = build.new(nb.model, nb.name, nb.parts, nb.vars, type(msg.from) == "string" and msg.from or "random", os.time())
-  saveBuild()
+  local moved, aside = backupBuild()
+  if not moved then return answer(aside, "warn") end
+  if replacement then
+    local saved, err = saveJson(buildPath, replacement)
+    if not saved then
+      if aside then
+        local restored, restoreErr = os.rename(aside, buildPath)
+        if not restored then
+          err = string.format("%s; restore failed (%s), original kept at %s", err, tostring(restoreErr), aside)
+          saveError(buildPath, err)
+        end
+      end
+      return answer(err, "warn")
+    end
+  end
+  currentBuild = replacement
   panelService:push(panelState)
-  answer("New build: " .. build.label(currentBuild))
+  answer(replacement and "New build: " .. build.label(replacement) or "Build reset")
 end
 
 local function reloadRound()
@@ -844,9 +874,8 @@ local function panelSettings(pid, values, id)
   if type(id) ~= "number" and type(id) ~= "string" then id = nil end
   local function answer(ok, text, keys) send(pid, "cnr_panelReply", { ok = ok, text = text, keys = keys, id = id }) end
   if current:isActive() then return answer(false, "Stop the round first") end
-  local updated, keys = panel.applyValues(rawConfig, values)
-  if not updated then return answer(false, keys) end
-  settings:save(updated)
+  local keys, err = settings:apply(values)
+  if not keys then return answer(false, err) end
   reloadRound()
   answer(true, "Saved", keys)
   pushRules()
@@ -928,9 +957,10 @@ function cnrOnSetup(pid, data)
     local name = MP.GetPlayerName(pid) or tostring(pid)
     local nb, changed = build.apply(currentBuild, setup, changes, name, os.time())
     if nb ~= currentBuild then
+      local saved, err = saveJson(buildPath, nb)
+      if not saved then return refuse(pid, err) end
       currentBuild = nb
       current.buildStep = nb.step
-      saveBuild()
     end
     if changed then broadcast(build.changeLine(nb.step, name, changes)) end
   end
@@ -1090,8 +1120,8 @@ function cnrOnColor(pid, data)
   if not ok or type(msg) ~= "table" then return end
   local hex = type(msg.hex) == "string" and msg.hex or ""
   if hex == "" then
-    playerColors:clear(pid)
-    return playerColors:sendMine(pid)
+    local _, err = playerColors:clear(pid)
+    return playerColors:sendMine(pid, err)
   end
   local saved, err = playerColors:set(pid, hex)
   playerColors:sendMine(pid, err)
@@ -1331,15 +1361,15 @@ end
 function cnrOnStations(pid, data)
   local ok, decoded = pcall(Util.JsonDecode, data)
   if not ok or type(decoded) ~= "table" or decoded.map ~= mapName or #stations > 0 then return end
+  local updated = {}
   for _, s in ipairs(decoded.stations or {}) do
     local v = vec.toVec(s)
     if v then
       v.r = tonumber(s.r) or 0
-      stations[#stations + 1] = v
+      updated[#updated + 1] = v
     end
   end
-  if #stations > 0 then
-    saveStations()
+  if #updated > 0 and saveStations(updated) then
     log(string.format("%d gas stations detected for %s", #stations, mapName))
   end
 end

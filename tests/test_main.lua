@@ -3939,3 +3939,133 @@ test("a malformed registration leaves valid siblings usable and quoted null text
   assertEq(runnerSpotted(env), true)
   env.cleanup()
 end)
+
+local function denyRenameFrom(path)
+  local rename = FS.Rename
+  FS.Rename = function(from, to)
+    if from == path then return false, "rename denied" end
+    return rename(from, to)
+  end
+end
+
+test("a panel save that can't be written keeps config.json and the live value", function()
+  local bytes = '{"headStartSeconds":3}'
+  local env = boot({ config = bytes })
+  denyRenameFrom(env.dir .. "config.json.tmp")
+  env.call("cnr_panel", 1, '{"action":"settings","id":7,"values":{"headStartSeconds":9}}')
+  local reply = decodeJson(env.lastSent("cnr_panelReply").data)
+  assertEq(reply.ok, false)
+  assertEq(reply.id, 7)
+  assertEq(reply.text, "rename denied")
+  assertEq(env.logHas("could not save config.json: rename denied"), true)
+  assertEq(readFileAt(env.dir .. "config.json"), bytes)
+  assertEq(panelOf(env).settings.headStartSeconds, 3)
+  env.cleanup()
+end)
+
+for _, hex in ipairs({ "#00ff00", "" }) do
+  test("a colour that can't be saved isn't applied (" .. hex .. ")", function()
+    local env = boot()
+    env.call("cnr_color", 1, '{"hex":"#ff0000"}')
+    denyRenameFrom(env.dir .. "data/colors.json.tmp")
+    env.call("cnr_color", 1, encode({ hex = hex }))
+    local mine = decodeJson(env.lastSent("cnr_myColor").data)
+    assertEq(mine.error, "rename denied")
+    assertEq(mine.hex, "#ff0000")
+    env.cleanup()
+  end)
+end
+
+local oldBuildBytes = '{"model":"pigeon","name":"Old build","parts":{},"step":3}'
+
+test("a new build that can't be saved keeps the old build", function()
+  local env = boot({ files = { ["data/build.json"] = oldBuildBytes } })
+  local path = env.dir .. "data/build.json"
+  denyRenameFrom(path .. ".tmp")
+  newBuild(env)
+  assertEq(env.replyHas("rename denied"), true)
+  assertEq(env.logHas("could not save build.json: rename denied"), true)
+  assertEq(readFileAt(path), oldBuildBytes)
+  assertEq(panelOf(env).build.label, "Old build · change 3")
+  env.cleanup()
+end)
+
+for _, op in ipairs({ "new", "reset" }) do
+  test("a failed build backup stops " .. op, function()
+    local env = boot({ files = { ["data/build.json"] = oldBuildBytes } })
+    local path = env.dir .. "data/build.json"
+    denyRenameFrom(path)
+    if op == "new" then newBuild(env) else env.call("cnr_panel", 1, '{"action":"build","op":"reset"}') end
+    assertEq(env.replyHas("rename denied"), true)
+    assertEq(readFileAt(path), oldBuildBytes)
+    assertEq(panelOf(env).build.label, "Old build · change 3")
+    env.cleanup()
+  end)
+end
+
+test("an unsaved evolving setup keeps the build and its step", function()
+  local env = boot({ files = { ["data/build.json"] = oldBuildBytes } })
+  evolving(env)
+  env.panel(2, "start rein")
+  env.call("cnr_panel", 1, '{"action":"apply"}')
+  local path = env.dir .. "data/build.json"
+  denyRenameFrom(path .. ".tmp")
+  env.call("cnr_setup", 1, '{"parts":{"engine":"v8"},"changes":[{"label":"Engine"}]}')
+  assertEq(env.logHas("could not save build.json: rename denied"), true)
+  assertEq(panelOf(env).build.step, 3)
+  assertEq(readFileAt(path), oldBuildBytes)
+  assertEq(env.lastSent("cnr_rebuild"), nil)
+  env.cleanup()
+end)
+
+for _, op in ipairs({ "add", "remove", "discovery" }) do
+  test("a failed station " .. op .. " keeps the station list", function()
+    local env = boot()
+    local path = env.dir .. "data/stations/west_coast_usa.json"
+    env.positions[1] = 0
+    if op == "remove" then env.call("cnr_panel", 1, '{"action":"station","op":"add"}') end
+    local count, bytes = panelOf(env).stationCount, readFileAt(path)
+    denyRenameFrom(path .. ".tmp")
+    if op == "discovery" then
+      env.call("cnr_stations", 1, '{"map":"west_coast_usa","stations":[{"x":1,"y":2,"z":3}]}')
+    else
+      env.call("cnr_panel", 1, encode({ action = "station", op = op }))
+    end
+    assertEq(env.logHas("could not save west_coast_usa.json: rename denied"), true)
+    assertEq(panelOf(env).stationCount, count)
+    assertEq(readFileAt(path), bytes)
+    env.cleanup()
+  end)
+end
+
+test("a failed leaderboard save leaves the old standings on disk and in the app", function()
+  local bytes = '{"format":2,"runs":[]}'
+  local env = boot({ leaderboard = bytes })
+  local path = env.dir .. "data/leaderboard.json"
+  denyRenameFrom(path .. ".tmp")
+  env.startRound()
+  env.go()
+  for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.panel(1, "end")
+  env.call("cnr_board", 1, '{"action":"open"}')
+  assertEq(env.logHas("could not save leaderboard.json: rename denied"), true)
+  assertEq(#decodeJson(env.lastSent("cnr_boardState").data).rounds, 0)
+  assertEq(readFileAt(path), bytes)
+  env.cleanup()
+end)
+
+test("an encoding error while replacing a build restores its file", function()
+  local env = boot({ files = { ["data/build.json"] = oldBuildBytes } })
+  local encodeJson = Util.JsonEncode
+  Util.JsonEncode = function(value)
+    if value.model == "pickup" and value.startedFrom then error("encoding failed", 0) end
+    return encodeJson(value)
+  end
+  local called, err = pcall(newBuild, env)
+  Util.JsonEncode = encodeJson
+  assert(called, err)
+  assertEq(env.replyHas("encoding failed"), true)
+  assertEq(readFileAt(env.dir .. "data/build.json"), oldBuildBytes)
+  assertEq(panelOf(env).build.label, "Old build · change 3")
+  env.cleanup()
+end)

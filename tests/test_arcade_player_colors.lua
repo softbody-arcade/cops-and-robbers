@@ -61,4 +61,20 @@ test("an invalid hex reports the parse error with the current colour", function(
   assertEq(payload.error, err)
 end)
 
+for _, method in ipairs({ "set", "clear" }) do
+  test("a failed " .. method .. " reports the error and keeps the saved colour", function()
+    local c = loadColors(method .. "-failed.json")
+    assert(c:set(1, "#ff0000"))
+    local rename = FS.Rename
+    FS.Rename = function() return false, "denied" end
+    local called, ok, err = pcall(c[method], c, 1, "#00ff00")
+    FS.Rename = rename
+    assert(called, ok)
+    assertEq(ok, false)
+    assertEq(err, "denied")
+    assertEq(c:get(1).hex, "#ff0000")
+    assertEq(loadColors(method .. "-failed.json"):get(1).hex, "#ff0000")
+  end)
+end
+
 env.cleanup()
