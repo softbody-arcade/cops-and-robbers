@@ -56,7 +56,7 @@ The game is built with `cnr.game.new(ctx)` and returns an object. The manager ca
 | `start(prepared, snapshot, now)` | → nothing | `snapshot` is the copied effective settings for this round |
 | `tick(now)` | → nothing | Called every 250 ms while the manager is in a round |
 | `join(pid, name, now)` / `leave(pid, now)` | → nothing | `leave` sits at a fixed point in the manager's disconnect order. In 2.x, `join` drives the whole join sequence (see "Ordering") and calls the manager's services for the manager's parts, because today's order interleaves game and manager messages. At 3.0.0, when message order may change, the manager takes the generic parts (own colour, lobby, round-car list) |
-| `checkVehicle(kind, pid, vid, decoded, facts)` | → `allow`, `reason`, `roundCar` | Synchronous. `kind` is `"spawn"` or `"edit"`. The game decides whether the car matches its rules, including its own matching policy (a missing config filename, the evolving build); `roundCar = true` says this spawn is the player's round car. `facts` tells the game whether the player has a round-car entitlement and a confirmed round car. The manager owns the entitlement: the game grants it when it sends a setup (`ctx.cars.entitle(pid)`), and it lasts the whole round. A `roundCar` spawn is accepted, even above the traffic cap, only while the player is entitled and has no confirmed round car; it is published at once. A second one while a round car is confirmed is refused. After a deletion the entitlement allows one matching replacement, as today (`tests/test_main.lua:2470`). Only the manager returns BeamMP's `0` or `1` and logs refusals. This replaces today's `roundSpawn` result (`main.lua:971`) |
+| `checkVehicle(kind, pid, vid, decoded, facts)` | → `allow`, `reason`, `roundCar` | Synchronous. `kind` is `"spawn"` or `"edit"`. The game decides whether the car matches its rules with its own matching policy (a missing config filename, the evolving build); `roundCar = true` says this spawn is the player's round car. `facts` tells the game which round-car permissions the player holds and whether their round car is confirmed. The manager owns two permissions, as `main.lua:971-1056` does today:<br>• **One-use permission:** each successful setup grants one (`ctx.cars.permit(pid)`, today's `allowRoundSpawn`). The first matching spawn uses it up, even while the old car still exists, as after a reroll.<br>• **Replacement right:** a driver whose round car was confirmed and is now gone may spawn one matching replacement, also above the traffic cap.<br>A matching spawn becomes the player's provisional round car. It is published at once only for a driver who was already confirmed (a replacement). Otherwise it is published when the driver confirms it with `cnr_myVehicle`. Only the manager returns BeamMP's `0` or `1` and logs refusals. This replaces today's `roundSpawn` result. `tests/test_main.lua:2470` covers both deletion and reroll |
 | `onVehicle(kind, pid, vid, facts, now)` | → nothing | Placement, replacement, deletion and reset notices at their current points |
 | `panelState()` / `lobbyFields()` | → data | `panelState` is built lazily, only when someone has the panel open, because computing it can pick the next runner. `lobbyFields` is computed every tick, as `lobbyState` is today; it draws nothing, and the lobby goes out when its content changes |
 | `panelAction(pid, action, payload)` | → nothing | The game's panel actions and round commands. The game declares its commands (Cops and Robbers: `go`, `reroll`, `end`, `stop`, `test runner`, `test cop`, `sky`, `start <name>`, …). The manager's allow-list is its own commands (`auto on`, `auto off`, `next`, `reload`) plus the game's declared ones, and validation stays ahead of dispatch, as today. The manager keeps the subscriptions and the reply mirroring |
@@ -68,7 +68,7 @@ The game is built with `cnr.game.new(ctx)` and returns an object. The manager ca
 - the settings service;
 - the clock;
 - player colours;
-- traffic, where the game passes the number of car slots to keep free (Cops and Robbers: 3 during practice, otherwise 1) instead of today's `practice` flag (`arcade/traffic.lua:8`);
+- traffic, where the caller passes the number of car slots to keep free instead of today's `practice` flag (`arcade/traffic.lua:8`). Cops and Robbers passes 3 only for the practice issuer's own allowance (`main.lua:212`). The traffic count in `cnr_rules` keeps 1, as today (`main.lua:687`), so How to play shows the same number;
 - the car tools;
 - spectating and parking;
 - panel and lobby pushes;
@@ -93,7 +93,7 @@ The manager's cycle has three states: **lobby**, **round** and **results**. Cops
 - The settings service (`arcade.settings.new(...)`) owns the raw and effective config. It gains `get(key)`, `set(key, text)`, `apply(values)`, `load()` and `snapshot()`, reusing today's validators, load and save. `autoRounds.register` receives this service directly. The ad-hoc `ctx.settings` `{get, set}` adapter in `main.lua` goes (#72, moved from #82).
 - `snapshot()` returns a deep copy of the effective settings, with list values copied too. The manager takes one at round start and hands it to `game:start`.
 - `set(key, text)` re-reads `config.json` first. If the file is missing it starts from an empty table, as today. If the file can't be read or parsed, `set` writes nothing, keeps the live value and returns an error the panel shows. It never saves a table it couldn't load.
-- **What clients see:** the rules message (`cnr_rules`, gameplay settings only) carries the round's snapshot while a round runs, and the live settings in the lobby and results. It goes out on join and on the toggle, as today, and also when a round ends, but only when it differs from what was last sent. A change held back by the snapshot therefore reaches connected players right after the round. The goldens stay identical, because no golden changes settings mid-round.
+- **What clients see:** the rules message (`cnr_rules`, gameplay settings only) carries the round's snapshot while a round runs, and the live settings in the lobby and results. It goes out on join and on the toggle unconditionally, as today. The `auto_next` golden needs the toggle's unchanged rules broadcast (`tests/traces/auto_next.txt:388`). It also goes out once more when a round ends, and only that new send is skipped when it equals what was last sent. A change held back by the snapshot therefore reaches connected players right after the round. The goldens stay identical, because no golden changes settings mid-round.
 - **#89 lands first** (validating a game's override values like config values: ranges, list shapes, both ends of each range), before the contract advertises overrides. Cops and Robbers declares none today.
 
 ### Behaviour change
@@ -145,7 +145,7 @@ The traces pin message order. The new code keeps these orders exactly:
   A recorded round (not practice, not cancelled) then has its separate `record` effect: save, board update, each player's top rows. `tests/traces/round_caught.txt` shows the recorded case, and `tests/traces/practice_runner.txt` the practice case. `Round:finish` has already cleared its state by then, so the end handling works from the captured end effect.
 - **Effects:** handled in `ipairs` order, including the recursive handling when a setup fails.
 
-**Grid and rebuild IDs keep their current lifetime.** They are module-level counters in `cnr/round.lua` (`round.lua:33`), so they survive a new round object and a hot reload of `main.lua`, because the module stays cached. Resetting them could make an acknowledgement from before the reset look current. They are the one deliberate exception to "no module-level state". A test replays an old grid and rebuild acknowledgement after a reload and checks it is ignored.
+**Grid and rebuild IDs keep their current lifetime.** They are module-level counters in `cnr/round.lua` (`round.lua:33`), so they survive a new round object and a hot reload of `main.lua`, because the module stays cached. Resetting them could make an acknowledgement from before the reset look current. They are the one deliberate exception to "no module-level state". A test replays an old grid and rebuild acknowledgement after a reload. The old rebuild ID must not mark the player ready for the current rebuild, which stays pending. The rest of the `cnr_myVehicle` report (registering the car, placement log, traffic, car list) behaves as today.
 
 ### Hot reload
 
@@ -166,7 +166,8 @@ As in step 1: `main.lua` builds fresh manager services and a fresh game on every
 - The fake game's start with too few players is refused by the manager's `minPlayers` check, and a solo start passes it. A Cops and Robbers watch-only practice by a player who sits out still starts.
 - Round-car replacement after a deletion (`tests/test_main.lua:2470`) still passes: wrong config refused, replacement published at once, second spawn refused.
 - `set` on an unreadable or corrupt `config.json` writes nothing and keeps the live value.
-- An old grid or rebuild acknowledgement replayed after a reload is ignored.
+- An old grid or rebuild acknowledgement replayed after a reload doesn't complete the current grid or rebuild.
+- A reroll's replacement while the old car still exists is accepted once and published at once (`tests/test_main.lua:2470`), and a first round car is published only after `cnr_myVehicle`.
 - The reload test passes.
 
 ## In-game checks
@@ -184,7 +185,7 @@ The six checks from step 1, run by the playtest extension (the shared rules: an 
 A fresh reader checked this design for gaps on 2026-11-28. Four answers came from the parity rule and the code; they are my calls, marked here for the maintainer to check:
 - the start order, with the manager's `minPlayers` check after `canStart`;
 - the game's `join` hook driving the join sequence in 2.x;
-- expected spawns owned by the car tools through `ctx.cars.expect`;
+- round-car permissions owned by the car tools (`ctx.cars.permit` and the replacement right);
 - only `panelState` lazy.
 
 The disk-edit fix (decision 6) was the maintainer's.
