@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Fix the five follow-ups the final review of #71 deferred (#78–#82), as the fix batch #84.
+**Goal:** Fix the five follow-ups the final review of #71 deferred (#78–#82), and drop the chat redirect (#86), as the fix batch #84.
 
 **Architecture:** Task 1 widens what the golden traces record and adds the uncovered paths, then re-records the goldens once. Every later task leaves the goldens byte-identical. Tasks 2–4 make `arcade/` game-neutral and harden settings. Tasks 5–6 are tidy-ups.
 
@@ -195,6 +195,21 @@
 - [ ] **Step 8: Commit** with the message "Tidy: standalone store test, name-independent fault test, raw payloads and token-safe version in traces, reload cleanup, docs".
 
 **#82 item handed to #72:** the ad-hoc `ctx.settings` `{get, set}` adapter. Step 2 (#72) redesigns the game interface it belongs to. The controller records the handoff on #72 and #82 (the maintainer agreed on 2026-11-28; decision on #82).
+
+### Task 7: The mod no longer handles chat (#86)
+
+Added on 2026-11-28 by the maintainer's decision on #86. It runs after Task 6, because Task 5 renames locals in `main.lua`.
+
+**Files:** `server/CopsAndRobbers/main.lua`, `server/CopsAndRobbers/cnr/commands.lua`, `server/CopsAndRobbers/arcade/commands.lua`, `tests/test_main.lua`, `tests/test_commands.lua`, `tests/test_arcade_commands.lua`, `docs/DEPENDENCIES.md`
+
+**Interfaces:**
+- Removes: `cnrOnChatMessage` and `MP.RegisterEvent("onChatMessage", ...)` in `main.lua`; `cnr.commands.parse`; `arcade.commands.parse(msg, prefix)`.
+- Keeps: `arcade.commands.parseText(text)`, which the panel uses, and the rest of `cnr/commands.lua` (`eligibleNext`, `matchPlayer` and so on).
+
+- [ ] **Step 1: Failing test** in `tests/test_main.lua`: after `boot()`, `env.events.onChatMessage == nil`. Replace the existing chat tests (they assert the redirect notice and the return values) with this one.
+- [ ] **Step 2: Run** → FAIL. **Step 3: Implement.** Remove the code listed above, the `parse` tests from `tests/test_commands.lua` and `tests/test_arcade_commands.lua` (keep the `parseText` tests), and the `onChatMessage` bullet from `docs/DEPENDENCIES.md`. Afterwards `grep -rn 'ChatMessage' server/ docs/DEPENDENCIES.md` and `grep -rn 'commands.parse(' server/ tests/` print nothing.
+- [ ] **Step 4: Run** `make test` → PASS; golden gate.
+- [ ] **Step 5: Commit** with the message "Drop the chat redirect: the mod no longer handles chat".
 
 ### Batch completion (controller)
 
