@@ -10,7 +10,6 @@ local rules = require("cnr.rules")
 local round = require("cnr.round")
 local leaderboard = require("cnr.leaderboard")
 local commands = require("cnr.commands")
-local colors = require("arcade.colors")
 local tables = require("cnr.tables")
 local build = require("cnr.build")
 local panel = require("cnr.panel")
@@ -18,7 +17,6 @@ local panelService = require("arcade.panel").new(messages, roster)
 local autoRounds = require("arcade.autoRounds")
 local nextRound = autoRounds.new()
 local sky = require("cnr.sky")
-local strikeSchedule = require("cnr.strikeSchedule")
 local traffic = require("arcade.traffic")
 local trafficService = traffic.new(roster, messages)
 local cars = require("arcade.cars").new(roster, messages, trafficService)
@@ -32,34 +30,15 @@ local dataDir = pluginDir .. "data/"
 local stationsDir = dataDir .. "stations/"
 local leaderboardPath = dataDir .. "leaderboard.json"
 local buildPath = dataDir .. "build.json"
-local currentBuild
 local settings = require("arcade.settings").new(pluginDir .. "config.json", config.declaration, log)
 local playerColors = require("arcade.playerColors").new(dataDir .. "colors.json", roster, messages)
 
 local cfg
-local current
-local board
-local mapName
-local stations = {}
+local game
 local stationsRequested = roster:perPlayer("stationsRequested", "early")
-local partsBaseline = {}
-local aiCars = {}
-local aiSlotSerial, aiVidSerial = {}, {}
-local connectionSerial = roster:perPlayer("connectionSerial", "early")
-local previousRoundSerial = 0
-local runCounts = {}
-local lastRunnerKey
-local plannedRunnerKey
-local missingCount = {}
-local lastResult
-local currentRunnerKey
 local lastIssuer
-local PARTS_PLACING_SECONDS, PARTS_SETTLE_SECONDS = 10, 3
 local REFUSAL_LOG_SECONDS = 10
 local refusalLoggedAt = roster:perPlayer("refusalLoggedAt", "early")
-local aiSpawnsLeft = 0
-local pendingAISetup
-local AI_SETUP_WAIT_SECONDS = 15
 local gridClients = roster:perPlayer("gridClients", "early")
 local START_ROAD_SEARCH = 2000
 local WATCHING_AI = "You can't spawn a car while watching the AI"
@@ -69,25 +48,12 @@ math.randomseed(os.time())
 
 local function now() return serverClock:GetCurrent() end
 
-local function placing(pid)
-  local entry = partsBaseline[pid] or {}
-  partsBaseline[pid] = { announced = entry.announced, quietUntil = now() + PARTS_PLACING_SECONDS, placing = true }
-end
-
-local function placed(pid)
-  local entry = partsBaseline[pid]
-  if entry and entry.placing then
-    entry.placing = nil
-    entry.quietUntil = now() + PARTS_SETTLE_SECONDS
-  end
-end
-
 local boardSubs = roster:perPlayer("boardSubs", "early")
 local leaderboardLocked = false
 
 local function useConfig(values)
   cfg = values
-  current.cfg = values
+  game.current.cfg = values
 end
 
 local function loadLeaderboard()
@@ -103,18 +69,18 @@ local function loadLeaderboard()
     end
     decoded = nil
   end
-  board = leaderboard.load(decoded)
+  game.board = leaderboard.load(decoded)
 end
 
 local function loadBuild()
   local decoded, corrupt = store.decode(buildPath)
-  currentBuild = not corrupt and build.normalize(decoded) or nil
-  if decoded ~= nil and not currentBuild or corrupt then
+  game.currentBuild = not corrupt and build.normalize(decoded) or nil
+  if decoded ~= nil and not game.currentBuild or corrupt then
     local aside = buildPath .. ".corrupt-" .. os.time()
     FS.Rename(buildPath, aside)
     log("build.json was unreadable, moved to " .. aside .. "; no build")
-  elseif currentBuild then
-    log("Build: " .. build.label(currentBuild))
+  elseif game.currentBuild then
+    log("Build: " .. build.label(game.currentBuild))
   end
 end
 
@@ -143,6 +109,7 @@ local function backupBuild()
 end
 
 local function buildOpts()
+  local currentBuild = game.currentBuild
   if not currentBuild then return nil end
   return {
     model = currentBuild.model, step = currentBuild.step, name = currentBuild.name,
@@ -151,41 +118,42 @@ local function buildOpts()
 end
 
 local function saveLeaderboard(run)
-  leaderboard.add(board, run)
+  leaderboard.add(game.board, run)
   if leaderboardLocked then return log("leaderboard not saved: the old file could not be moved aside") end
-  if not saveJson(leaderboardPath, board) then table.remove(board.runs) end
+  if not saveJson(leaderboardPath, game.board) then table.remove(game.board.runs) end
 end
 
 local function roundCarActive()
+  local current = game.current
   return current.vehicle ~= nil and current.state ~= "idle" and current.state ~= "picking"
 end
 
-local function stationsPath() return stationsDir .. mapName .. ".json" end
+local function stationsPath() return stationsDir .. game.mapName .. ".json" end
 
 local function loadStations()
   local decoded = store.decode(stationsPath())
-  stations = {}
+  game.stations = {}
   for _, s in ipairs(decoded and decoded.stations or {}) do
     local v = vec.toVec(s)
     if v then
       v.r = tonumber(s.r) or 0
-      stations[#stations + 1] = v
+      game.stations[#game.stations + 1] = v
     end
   end
-  log(string.format("%d gas stations loaded for %s", #stations, mapName))
+  log(string.format("%d gas stations loaded for %s", #game.stations, game.mapName))
 end
 
 local function saveStations(updated)
   local ok, err = saveJson(stationsPath(), { stations = updated })
   if not ok then return nil, err end
-  stations = updated
+  game.stations = updated
   return true
 end
 
 local function requestStations(pid)
-  if #stations > 0 or stationsRequested[pid] then return end
+  if #game.stations > 0 or stationsRequested[pid] then return end
   stationsRequested[pid] = true
-  send(pid, "cnr_requestStations", { map = mapName })
+  send(pid, "cnr_requestStations", { map = game.mapName })
 end
 
 local function parseVehicleData(data)
@@ -198,59 +166,17 @@ local function parseVehicleData(data)
   return nil
 end
 
-local function openTraffic(pid)
-  if not current:isActive() or current.players[pid] == nil or trafficService:openCount(pid) then return end
-  local eligible = current.test or not cfg.trafficRunnerOnly or pid == current.runnerId
-  local reserved = current.test and pid == current.issuerId and 3 or 1
-  trafficService:open(pid, trafficService:allowance(cfg, reserved, eligible))
-end
-
 local function aiSlotForVid(vid)
-  for id, car in pairs(aiCars) do
+  for id, car in pairs(game.aiCars) do
     if car.vid == vid then return id end
   end
 end
 
 local function removeAICar(id)
-  if id and aiCars[id] then
-    aiCars[id] = nil
-    current:forgetVehicleSight(id)
+  if id and game.aiCars[id] then
+    game.aiCars[id] = nil
+    game.current:forgetVehicleSight(id)
   end
-end
-
-local function carFor(pid)
-  if pid == nil then return nil end
-  local owner, vid = pid, nil
-  if round.isAI(pid) then
-    owner, vid = current.issuerId, aiCars[pid] and aiCars[pid].vid
-  else
-    vid = cars:vidFor(pid)
-  end
-  return cars:position(owner, vid)
-end
-
-local function announceLightning(runner)
-  local s = current.sky
-  if not (s and s.strikeCursor) then return end
-  local elapsed = s.lightningTimer:GetCurrent()
-  local horizon = elapsed + 1.25
-  s.lastRunnerPos = runner and runner.pos or s.lastRunnerPos
-  local events = strikeSchedule.between(s.strikeCursor, s, math.max(s.lightningHorizon or 0, elapsed - 2), horizon)
-  s.lightningHorizon = horizon
-  if #events == 0 then return end
-  local positions = {}
-  for _, p in ipairs(s.lightningPositions or {}) do
-    if p.at >= elapsed - 2 then positions[#positions + 1] = p end
-  end
-  local start = current.startGrid and current.startGrid[1]
-  local ref = s.lastRunnerPos or start and start.pos or {x = 0, y = 0, z = 0}
-  for _, event in ipairs(events) do
-    local angle = math.rad(event.bearing)
-    positions[#positions + 1] = {id = event.id, at = event.at, x = ref.x + event.range * math.sin(angle),
-      y = ref.y + event.range * math.cos(angle), z = ref.z}
-  end
-  s.lightningPositions = positions
-  send(current.test and current.issuerId or -1, "cnr_lightningPositions", {lightningSeed = s.lightningSeed, positions = positions})
 end
 
 local function normalizeConfig(path)
@@ -268,14 +194,14 @@ local BOARD_TOP = 20
 local ROUNDS_DEFAULT, ROUNDS_STEP, ROUNDS_MAX = 30, 30, 300
 
 local function boardState(sub, viewerKey)
-  sub = type(sub) == "table" and sub or { map = mapName }
+  sub = type(sub) == "table" and sub or { map = game.mapName }
   local f = {
     map = sub.map ~= "all" and sub.map or nil,
     mode = (sub.mode == "random" or sub.mode == "evolving") and sub.mode or nil,
     traffic = (sub.traffic == "with" or sub.traffic == "runner" or sub.traffic == "without") and sub.traffic or nil,
   }
   local runners, mine = {}, nil
-  for rank, entry in ipairs(leaderboard.runners(board, f, math.huge)) do
+  for rank, entry in ipairs(leaderboard.runners(game.board, f, math.huge)) do
     if rank <= BOARD_TOP then
       runners[rank] = entry
     elseif entry.key == viewerKey then
@@ -287,24 +213,24 @@ local function boardState(sub, viewerKey)
     if e.key == viewerKey then e.me = true end
     e.key = nil
   end
-  local cops = leaderboard.cops(board, f, BOARD_TOP, cfg.assistMinSightPercent)
+  local cops = leaderboard.cops(game.board, f, BOARD_TOP, cfg.assistMinSightPercent)
   for _, c in ipairs(cops) do
     if c.key == viewerKey then c.me = true end
     c.key = nil
   end
-  local players = leaderboard.players(board, f, cfg.assistMinSightPercent)
+  local players = leaderboard.players(game.board, f, cfg.assistMinSightPercent)
   for _, p in ipairs(players) do
     if p.key == viewerKey then p.me = true end
     p.key = anonymous(tostring(p.key))
   end
   local limit = sub.rounds or ROUNDS_DEFAULT
-  local rounds, total = leaderboard.rounds(board, f, limit)
+  local rounds, total = leaderboard.rounds(game.board, f, limit)
   for _, r in ipairs(rounds) do
     r.playerKey = anonymous(tostring(r.playerKey))
     for _, c in ipairs(r.cops) do c.key = anonymous(tostring(c.key)) end
   end
   return {
-    map = mapName, maps = leaderboard.maps(board), filter = sub.map or mapName, mode = f.mode or "all", traffic = f.traffic or "all",
+    map = game.mapName, maps = leaderboard.maps(game.board), filter = sub.map or game.mapName, mode = f.mode or "all", traffic = f.traffic or "all",
     runners = runners, cops = cops, players = players, mine = mine,
     rounds = rounds, moreRounds = (total > #rounds and limit < ROUNDS_MAX) or nil,
   }
@@ -319,26 +245,6 @@ local function pushBoard()
   for pid in pairs(boardSubs) do sendBoard(pid) end
 end
 
-local function parkBystander(pid)
-  if pid ~= current.issuerId then spectators:park(pid) end
-end
-
-local function dispatchAISetup()
-  local setup = pendingAISetup
-  if not setup then return end
-  local pid, payload = setup.pid, setup.payload
-  if not payload.aiOnly and cars:placementPending(pid) then return end
-  if setup.capacity then
-    local occupied = 0
-    for _ in pairs(cars:vehicles(pid)) do occupied = occupied + 1 end
-    if occupied + #payload.ai > setup.capacity then return end
-  end
-  pendingAISetup = nil
-  aiSpawnsLeft = payload.aiOnly and #payload.ai or 0
-  send(pid, "cnr_setupAI", payload)
-  if not payload.aiOnly and cars:confirmed(pid) then openTraffic(pid) end
-end
-
 local lastRulesSignature
 local function pushRules(pid, onlyChanged)
   local payload = rules.payload(cfg, traffic.perPlayer(cfg.trafficPerPlayer, traffic.maxCars(), 1))
@@ -348,244 +254,42 @@ local function pushRules(pid, onlyChanged)
   lastRulesSignature = signature
 end
 
-local function applyEffects(effects)
-  for _, e in ipairs(effects) do
-    if e.kind == "reply" then
-      reply(e.pid, e.msg, e.tone)
-    elseif e.kind == "broadcast" then
-      if e.meters then log(string.format("%s %.0f m", e.msg, e.meters)) end
-      if e.to then notify(e.to, e.msg, e.tone) else broadcast(e.msg, e.tone) end
-    elseif e.kind == "pickVehicle" then
-      pendingAISetup = nil
-      cars:requestPick(e.pid, { includeMods = cfg.includeModVehicles, excludedModels = cfg.excludedModels })
-    elseif e.kind == "planStart" then
-      send(e.pid, "cnr_planStart", { id = e.id, count = e.count, anchor = e.anchor,
-        copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters })
-    elseif e.kind == "setup" then
-      local anchor = e.startPose ~= nil and current.startGrid[1]
-      local runnerCar = not anchor and carFor(current.runnerId)
-      local delivered, reason = cars:setup(e.pid, {
-        startPose = e.startPose,
-        runnerId = current.runnerId, runnerName = current:runnerName(), role = e.role, copIndex = e.copIndex,
-        model = current.vehicle.model, config = current.vehicle.config,
-        phase = e.phase, countdownRemaining = e.countdownRemaining, chaseElapsed = e.chaseElapsed,
-        headStartRemaining = e.headStartRemaining, inPlace = e.inPlace,
-        color = e.colorHex and colors.parseHex(e.colorHex) or playerColors:get(e.pid),
-        runnerPos = anchor and anchor.pos or runnerCar and runnerCar.pos or nil,
-        copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
-        sightMaxMeters = cfg.sightMaxMeters,
-        runnerShown = e.runnerShown, heli = e.heli,
-        evolving = current.evolving or nil, rebuild = current.rebuildId, practice = current.test or nil,
-        sky = sky.payload(current.sky, cfg, current:clockSeconds(now())),
-      })
-      if delivered == false then
-        log(string.format("setup failed for %s: %s", MP.GetPlayerName(e.pid) or tostring(e.pid), tostring(reason)))
-        local removedVid = cars:confirmedVid(e.pid)
-        cars:removeParticipant(e.pid)
-        applyEffects(current:setupFailed(now(), e.pid))
-        if not current:isActive() then return end
-        if removedVid then cars:publish() end
-      else
-        placing(e.pid)
-        log(string.format("setup sent to %s: %s, %s", MP.GetPlayerName(e.pid) or tostring(e.pid), e.role, tostring(e.phase)))
-        if e.role == "runner" and not current.test then
-          local key = roster:key(e.pid)
-          lastRunnerKey = key
-          plannedRunnerKey = nil
-          currentRunnerKey = key
-        end
-      end
-    elseif e.kind == "spectate" then
-      spectators:spectate(e.pid, {
-        runnerId = current.runnerId, runnerName = current:runnerName(), phase = e.phase,
-        countdownRemaining = e.countdownRemaining, headStartRemaining = e.headStartRemaining, chaseElapsed = e.chaseElapsed,
-        heli = e.heli,
-        sky = sky.payload(current.sky, cfg, current:clockSeconds(now())),
-      }, e.phase)
-    elseif e.kind == "setupAI" then
-      for pid in pairs(MP.GetPlayers() or {}) do parkBystander(pid) end
-      local list = {}
-      for _, a in ipairs(e.ai) do
-        list[#list + 1] = { id = a.id, role = a.role, index = current.startGrid and a.index or #list + 1, startPose = a.startPose, name = a.name, color = colors.parseHex(a.colorHex) }
-      end
-      if e.aiOnly then cars:rememberPreRound(e.pid) end
-      aiSpawnsLeft = 0
-      local capacity = traffic.maxCars()
-      local payload = {
-        model = current.vehicle.model, config = current.vehicle.config, ai = list,
-        runnerId = current.runnerId, copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters,
-        aiOnly = e.aiOnly, sightMaxMeters = cfg.sightMaxMeters,
-      }
-      pendingAISetup = { pid = e.pid, payload = payload, deadline = now() + AI_SETUP_WAIT_SECONDS,
-        capacity = capacity and capacity >= #list + (e.aiOnly and 0 or 1) and capacity or nil }
-      dispatchAISetup()
-    elseif e.kind == "countdown" then
-      if sky.hasThunderstorm(current.sky) then
-        current.sky.lightningTimer = MP.CreateTimer()
-        current.sky.strikeCursor = strikeSchedule.new(current.sky.lightningSeed)
-        announceLightning(carFor(current.runnerId))
-      end
-      send(e.to or -1, "cnr_countdown", { seconds = e.seconds })
-    elseif e.kind == "runnerGo" then
-      send(e.to or -1, "cnr_runnerGo", { headStartSeconds = e.headStartSeconds })
-    elseif e.kind == "penalty" then
-      local msg = string.format("%s: crash penalty %gs%s", tostring(e.name), e.seconds, e.cause == "traffic" and " (traffic)" or "")
-      log(msg)
-      send(current.test and current.issuerId or -1, "cnr_notice", { msg = msg, tone = "warn", about = e.pid })
-      if round.isAI(e.pid) then
-        send(current.issuerId, "cnr_penalty", { seconds = e.seconds, aiId = e.pid })
-      else
-        send(e.pid, "cnr_penalty", { seconds = e.seconds })
-      end
-    elseif e.kind == "penaltyEnd" then
-      if round.isAI(e.pid) then
-        send(current.issuerId, "cnr_penaltyEnd", { aiId = e.pid })
-      else
-        send(e.pid, "cnr_penaltyEnd", {})
-      end
-    elseif e.kind == "release" then
-      send(e.to or -1, "cnr_release", {})
-    elseif e.kind == "state" then
-      send(e.pid, "cnr_state", { resetAllowed = e.resetAllowed, resetHint = e.resetHint, catchProgress = e.catchProgress })
-    elseif e.kind == "roundEnd" then
-      spectators:releaseAll()
-      local autoNext = settings:get("autoNextRound") and e.reason ~= "cancelled" and not e.to
-      send(e.to or -1, "cnr_roundEnd", {
-        runnerId = e.runnerId, runnerName = e.runnerName, survivedSeconds = e.survivedSeconds,
-        reason = e.reason, explode = e.explode, catchers = e.catchers, message = e.message,
-        autoNextSeconds = autoNext and cfg.autoNextDelaySeconds or nil,
-      })
-      cars:setPublishing(false)
-      cars:clearRound()
-      roster:clear("trafficOpen")
-      roster:clear("trafficVids")
-      aiSpawnsLeft = 0
-      pendingAISetup = nil
-      cars:clearPublished()
-      partsBaseline = {}
-      missingCount = {}
-      if not current.test and not e.to and e.reason ~= "cancelled" then
-        lastResult = { runner = e.runnerName, seconds = e.survivedSeconds, reason = e.reason }
-      end
-      aiCars, aiSlotSerial, aiVidSerial = {}, {}, {}
-      if autoNext then nextRound:schedule(now() + cfg.autoNextDelaySeconds) end
-      useConfig(settings:effective())
-      pushRules(nil, true)
-    elseif e.kind == "live" then
-      for pid in pairs(current.players) do
-        if pid ~= current.runnerId and not round.isAI(pid) then
-          local route = not (e.noRoute and e.noRoute[pid])
-          send(pid, "cnr_lastSeen", { pos = e.pos, live = true, route = route })
-        end
-      end
-      if not round.isAI(current.runnerId) and e.nearestCop then
-        send(current.runnerId, "cnr_nearestCop", { dist = e.nearestCop })
-      end
-    elseif e.kind == "requestSetup" then
-      send(e.pid, "cnr_requestSetup", {})
-    elseif e.kind == "rebuild" then
-      if pendingAISetup then pendingAISetup.payload.config = e.config end
-      local targets = {}
-      for pid in pairs(current.players) do
-        if not round.isAI(pid) then
-          placing(pid)
-          targets[#targets + 1] = pid
-        end
-      end
-      cars:rebuild(targets, { model = current.vehicle.model, config = e.config, rebuild = e.id }, e.id)
-    elseif e.kind == "applied" then
-      send(e.to or -1, "cnr_applied", {})
-    elseif e.kind == "spotted" then
-      if not round.isAI(current.runnerId) then send(current.runnerId, "cnr_spotted", { spotted = e.spotted }) end
-    elseif e.kind == "lastSeen" then
-      for pid in pairs(current.players) do
-        if pid ~= current.runnerId and not round.isAI(pid) then
-          send(pid, "cnr_lastSeen", { pos = e.pos })
-        end
-      end
-      if not round.isAI(current.runnerId) and e.nearestCop then
-        send(current.runnerId, "cnr_nearestCop", { dist = e.nearestCop })
-      end
-    elseif e.kind == "heli" then
-      send(e.to or -1, "cnr_heli", { phase = e.phase, seconds = e.seconds, reason = e.reason, seed = e.seed, guided = e.guided })
-    elseif e.kind == "runnerShown" then
-      for pid in pairs(current.players) do
-        if pid ~= current.runnerId and not round.isAI(pid) then
-          send(pid, "cnr_runnerShown", { shown = e.shown })
-        end
-      end
-    elseif e.kind == "nearestCop" then
-      if not round.isAI(current.runnerId) then
-        send(current.runnerId, "cnr_nearestCop", { dist = e.dist })
-      end
-    elseif e.kind == "record" then
-      local run = e.run
-      local endedAt = os.time()
-      run.map = mapName
-      run.releasedAt = endedAt - math.floor(run.survivedSeconds + 0.5)
-      run.endedAt = endedAt
-      run.key = currentRunnerKey
-      run.cops, run.copNames, run.copSightSeconds = {}, {}, {}
-      for i, pid in ipairs(run.copIds or {}) do
-        run.cops[i] = roster:key(pid)
-        run.copNames[i] = MP.GetPlayerName(pid) or tostring(pid)
-        run.copSightSeconds[i] = math.floor((run.copSight[i] or 0) * 10 + 0.5) / 10
-      end
-      run.copIds, run.copSight = nil, nil
-      if type(run.catchers) == "table" and #run.catchers > 0 then
-        local byName = {}
-        for pid, name in pairs(MP.GetPlayers() or {}) do byName[name] = pid end
-        run.catcherKeys = {}
-        for i, name in ipairs(run.catchers) do
-          local pid = byName[name]
-          run.catcherKeys[i] = pid and roster:key(pid) or ("name:" .. name)
-        end
-      end
-      if currentRunnerKey then runCounts[currentRunnerKey] = (runCounts[currentRunnerKey] or 0) + 1 end
-      plannedRunnerKey = nil
-      saveLeaderboard(run)
-      pushBoard()
-      local top = leaderboard.runners(board, mapName, 3)
-      for pid in pairs(MP.GetPlayers() or {}) do
-        local viewerKey = roster:key(pid)
-        local rows = {}
-        for i, e in ipairs(top) do
-          rows[i] = { rank = i, player = e.player, time = leaderboard.formatTime(e.survivedSeconds), me = e.key == viewerKey or nil }
-        end
-        send(pid, "cnr_top", { rows = rows })
-      end
-    end
-  end
-end
+game = require("cnr.game").new({
+  messages = messages, roster = roster, cars = cars, spectators = spectators,
+  traffic = trafficService, playerColors = playerColors, settings = settings, nextRound = nextRound,
+  now = now, useConfig = useConfig, pushRules = pushRules, saveLeaderboard = saveLeaderboard, pushBoard = pushBoard,
+})
 
 local function plannedRunner(players)
   local countsByName = {}
-  for p, name in pairs(players) do countsByName[name] = runCounts[roster:key(p)] or 0 end
-  local lastPid = lastRunnerKey and roster:pidForKey(lastRunnerKey)
+  for p, name in pairs(players) do countsByName[name] = game.runCounts[roster:key(p)] or 0 end
+  local lastPid = game.lastRunnerKey and roster:pidForKey(game.lastRunnerKey)
   local lastName = lastPid and MP.GetPlayerName(lastPid) or nil
   local eligible = commands.eligibleNext(players, countsByName, lastName)
-  if plannedRunnerKey then
+  if game.plannedRunnerKey then
     for _, p in ipairs(eligible) do
-      if roster:key(p) == plannedRunnerKey then return p end
+      if roster:key(p) == game.plannedRunnerKey then return p end
     end
   end
   local pid = commands.matchPlayer("next", players, nil, countsByName, lastName)
-  plannedRunnerKey = pid and roster:key(pid) or nil
+  game.plannedRunnerKey = pid and roster:key(pid) or nil
   return pid
 end
 
 local function startRound(runnerId, issuerId, players, opts)
+  local current = game.current
   local effects = current:start(now(), runnerId, issuerId, players, opts)
   if current:isActive() then cars:setPublishing(true) end
-  applyEffects(effects)
+  game:applyEffects(effects)
 end
 
 panelService:command("start", function(pid, cmd)
+  local current = game.current
   if current:isActive() and current.test then
-    applyEffects(current:stop(now(), current.issuerId))
+    game:applyEffects(current:stop(now(), current.issuerId))
   end
   if current:isActive() then return refuse(pid, "A round is already running") end
-  if cfg.carMode == "evolving" and not currentBuild then return refuse(pid, "Start a new build first") end
+  if cfg.carMode == "evolving" and not game.currentBuild then return refuse(pid, "Start a new build first") end
   nextRound:cancel()
   lastIssuer = pid
   local players = MP.GetPlayers() or {}
@@ -594,7 +298,7 @@ panelService:command("start", function(pid, cmd)
   local query = cmd.rest
   local runnerId, err
   if query and query:lower() == "again" then
-    runnerId = lastRunnerKey and roster:pidForKey(lastRunnerKey)
+    runnerId = game.lastRunnerKey and roster:pidForKey(game.lastRunnerKey)
     if not runnerId then return refuse(pid, "No previous runner online") end
   else
     if query and query:lower() == "next" then
@@ -613,30 +317,31 @@ panelService:command("start", function(pid, cmd)
   cars:clearRound()
   roster:clear("trafficOpen")
   roster:clear("trafficVids")
-  partsBaseline = {}
-  missingCount = {}
-  lastResult = nil
+  game.partsBaseline = {}
+  game.missingCount = {}
+  game.lastResult = nil
   useConfig(settings:snapshot())
   local sittingOut = roster:sitOutSnapshot()
   startRound(runnerId, pid, players, { gridPlanner = gridClients[runnerId] and runnerId, build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random), traffic = traffic.perPlayer(cfg.trafficPerPlayer, traffic.maxCars(), 1), trafficRunnerOnly = cfg.trafficRunnerOnly == true, sittingOut = sittingOut })
 end)
 
 panelService:command("test", function(pid, cmd)
-  if current:isActive() then return refuse(pid, "A round is already running") end
+  if game.current:isActive() then return refuse(pid, "A round is already running") end
   cars:clearRound()
   roster:clear("trafficOpen")
   roster:clear("trafficVids")
-  partsBaseline = {}
-  missingCount = {}
-  previousRoundSerial = connectionSerial[pid] or 0
+  game.partsBaseline = {}
+  game.missingCount = {}
+  game.previousRoundSerial = game.connectionSerial[pid] or 0
   local role = cmd.args[1] and cmd.args[1]:lower()
-  if cfg.carMode == "evolving" and not currentBuild then return refuse(pid, "Start a new build first") end
+  if cfg.carMode == "evolving" and not game.currentBuild then return refuse(pid, "Start a new build first") end
   useConfig(settings:snapshot())
   local opts = { gridPlanner = gridClients[pid] and pid, test = true, role = role, aiOnly = roster:sittingOut(pid), build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random) }
   startRound(nil, pid, roster:players(), opts)
 end)
 
 local function lobbyState()
+  local current = game.current
   local players = MP.GetPlayers() or {}
   local online = 0
   for _ in pairs(players) do online = online + 1 end
@@ -646,24 +351,26 @@ local function lobbyState()
 end
 
 panelService:command("go", function(pid)
-  applyEffects(current:go(now(), pid))
+  game:applyEffects(game.current:go(now(), pid))
 end)
 
 panelService:command("stop", function(pid)
+  local current = game.current
   local wasActive = current:isActive()
-  applyEffects(current:stop(now(), pid))
+  game:applyEffects(current:stop(now(), pid))
   if not wasActive then send(-1, "cnr_roundEnd", { reason = "cancelled" }) end
 end)
 
 panelService:command("end", function(pid)
-  applyEffects(current:endCalled(now(), pid))
+  game:applyEffects(game.current:endCalled(now(), pid))
 end)
 
 panelService:command("reroll", function(pid)
-  applyEffects(current:reroll(now(), pid))
+  game:applyEffects(game.current:reroll(now(), pid))
 end)
 
 panelService:command("sky", function(pid)
+  local current = game.current
   if current.state ~= "prep" and current.state ~= "ready" then return refuse(pid, "You can only change the sky before GO") end
   if not sky.hasRandom(cfg) then return refuse(pid, "Set time of day or weather to random first") end
   local before = current.sky or {}
@@ -679,29 +386,29 @@ panelService:command("sky", function(pid)
 end)
 
 panelService:command("addstation", function(pid)
-  local car = carFor(pid)
+  local car = game:carFor(pid)
   if not car then return refuse(pid, "You need to be in a vehicle") end
-  local updated = table.move(stations, 1, #stations, 1, {})
+  local updated = table.move(game.stations, 1, #game.stations, 1, {})
   updated[#updated + 1] = { x = car.pos.x, y = car.pos.y, z = car.pos.z, r = 0 }
   local ok, err = saveStations(updated)
   if not ok then return refuse(pid, err) end
-  reply(pid, string.format("Gas station added (%d on %s)", #stations, mapName))
+  reply(pid, string.format("Gas station added (%d on %s)", #game.stations, game.mapName))
 end)
 
 panelService:command("removestation", function(pid)
-  local car = carFor(pid)
+  local car = game:carFor(pid)
   if not car then return refuse(pid, "You need to be in a vehicle") end
   local bestIndex, bestDist
-  for i, s in ipairs(stations) do
+  for i, s in ipairs(game.stations) do
     local d = vec.dist(car.pos, s)
     if d <= 50 and (not bestDist or d < bestDist) then bestIndex, bestDist = i, d end
   end
   if not bestIndex then return refuse(pid, "No gas station within 50 m") end
-  local updated = table.move(stations, 1, #stations, 1, {})
+  local updated = table.move(game.stations, 1, #game.stations, 1, {})
   table.remove(updated, bestIndex)
   local ok, err = saveStations(updated)
   if not ok then return refuse(pid, err) end
-  reply(pid, string.format("Gas station removed (%d left on %s)", #stations, mapName))
+  reply(pid, string.format("Gas station removed (%d left on %s)", #game.stations, game.mapName))
 end)
 
 local function nextRunnerName(players)
@@ -710,19 +417,20 @@ local function nextRunnerName(players)
 end
 
 local function playerEntries(players, realRound)
+  local current = game.current
   local entries, loading = {}, 0
   for pid, name in pairs(players) do
-    local entry = { name = name, runs = runCounts[roster:key(pid)] or 0, sitOut = roster:sittingOut(pid) or nil }
+    local entry = { name = name, runs = game.runCounts[roster:key(pid)] or 0, sitOut = roster:sittingOut(pid) or nil }
     if realRound and current.players[pid] ~= nil then
       local isRunner = pid == current.runnerId
       entry.role = isRunner and "runner" or "cop"
-      local placingNow = partsBaseline[pid] and partsBaseline[pid].placing
+      local placingNow = game.partsBaseline[pid] and game.partsBaseline[pid].placing
       if placingNow then loading = loading + 1 end
       local changes = current.queued and current.queued.changes
       if placingNow then
         entry.state = "loading"
-      elseif missingCount[pid] then
-        entry.state, entry.missing = "missing", missingCount[pid]
+      elseif game.missingCount[pid] then
+        entry.state, entry.missing = "missing", game.missingCount[pid]
       elseif isRunner and current.evolving and current.state == "prep" and changes and changes[1] then
         entry.state, entry.change = "changing", tostring(changes[1].label)
       else
@@ -735,24 +443,26 @@ local function playerEntries(players, realRound)
 end
 
 local function panelState()
+  local current = game.current
   local running = current.state == "running"
   local players = MP.GetPlayers() or {}
   local candidates, count = roster:playing(players)
   local realRound = current:isActive() and not current.test
   local entries, loading = playerEntries(players, realRound)
   local nextName = not realRound and nextRunnerName(candidates) or nil
-  local lastPid = lastRunnerKey and roster:pidForKey(lastRunnerKey)
+  local lastPid = game.lastRunnerKey and roster:pidForKey(game.lastRunnerKey)
   local autoNext
   local autoNextAt = nextRound:pending()
   if autoNextAt and not realRound then
     autoNext = { seconds = math.max(0, math.ceil(autoNextAt - now())), runner = nextName }
   end
   local buildInfo
+  local currentBuild = game.currentBuild
   if currentBuild then
     buildInfo = { label = build.label(currentBuild), step = currentBuild.step, name = currentBuild.name, lastChange = build.lastChange(currentBuild) }
   end
   return panel.snapshot({
-    version = VERSION, map = mapName, phase = current.state,
+    version = VERSION, map = game.mapName, phase = current.state,
     runner = current.runnerId and current:runnerName() or nil,
     car = roundCarActive() and current.vehicle.model or nil,
     test = current.test == true,
@@ -762,8 +472,8 @@ local function panelState()
     evolving = current.evolving == true,
     build = buildInfo,
     nextRunner = nextName, lastRunner = lastPid and players[lastPid] or nil,
-    loading = loading, autoNext = autoNext, lastResult = lastResult,
-    stationCount = #stations,
+    loading = loading, autoNext = autoNext, lastResult = game.lastResult,
+    stationCount = #game.stations,
     skyRandom = sky.hasRandom(cfg),
     trafficNote = trafficNote(cfg.trafficPerPlayer, traffic.maxCars(), count, cfg.trafficRunnerOnly == true),
   })
@@ -771,7 +481,7 @@ end
 
 local function panelBuild(pid, msg)
   local function answer(text, tone) send(pid, "cnr_panelReply", { text = text, tone = tone }) end
-  if current:isActive() then return answer("Stop the round first", "warn") end
+  if game.current:isActive() then return answer("Stop the round first", "warn") end
   local replacement
   if msg.op == "new" then
     local nb = build.normalize({ model = msg.model, name = msg.name, parts = msg.parts, vars = msg.vars })
@@ -795,20 +505,20 @@ local function panelBuild(pid, msg)
       return answer(err, "warn")
     end
   end
-  currentBuild = replacement
+  game.currentBuild = replacement
   panelService:push(panelState)
   answer(replacement and "New build: " .. build.label(replacement) or "Build reset")
 end
 
 local function reloadRound()
   cfg = settings:load()
-  current = round.new(cfg)
+  game.current = round.new(cfg)
 end
 
 local function panelSettings(pid, values, id)
   if type(id) ~= "number" and type(id) ~= "string" then id = nil end
   local function answer(ok, text, keys) send(pid, "cnr_panelReply", { ok = ok, text = text, keys = keys, id = id }) end
-  if current:isActive() then return answer(false, "Stop the round first") end
+  if game.current:isActive() then return answer(false, "Stop the round first") end
   local keys, err = settings:apply(values)
   if not keys then return answer(false, err) end
   reloadRound()
@@ -838,17 +548,18 @@ function cnrOnPanel(pid, data)
     if not ran then error(err, 0) end
   elseif msg.action == "stations" then
     local list = {}
-    for _, st in ipairs(stations) do
+    for _, st in ipairs(game.stations) do
       list[#list + 1] = { x = st.x, y = st.y, z = st.z }
     end
-    send(pid, "cnr_stationList", { map = mapName, stations = list })
+    send(pid, "cnr_stationList", { map = game.mapName, stations = list })
   elseif msg.action == "settings" then
     panelSettings(pid, msg.values, msg.id)
   elseif msg.action == "build" then
     panelBuild(pid, msg)
   elseif msg.action == "apply" then
+    local current = game.current
     if pid ~= current.runnerId then return send(pid, "cnr_panelReply", { text = "Only the runner can apply the change", tone = "warn" }) end
-    local ran, err = messages.mirrored(pid, function() applyEffects(current:apply(now(), pid)) end)
+    local ran, err = messages.mirrored(pid, function() game:applyEffects(current:apply(now(), pid)) end)
     panelService:push(panelState)
     if not ran then error(err, 0) end
   end
@@ -880,6 +591,7 @@ local function cleanChanges(list)
 end
 
 function cnrOnSetup(pid, data)
+  local current = game.current
   local ok, d = pcall(Util.JsonDecode, data)
   if not ok or type(d) ~= "table" or type(d.parts) ~= "table" then return end
   if not current.evolving or current.state ~= "applying" or pid ~= current.runnerId then return end
@@ -888,23 +600,24 @@ function cnrOnSetup(pid, data)
   if not valid then return log("ignored a malformed setup from " .. tostring(pid)) end
   local setup = { parts = valid.parts, vars = valid.vars }
   local changes = cleanChanges(d.changes)
-  if not current.test and currentBuild then
+  if not current.test and game.currentBuild then
     local name = MP.GetPlayerName(pid) or tostring(pid)
-    local nb, changed = build.apply(currentBuild, setup, changes, name, os.time())
-    if nb ~= currentBuild then
+    local nb, changed = build.apply(game.currentBuild, setup, changes, name, os.time())
+    if nb ~= game.currentBuild then
       local saved, err = saveJson(buildPath, nb)
       if not saved then return refuse(pid, err) end
-      currentBuild = nb
+      game.currentBuild = nb
       current.buildStep = nb.step
     end
     if changed then broadcast(build.changeLine(nb.step, name, changes)) end
   end
   local cfgTable = { format = 2, model = current.vehicle.model, parts = setup.parts, vars = setup.vars }
-  applyEffects(current:setupReceived(now(), pid, cfgTable))
+  game:applyEffects(current:setupReceived(now(), pid, cfgTable))
   panelService:push(panelState)
 end
 
 function cnrOnChange(pid, data)
+  local current = game.current
   local ok, d = pcall(Util.JsonDecode, data)
   if not ok or type(d) ~= "table" then return end
   if not current.evolving or current.state ~= "prep" or pid ~= current.runnerId then return end
@@ -915,10 +628,11 @@ function cnrOnChange(pid, data)
 end
 
 function cnrOnMissing(pid, data)
+  local current = game.current
   local ok, d = pcall(Util.JsonDecode, data)
   if not ok or type(d) ~= "table" or type(d.parts) ~= "table" or #d.parts == 0 then return end
   if not current:isActive() or current.players[pid] == nil then return end
-  missingCount[pid] = #d.parts
+  game.missingCount[pid] = #d.parts
   local names = {}
   for i, part in ipairs(d.parts) do
     if i > 6 then names[#names + 1] = string.format("+%d more", #d.parts - 6) break end
@@ -928,19 +642,21 @@ function cnrOnMissing(pid, data)
 end
 
 local function matchesRoundVehicle(decoded)
+  local current = game.current
   if not decoded or decoded.jbm ~= current.vehicle.model then return false end
   local pcFile = type(decoded.vcf) == "table" and decoded.vcf.partConfigFilename
   return not pcFile or current.evolving or normalizeConfig(pcFile) == normalizeConfig(current.vehicle.config)
 end
 
 local function vehicleAllowed(pid, vid, data, isSpawn)
+  local current = game.current
   if current:isActive() and current.aiOnly and pid == current.issuerId then
     local decoded = parseVehicleData(data)
     if current.state == "picking" then return not isSpawn, decoded, isSpawn and WATCHING_AI or nil end
     local model = current.vehicle and current.vehicle.model
     local roundModel = model ~= nil and decoded ~= nil and decoded.jbm == model
-    if not roundModel or (isSpawn and aiSpawnsLeft <= 0) then return false, decoded, isSpawn and WATCHING_AI or nil end
-    if isSpawn then aiSpawnsLeft = aiSpawnsLeft - 1 end
+    if not roundModel or (isSpawn and game.aiSpawnsLeft <= 0) then return false, decoded, isSpawn and WATCHING_AI or nil end
+    if isSpawn then game.aiSpawnsLeft = game.aiSpawnsLeft - 1 end
     return true, decoded
   end
   local own = cars:activeVid(pid)
@@ -964,12 +680,13 @@ local function vehicleAllowed(pid, vid, data, isSpawn)
 end
 
 local function checkParts(pid, decoded)
+  local current = game.current
   if not decoded or type(decoded.vcf) ~= "table" or decoded.vcf.parts == nil then return end
   local parts = decoded.vcf.parts
-  local entry = partsBaseline[pid]
+  local entry = game.partsBaseline[pid]
   local mayChange = current.evolving and (current.state == "prep" or current.state == "applying") and pid == current.runnerId
   if entry == nil then
-    partsBaseline[pid] = { parts = parts, announced = false }
+    game.partsBaseline[pid] = { parts = parts, announced = false }
   elseif entry.parts == nil or mayChange or (entry.quietUntil and now() < entry.quietUntil) then
     entry.parts = parts
   elseif not tables.deepEqual(parts, entry.parts) then
@@ -985,6 +702,7 @@ local function checkParts(pid, decoded)
 end
 
 local function tracksActive(pid)
+  local current = game.current
   return current:isActive() and not (current.test and pid == current.issuerId)
 end
 
@@ -997,6 +715,7 @@ local function logVehicleRefusal(pid, action, vid, decoded)
 end
 
 function cnrOnVehicleSpawn(pid, vid, data)
+  local current = game.current
   if current.vehicle and not current.test and current.players[pid] == nil then
     logVehicleRefusal(pid, "spawned", vid, parseVehicleData(data))
     refuse(pid, "You can't spawn a car while spectating")
@@ -1019,6 +738,7 @@ function cnrOnVehicleSpawn(pid, vid, data)
 end
 
 function cnrOnVehicleEdited(pid, vid, data)
+  local current = game.current
   if cars:isPreRound(pid, vid) then return 0 end
   if cars:confirmed(pid) and cars:activeVid(pid) ~= vid then
     if pid ~= current.issuerId or not aiSlotForVid(vid) then return 0 end
@@ -1038,6 +758,7 @@ function cnrOnVehicleEdited(pid, vid, data)
 end
 
 function cnrOnVehicleDeleted(pid, vid)
+  local current = game.current
   if pid == current.issuerId then removeAICar(aiSlotForVid(vid)) end
   cars:forgetPreRound(pid, vid)
   if cars:activeVid(pid) == vid and cars:setActive(pid, nil) then
@@ -1049,10 +770,11 @@ end
 function cnrOnVehicleReset(pid, vid)
   local own = cars:activeVid(pid)
   if (own or cars:confirmed(pid) or trafficService:openCount(pid)) and own ~= vid then return end
-  applyEffects(current:vehicleReset(now(), pid))
+  game:applyEffects(game.current:vehicleReset(now(), pid))
 end
 
 function cnrOnColor(pid, data)
+  local current = game.current
   local ok, msg = pcall(Util.JsonDecode, data)
   if not ok or type(msg) ~= "table" then return end
   local hex = type(msg.hex) == "string" and msg.hex or ""
@@ -1064,12 +786,13 @@ function cnrOnColor(pid, data)
   playerColors:sendMine(pid, err)
   if not saved then return end
   if current.state == "prep" and current.players[pid] then
-    placing(pid)
+    game:placing(pid)
     send(pid, "cnr_paint", { color = playerColors:get(pid) })
   end
 end
 
 function cnrOnSitOut(pid, data)
+  local current = game.current
   local ok, d = pcall(Util.JsonDecode, data)
   if not ok or type(d) ~= "table" or type(d.on) ~= "boolean" then return end
   roster:setSitOut(pid, d.on)
@@ -1080,13 +803,14 @@ function cnrOnSitOut(pid, data)
 end
 
 function cnrOnPlayerJoin(pid)
+  local current = game.current
   send(pid, "cnr_mode", { version = VERSION, startGrid = true })
   playerColors:sendMine(pid)
   pushRules(pid)
   panelService:pushLobby(lobbyState, pid)
   requestStations(pid)
-  applyEffects(current:playerJoined(now(), pid, MP.GetPlayerName(pid)))
-  if current.test and current.vehicle then parkBystander(pid) end
+  game:applyEffects(current:playerJoined(now(), pid, MP.GetPlayerName(pid)))
+  if current.test and current.vehicle then game:parkBystander(pid) end
   if current.evolving and current.state == "prep" and current.queued and current.players[pid] then
     send(pid, "cnr_queued", current.queued)
   end
@@ -1095,7 +819,7 @@ end
 
 function cnrOnPlayerDisconnect(pid)
   roster:leaveEarly(pid)
-  applyEffects(current:playerLeft(now(), pid))
+  game:applyEffects(game.current:playerLeft(now(), pid))
   roster:leaveLate(pid)
   cars:publish()
 end
@@ -1109,6 +833,7 @@ local function finite(n)
 end
 
 function cnrOnLightningClock(pid, data)
+  local current = game.current
   local timer = current.sky and current.sky.lightningTimer
   if not timer or not current:isActive() then return end
   local players = MP.GetPlayers() or {}
@@ -1125,7 +850,7 @@ local function gamePoint(p)
 end
 
 local function plannerPosition(pid)
-  if current.aiOnly then return nil end
+  if game.current.aiOnly then return nil end
   local vehicles = cars:vehicles(pid)
   local vid, data = next(vehicles)
   if not vid or next(vehicles, vid) then return nil end
@@ -1146,6 +871,7 @@ local function startPose(p)
 end
 
 function cnrOnStartGrid(pid, data)
+  local current = game.current
   local pending = current.pendingGrid
   if not pending or pid ~= pending.request.pid then return end
   local ok, d = pcall(Util.JsonDecode, data)
@@ -1170,13 +896,13 @@ function cnrOnStartGrid(pid, data)
     local cop = slots[i]
     if cop and not (vec.dist(anchor, cop.pos) <= limit + 1) then return end
   end
-  applyEffects(current:gridReceived(now(), slots, MP.GetPlayers() or {}))
+  game:applyEffects(current:gridReceived(now(), slots, MP.GetPlayers() or {}))
 end
 
 function cnrOnVehiclePicked(pid, data)
   local ok, decoded = pcall(Util.JsonDecode, data)
   if not ok or type(decoded) ~= "table" or type(decoded.model) ~= "string" then return end
-  applyEffects(current:vehiclePicked(now(), pid, decoded.model, decoded.config, MP.GetPlayers() or {}))
+  game:applyEffects(game.current:vehiclePicked(now(), pid, decoded.model, decoded.config, MP.GetPlayers() or {}))
 end
 
 local function integer(n)
@@ -1184,22 +910,24 @@ local function integer(n)
 end
 
 function cnrOnMyVehicle(pid, data)
+  local current = game.current
   local ok, decoded = pcall(Util.JsonDecode, data)
   local vid = ok and type(decoded) == "table" and tonumber(decoded.vid)
   if not integer(vid) or vid < 0 or not roundCarActive() or current.players[pid] == nil then return end
   local owned = cars:vehicles(pid)
   if not owned[vid] or (pid == current.issuerId and aiSlotForVid(vid)) then return end
   if cars:confirm(pid, vid) then current:forgetVehicleSight(pid) end
-  placed(pid)
+  game:placed(pid)
   log(string.format("%s placed the round car (vid %s)", MP.GetPlayerName(pid) or tostring(pid), tostring(vid)))
   local rebuildId = tonumber(decoded.rebuild)
   cars:acknowledgeRebuild(pid, rebuildId)
-  applyEffects(current:vehicleReady(now(), pid, rebuildId))
-  if pendingAISetup then dispatchAISetup() else openTraffic(pid) end
+  game:applyEffects(current:vehicleReady(now(), pid, rebuildId))
+  if game.pendingAISetup then game:dispatchAISetup() else game:openTraffic(pid) end
   cars:publish()
 end
 
 function cnrOnTrafficCars(pid, data)
+  local current = game.current
   if not trafficService:openCount(pid) then return end
   local ok, d = pcall(Util.JsonDecode, data)
   if not ok or type(d) ~= "table" or type(d.vids) ~= "table" then return end
@@ -1211,19 +939,19 @@ end
 local function registerAICar(pid, a, owned)
   if type(a) ~= "table" then return end
   local id, vid, serial = a.id, a.vid, a.instance
-  if not round.isAI(id) or not current.players[id] then return end
+  if not round.isAI(id) or not game.current.players[id] then return end
   if not integer(vid) or vid < 0 or not owned[vid] or cars:confirmedVid(pid) == vid then return end
   if serial ~= nil then
-    local latest = math.max(previousRoundSerial, aiSlotSerial[id] or 0, aiVidSerial[vid] or 0)
+    local latest = math.max(game.previousRoundSerial, game.aiSlotSerial[id] or 0, game.aiVidSerial[vid] or 0)
     if not integer(serial) or serial <= latest then return end
-    aiSlotSerial[id], aiVidSerial[vid] = serial, serial
-    connectionSerial[pid] = math.max(connectionSerial[pid] or 0, serial)
-  elseif aiSlotSerial[id] or aiVidSerial[vid] or (aiCars[id] and aiCars[id].vid == vid) then
+    game.aiSlotSerial[id], game.aiVidSerial[vid] = serial, serial
+    game.connectionSerial[pid] = math.max(game.connectionSerial[pid] or 0, serial)
+  elseif game.aiSlotSerial[id] or game.aiVidSerial[vid] or (game.aiCars[id] and game.aiCars[id].vid == vid) then
     return
   end
   removeAICar(id)
   removeAICar(aiSlotForVid(vid))
-  aiCars[id] = {vid=vid, instance=serial}
+  game.aiCars[id] = {vid=vid, instance=serial}
   cars:forgetPreRound(pid, vid)
 end
 
@@ -1242,6 +970,7 @@ local function decodeObservationPacket(data)
 end
 
 function cnrOnAiVehicles(pid, data)
+  local current = game.current
   if not current.test or pid ~= current.issuerId then return end
   local decoded = decodeObservationPacket(data)
   if not decoded or type(decoded.ai) ~= "table" then return end
@@ -1255,7 +984,7 @@ function cnrOnBoard(pid, data)
   if msg.action == "close" then
     boardSubs[pid] = nil
   elseif msg.action == "open" or msg.action == "filter" then
-    local sub = boardSubs[pid] or { map = mapName }
+    local sub = boardSubs[pid] or { map = game.mapName }
     if msg.action == "filter" then
       sub = {
         map = type(msg.map) == "string" and msg.map or sub.map, mode = type(msg.mode) == "string" and msg.mode or nil,
@@ -1272,12 +1001,13 @@ function cnrOnBoard(pid, data)
 end
 
 function cnrOnSight(pid, data)
+  local current = game.current
   local d = decodeObservationPacket(data)
   if not d or type(d.seen) ~= "boolean" then return end
-  if not cars:confirmedVid(current.runnerId) and not aiCars[current.runnerId] then return end
+  if not cars:confirmedVid(current.runnerId) and not game.aiCars[current.runnerId] then return end
   if d.aiId ~= nil or d.instance ~= nil then
     if not current.test or pid ~= current.issuerId or not round.isAI(d.aiId) or not integer(d.instance) then return end
-    local car = aiCars[d.aiId]
+    local car = game.aiCars[d.aiId]
     if not car or car.instance ~= d.instance then return end
     local owned = cars:vehicles(pid)
     if owned[car.vid] then current:aiSightReport(now(), pid, d.aiId, d.seen) end
@@ -1289,22 +1019,22 @@ end
 function cnrOnCover(pid, data)
   local ok, d = pcall(Util.JsonDecode, data)
   if not ok or type(d) ~= "table" then return end
-  current:coverReport(now(), pid, d.covered == true)
+  game.current:coverReport(now(), pid, d.covered == true)
 end
 
 function cnrOnStations(pid, data)
   local ok, decoded = pcall(Util.JsonDecode, data)
-  if not ok or type(decoded) ~= "table" or decoded.map ~= mapName or #stations > 0 then return end
+  if not ok or type(decoded) ~= "table" or decoded.map ~= game.mapName or #game.stations > 0 then return end
   for _, s in ipairs(decoded.stations or {}) do
     local v = vec.toVec(s)
     if v then
       v.r = tonumber(s.r) or 0
-      stations[#stations + 1] = v
+      game.stations[#game.stations + 1] = v
     end
   end
-  if #stations > 0 then
-    saveStations(stations)
-    log(string.format("%d gas stations detected for %s", #stations, mapName))
+  if #game.stations > 0 then
+    saveStations(game.stations)
+    log(string.format("%d gas stations detected for %s", #game.stations, game.mapName))
   end
 end
 
@@ -1323,32 +1053,33 @@ local startScheduled = autoRounds.register(panelService, {
   settings = settings,
   a = nextRound,
   pushRules = function()
-    if not current:isActive() then useConfig(settings:effective()) end
+    if not game.current:isActive() then useConfig(settings:effective()) end
     pushRules()
   end,
   startNext = startNext,
   reloadRound = reloadRound,
-  isActive = function() return current:isActive() end,
+  isActive = function() return game.current:isActive() end,
   send = send,
 })
 
 function cnrTick()
   panelService:tick(panelState, lobbyState)
   if nextRound:due(now()) then startScheduled() end
+  local current = game.current
   if not current:isActive() then return end
-  dispatchAISetup()
-  if pendingAISetup and now() >= pendingAISetup.deadline then
-    local pid = pendingAISetup.pid
-    local waitingForCar = not pendingAISetup.payload.aiOnly and cars:placementPending(pid)
-    applyEffects(current:stop(now(), pid))
+  game:dispatchAISetup()
+  if game.pendingAISetup and now() >= game.pendingAISetup.deadline then
+    local pid = game.pendingAISetup.pid
+    local waitingForCar = not game.pendingAISetup.payload.aiOnly and cars:placementPending(pid)
+    game:applyEffects(current:stop(now(), pid))
     notify(pid, waitingForCar and "Practice cancelled: your round car did not register in time."
       or "Practice cancelled: too few free vehicle slots for the AI. Free a slot or increase MaxCars.", "warn")
     return
   end
   local positions = {}
-  for pid in pairs(current.players) do positions[pid] = carFor(pid) end
-  announceLightning(positions[current.runnerId])
-  applyEffects(current:tick(now(), positions, stations, trafficService:cars()))
+  for pid in pairs(current.players) do positions[pid] = game:carFor(pid) end
+  game:announceLightning(positions[current.runnerId])
+  game:applyEffects(current:tick(now(), positions, game.stations, trafficService:cars()))
 end
 
 FS.CreateDirectory(stationsDir)
@@ -1356,7 +1087,7 @@ reloadRound()
 loadLeaderboard()
 loadBuild()
 playerColors:load()
-mapName = (tostring(MP.Get(MP.Settings.Map) or ""):match("levels/([^/]+)/")) or "unknown"
+game.mapName = (tostring(MP.Get(MP.Settings.Map) or ""):match("levels/([^/]+)/")) or "unknown"
 loadStations()
 
 MP.RegisterEvent("onVehicleSpawn", "cnrOnVehicleSpawn")
@@ -1390,4 +1121,4 @@ send(-1, "cnr_roundEnd", { reason = "cancelled" })
 send(-1, "cnr_mode", { version = VERSION, startGrid = true })
 pushRules()
 panelService:pushLobby(lobbyState)
-log("Cops and Robbers " .. VERSION .. " loaded on " .. mapName .. " (" .. pluginDir .. ")")
+log("Cops and Robbers " .. VERSION .. " loaded on " .. game.mapName .. " (" .. pluginDir .. ")")
