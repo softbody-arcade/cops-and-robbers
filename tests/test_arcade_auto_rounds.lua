@@ -36,26 +36,27 @@ test("the scheduled callback cancels the countdown and starts only an idle round
   assertEq(starts, 1)
 end)
 
-test("auto off during a chase refreshes the config and clears the client countdown", function()
+test("auto during a chase toggles the live setting and clears the client countdown", function()
   local a = autoRounds.new()
   local sent, replies = {}, {}
   local p = panel.new({
     reply = function(pid, text) replies[#replies + 1] = { pid = pid, text = text } end,
   }, roster.new())
-  local saved, refreshes, pushes = {}, 0, 0
+  local saved, pushes = { autoNextRound = true }, 0
   autoRounds.register(p, {
     a = a,
-    settings = { set = function(key, value) saved[key] = value end },
+    settings = {
+      get = function(_, key) return saved[key] end,
+      set = function(_, key, value) saved[key] = value; return true end,
+    },
     isActive = function() return true end,
-    refreshConfig = function() refreshes = refreshes + 1 end,
     reloadRound = function() error("replaced a running round") end,
     pushRules = function() pushes = pushes + 1 end,
     send = function(pid, event, data) sent[#sent + 1] = { pid = pid, event = event, data = data } end,
   })
   a:schedule(12)
-  p:run(4, "auto off")
+  p:run(4, "auto")
   assertEq(saved.autoNextRound, "off")
-  assertEq(refreshes, 1)
   assertEq(pushes, 1)
   assertEq(a:pending(), nil)
   assertEq(#sent, 1)

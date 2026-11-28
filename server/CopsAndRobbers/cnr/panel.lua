@@ -70,7 +70,8 @@ function M.goBlocked(phase, evolving, runnerName, loading)
 end
 
 function M.snapshot(info)
-  local cfg = info.cfg or {}
+  local cfg = copy(info.cfg or {})
+  if info.autoNextRound ~= nil then cfg.autoNextRound = info.autoNextRound end
   return {
     version = info.version,
     map = info.map,
@@ -80,7 +81,7 @@ function M.snapshot(info)
     test = info.test == true,
     elapsed = info.elapsed and math.floor(info.elapsed) or nil,
     players = M.playerRows(info.players, info.nextRunner, info.lastRunner),
-    settings = copy(cfg),
+    settings = cfg,
     defaults = copy(info.defaults or {}),
     auto = cfg.autoNextRound == true,
     can = M.can(info.phase, info.test, info.evolving, info.skyRandom),

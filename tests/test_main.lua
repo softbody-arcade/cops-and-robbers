@@ -639,9 +639,12 @@ test("a mid-chase rejoin gets chaseElapsed in the spectator event", function()
   env.cleanup()
 end)
 
-local function countSent(env, ev, pid)
+local function countSent(env, ev, pid, offset)
   local n = 0
-  for _, s in ipairs(env.sent) do if s.ev == ev and (pid == nil or s.pid == pid) then n = n + 1 end end
+  for i = (offset or 0) + 1, #env.sent do
+    local s = env.sent[i]
+    if s.ev == ev and (pid == nil or s.pid == pid) then n = n + 1 end
+  end
   return n
 end
 
@@ -2063,6 +2066,133 @@ test("after a round with auto on the panel shows the next round", function()
   assertEq(st.autoNext.seconds, 15); assertEq(st.autoNext.runner, "Bob")
   assertEq(st.lastResult.runner, "Reinder"); assertEq(st.lastResult.reason, "caught")
   assertEq(type(st.lastResult.seconds), "number")
+  env.cleanup()
+end)
+
+local function editConfig(env, json)
+  local file = assert(io.open(env.dir .. "config.json", "w"))
+  assert(file:write(json))
+  assert(file:close())
+end
+
+test("a disk edit survives a mid-round auto toggle and applies from the next round", function()
+  local env = boot()
+  env.startRound()
+  editConfig(env, '{"headStartSeconds":9}')
+  env.panel(1, "auto on")
+  assertEq(decodeJson(readFileAt(env.dir .. "config.json")).headStartSeconds, 9)
+
+  local function runnerGoSeconds()
+    env.go()
+    env.clock = env.clock + 3
+    env.call("cnr_tick")
+    return decodeJson(env.lastSent("cnr_runnerGo").data).headStartSeconds
+  end
+  assertEq(runnerGoSeconds(), 7)
+  env.panel(2, "stop")
+  env.startRound()
+  assertEq(runnerGoSeconds(), 9)
+  env.cleanup()
+end)
+
+test("a held-back change reaches players once at round end", function()
+  local env = boot()
+  runToChase(env)
+  editConfig(env, '{"headStartSeconds":9}')
+  env.panel(1, "auto on")
+  assertEq(decodeJson(env.lastSent("cnr_rules").data).headStartSeconds, 7)
+  env.call("onPlayerJoin", 2)
+  assertEq(env.lastSent("cnr_rules").pid, 2)
+  assertEq(decodeJson(env.lastSent("cnr_rules").data).headStartSeconds, 7)
+  local offset = #env.sent
+  env.panel(2, "end")
+  assertEq(countSent(env, "cnr_rules", nil, offset), 1)
+  assertEq(env.lastSent("cnr_rules").pid, -1)
+  assertEq(decodeJson(env.lastSent("cnr_rules").data).headStartSeconds, 9)
+  env.startRound()
+  offset = #env.sent
+  env.panel(2, "stop")
+  assertEq(countSent(env, "cnr_rules", nil, offset), 0)
+  env.cleanup()
+end)
+
+test("a subscribed panel shows auto off at once during a chase", function()
+  local env = boot({ config = '{"autoNextRound":true}' })
+  runToChase(env)
+  assertEq(panelOf(env).auto, true)
+  editConfig(env, '{"headStartSeconds":9}')
+  env.sent = {}
+  env.panel(2, "auto off")
+  local update = env.lastSent("cnr_panelState")
+  assertEq(update.pid, 1)
+  local state = decodeJson(update.data)
+  assertEq(state.phase, "running")
+  assertEq(state.auto, false)
+  assertEq(state.settings.autoNextRound, false)
+  assertEq(state.settings.headStartSeconds, 7)
+  env.panel(2, "end")
+  assertEq(decodeJson(env.lastSent("cnr_panelState").data).settings.headStartSeconds, 9)
+  env.cleanup()
+end)
+
+test("a disk edit to the delay doesn't change the running round's next countdown", function()
+  local env = boot({ config = '{"autoNextRound":false,"autoNextDelaySeconds":5}' })
+  runToChase(env)
+  editConfig(env, '{"autoNextDelaySeconds":15}')
+  env.panel(1, "auto on")
+  env.panel(2, "end")
+  assertEq(decodeJson(env.lastSent("cnr_roundEnd").data).autoNextSeconds, 5)
+  local state = panelOf(env)
+  assertEq(state.autoNext.seconds, 5)
+  assertEq(state.settings.autoNextDelaySeconds, 15)
+  env.cleanup()
+end)
+
+test("auto off mid-chase still stops the next countdown", function()
+  local env = boot({ config = '{"autoNextRound":true,"autoNextDelaySeconds":5}' })
+  runToChase(env)
+  env.panel(1, "auto off")
+  env.panel(2, "end")
+  local ended = decodeJson(env.lastSent("cnr_roundEnd").data)
+  assertEq(ended.reason, "called")
+  assertEq(ended.autoNextSeconds, nil)
+  env.sent = {}
+  env.clock = env.clock + 5
+  env.call("cnr_tick")
+  assertEq(env.lastSent("cnr_pickVehicle"), nil)
+  env.cleanup()
+end)
+
+test("auto on with an unreadable config.json changes nothing and says so", function()
+  local env = boot({ config = '{"autoNextRound":false}' })
+  local path = env.dir .. "config.json"
+  assert(os.remove(path))
+  FS.CreateDirectory(path)
+  local _, readError = require("arcade.store").read(path)
+  assert(readError)
+  env.sent = {}
+  env.panel(1, "auto on")
+  assertEq(env.replyHas(readError), true)
+  assertEq(env.lastSent("cnr_rules"), nil)
+  assertEq(env.lastSent("cnr_autoNext"), nil)
+  local state = panelOf(env)
+  assertEq(state.auto, false)
+  assertEq(state.settings.autoNextRound, false)
+  env.cleanup()
+end)
+
+test("a failed auto off keeps the scheduled next round", function()
+  local env = boot({ config = '{"autoNextRound":true,"autoNextDelaySeconds":5}' })
+  runToChase(env)
+  env.panel(2, "end")
+  editConfig(env, "{broken")
+  env.sent = {}
+  env.panel(1, "auto off")
+  assertEq(env.replyHas("config.json is not valid JSON"), true)
+  assertEq(env.lastSent("cnr_autoNext"), nil)
+  env.clock = env.clock + 5
+  env.call("cnr_tick")
+  assertEq(env.lastSent("cnr_pickVehicle") ~= nil, true)
   env.cleanup()
 end)
 

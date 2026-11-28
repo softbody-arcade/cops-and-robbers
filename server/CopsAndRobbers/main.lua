@@ -57,7 +57,6 @@ local missingCount = {}
 local lastResult
 local currentRunnerKey
 local lastIssuer
-local rawConfig = {}
 local PARTS_PLACING_SECONDS, PARTS_SETTLE_SECONDS = 10, 3
 local REFUSAL_LOG_SECONDS = 10
 local refusalLoggedAt = roster:perPlayer("refusalLoggedAt", "early")
@@ -90,9 +89,9 @@ end
 local boardSubs = roster:perPlayer("boardSubs", "early")
 local leaderboardLocked = false
 
-local function readSettings()
-  local _
-  cfg, _, rawConfig = settings:load()
+local function useConfig(values)
+  cfg = values
+  current.cfg = values
 end
 
 local function loadLeaderboard()
@@ -418,6 +417,15 @@ local function dispatchAISetup()
   if not payload.aiOnly and registeredRoundCar[pid] then openTraffic(pid) end
 end
 
+local lastRulesSignature
+local function pushRules(pid, onlyChanged)
+  local payload = rules.payload(cfg, traffic.perPlayer(cfg.trafficPerPlayer, traffic.maxCars(), 1))
+  local signature = panel.signature(payload)
+  if onlyChanged and signature == lastRulesSignature then return end
+  send(pid or -1, "cnr_rules", payload)
+  lastRulesSignature = signature
+end
+
 local function applyEffects(effects)
   for _, e in ipairs(effects) do
     if e.kind == "reply" then
@@ -520,7 +528,7 @@ local function applyEffects(effects)
     elseif e.kind == "roundEnd" then
       for pid in pairs(parkedBystanders) do send(pid, "cnr_parkBystanderCars", { on = false }) end
       roster:clear("parkedBystanders")
-      local autoNext = cfg.autoNextRound and e.reason ~= "cancelled" and not e.to
+      local autoNext = settings:get("autoNextRound") and e.reason ~= "cancelled" and not e.to
       send(e.to or -1, "cnr_roundEnd", {
         runnerId = e.runnerId, runnerName = e.runnerName, survivedSeconds = e.survivedSeconds,
         reason = e.reason, explode = e.explode, catchers = e.catchers, message = e.message,
@@ -542,6 +550,8 @@ local function applyEffects(effects)
       end
       aiCars, aiSlotSerial, aiVidSerial = {}, {}, {}
       if autoNext then nextRound:schedule(now() + cfg.autoNextDelaySeconds) end
+      useConfig(settings:effective())
+      pushRules(nil, true)
     elseif e.kind == "live" then
       for pid in pairs(current.players) do
         if pid ~= current.runnerId and not round.isAI(pid) then
@@ -680,6 +690,7 @@ panelService:command("start", function(pid, cmd)
   partsBaseline = {}
   missingCount = {}
   lastResult = nil
+  useConfig(settings:snapshot())
   local sittingOut = roster:sitOutSnapshot()
   applyEffects(current:start(now(), runnerId, pid, players, { gridPlanner = gridClients[runnerId] and runnerId, build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random), traffic = traffic.perPlayer(cfg.trafficPerPlayer, traffic.maxCars(), 1), trafficRunnerOnly = cfg.trafficRunnerOnly == true, sittingOut = sittingOut }))
 end)
@@ -694,13 +705,10 @@ panelService:command("test", function(pid, cmd)
   previousRoundSerial = connectionSerial[pid] or 0
   local role = cmd.args[1] and cmd.args[1]:lower()
   if cfg.carMode == "evolving" and not currentBuild then return refuse(pid, "Start a new build first") end
+  useConfig(settings:snapshot())
   local opts = { gridPlanner = gridClients[pid] and pid, test = true, role = role, aiOnly = roster:sittingOut(pid), build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random) }
   applyEffects(current:start(now(), nil, pid, MP.GetPlayers() or {}, opts))
 end)
-
-local function pushRules(pid)
-  send(pid or -1, "cnr_rules", rules.payload(cfg, traffic.perPlayer(cfg.trafficPerPlayer, traffic.maxCars(), 1)))
-end
 
 local function lobbyState()
   local players = MP.GetPlayers() or {}
@@ -824,6 +832,7 @@ local function panelState()
     test = current.test == true,
     elapsed = running and current.releasedAt and math.max(0, now() - current.releasedAt) or nil,
     players = entries, cfg = cfg, defaults = config.DEFAULTS,
+    autoNextRound = settings:get("autoNextRound"),
     evolving = current.evolving == true,
     build = buildInfo,
     nextRunner = nextName, lastRunner = lastPid and players[lastPid] or nil,
@@ -866,7 +875,7 @@ local function panelBuild(pid, msg)
 end
 
 local function reloadRound()
-  readSettings()
+  cfg = settings:load()
   current = round.new(cfg)
 end
 
@@ -1386,17 +1395,13 @@ local function startNext()
 end
 
 local startScheduled = autoRounds.register(panelService, {
-  settings = {
-    get = function(key) return cfg[key] end,
-    set = function(key, text) settings:save(config.setValue(rawConfig, key, text)) end,
-  },
+  settings = settings,
   a = nextRound,
-  pushRules = pushRules,
-  startNext = startNext,
-  refreshConfig = function()
-    readSettings()
-    current.cfg = cfg
+  pushRules = function()
+    if not current:isActive() then useConfig(settings:effective()) end
+    pushRules()
   end,
+  startNext = startNext,
   reloadRound = reloadRound,
   isActive = function() return current:isActive() end,
   send = send,
@@ -1422,13 +1427,12 @@ function cnrTick()
 end
 
 FS.CreateDirectory(stationsDir)
-readSettings()
+reloadRound()
 loadLeaderboard()
 loadBuild()
 playerColors:load()
 mapName = (tostring(MP.Get(MP.Settings.Map) or ""):match("levels/([^/]+)/")) or "unknown"
 loadStations()
-current = round.new(cfg)
 
 MP.RegisterEvent("onVehicleSpawn", "cnrOnVehicleSpawn")
 MP.RegisterEvent("onVehicleEdited", "cnrOnVehicleEdited")

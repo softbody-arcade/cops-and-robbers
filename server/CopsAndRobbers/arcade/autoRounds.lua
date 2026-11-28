@@ -26,9 +26,9 @@ end
 function autoRounds.register(p, ctx)
   p:command("auto", function(pid, cmd, m)
     local arg = cmd.args[1] and cmd.args[1]:lower()
-    if arg ~= "on" and arg ~= "off" then arg = ctx.settings.get("autoNextRound") and "off" or "on" end
-    ctx.settings.set("autoNextRound", arg)
-    ctx.refreshConfig()
+    if arg ~= "on" and arg ~= "off" then arg = ctx.settings:get("autoNextRound") and "off" or "on" end
+    local ok, err = ctx.settings:set("autoNextRound", arg)
+    if not ok then return m.refuse(pid, err) end
     ctx.pushRules()
     if arg == "off" then
       ctx.a:cancel()
