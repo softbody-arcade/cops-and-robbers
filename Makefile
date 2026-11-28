@@ -10,6 +10,7 @@ test:
 	bash tests/board_test.sh
 	bash tests/release_test.sh
 	bash tests/doctor_test.sh
+	bash tests/install_local_test.sh
 	bash tests/base_pin_test.sh
 
 doctor:
@@ -42,9 +43,9 @@ package: clean
 	cd dist/release && sha256sum CopsAndRobbers.zip CopsAndRobbers-server.tar.gz > SHA256SUMS
 
 install-local: package
-	mkdir -p $(TESTSERVER)/Resources/Client $(TESTSERVER)/Resources/Server
-	cp dist/Client/CopsAndRobbers.zip $(TESTSERVER)/Resources/Client/
-	rsync -a dist/Server/CopsAndRobbers $(TESTSERVER)/Resources/Server/
+	mkdir -p "$(TESTSERVER)/Resources/Client" "$(TESTSERVER)/Resources/Server/CopsAndRobbers"
+	cp dist/Client/CopsAndRobbers.zip "$(TESTSERVER)/Resources/Client/"
+	rsync -a --delete --filter='P /config.json*' --filter='P /data' dist/Server/CopsAndRobbers/ "$(TESTSERVER)/Resources/Server/CopsAndRobbers/"
 
 clean:
 	rm -rf dist
