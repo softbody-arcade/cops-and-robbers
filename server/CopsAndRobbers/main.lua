@@ -972,12 +972,6 @@ function cnrOnMissing(pid, data)
   send(current.test and current.issuerId or -1, "cnr_notice", { msg = string.format("⚠ %s is missing: %s", MP.GetPlayerName(pid) or tostring(pid), table.concat(names, ", ")), tone = "warn" })
 end
 
-function cnrOnChatMessage(pid, name, msg)
-  if not commands.parse(msg) then return 0 end
-  notify(pid, "Chat commands are gone: use the Cops and Robbers card at the bottom of your screen.")
-  return 1
-end
-
 local function matchesRoundVehicle(decoded)
   if not decoded or decoded.jbm ~= current.vehicle.model then return false end
   local pcFile = type(decoded.vcf) == "table" and decoded.vcf.partConfigFilename
@@ -1416,7 +1410,6 @@ mapName = (tostring(MP.Get(MP.Settings.Map) or ""):match("levels/([^/]+)/")) or 
 loadStations()
 current = round.new(cfg)
 
-MP.RegisterEvent("onChatMessage", "cnrOnChatMessage")
 MP.RegisterEvent("onVehicleSpawn", "cnrOnVehicleSpawn")
 MP.RegisterEvent("onVehicleEdited", "cnrOnVehicleEdited")
 MP.RegisterEvent("onVehicleDeleted", "cnrOnVehicleDeleted")

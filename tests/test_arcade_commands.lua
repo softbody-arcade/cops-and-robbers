@@ -15,12 +15,3 @@ test("parseText treats empty and blank input as help", function()
     assertEq(cmd.rest, "")
   end
 end)
-
-test("parse matches the supplied prefix case-insensitively", function()
-  assertEq(commands.parse("/CNR stop", "/cnr").name, "stop")
-  assertEq(commands.parse("/other stop", "/OTHER").name, "stop")
-end)
-
-test("parse ignores a command for a different prefix", function()
-  assertEq(commands.parse("/cnr stop", "/other"), nil)
-end)

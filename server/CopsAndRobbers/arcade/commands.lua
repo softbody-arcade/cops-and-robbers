@@ -9,11 +9,4 @@ function M.parseText(text)
   return { name = name:lower(), args = args, rest = rest }
 end
 
-function M.parse(msg, prefix)
-  if type(msg) ~= "string" or type(prefix) ~= "string" then return nil end
-  local token, tail = msg:match("^%s*(%S+)%s*(.*)$")
-  if not token or token:lower() ~= prefix:lower() then return nil end
-  return M.parseText(tail)
-end
-
 return M

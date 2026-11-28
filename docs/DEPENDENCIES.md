@@ -49,7 +49,6 @@ Then do the checks for whatever actually updated.
   - `MP.Get(MP.Settings.Map)` (the map path; we parse `levels/<name>/`) and `MP.Get(MP.Settings.MaxCars)` (a number; it caps the traffic per player, and anything else means no cap)
   - `Util.JsonEncode` / `JsonDecode` / `JsonPrettify`, `FS.CreateDirectory` / `Remove` / `Rename`
 - **Events and the data shapes we parse:**
-  - `onChatMessage(pid, name, msg)`: returning `1` hides the message. We use it only to hide a typed `/cnr ...` from chat; the sender gets a HUD notice pointing to the Cops and Robbers card instead.
   - `onVehicleSpawn(pid, vid, data)` and `onVehicleEdited(pid, vid, data)`. The data is `...:pid-vid:{json}`, and we parse from the first `{`. The JSON has `jbm` (model) and `vcf.partConfigFilename` / `vcf.parts`. Returning `1` from an edit **deletes the car**.
   - **Traffic is synced like any car:** BeamMP sends every car a player's game spawns, traffic included, through `onVehicleSpawn`, counts it against `MaxCars` and shows it to everyone. Nothing in the data marks traffic, so the server trusts the game's own report (`cnr_trafficCars`) and caps the extra cars. Moving a traffic car to a new spot reaches us as `onVehicleReset` for that car.
   - `onVehicleDeleted`, `onVehicleReset`, `onPlayerJoin`, `onPlayerDisconnect`.
