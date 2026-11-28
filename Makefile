@@ -45,8 +45,7 @@ package: clean
 install-local: package
 	mkdir -p "$(TESTSERVER)/Resources/Client" "$(TESTSERVER)/Resources/Server/CopsAndRobbers"
 	cp dist/Client/CopsAndRobbers.zip "$(TESTSERVER)/Resources/Client/"
-	rsync -a --delete --exclude=/config.json --exclude=/data/ dist/Server/CopsAndRobbers/ "$(TESTSERVER)/Resources/Server/CopsAndRobbers/"
-	test -e "$(TESTSERVER)/Resources/Server/CopsAndRobbers/config.json" || cp dist/Server/CopsAndRobbers/config.json "$(TESTSERVER)/Resources/Server/CopsAndRobbers/"
+	rsync -a --delete --filter='P /config.json*' --filter='P /data' dist/Server/CopsAndRobbers/ "$(TESTSERVER)/Resources/Server/CopsAndRobbers/"
 
 clean:
 	rm -rf dist
