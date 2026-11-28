@@ -3077,6 +3077,36 @@ test("a refused start keeps a running practice", function()
   env.cleanup()
 end)
 
+test("a start into evolving mode without a build is refused by the new round's settings, keeping practice", function()
+  local env = boot()
+  env.names = { "Reinder", "Bob" }
+  env.panel(1, "test runner")
+  env.call("cnr_vehiclePicked", 1, PICK)
+  editConfig(env, '{"carMode":"evolving"}')
+  env.panel(1, "auto on")
+  env.sent = {}
+  env.panel(1, "start next")
+  assertEq(env.replyHas("Start a new build first"), true)
+  assertEq(env.lastSent("cnr_roundEnd"), nil)
+  assertEq(env.lastSent("cnr_pickVehicle"), nil)
+  env.cleanup()
+end)
+
+test("a refused start doesn't fix who runs next", function()
+  local env = boot()
+  local random = math.random
+  math.random = function(n) if n then return n end return random() end
+  env.names = { "Reinder" }
+  env.panel(1, "start next")
+  assertEq(env.replyHas("Not enough players"), true)
+  env.names = { "Reinder", "Bob" }
+  env.panel(1, "start next")
+  env.call("cnr_vehiclePicked", 1, PICK)
+  math.random = random
+  assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 2)).role, "runner")
+  env.cleanup()
+end)
+
 test("a refused manual start keeps the pending automatic round", function()
   local env = boot({ config = '{"autoNextRound": true, "autoNextDelaySeconds": 5}' })
   env.panel(2, "start Bob")

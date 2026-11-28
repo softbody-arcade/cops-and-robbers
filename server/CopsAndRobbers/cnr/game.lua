@@ -638,7 +638,7 @@ function M.new(ctx)
     send(pid, "cnr_requestStations", { map = game.mapName })
   end
 
-  local function plannedRunner(players)
+  local function plannedRunner(players, peek)
     local countsByName = {}
     for p, name in pairs(players) do countsByName[name] = game.runCounts[roster:key(p)] or 0 end
     local lastPid = game.lastRunnerKey and roster:pidForKey(game.lastRunnerKey)
@@ -650,7 +650,7 @@ function M.new(ctx)
       end
     end
     local pid = commands.matchPlayer("next", players, nil, countsByName, lastName)
-    game.plannedRunnerKey = pid and roster:key(pid) or nil
+    if not peek then game.plannedRunnerKey = pid and roster:key(pid) or nil end
     return pid
   end
 
@@ -684,7 +684,7 @@ function M.new(ctx)
     local current = self.current
     local practice = command == "test"
     if current:isActive() and (practice or not current.test) then return reject(replyTo, "A round is already running") end
-    if current.cfg.carMode == "evolving" and not self.currentBuild then return reject(replyTo, "Start a new build first") end
+    if ctx.settings:get("carMode") == "evolving" and not self.currentBuild then return reject(replyTo, "Start a new build first") end
     local players = roster:players()
     if practice then
       local aiOnly = roster:sittingOut(pid)
@@ -702,7 +702,7 @@ function M.new(ctx)
       if not runnerId then return reject(replyTo, "No previous runner online") end
     else
       if query and query:lower() == "next" then
-        runnerId = plannedRunner(candidates)
+        runnerId = plannedRunner(candidates, true)
       else
         runnerId, err = commands.matchPlayer(query, candidates)
       end
@@ -713,11 +713,12 @@ function M.new(ctx)
     end
     if not runnerId then return reject(replyTo, err) end
     if roster:sittingOut(runnerId) then return reject(replyTo, string.format("%s is sitting out", players[runnerId] or tostring(runnerId))) end
-    return { participants = participants, issuer = pid, runnerId = runnerId, players = players }
+    return { participants = participants, issuer = pid, runnerId = runnerId, players = players, planned = query ~= nil and query:lower() == "next" }
   end
 
   function game:beforeStart(prepared, at)
     if prepared.solo then return end
+    if prepared.planned then game.plannedRunnerKey = roster:key(prepared.runnerId) end
     local current = self.current
     if current:isActive() and current.test then
       self:applyEffects(current:stop(at, current.issuerId))
