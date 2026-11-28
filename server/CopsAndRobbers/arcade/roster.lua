@@ -2,20 +2,25 @@ local roster = {}
 
 function roster.new()
   local r = {}
-  local tables = {}
+  local groupByName = {}
   local groups = { early = {}, late = {} }
 
   function r:perPlayer(name, group)
-    if not tables[name] then
-      local entries = {}
-      groups[group][name] = entries
-      tables[name] = entries
+    local existingGroup = groupByName[name]
+    if existingGroup and existingGroup ~= group then
+      error(string.format("per-player table %s belongs to group %s, requested %s", name, existingGroup, group), 2)
     end
-    return tables[name]
+    if not existingGroup then
+      groups[group][name] = {}
+      groupByName[name] = group
+    end
+    return groups[group][name]
   end
 
   function r:clear(name)
-    local entries = tables[name]
+    local group = groupByName[name]
+    if not group then error("unknown per-player table " .. tostring(name), 2) end
+    local entries = groups[group][name]
     for pid in pairs(entries) do entries[pid] = nil end
   end
 

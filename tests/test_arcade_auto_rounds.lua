@@ -15,6 +15,27 @@ test("a round is due from its scheduled time until cancelled", function()
   assertEq(a:due(13), false)
 end)
 
+test("the scheduled callback cancels the countdown and starts only an idle round", function()
+  local a = autoRounds.new()
+  local active, starts = true, 0
+  local startScheduled = autoRounds.register({ command = function() end }, {
+    a = a,
+    isActive = function() return active end,
+    startNext = function() starts = starts + 1 end,
+  })
+  assertEq(type(startScheduled), "function")
+  a:schedule(12)
+  startScheduled()
+  assertEq(a:pending(), nil)
+  assertEq(starts, 0)
+
+  active = false
+  a:schedule(14)
+  startScheduled()
+  assertEq(a:pending(), nil)
+  assertEq(starts, 1)
+end)
+
 test("auto off during a chase refreshes the config and clears the client countdown", function()
   local a = autoRounds.new()
   local sent, replies = {}, {}
