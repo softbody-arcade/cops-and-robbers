@@ -1257,6 +1257,7 @@ test("if the old leaderboard can't be moved aside, it is never overwritten", fun
   local rounds = decodeJson(env.lastSent("cnr_boardState").data).rounds
   assertEq(#rounds, 1)
   assertEq(rounds[1].player, "Reinder")
+  assertEq(env.logHas("runs are not saved until the server restarts"), true)
   assertEq(env.logHas("leaderboard not saved: the old file could not be moved aside"), true)
   env.cleanup()
 end)
@@ -4445,6 +4446,7 @@ test("a temporary leaderboard read error at startup cannot replace earlier runs"
   assertEq(#rounds, 1)
   assertEq(rounds[1].player, "Reinder")
   assertEq(saved, bytes)
+  assertEq(env.logHas("permission denied; runs are not saved until the server restarts"), true)
 end)
 
 test("a failed build restore names the kept backup and logs its path", function()

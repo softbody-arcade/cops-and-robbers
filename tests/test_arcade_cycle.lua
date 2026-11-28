@@ -15,15 +15,15 @@ function stub.settingsDeclaration()
   return { DEFAULTS = { laps = 3 } }
 end
 
-local function fixture(service, manifest)
+local function fixture(service)
   local cycle = require("arcade.cycle")
   local r = roster.new()
   function r:players() return { [7] = "Ann" } end
   local f = { snapshots = 0, starts = 0, calls = {}, prepared = { participants = { 7, 9 } } }
   local messages = { send = function(pid, event, data)
     if event == "cnr_roundEnd" then f.result, f.audience = data, pid end
-    if event == "cnr_panelReply" then f.reply, f.replyPid = data, pid end
   end, log = error, mirrored = function(_, fn, ...) return pcall(fn, ...) end }
+  function messages.refuse(pid, reason) f.refusedPid, f.reason = pid, reason end
   local function noop() end
   local s = service or {
     snapshot = function() return { autoNextDelaySeconds = 5 } end,
@@ -37,7 +37,7 @@ local function fixture(service, manifest)
     cars = { clearRound = noop, clearPublished = noop, setPublishing = function(_, on) f.publishing = on end },
     spectators = { releaseAll = noop },
   }
-  local y = cycle.new(services, manifest or stub.manifest())
+  local y = cycle.new(services, stub.manifest())
   f.cycle, f.ctx = y, y:context()
   local function called(hook) f.calls[#f.calls + 1] = hook; return {} end
   local game = {
@@ -75,8 +75,8 @@ test("a non-solo start needs the manifest's minimum before taking a snapshot", f
   local ok, reason = f.ctx.round:start({ issuer = 7 })
   assertEq(ok, nil)
   assertEq(reason, "Not enough players")
-  assertEq(f.replyPid, 7)
-  assertEq(f.reply.text, "Not enough players")
+  assertEq(f.refusedPid, 7)
+  assertEq(f.reason, "Not enough players")
   assertEq(f.snapshots, 0)
   assertEq(f.starts, 0)
   assertEq(f.cycle:state(), "lobby")
@@ -144,15 +144,6 @@ test("tick pushes the panel lazily and the lobby before a due start and round ti
   f.cycle:tick()
   assertEq(table.concat(f.calls, ","), "panel,lobby,tick")
   assertEq(f.request.command, "next")
-end)
-
-test("each cycle uses literal game prefixes, exact commands and the common commands", function()
-  local f = fixture()
-  assertEq(f.cycle:allowCommand(" auto on "), "auto on")
-  assertEq(f.cycle:allowCommand(" RACE "), "race")
-  assertEq(f.cycle:allowCommand("GRID+ Ann"), "grid+ Ann")
-  assertEq(f.cycle:allowCommand("grid+  Ann"), nil)
-  assertEq(f.cycle:allowCommand("go"), nil)
 end)
 
 test("a new traffic service exposes the current server capacity", function()
@@ -353,26 +344,6 @@ test("leave runs between the early and late cleanups, then publishes the remaini
   end
   f.cycle:onPlayerDisconnect(7)
   assertEq(table.concat(calls, ","), "leave,publish")
-end)
-
-test("allow accepts bindable, start <name> and auto on/off", function()
-  local y = fixture(nil, require("cnr.game").manifest(CNR_VERSION)).cycle
-  assertEq(y:allowCommand("  GO "), "go")
-  assertEq(y:allowCommand("start Reinder"), "start Reinder")
-  assertEq(y:allowCommand("START =next"), "start =next")
-  assertEq(y:allowCommand("auto off"), "auto off")
-  assertEq(y:allowCommand("sky"), "sky")
-  assertEq(y:allowCommand("next"), "next")
-  assertEq(y:allowCommand("test cop"), "test cop")
-end)
-
-test("allow rejects over-long and unknown text", function()
-  local y = fixture(nil, require("cnr.game").manifest(CNR_VERSION)).cycle
-  assertEq(y:allowCommand("set headStartSeconds 1"), nil)
-  assertEq(y:allowCommand("start"), nil)
-  assertEq(y:allowCommand("auto maybe"), nil)
-  assertEq(y:allowCommand("start " .. string.rep("a", 70)), nil)
-  assertEq(y:allowCommand(nil), nil)
 end)
 
 local function panelRequest(f, data)

@@ -27,7 +27,6 @@ function M.new(services, manifest)
   function y:context() return ctx end
   function y:attach(instance) game = instance end
   function y:state() return state end
-  function y:allowCommand(text) return allow(text) end
 
   function y:dispatch(hook, ...)
     return game[hook](game, ...)
@@ -157,8 +156,8 @@ function M.new(services, manifest)
     local prepared, reason = y:dispatch("canStart", request)
     if not prepared then return nil, reason end
     if not prepared.solo and #prepared.participants < manifest.minPlayers then
-      local reason = "Not enough players"
-      ctx.messages.send(request.issuer, "cnr_panelReply", { text = reason, tone = "warn" })
+      reason = "Not enough players"
+      ctx.messages.refuse(request.issuer, reason)
       return nil, reason
     end
     local snapshot = ctx.settings:snapshot()

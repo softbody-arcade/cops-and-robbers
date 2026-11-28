@@ -82,13 +82,13 @@ function M.new(ctx)
     leaderboardLocked = nil
     if readErr and code ~= 2 then
       leaderboardLocked = "the old file could not be read"
-      log("could not read leaderboard.json: " .. tostring(readErr) .. "; runs are not saved until this is fixed")
+      log("could not read leaderboard.json: " .. tostring(readErr) .. "; runs are not saved until the server restarts")
     elseif corrupt or not leaderboard.validShape(decoded) then
       local aside = leaderboardPath .. ".corrupt-" .. ctx.clock.unixTime()
       local moved, err = FS.Rename(leaderboardPath, aside)
       if not moved then
         leaderboardLocked = "the old file could not be moved aside"
-        log(string.format("leaderboard.json was unreadable but could not be moved to %s (%s): runs are not saved until this is fixed", aside, tostring(err)))
+        log(string.format("leaderboard.json was unreadable but could not be moved to %s (%s): runs are not saved until the server restarts", aside, tostring(err)))
       else
         log(string.format("leaderboard.json was unreadable, moved to %s; starting a fresh one", aside))
       end

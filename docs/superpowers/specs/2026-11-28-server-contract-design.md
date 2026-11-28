@@ -61,7 +61,7 @@ The game is built with `cnr.game.new(ctx)` and returns an object. The manager ca
 | `checkVehicle(kind, pid, vid, decoded, facts)` | → `{ allow, reason, roundCar, notify }` | Synchronous. The game decides the policy and matching. The manager owns the round-car permissions (one-use permit, replacement right), returns BeamMP's `0` or `1` and logs refusals. On refusal, an explicit `roundCar = false` logs the model as `?`. Cops and Robbers uses this for an extra traffic car over the cap |
 | `onVehicle(kind, pid, vid, decoded, facts, now)` | → nothing | `kind` is `spawn`, `edit`, `delete`, `reset` or `replaced`. Spawn and edit call the hook when the verdict requests `notify`. Delete, reset and replaced call it regardless of the verdict; replaced only when a claim replaced a car or the active car was deleted. For `replaced`, a successful claim passes the new car’s vid and a deletion passes the deleted car’s vid |
 | `panelState()` / `lobbyFields()` | → data | `panelState` only while someone has the panel open; `lobbyFields` every tick |
-| `panelAction(pid, action, payload)` | → nothing | A command that passes the allow-list, or an action named in `manifest.actions` |
+| `panelAction(pid, action, payload)` | → nothing | For an allowed game command, the cycle mirrors the reply to the issuer’s panel and pushes the panel after the hook returns. For a structured action in `manifest.actions`, the game handles its own reply and panel push as needed |
 | `clientEvent(name, pid, data)` | → nothing | For each name in `manifest.clientEvents` |
 | `roundFinished()` / `settingsChanged(keys)` / `rulesChanged()` | → nothing | Notifications at today's positions: after a round ends (rules if changed), after a settings save (rules, panel push, board), after the automatic-rounds toggle or a reload (rules, unconditionally) |
 
@@ -160,6 +160,8 @@ The traces pin message order. The new code keeps these orders exactly:
 ### Hot reload
 
 As in step 1: `main.lua` builds fresh manager services and a fresh game on every load. No `arcade/` module keeps state at module level, and no `cnr/` module either, apart from the grid and rebuild counters above. One 250 ms timer, and the start-up messages repeat. `tests/test_reload.lua` covers it.
+
+On startup and plugin reload, the Cops and Robbers entry point loads the leaderboard, build, player colours and stations in that order. These direct loads belong to this game’s wiring. A second game loads its own data in its entry point when it constructs the game and services. The panel’s `reload` command reloads settings.
 
 ### Checking the contract
 
