@@ -58,12 +58,6 @@ function store.write(path, content)
   local written, err = writeBytes(tmp, content)
   if not written then return failed(err) end
 
-  local previous, backupErr, backupCode = io.open(backup, "rb")
-  if previous then
-    previous:close()
-    return failed("recovery file exists: " .. backup)
-  end
-  if backupCode ~= 2 then return failed(backupErr) end
   local original, readErr, code = store.read(path)
   if not original and code ~= 2 then return failed(readErr) end
   if original then
@@ -72,6 +66,13 @@ function store.write(path, content)
       os.remove(backup)
       return failed(copyErr)
     end
+  else
+    local previous, backupErr, backupCode = io.open(backup, "rb")
+    if previous then
+      previous:close()
+      return failed("recovery file exists: " .. backup)
+    end
+    if backupCode ~= 2 then return failed(backupErr) end
   end
 
   local removed, removeErr = FS.Remove(path)
@@ -82,13 +83,10 @@ function store.write(path, content)
   local moved, moveErr = FS.Rename(tmp, path)
   if not moved then
     if original then
-      local bytes, restoreErr = store.read(backup)
-      local restored
-      if bytes then restored, restoreErr = writeBytes(path, bytes) end
+      local restored, restoreErr = os.rename(backup, path)
       if not restored then
         return failed(string.format("%s; restore failed (%s), original kept at %s", moveErr or "rename failed", tostring(restoreErr), backup))
       end
-      os.remove(backup)
     end
     return failed(moveErr or "rename failed")
   end

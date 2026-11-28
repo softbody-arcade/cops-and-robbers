@@ -221,21 +221,59 @@ test("a failed rename restores the original bytes and cleans up", function()
   assertEq(FS.Exists(path .. ".bak"), false)
 end)
 
+local function leaveBackup(path, bytes)
+  local backup = path .. ".bak"
+  paths[#paths + 1] = backup
+  local f = assert(io.open(backup, "wb"))
+  assert(f:write(bytes))
+  assert(f:close())
+end
+
+test("a save replaces a leftover backup beside an intact file", function()
+  local path = fixture("current")
+  leaveBackup(path, "older")
+  assertEq(store.write(path, "new"), true)
+  assertEq(store.read(path), "new")
+  assertEq(FS.Exists(path .. ".bak"), false)
+end)
+
+test("a failed replacement restores the current bytes despite a leftover backup", function()
+  local path = fixture("current")
+  leaveBackup(path, "older")
+  local ok, err = failedRename(function() return store.write(path, "new") end)
+  assertEq(ok, nil)
+  assertEq(err, "rename denied")
+  assertEq(store.read(path), "current")
+  assertEq(FS.Exists(path .. ".bak"), false)
+end)
+
+test("a save preserves the only good backup when the destination is missing", function()
+  local path = fixture(nil)
+  leaveBackup(path, "only good copy")
+  local ok, err = store.write(path, "new")
+  assertEq(ok, nil)
+  assert(err:find(path .. ".bak", 1, true))
+  assertEq(store.read(path .. ".bak"), "only good copy")
+  assertEq(FS.Exists(path), false)
+  assertEq(FS.Exists(path .. ".tmp"), false)
+end)
+
 test("a failed rename and a failed restore leave the original in <path>.bak", function()
   local path = fixture("old")
   paths[#paths + 1] = path .. ".bak"
-  local open = io.open
-  io.open = function(name, mode)
-    if name == path and mode:match("^w") then return failingFile("write")(open(name, mode)) end
-    return open(name, mode)
+  local rename = os.rename
+  os.rename = function(from, to)
+    if from == path .. ".bak" and to == path then return nil, "restore denied" end
+    return rename(from, to)
   end
   local called, ok, err = pcall(failedRename, function() return store.write(path, "new") end)
-  io.open = open
+  os.rename = rename
   assert(called, ok)
   assertEq(ok, nil)
   assert(type(err) == "string" and err:find(path .. ".bak", 1, true))
   assertEq(store.read(path .. ".bak"), "old")
   assertEq(FS.Exists(path .. ".tmp"), false)
+  assertEq(FS.Exists(path), false)
   assertEq(store.write(path, "retry"), nil)
   assertEq(store.read(path .. ".bak"), "old")
 end)
