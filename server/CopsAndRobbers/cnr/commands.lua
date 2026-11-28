@@ -1,7 +1,9 @@
 local arcadeCommands = require("arcade.commands")
 local M = {}
 
-M.parse = arcadeCommands.parse
+function M.parse(msg)
+  return arcadeCommands.parse(msg, "/cnr")
+end
 
 function M.eligibleNext(players, runCounts, lastName)
   local pids = {}

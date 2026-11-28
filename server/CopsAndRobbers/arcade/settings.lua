@@ -251,7 +251,10 @@ function M.new(path, decl, log)
 
   function s:load()
     local raw, corrupt = store.decode(path)
-    if corrupt then log("config.json is not valid JSON, using defaults") end
+    if corrupt then
+      local basename = path:match("[^/\\]+$")
+      log(basename .. " is not valid JSON, using defaults")
+    end
     raw = raw or {}
     local cfg, warnings = M.merge(raw, decl)
     for _, w in ipairs(warnings) do log("config: " .. w) end

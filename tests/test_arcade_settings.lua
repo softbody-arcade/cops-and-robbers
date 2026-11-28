@@ -118,6 +118,15 @@ test("an invalid value keeps the original error text", function()
   assertEq(err, "Invalid value for lightningMinSeconds: 0")
 end)
 
+test("invalid settings log the basename of the file", function()
+  local env = serverBoot.boot({ files = { ["game.json"] = "{broken" } })
+  local logs = {}
+  settings.new(env.dir .. "game.json", decl, function(line) logs[#logs + 1] = line end):load()
+  env.cleanup()
+  local prefix = "game.json is not valid JSON, using defaults"
+  assertEq(logs[1]:sub(1, #prefix), prefix)
+end)
+
 test("saving a raw edit preserves unknowns and drops retired entries", function()
   local env = serverBoot.boot({ config = serverBoot.encode(raw) })
   local path = env.dir .. "config.json"
