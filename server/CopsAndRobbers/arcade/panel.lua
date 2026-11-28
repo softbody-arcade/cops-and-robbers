@@ -2,16 +2,20 @@ local commands = require("arcade.commands")
 
 local M = {}
 
-function M.allowList(commands)
-  local exact = { ["auto on"] = true, ["auto off"] = true, next = true, reload = true }
-  for _, word in ipairs(commands.exact) do exact[word] = true end
+function M.managerCommand(text)
+  return text == "auto on" or text == "auto off" or text == "next" or text == "reload"
+end
+
+function M.allowList(declared)
+  local exact = {}
+  for _, word in ipairs(declared.exact) do exact[word] = true end
   return function(text)
     if type(text) ~= "string" then return nil end
     local trimmed = text:match("^%s*(.-)%s*$")
     if #trimmed > 64 then return nil end
     local lower = trimmed:lower()
-    if exact[lower] then return lower end
-    for _, prefix in ipairs(commands.prefixes) do
+    if M.managerCommand(lower) or exact[lower] then return lower end
+    for _, prefix in ipairs(declared.prefixes) do
       local rest = trimmed:sub(#prefix + 1)
       if lower:sub(1, #prefix) == prefix and rest:match("^%S") then return prefix .. rest end
     end

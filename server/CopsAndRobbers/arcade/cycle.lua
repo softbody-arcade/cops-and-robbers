@@ -33,6 +33,68 @@ function M.new(services, manifest)
     return game[hook](game, ...)
   end
 
+  function y:onPlayerJoin(pid)
+    self:dispatch("join", pid, ctx.roster:name(pid), now())
+  end
+
+  function y:onPlayerDisconnect(pid)
+    ctx.roster:leaveEarly(pid)
+    self:dispatch("leave", pid, now())
+    ctx.roster:leaveLate(pid)
+    ctx.cars:publish()
+  end
+
+  local function declaredNames(names)
+    local declared = {}
+    for _, name in ipairs(names) do declared[name] = true end
+    return declared
+  end
+
+  local actions = declaredNames(manifest.actions)
+  local clientEvents = declaredNames(manifest.clientEvents)
+
+  function y:onClientEvent(name, pid, data)
+    if clientEvents[name] then self:dispatch("clientEvent", name, pid, data) end
+  end
+
+  local function panelSettings(pid, values, id)
+    if type(id) ~= "number" and type(id) ~= "string" then id = nil end
+    local function answer(ok, text, keys) ctx.messages.send(pid, "cnr_panelReply", { ok = ok, text = text, keys = keys, id = id }) end
+    if state == "round" then return answer(false, "Stop the round first") end
+    local keys, err = ctx.settings:apply(values)
+    if not keys then return answer(false, err) end
+    ctx.settings:load()
+    answer(true, "Saved", keys)
+    y:dispatch("settingsChanged", keys)
+  end
+
+  function y:onPanel(pid, data)
+    local ok, msg = pcall(Util.JsonDecode, data)
+    if not ok or type(msg) ~= "table" or type(msg.action) ~= "string" then return end
+    if msg.action == "open" then
+      ctx.panel:push(pid)
+    elseif msg.action == "close" then
+      transport:close(pid)
+    elseif msg.action == "settings" then
+      panelSettings(pid, msg.values, msg.id)
+    elseif msg.action == "command" then
+      msg.text = allow(msg.text)
+      if not msg.text then
+        return ctx.messages.send(pid, "cnr_panelReply", { text = "Not available from the panel", tone = "warn" })
+      end
+      local ran, err
+      if panel.managerCommand(msg.text) then
+        ran, err = ctx.messages.mirrored(pid, transport.run, transport, pid, msg.text)
+      else
+        ran, err = ctx.messages.mirrored(pid, self.dispatch, self, "panelAction", pid, msg.action, msg)
+      end
+      ctx.panel:push()
+      if not ran then error(err, 0) end
+    elseif actions[msg.action] then
+      self:dispatch("panelAction", pid, msg.action, msg)
+    end
+  end
+
   local function vehicleFacts(pid, vid)
     local cars = ctx.cars
     return {
@@ -94,7 +156,11 @@ function M.new(services, manifest)
   function ctx.round:start(request)
     local prepared, reason = y:dispatch("canStart", request)
     if not prepared then return nil, reason end
-    if not prepared.solo and #prepared.participants < manifest.minPlayers then return nil, "Not enough players" end
+    if not prepared.solo and #prepared.participants < manifest.minPlayers then
+      local reason = "Not enough players"
+      ctx.messages.send(request.issuer, "cnr_panelReply", { text = reason, tone = "warn" })
+      return nil, reason
+    end
     local snapshot = ctx.settings:snapshot()
     roundDelay = snapshot.autoNextDelaySeconds
     roundIssuer = request.issuer
@@ -141,7 +207,6 @@ function M.new(services, manifest)
 
   function ctx.panel:push(pid) transport:push(panelState, pid) end
   function ctx.panel:pushLobby(pid) transport:pushLobby(lobbyState, pid) end
-  function ctx.panel:command(name, handler) transport:command(name, handler) end
 
   local startScheduled = autoRounds.register(transport, {
     settings = ctx.settings, a = ctx.autoRounds, send = ctx.messages.send,

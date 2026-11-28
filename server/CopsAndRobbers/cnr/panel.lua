@@ -8,8 +8,6 @@ function M.commands()
   return { exact = { "go", "reroll", "end", "stop", "test runner", "test cop", "sky" }, prefixes = { "start " } }
 end
 
-M.allow = arcadePanel.allowList(M.commands())
-
 function M.can(state, test, evolving, skyRandom)
   return {
     start = state == "idle" or test == true,

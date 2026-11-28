@@ -4365,3 +4365,61 @@ test("a driver can retry placement after their provisional car is deleted before
   assertEq(retry, 0)
   assertEq(table.concat(keys, ","), "2-5")
 end)
+
+test("a runner leaving mid-chase sends exactly one empty cnr_roundCars", function()
+  local env = trafficBoot()
+  env.startRound()
+  placed(env, 1)
+  placed(env, 2)
+  chase(env)
+  env.call("cnr_panel", 2, '{"action":"open"}')
+  assertEq(decodeJson(env.lastSent("cnr_panelState").data).phase, "running")
+  assertEq(table.concat(decodeJson(env.lastSent("cnr_roundCars").data).keys, ","), "1-0,2-0")
+  env.sent = {}
+  env.call("onPlayerDisconnect", 1)
+  local count = 0
+  for _, msg in ipairs(env.sent) do
+    if msg.ev == "cnr_roundCars" then
+      count = count + 1
+      assertEq(msg.pid, -1)
+      assertEq(#decodeJson(msg.data).keys, 0)
+    end
+  end
+  env.cleanup()
+  assertEq(count, 1)
+end)
+
+test("a station report without a list leaves discovery open for the next report", function()
+  local env = boot()
+  env.call("cnr_stations", 1, '{"map":"west_coast_usa","stations":true}')
+  env.call("cnr_stations", 1, '{"map":"west_coast_usa","stations":[{"x":1,"y":2,"z":3}]}')
+  env.call("cnr_panel", 1, '{"action":"stations"}')
+  local stations = decodeJson(env.lastSent("cnr_stationList").data).stations
+  env.cleanup()
+  assertEq(#stations, 1)
+  assertEq(stations[1].x, 1)
+end)
+
+test("a temporary leaderboard read error at startup cannot replace earlier runs", function()
+  local bytes = '{"format":2,"runs":[{"player":"Old","survivedSeconds":999,"endedAt":1}]}'
+  local env = boot({ leaderboard = bytes })
+  local path = env.dir .. "data/leaderboard.json"
+  local store = require("arcade.store")
+  local read = store.read
+  store.read = function(name)
+    if name == path then return nil, "permission denied", 13 end
+    return read(name)
+  end
+  local ok, err = pcall(env.reload)
+  store.read = read
+  assert(ok, err)
+  runningRound(env)
+  env.panel(1, "end")
+  env.call("cnr_board", 1, '{"action":"open"}')
+  local rounds = decodeJson(env.lastSent("cnr_boardState").data).rounds
+  local saved = readFileAt(path)
+  env.cleanup()
+  assertEq(#rounds, 1)
+  assertEq(rounds[1].player, "Reinder")
+  assertEq(saved, bytes)
+end)

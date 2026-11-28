@@ -7,21 +7,23 @@ dofile("tests/server_boot.lua")
 
 local stub = {}
 function stub.manifest()
-  return { minPlayers = 2, commands = { exact = { "race" }, prefixes = { "grid+ " } } }
+  return { minPlayers = 2, commands = { exact = { "race", "next", "reload", "auto on", "auto off" }, prefixes = { "grid+ " } },
+    actions = { "upgrade" }, clientEvents = { "race_grid" } }
 end
 
 function stub.settingsDeclaration()
   return { DEFAULTS = { laps = 3 } }
 end
 
-local function fixture(service)
+local function fixture(service, manifest)
   local cycle = require("arcade.cycle")
   local r = roster.new()
   function r:players() return { [7] = "Ann" } end
   local f = { snapshots = 0, starts = 0, calls = {}, prepared = { participants = { 7, 9 } } }
   local messages = { send = function(pid, event, data)
     if event == "cnr_roundEnd" then f.result, f.audience = data, pid end
-  end, log = error }
+    if event == "cnr_panelReply" then f.reply, f.replyPid = data, pid end
+  end, log = error, mirrored = function(_, fn, ...) return pcall(fn, ...) end }
   local function noop() end
   local s = service or {
     snapshot = function() return { autoNextDelaySeconds = 5 } end,
@@ -35,7 +37,7 @@ local function fixture(service)
     cars = { clearRound = noop, clearPublished = noop, setPublishing = function(_, on) f.publishing = on end },
     spectators = { releaseAll = noop },
   }
-  local y = cycle.new(services, stub.manifest())
+  local y = cycle.new(services, manifest or stub.manifest())
   f.cycle, f.ctx = y, y:context()
   local function called(hook) f.calls[#f.calls + 1] = hook; return {} end
   local game = {
@@ -51,6 +53,7 @@ local function fixture(service)
     tick = function() called("tick") end,
     roundFinished = function() f.finishedIn = y:state(); f.publishingAtFinish = f.publishing end,
   }
+  f.game = game
   y:attach(game)
   return f
 end
@@ -72,6 +75,8 @@ test("a non-solo start needs the manifest's minimum before taking a snapshot", f
   local ok, reason = f.ctx.round:start({ issuer = 7 })
   assertEq(ok, nil)
   assertEq(reason, "Not enough players")
+  assertEq(f.replyPid, 7)
+  assertEq(f.reply.text, "Not enough players")
   assertEq(f.snapshots, 0)
   assertEq(f.starts, 0)
   assertEq(f.cycle:state(), "lobby")
@@ -312,3 +317,130 @@ test("only a notifying edit delivers its once-decoded packet to the game", funct
 end)
 
 MP, Util = savedMP, savedUtil
+
+test("the game receives the joining player's name and the cycle time", function()
+  local f = fixture()
+  function f.ctx.roster:name(pid) return self:players()[pid] end
+  local joined
+  f.cycle:attach({ join = function(_, ...) joined = table.pack(...) end })
+  f.cycle:onPlayerJoin(7)
+  assertEq(table.concat(joined, ","), "7,Ann,20")
+end)
+
+test("leave runs between the early and late cleanups, then publishes the remaining cars", function()
+  local f = fixture()
+  local early = f.ctx.roster:perPlayer("sub", "early")
+  local late = f.ctx.roster:perPlayer("car", "late")
+  early[7], late[7] = true, true
+  local calls = {}
+  f.cycle:attach({ leave = function(_, pid, at)
+    assertEq(pid, 7)
+    assertEq(at, 20)
+    assertEq(early[pid], nil)
+    assertEq(late[pid], true)
+    calls[#calls + 1] = "leave"
+  end })
+  function f.ctx.cars:publish()
+    assertEq(late[7], nil)
+    calls[#calls + 1] = "publish"
+  end
+  f.cycle:onPlayerDisconnect(7)
+  assertEq(table.concat(calls, ","), "leave,publish")
+end)
+
+test("allow accepts bindable, start <name> and auto on/off", function()
+  local y = fixture(nil, require("cnr.game").manifest(CNR_VERSION)).cycle
+  assertEq(y:allowCommand("  GO "), "go")
+  assertEq(y:allowCommand("start Reinder"), "start Reinder")
+  assertEq(y:allowCommand("START =next"), "start =next")
+  assertEq(y:allowCommand("auto off"), "auto off")
+  assertEq(y:allowCommand("sky"), "sky")
+  assertEq(y:allowCommand("next"), "next")
+  assertEq(y:allowCommand("test cop"), "test cop")
+end)
+
+test("allow rejects over-long and unknown text", function()
+  local y = fixture(nil, require("cnr.game").manifest(CNR_VERSION)).cycle
+  assertEq(y:allowCommand("set headStartSeconds 1"), nil)
+  assertEq(y:allowCommand("start"), nil)
+  assertEq(y:allowCommand("auto maybe"), nil)
+  assertEq(y:allowCommand("start " .. string.rep("a", 70)), nil)
+  assertEq(y:allowCommand(nil), nil)
+end)
+
+local function panelRequest(f, data)
+  local previous = Util
+  Util = { JsonDecode = decodeJson }
+  local ok, err = pcall(f.cycle.onPanel, f.cycle, 7, data)
+  Util = previous
+  assert(ok, err)
+end
+
+test("panel routes only declared game commands and actions with their payload", function()
+  local f = fixture()
+  local actions = {}
+  function f.game:panelAction(pid, action, msg)
+    assertEq(pid, 7)
+    actions[#actions + 1] = action .. " " .. (msg.text or msg.part)
+  end
+  panelRequest(f, '{"action":"command","text":" GRID+ Ann "}')
+  panelRequest(f, '{"action":"upgrade","part":"engine"}')
+  panelRequest(f, '{"action":"command","text":"unknown"}')
+  panelRequest(f, '{"action":"unlisted"}')
+  assertEq(table.concat(actions, ","), "command grid+ Ann,upgrade engine")
+end)
+
+test("reserved commands still use the manager when the game declares the same text", function()
+  local f = fixture()
+  local calls = {}
+  function f.ctx.settings:set(_, value) calls[#calls + 1] = value; return true end
+  function f.ctx.settings:load() calls[#calls + 1] = "reload" end
+  function f.game:rulesChanged() end
+  function f.ctx.messages.reply() end
+  function f.ctx.messages.refuse(_, text) calls[#calls + 1] = text end
+  for _, text in ipairs({ "auto on", "auto off", "next", "reload" }) do
+    panelRequest(f, serverBoot.encode({ action = "command", text = text }))
+  end
+  assertEq(table.concat(calls, ","), "on,off,No round is scheduled,reload")
+end)
+
+test("a successful settings save reloads before replying and then notifies the game", function()
+  local f = fixture()
+  local keys = { "laps" }
+  local calls = {}
+  function f.ctx.settings:apply(values)
+    assertEq(values.laps, 4)
+    calls[#calls + 1] = "apply"
+    return keys
+  end
+  function f.ctx.settings:load() calls[#calls + 1] = "reload" end
+  function f.ctx.messages.send(pid, event, msg)
+    assertEq(pid, 7)
+    assertEq(event, "cnr_panelReply")
+    assertEq(msg.id, "save-3")
+    assertEq(msg.ok, true)
+    assertEq(msg.keys, keys)
+    calls[#calls + 1] = "reply"
+  end
+  function f.game:settingsChanged(changed)
+    assertEq(changed, keys)
+    calls[#calls + 1] = "changed"
+  end
+  panelRequest(f, '{"action":"settings","values":{"laps":4},"id":"save-3"}')
+  assertEq(table.concat(calls, ","), "apply,reload,reply,changed")
+end)
+
+test("only client events declared by this game reach its hook with the original packet", function()
+  local f = fixture()
+  local calls = {}
+  function f.game:clientEvent(name, pid, data)
+    calls[#calls + 1] = { name, pid, data }
+  end
+  local packet = '{"order":[9,7]}'
+  f.cycle:onClientEvent("race_grid", 7, packet)
+  f.cycle:onClientEvent("other_grid", 7, packet)
+  assertEq(#calls, 1)
+  assertEq(calls[1][1], "race_grid")
+  assertEq(calls[1][2], 7)
+  assertEq(calls[1][3], packet)
+end)

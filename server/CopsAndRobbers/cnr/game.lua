@@ -1,3 +1,5 @@
+local parseVehicleData = require("arcade.cycle").parseVehicleData
+local parseText = require("arcade.commands").parseText
 local colors = require("arcade.colors")
 local leaderboard = require("cnr.leaderboard")
 local panel = require("cnr.panel")
@@ -28,6 +30,7 @@ end
 function M.settingsDeclaration() return config.GAME end
 
 local PARTS_PLACING_SECONDS, PARTS_SETTLE_SECONDS = 10, 3
+local START_ROAD_SEARCH = 2000
 local AI_SETUP_WAIT_SECONDS = 15
 
 local function anonymous(key)
@@ -57,7 +60,6 @@ end
 function M.new(ctx)
   local game = {
     current = round.new(ctx.settings:effective()), mapName = ctx.map,
-    leaderboardPath = ctx.dataDir .. "leaderboard.json",
     stations = {}, partsBaseline = {}, missingCount = {}, runCounts = {},
     aiCars = {}, aiSlotSerial = {}, aiVidSerial = {}, previousRoundSerial = 0, aiSpawnsLeft = 0,
     connectionSerial = ctx.roster:perPlayer("connectionSerial", "early"),
@@ -68,16 +70,40 @@ function M.new(ctx)
   local gridClients = roster:perPlayer("gridClients", "early")
   local stationsRequested = roster:perPlayer("stationsRequested", "early")
   local refuse, reply = ctx.messages.refuse, ctx.messages.reply
+  local buildPath = ctx.dataDir .. "build.json"
   local sharedRulesSignature
   local boardSubs = roster:perPlayer("boardSubs", "early")
 
+  local leaderboardPath = ctx.dataDir .. "leaderboard.json"
+  local board, leaderboardLocked
+
+  function game:loadLeaderboard()
+    local decoded, corrupt, _, readErr, code = ctx.store.decode(leaderboardPath)
+    leaderboardLocked = nil
+    if readErr and code ~= 2 then
+      leaderboardLocked = "the old file could not be read"
+      log("could not read leaderboard.json: " .. tostring(readErr) .. "; runs are not saved until this is fixed")
+    elseif corrupt or not leaderboard.validShape(decoded) then
+      local aside = leaderboardPath .. ".corrupt-" .. ctx.clock.unixTime()
+      local moved, err = FS.Rename(leaderboardPath, aside)
+      if not moved then
+        leaderboardLocked = "the old file could not be moved aside"
+        log(string.format("leaderboard.json was unreadable but could not be moved to %s (%s): runs are not saved until this is fixed", aside, tostring(err)))
+      else
+        log(string.format("leaderboard.json was unreadable, moved to %s; starting a fresh one", aside))
+      end
+      decoded = nil
+    end
+    board = leaderboard.load(decoded)
+  end
+
   local function saveLeaderboard(run)
-    leaderboard.add(game.board, run)
-    if game.leaderboardLocked then return log("leaderboard not saved: the old file could not be moved aside") end
-    local ok, err = ctx.store.writeJson(game.leaderboardPath, game.board)
+    leaderboard.add(board, run)
+    if leaderboardLocked then return log("leaderboard not saved: " .. leaderboardLocked) end
+    local ok, err = ctx.store.writeJson(leaderboardPath, board)
     if not ok then
       log("could not save leaderboard.json: " .. err)
-      table.remove(game.board.runs)
+      table.remove(board.runs)
     end
   end
 
@@ -89,7 +115,7 @@ function M.new(ctx)
       traffic = (sub.traffic == "with" or sub.traffic == "runner" or sub.traffic == "without") and sub.traffic or nil,
     }
     local runners, mine = {}, nil
-    for rank, entry in ipairs(leaderboard.runners(game.board, f, math.huge)) do
+    for rank, entry in ipairs(leaderboard.runners(board, f, math.huge)) do
       if rank <= BOARD_TOP then
         runners[rank] = entry
       elseif entry.key == viewerKey then
@@ -101,24 +127,24 @@ function M.new(ctx)
       if e.key == viewerKey then e.me = true end
       e.key = nil
     end
-    local cops = leaderboard.cops(game.board, f, BOARD_TOP, game.current.cfg.assistMinSightPercent)
+    local cops = leaderboard.cops(board, f, BOARD_TOP, game.current.cfg.assistMinSightPercent)
     for _, c in ipairs(cops) do
       if c.key == viewerKey then c.me = true end
       c.key = nil
     end
-    local players = leaderboard.players(game.board, f, game.current.cfg.assistMinSightPercent)
+    local players = leaderboard.players(board, f, game.current.cfg.assistMinSightPercent)
     for _, p in ipairs(players) do
       if p.key == viewerKey then p.me = true end
       p.key = anonymous(tostring(p.key))
     end
     local limit = sub.rounds or ROUNDS_DEFAULT
-    local rounds, total = leaderboard.rounds(game.board, f, limit)
+    local rounds, total = leaderboard.rounds(board, f, limit)
     for _, r in ipairs(rounds) do
       r.playerKey = anonymous(tostring(r.playerKey))
       for _, c in ipairs(r.cops) do c.key = anonymous(tostring(c.key)) end
     end
     return {
-      map = game.mapName, maps = leaderboard.maps(game.board), filter = sub.map or game.mapName, mode = f.mode or "all", traffic = f.traffic or "all",
+      map = game.mapName, maps = leaderboard.maps(board), filter = sub.map or game.mapName, mode = f.mode or "all", traffic = f.traffic or "all",
       runners = runners, cops = cops, players = players, mine = mine,
       rounds = rounds, moreRounds = (total > #rounds and limit < ROUNDS_MAX) or nil,
     }
@@ -450,7 +476,7 @@ function M.new(ctx)
         self.plannedRunnerKey = nil
         saveLeaderboard(run)
         pushBoard()
-        local top = leaderboard.runners(self.board, self.mapName, 3)
+        local top = leaderboard.runners(board, self.mapName, 3)
         for pid in pairs(roster:players()) do
           local viewerKey = roster:key(pid)
           local rows = {}
@@ -618,8 +644,23 @@ function M.new(ctx)
     return pid
   end
 
-  function game:gridReady(pid)
-    gridClients[pid] = true
+  function game:join(pid, name, at)
+    local current = game.current
+    send(pid, "cnr_mode", { version = ctx.version, startGrid = true })
+    ctx.playerColors:sendMine(pid)
+    game:pushRules(pid)
+    ctx.panel:pushLobby(pid)
+    game:requestStations(pid)
+    game:applyEffects(current:playerJoined(at, pid, name))
+    if current.test and current.vehicle then game:parkBystander(pid) end
+    if current.evolving and current.state == "prep" and current.queued and current.players[pid] then
+      send(pid, "cnr_queued", current.queued)
+    end
+    cars:publish(pid)
+  end
+
+  function game:leave(pid, at)
+    game:applyEffects(game.current:playerLeft(at, pid))
   end
 
   local function reject(pid, reason)
@@ -693,12 +734,78 @@ function M.new(ctx)
     self:applyEffects(self.current:start(startedAt, runnerId, pid, prepared.players, opts))
   end
 
+  function game:loadBuild()
+    local decoded, corrupt = ctx.store.decode(buildPath)
+    game.currentBuild = not corrupt and build.normalize(decoded) or nil
+    if decoded ~= nil and not game.currentBuild or corrupt then
+      local aside = buildPath .. ".corrupt-" .. ctx.clock.unixTime()
+      FS.Rename(buildPath, aside)
+      log("build.json was unreadable, moved to " .. aside .. "; no build")
+    elseif game.currentBuild then
+      log("Build: " .. build.label(game.currentBuild))
+    end
+  end
+
+  local function saveError(path, err)
+    log("could not save " .. path:match("[^/\\]+$") .. ": " .. err)
+    return nil, err
+  end
+
+  local function saveJson(path, value)
+    local ok, err = ctx.store.writeJson(path, value)
+    if not ok then return saveError(path, err) end
+    return true
+  end
+
+  local function backupBuild()
+    if not FS.Exists(buildPath) then return true end
+    local base = ctx.dataDir .. "build-" .. ctx.clock.unixTime()
+    local aside, n = base .. ".json", 1
+    while FS.Exists(aside) do
+      n = n + 1
+      aside = string.format("%s-%d.json", base, n)
+    end
+    local moved, err = FS.Rename(buildPath, aside)
+    if not moved then return saveError(buildPath, err or "rename failed") end
+    return true, aside
+  end
+
+  local function panelBuild(pid, msg)
+    local function answer(text, tone) send(pid, "cnr_panelReply", { text = text, tone = tone }) end
+    if game.current:isActive() then return answer("Stop the round first", "warn") end
+    local replacement
+    if msg.op == "new" then
+      local nb = build.normalize({ model = msg.model, name = msg.name, parts = msg.parts, vars = msg.vars })
+      if not nb then return answer("That car can't start a build", "warn") end
+      replacement = build.new(nb.model, nb.name, nb.parts, nb.vars, type(msg.from) == "string" and msg.from or "random", ctx.clock.unixTime())
+    elseif msg.op ~= "reset" then
+      return
+    end
+    local moved, aside = backupBuild()
+    if not moved then return answer(aside, "warn") end
+    if replacement then
+      local saved, err = saveJson(buildPath, replacement)
+      if not saved then
+        if aside then
+          local restored, restoreErr = os.rename(aside, buildPath)
+          if not restored then
+            err = string.format("%s; restore failed (%s), original kept at %s", err, tostring(restoreErr), aside)
+            saveError(buildPath, err)
+          end
+        end
+        return answer(err, "warn")
+      end
+    end
+    game.currentBuild = replacement
+    ctx.panel:push()
+    answer(replacement and "New build: " .. build.label(replacement) or "Build reset")
+  end
+
   local function startCommand(pid, cmd)
     ctx.round:start({ issuer = pid, command = cmd.name, text = cmd.rest })
   end
 
-  ctx.panel:command("start", startCommand)
-  ctx.panel:command("test", startCommand)
+  local gameCommands = { start = startCommand, test = startCommand }
 
   function game:lobbyFields()
     local current = game.current
@@ -710,26 +817,26 @@ function M.new(ctx)
     return { online = online, practice = practice, active = current:isActive() and not current.test or false }
   end
 
-  ctx.panel:command("go", function(pid)
+  function gameCommands.go(pid)
     game:applyEffects(game.current:go(now(), pid))
-  end)
+  end
 
-  ctx.panel:command("stop", function(pid)
+  function gameCommands.stop(pid)
     local current = game.current
     local wasActive = current:isActive()
     game:applyEffects(current:stop(now(), pid))
     if not wasActive then send(-1, "cnr_roundEnd", { reason = "cancelled" }) end
-  end)
+  end
 
-  ctx.panel:command("end", function(pid)
+  gameCommands["end"] = function(pid)
     game:applyEffects(game.current:endCalled(now(), pid))
-  end)
+  end
 
-  ctx.panel:command("reroll", function(pid)
+  function gameCommands.reroll(pid)
     game:applyEffects(game.current:reroll(now(), pid))
-  end)
+  end
 
-  ctx.panel:command("sky", function(pid)
+  function gameCommands.sky(pid)
     local current = game.current
     if current.state ~= "prep" and current.state ~= "ready" then return refuse(pid, "You can only change the sky before GO") end
     local cfg = current.cfg
@@ -744,9 +851,9 @@ function M.new(ctx)
     local data = sky.payload(current.sky, cfg, nil)
     local targets = current.test and { [current.issuerId] = true } or roster:players()
     for p in pairs(targets) do send(p, "cnr_sky", data) end
-  end)
+  end
 
-  ctx.panel:command("addstation", function(pid)
+  function gameCommands.addstation(pid)
     local car = game:carFor(pid)
     if not car then return refuse(pid, "You need to be in a vehicle") end
     local updated = table.move(game.stations, 1, #game.stations, 1, {})
@@ -754,9 +861,9 @@ function M.new(ctx)
     local ok, err = game:saveStations(updated)
     if not ok then return refuse(pid, err) end
     reply(pid, string.format("Gas station added (%d on %s)", #game.stations, game.mapName))
-  end)
+  end
 
-  ctx.panel:command("removestation", function(pid)
+  function gameCommands.removestation(pid)
     local car = game:carFor(pid)
     if not car then return refuse(pid, "You need to be in a vehicle") end
     local bestIndex, bestDist
@@ -770,7 +877,33 @@ function M.new(ctx)
     local ok, err = game:saveStations(updated)
     if not ok then return refuse(pid, err) end
     reply(pid, string.format("Gas station removed (%d left on %s)", #game.stations, game.mapName))
-  end)
+  end
+
+  function game:panelAction(pid, action, msg)
+    if action == "command" then
+      local cmd = parseText(msg.text)
+      gameCommands[cmd.name](pid, cmd)
+    elseif action == "station" then
+      if msg.op ~= "add" and msg.op ~= "remove" then return end
+      local ran, err = ctx.messages.mirrored(pid, gameCommands[msg.op .. "station"], pid)
+      ctx.panel:push()
+      if not ran then error(err, 0) end
+    elseif action == "stations" then
+      local list = {}
+      for _, st in ipairs(game.stations) do
+        list[#list + 1] = { x = st.x, y = st.y, z = st.z }
+      end
+      send(pid, "cnr_stationList", { map = game.mapName, stations = list })
+    elseif action == "build" then
+      panelBuild(pid, msg)
+    elseif action == "apply" then
+      local current = game.current
+      if pid ~= current.runnerId then return send(pid, "cnr_panelReply", { text = "Only the runner can apply the change", tone = "warn" }) end
+      local ran, err = ctx.messages.mirrored(pid, function() game:applyEffects(current:apply(now(), pid)) end)
+      ctx.panel:push()
+      if not ran then error(err, 0) end
+    end
+  end
 
   local function nextRunnerName(players)
     local pid = plannedRunner(players)
@@ -839,6 +972,320 @@ function M.new(ctx)
       skyRandom = sky.hasRandom(cfg),
       trafficNote = trafficNote(cfg.trafficPerPlayer, ctx.traffic:maxCars(), count, cfg.trafficRunnerOnly == true),
     })
+  end
+
+  local clientEvents = {}
+
+  local function decodePacket(data)
+    local ok, packet = pcall(Util.JsonDecode, data)
+    if ok and type(packet) == "table" then return packet end
+  end
+
+  local MAX_CHANGES, MAX_TEXT, MAX_PARTS, MAX_PART_ID = 30, 80, 20, 120
+
+  local function cleanParts(list)
+    local out = {}
+    for _, id in ipairs(type(list) == "table" and list or {}) do
+      if #out >= MAX_PARTS then break end
+      if type(id) == "string" and id ~= "" then out[#out + 1] = id:sub(1, MAX_PART_ID) end
+    end
+    return #out > 0 and out or nil
+  end
+
+  local function cleanChanges(list)
+    local out = {}
+    for _, c in ipairs(type(list) == "table" and list or {}) do
+      if #out >= MAX_CHANGES then break end
+      if type(c) == "table" then
+        out[#out + 1] = {
+          label = tostring(c.label or ""):sub(1, MAX_TEXT), from = tostring(c.from or ""):sub(1, MAX_TEXT),
+          to = tostring(c.to or ""):sub(1, MAX_TEXT), extra = tonumber(c.extra), parts = cleanParts(c.parts),
+        }
+      end
+    end
+    return out
+  end
+
+  function clientEvents.cnr_setup(pid, data)
+    local current = game.current
+    local d = decodePacket(data)
+    if not d or type(d.parts) ~= "table" then return end
+    if not current.evolving or current.state ~= "applying" or pid ~= current.runnerId then return end
+    if d.model ~= nil and d.model ~= current.vehicle.model then return log("ignored a setup for another car model from " .. tostring(pid)) end
+    local valid = build.normalize({ model = current.vehicle.model, parts = d.parts, vars = d.vars })
+    if not valid then return log("ignored a malformed setup from " .. tostring(pid)) end
+    local setup = { parts = valid.parts, vars = valid.vars }
+    local changes = cleanChanges(d.changes)
+    if not current.test and game.currentBuild then
+      local name = roster:name(pid) or tostring(pid)
+      local nb, changed = build.apply(game.currentBuild, setup, changes, name, ctx.clock.unixTime())
+      if nb ~= game.currentBuild then
+        local saved, err = saveJson(buildPath, nb)
+        if not saved then return refuse(pid, err) end
+        game.currentBuild = nb
+        current.buildStep = nb.step
+      end
+      if changed then ctx.messages.broadcast(build.changeLine(nb.step, name, changes)) end
+    end
+    local cfgTable = { format = 2, model = current.vehicle.model, parts = setup.parts, vars = setup.vars }
+    game:applyEffects(current:setupReceived(now(), pid, cfgTable))
+    ctx.panel:push()
+  end
+
+  function clientEvents.cnr_change(pid, data)
+    local current = game.current
+    local d = decodePacket(data)
+    if not d then return end
+    if not current.evolving or current.state ~= "prep" or pid ~= current.runnerId then return end
+    current.queued = { runner = roster:name(pid) or tostring(pid), changes = cleanChanges(d.changes) }
+    for p in pairs(current.players) do
+      if not round.isAI(p) then send(p, "cnr_queued", current.queued) end
+    end
+  end
+
+  function clientEvents.cnr_missing(pid, data)
+    local current = game.current
+    local d = decodePacket(data)
+    if not d or type(d.parts) ~= "table" or #d.parts == 0 then return end
+    if not current:isActive() or current.players[pid] == nil then return end
+    game.missingCount[pid] = #d.parts
+    local names = {}
+    for i, part in ipairs(d.parts) do
+      if i > 6 then names[#names + 1] = string.format("+%d more", #d.parts - 6) break end
+      names[#names + 1] = tostring(part)
+    end
+    send(current.test and current.issuerId or -1, "cnr_notice", { msg = string.format("⚠ %s is missing: %s", roster:name(pid) or tostring(pid), table.concat(names, ", ")), tone = "warn" })
+  end
+
+  function clientEvents.cnr_color(pid, data)
+    local current = game.current
+    local msg = decodePacket(data)
+    if not msg then return end
+    local hex = type(msg.hex) == "string" and msg.hex or ""
+    if hex == "" then
+      local _, err = ctx.playerColors:clear(pid)
+      return ctx.playerColors:sendMine(pid, err)
+    end
+    local saved, err = ctx.playerColors:set(pid, hex)
+    ctx.playerColors:sendMine(pid, err)
+    if not saved then return end
+    if current.state == "prep" and current.players[pid] then
+      game:placing(pid)
+      send(pid, "cnr_paint", { color = ctx.playerColors:get(pid) })
+    end
+  end
+
+  function clientEvents.cnr_sitOut(pid, data)
+    local current = game.current
+    local d = decodePacket(data)
+    if not d or type(d.on) ~= "boolean" then return end
+    roster:setSitOut(pid, d.on)
+    send(pid, "cnr_sitOut", { on = d.on })
+    if current:isActive() and not current.test then
+      ctx.messages.notify(pid, d.on and "You sit out from the next round" or "You play again from the next round")
+    end
+  end
+
+  function clientEvents.cnr_startGridReady(pid)
+    gridClients[pid] = true
+  end
+
+  local function finite(n)
+    return type(n) == "number" and math.abs(n) < math.huge
+  end
+
+  function clientEvents.cnr_lightningClock(pid, data)
+    local current = game.current
+    local timer = current.sky and current.sky.lightningTimer
+    if not timer or not current:isActive() then return end
+    local players = roster:players()
+    if not players[pid] or (current.test and pid ~= current.issuerId) then return end
+    local d = decodePacket(data)
+    if not d or d.seed ~= current.sky.lightningSeed or not finite(d.id) then return end
+    send(pid, "cnr_lightningClock", {seed = d.seed, id = d.id, elapsed = timer:GetCurrent()})
+  end
+
+  local function gamePoint(p)
+    if type(p) == "table" and finite(p.x) and finite(p.y) and finite(p.z) then
+      return { x = p.x, y = p.y, z = p.z }
+    end
+  end
+
+  local function plannerPosition(pid)
+    if game.current.aiOnly then return nil end
+    local vehicles = cars:vehicles(pid)
+    local vid, data = next(vehicles)
+    if not vid or next(vehicles, vid) then return nil end
+    local vehicle = parseVehicleData(data)
+    if vehicle and vehicle.jbm == "unicycle" then return nil end
+    local raw = cars:rawPosition(pid, vid)
+    if raw then return vec.toVec(raw.pos) end
+  end
+
+  local function startPose(p)
+    if p == false then return false end
+    if type(p) ~= "table" then return nil end
+    local at, dir = gamePoint(p.pos), gamePoint(p.dir)
+    if at and dir then
+      local norm = dir.x * dir.x + dir.y * dir.y + dir.z * dir.z
+      if norm > 0.99 and norm < 1.01 then return { pos = at, dir = dir, offRoad = p.offRoad == true or nil } end
+    end
+  end
+
+  function clientEvents.cnr_startGrid(pid, data)
+    local current = game.current
+    local pending = current.pendingGrid
+    if not pending or pid ~= pending.request.pid then return end
+    local d = decodePacket(data)
+    if not d or d.id ~= pending.request.id or type(d.slots) ~= "table" then return end
+    if #d.slots ~= pending.request.count then return end
+    local slots = {}
+    for i = 1, pending.request.count do
+      slots[i] = startPose(d.slots[i])
+      if slots[i] == nil or (not slots[1] and slots[i]) then return end
+    end
+    local runner = slots[1]
+    local anchor = runner and runner.pos
+    if pending.request.anchor ~= nil then
+      if not tables.deepEqual(pending.request.anchor, runner) then return end
+    elseif anchor then
+      local known = plannerPosition(pid)
+      if known and not (vec.dist(known, anchor) <= START_ROAD_SEARCH + 1) then return end
+    end
+    local limit = math.max(current.cfg.copSpawnMaxMeters, 1)
+    while limit < START_ROAD_SEARCH do limit = limit * 2 end
+    for i = 2, #slots do
+      local cop = slots[i]
+      if cop and not (vec.dist(anchor, cop.pos) <= limit + 1) then return end
+    end
+    game:applyEffects(current:gridReceived(now(), slots, roster:players()))
+  end
+
+  function clientEvents.cnr_vehiclePicked(pid, data)
+    local decoded = decodePacket(data)
+    if not decoded or type(decoded.model) ~= "string" then return end
+    game:applyEffects(game.current:vehiclePicked(now(), pid, decoded.model, decoded.config, roster:players()))
+  end
+
+  local function integer(n)
+    return finite(n) and n % 1 == 0
+  end
+
+  function clientEvents.cnr_myVehicle(pid, data)
+    local current = game.current
+    local decoded = decodePacket(data)
+    local vid = decoded and tonumber(decoded.vid)
+    if not integer(vid) or vid < 0 or not game:roundCarActive() or current.players[pid] == nil then return end
+    local owned = cars:vehicles(pid)
+    if not owned[vid] or (pid == current.issuerId and game:aiSlotForVid(vid)) then return end
+    if cars:confirm(pid, vid) then current:forgetVehicleSight(pid) end
+    game:placed(pid)
+    log(string.format("%s placed the round car (vid %s)", roster:name(pid) or tostring(pid), tostring(vid)))
+    local rebuildId = tonumber(decoded.rebuild)
+    cars:acknowledgeRebuild(pid, rebuildId)
+    game:applyEffects(current:vehicleReady(now(), pid, rebuildId))
+    if game.pendingAISetup then game:dispatchAISetup() else game:openTraffic(pid) end
+    cars:publish()
+  end
+
+  function clientEvents.cnr_trafficCars(pid, data)
+    local current = game.current
+    if not ctx.traffic:openCount(pid) then return end
+    local d = decodePacket(data)
+    if not d or type(d.vids) ~= "table" then return end
+    ctx.traffic:report(pid, d.vids, cars:activeVid(pid), function(vid)
+      return current.test and pid == current.issuerId and game:aiSlotForVid(vid)
+    end)
+  end
+
+  local function registerAICar(pid, a, owned)
+    if type(a) ~= "table" then return end
+    local id, vid, serial = a.id, a.vid, a.instance
+    if not round.isAI(id) or not game.current.players[id] then return end
+    if not integer(vid) or vid < 0 or not owned[vid] or cars:confirmedVid(pid) == vid then return end
+    if serial ~= nil then
+      local latest = math.max(game.previousRoundSerial, game.aiSlotSerial[id] or 0, game.aiVidSerial[vid] or 0)
+      if not integer(serial) or serial <= latest then return end
+      game.aiSlotSerial[id], game.aiVidSerial[vid] = serial, serial
+      game.connectionSerial[pid] = math.max(game.connectionSerial[pid] or 0, serial)
+    elseif game.aiSlotSerial[id] or game.aiVidSerial[vid] or (game.aiCars[id] and game.aiCars[id].vid == vid) then
+      return
+    end
+    game:removeAICar(id)
+    game:removeAICar(game:aiSlotForVid(vid))
+    game.aiCars[id] = {vid=vid, instance=serial}
+    cars:forgetPreRound(pid, vid)
+  end
+
+  local function decodeObservationPacket(data)
+    if type(data) ~= "string" then return end
+    if data:find("null", 1, true) then
+      local quoted = false
+      data = data:gsub('([^"]*)("?)', function(chunk, quote)
+        local value = quoted and chunk or chunk:gsub("null", "[]")
+        if quote ~= "" and #chunk:match("\\*$") % 2 == 0 then quoted = not quoted end
+        return value .. quote
+      end)
+    end
+    return decodePacket(data)
+  end
+
+  function clientEvents.cnr_aiVehicles(pid, data)
+    local current = game.current
+    if not current.test or pid ~= current.issuerId then return end
+    local decoded = decodeObservationPacket(data)
+    if not decoded or type(decoded.ai) ~= "table" then return end
+    local owned = cars:vehicles(pid)
+    for _, a in ipairs(decoded.ai) do registerAICar(pid, a, owned) end
+  end
+
+  function clientEvents.cnr_board(pid, data)
+    local msg = decodePacket(data)
+    if not msg then return end
+    game:updateBoard(pid, msg)
+  end
+
+  function clientEvents.cnr_sight(pid, data)
+    local current = game.current
+    local d = decodeObservationPacket(data)
+    if not d or type(d.seen) ~= "boolean" then return end
+    if not cars:confirmedVid(current.runnerId) and not game.aiCars[current.runnerId] then return end
+    if d.aiId ~= nil or d.instance ~= nil then
+      if not current.test or pid ~= current.issuerId or not round.isAI(d.aiId) or not integer(d.instance) then return end
+      local car = game.aiCars[d.aiId]
+      if not car or car.instance ~= d.instance then return end
+      local owned = cars:vehicles(pid)
+      if owned[car.vid] then current:aiSightReport(now(), pid, d.aiId, d.seen) end
+    elseif cars:confirmedVid(pid) then
+      current:sightReport(now(), pid, d.seen)
+    end
+  end
+
+  function clientEvents.cnr_cover(pid, data)
+    local d = decodePacket(data)
+    if not d then return end
+    game.current:coverReport(now(), pid, d.covered == true)
+  end
+
+  function clientEvents.cnr_stations(pid, data)
+    local decoded = decodePacket(data)
+    if not decoded or decoded.map ~= game.mapName or #game.stations > 0 then return end
+    if type(decoded.stations) ~= "table" then return end
+    for _, s in ipairs(decoded.stations) do
+      local v = vec.toVec(s)
+      if v then
+        v.r = tonumber(s.r) or 0
+        game.stations[#game.stations + 1] = v
+      end
+    end
+    if #game.stations > 0 then
+      game:saveStations(game.stations)
+      log(string.format("%d gas stations detected for %s", #game.stations, game.mapName))
+    end
+  end
+
+  function game:clientEvent(name, pid, data)
+    clientEvents[name](pid, data)
   end
 
   function game:tick(tickAt)
