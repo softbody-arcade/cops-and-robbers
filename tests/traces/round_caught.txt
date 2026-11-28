@@ -1,4 +1,7 @@
+0.000 fs mkdir <dir>data/stations/
 0.000 log [CnR] 0 gas stations loaded for west_coast_usa
+0.000 timer cancel cnr_tick
+0.000 timer create cnr_tick 250
 0.000 -1 cnr_roundEnd {"reason":"cancelled"}
 0.000 -1 cnr_mode {"startGrid":true,"version":"<version>"}
 0.000 -1 cnr_rules {"carMode":"random","catchHoldSeconds":7,"catchMaxSpeedKmh":3,"catchRadiusMeters":10,"copResetMinDistanceMeters":1000,"crashPenaltySeconds":10,"crashSpeedLossKmh":50,"headStartSeconds":7,"helicopter":true,"helicopterArrivalSeconds":60,"helicopterRefuelSeconds":90,"helicopterUpSeconds":120,"resetWaitSeconds":7,"roundTimeLimitSeconds":1800,"runnerCountdownSeconds":3,"sightMaxMeters":400,"sirensAllowed":true,"trafficPerPlayer":0,"trafficRunnerOnly":false,"weatherChanges":true}
@@ -256,6 +259,8 @@ call cnr_tick
 17.250 2 cnr_state {"catchProgress":1,"resetAllowed":false,"resetHint":"Stay still 1s to reset"}
 17.250 -1 cnr_roundEnd {"catchers":["Bob"],"explode":false,"reason":"caught","runnerId":1,"runnerName":"Reinder","survivedSeconds":7.25}
 17.250 -1 cnr_roundCars {"keys":{}}
+17.250 fs remove <dir>data/leaderboard.json
+17.250 fs write <dir>data/leaderboard.json {"format":2,"runs":[{"catcherKeys":["name:Bob"],"catchers":["Bob"],"chaseSeconds":7.25,"config":"vehicles/pickup/base.pc","copNames":["Bob"],"copSightSeconds":[7],"cops":["name:Bob"],"endReason":"caught","endedAt":1795000000,"hiddenSeconds":0,"key":"name:Reinder","lostCount":0,"map":"west_coast_usa","mode":"random","model":"pickup","player":"Reinder","releasedAt":1794999993,"sky":{"day":12,"dayLength":"moderate","driving":true,"month":12,"time":"sunrise","weather":"cloudy","weatherStart":"cloudy","year":2026},"survivedSeconds":7.25,"timeline":{}}]}
 17.250 1 cnr_boardState {"cops":[{"assists":0,"catches":1,"fastest":7.25,"name":"Bob"}],"filter":"west_coast_usa","map":"west_coast_usa","maps":["west_coast_usa"],"mode":"all","players":[{"assists":0,"catches":1,"escapes":0,"key":"p3054b4b3","name":"Bob","runs":0},{"assists":0,"average":7.25,"best":7.25,"catches":0,"escapes":0,"hiddenPct":0,"key":"pb942c009","lostThem":0,"me":true,"name":"Reinder","runs":1}],"rounds":[{"catchers":["Bob"],"cops":[{"catcher":true,"key":"p3054b4b3","name":"Bob","sightPct":97}],"endReason":"caught","endedAt":1795000000,"id":1,"map":"west_coast_usa","mode":"random","model":"pickup","player":"Reinder","playerKey":"pb942c009","sky":{"day":12,"dayLength":"moderate","driving":true,"month":12,"time":"sunrise","weather":"cloudy","weatherStart":"cloudy","year":2026},"survivedSeconds":7.25,"tracked":true}],"runners":[{"map":"west_coast_usa","me":true,"model":"pickup","player":"Reinder","survivedSeconds":7.25}],"traffic":"all"}
 17.250 1 cnr_top {"rows":[{"me":true,"player":"Reinder","rank":1,"time":"0:07"}]}
 17.250 2 cnr_top {"rows":[{"player":"Reinder","rank":1,"time":"0:07"}]}

@@ -1,0 +1,142 @@
+0.000 fs mkdir <dir>data/stations/
+0.000 log [CnR] 0 gas stations loaded for west_coast_usa
+0.000 timer cancel cnr_tick
+0.000 timer create cnr_tick 250
+0.000 -1 cnr_roundEnd {"reason":"cancelled"}
+0.000 -1 cnr_mode {"startGrid":true,"version":"<version>"}
+0.000 -1 cnr_rules {"carMode":"random","catchHoldSeconds":7,"catchMaxSpeedKmh":3,"catchRadiusMeters":10,"copResetMinDistanceMeters":1000,"crashPenaltySeconds":10,"crashSpeedLossKmh":50,"headStartSeconds":7,"helicopter":true,"helicopterArrivalSeconds":60,"helicopterRefuelSeconds":90,"helicopterUpSeconds":120,"resetWaitSeconds":7,"roundTimeLimitSeconds":1800,"runnerCountdownSeconds":3,"sightMaxMeters":400,"sirensAllowed":true,"trafficPerPlayer":0,"trafficRunnerOnly":false,"weatherChanges":true}
+0.000 -1 cnr_lobby {"active":false,"online":2}
+0.000 log [CnR] Cops and Robbers <version> loaded on west_coast_usa (<dir>)
+call cnr_panel
+0.000 1 cnr_pickVehicle {"excludedModels":{},"includeMods":false}
+ret
+call cnr_vehiclePicked
+0.000 1 cnr_roundSetup {"color":{"b":0.1725490196,"g":0.2274509804,"hex":"#d83a2c","r":0.8470588235},"config":"vehicles/pickup/base.pc","copIndex":0,"copSpawnMax":150,"copSpawnMin":50,"inPlace":true,"model":"pickup","phase":"prep","practice":true,"role":"runner","runnerId":1,"runnerName":"Reinder","runnerShown":true,"sightMaxMeters":400,"sky":{"changes":[{"afterStay":true,"at":1403.644291,"forecastFrom":1319.570715,"to":"fog"}],"day":12,"daySeconds":1800,"driving":true,"gameStart":0.7333333333,"lightningMaxSeconds":20,"lightningMinSeconds":5,"lightningSeed":1062517886,"month":12,"releaseAt":10,"temps":[{"c":6.963667917,"hour":14,"t":-0.65},{"c":3.963667917,"hour":6,"t":0.01666666667},{"c":6.963667917,"hour":14,"t":0.35},{"c":1.238673421,"hour":6,"t":1.016666667},{"c":3.238673421,"hour":14,"t":1.35}],"time":"sunrise","weather":"cloudy","windDir":61,"windSeed":1508029951,"year":2026}}
+0.000 log [CnR] setup sent to Reinder: runner, prep
+0.000 2 cnr_parkBystanderCars {"on":true}
+ret
+call cnr_tick
+0.250 -1 cnr_lobby {"active":false,"online":2,"practice":"Reinder"}
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+15.000 1 cnr_notice {"msg":"Round cancelled","tone":"info"}
+15.000 2 cnr_parkBystanderCars {"on":false}
+15.000 1 cnr_roundEnd {"catchers":{},"explode":false,"message":"Round cancelled","reason":"cancelled","runnerId":1,"runnerName":"Reinder","survivedSeconds":0}
+15.000 1 cnr_notice {"msg":"Practice cancelled: your round car did not register in time.","tone":"warn"}
+ret
