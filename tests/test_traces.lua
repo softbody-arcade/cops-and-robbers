@@ -22,6 +22,10 @@ test("trace runs preserve non-JSON send payloads", function()
   assert(trace:find("0.000 1 cnr_probe raw:not json\n", 1, true))
 end)
 
+test("trace lines render a payload that isn't text instead of aborting", function()
+  assertEq(traceLine({ kind = "send", t = 0, to = 1, ev = "cnr_probe" }), "0.000 1 cnr_probe raw:nil")
+end)
+
 test("trace runs replace only standalone version tokens", function()
   local trace = traceRun({ steps = function(env)
     env.events.probe = "traceProbe"

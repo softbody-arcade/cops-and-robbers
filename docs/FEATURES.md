@@ -331,5 +331,5 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Install:** players install nothing. The server needs the plugin in `Resources/Server` and the zip in `Resources/Client`.
 - **Mods panel:** the zip carries a title, description, version and icon (`mod_info`) for mod panels.
 - **Stuck controls:** Cancel always unlocks everyone, and so does a plugin restart.
-- **Bad files:** a broken `config.json` gives a warning and uses the defaults. A broken or malformed leaderboard is moved aside.
+- **Bad files:** a broken or empty `config.json` gives a warning and uses the defaults. The file is first copied next to it as `config.json.corrupt-<date>-<time>`, and the warning names the copy. A broken or malformed leaderboard is moved aside.
 - **Tests:** The automated tests cover the rules, the server wiring and the client, which runs against stubbed game functions in `tests/test_client.lua` (run with `make test`).

@@ -208,6 +208,14 @@ test("copy failure logs the error and loads defaults", function()
   end)
 end)
 
+test("a copy failure without an error message still loads defaults", function()
+  withSettings("{broken", function(service, path, backup, logs)
+    store.copy = function() return nil end
+    sameValues(service:load(), defaults)
+    sameValues(logs, { warning .. "could not keep a copy: nil" })
+  end)
+end)
+
 test("an empty settings file keeps an empty copy", function()
   withSettings("", function(service, path, backup, logs)
     sameValues(service:load(), defaults)

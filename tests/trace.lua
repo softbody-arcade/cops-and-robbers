@@ -1,6 +1,6 @@
 local function payload(entry)
   local ok, value = pcall(decodeJson, entry.data)
-  if not ok then return "raw:" .. entry.data end
+  if not ok then return "raw:" .. tostring(entry.data) end
   return serverBoot.encode(value, true)
 end
 

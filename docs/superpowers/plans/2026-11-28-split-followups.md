@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - No source comments. Server Lua runs on Lua 5.3; check each changed server file with `luac5.3 -p` if available, otherwise `luajit -bl`.
-- Players see no change. Hosts see one: #81's copy of a broken `config.json` and its log line.
+- Visible changes, all accepted by the maintainer: hosts see #81's copy of a broken `config.json` and its log line, and #87 moves a pre-1.7 leaderboard aside as unreadable. Players see two edge cases: a typed `/cnr ...` now goes to public chat (#86), and a colour saved only under a player's name is no longer applied (#87). Nothing else changes.
 - After Task 1, every task passes `git diff --exit-code <Task 1 head> -- tests/traces`.
 - Event names stay `cnr_*`; only the `/cnr` command prefix and the `config.json` literal leave `arcade/` (#79).
 - `make test` must pass at the end of each task.

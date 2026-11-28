@@ -274,7 +274,7 @@ function M.new(path, decl, log)
       if copy then
         log(warning .. "kept a copy as " .. copy:match("[^/\\]+$"))
       else
-        log(warning .. "could not keep a copy: " .. err)
+        log(warning .. "could not keep a copy: " .. tostring(err))
       end
     end
     raw = raw or {}

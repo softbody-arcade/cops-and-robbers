@@ -85,5 +85,27 @@ test("copy reports a destination open failure and preserves the source", functio
   assertEq(store.read(src), "[1")
 end)
 
+for _, case in ipairs({
+  { step = "write", file = function(real) return { write = function() return nil, "No space left on device" end, close = function() return real:close() end } end },
+  { step = "close", file = function(real) return { write = function(_, bytes) return real:write(bytes) end, close = function() real:close() return nil, "No space left on device" end } end },
+}) do
+  test("copy removes a partial destination when the " .. case.step .. " fails", function()
+    local src = fixture("[1")
+    local dst = fixture(nil)
+    local realOpen = io.open
+    io.open = function(path, mode)
+      if path == dst then return case.file(realOpen(path, mode)) end
+      return realOpen(path, mode)
+    end
+    local ran, copied, copyErr = pcall(store.copy, src, dst)
+    io.open = realOpen
+    assertEq(ran, true)
+    assertEq(copied, nil)
+    assertEq(copyErr, "No space left on device")
+    assertEq(FS.Exists(dst), false)
+    assertEq(store.read(src), "[1")
+  end)
+end
+
 FS, Util = originalFS, originalUtil
 for _, path in ipairs(paths) do os.remove(path) end

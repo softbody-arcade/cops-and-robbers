@@ -18,8 +18,10 @@ function store.copy(src, dst)
   if not f then return nil, err end
   local written, writeErr = f:write(bytes)
   local closed, closeErr = f:close()
-  if not written then return nil, writeErr end
-  if not closed then return nil, closeErr end
+  if not written or not closed then
+    os.remove(dst)
+    return nil, written and closeErr or writeErr
+  end
   return true
 end
 

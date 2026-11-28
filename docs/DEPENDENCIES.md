@@ -47,7 +47,7 @@ Then do the checks for whatever actually updated.
   - Our own client→server events are registered with `MP.RegisterEvent` too, among them `cnr_sitOut` (`{ on = boolean }`; anything else is ignored)
   - `MP.CreateTimer():GetCurrent()`, `MP.CreateEventTimer` / `MP.CancelEventTimer` (the 250 ms `cnr_tick`)
   - `MP.Get(MP.Settings.Map)` (the map path; we parse `levels/<name>/`) and `MP.Get(MP.Settings.MaxCars)` (a number; it caps the traffic per player, and anything else means no cap)
-  - `Util.JsonEncode` / `JsonDecode` / `JsonPrettify`, `FS.CreateDirectory` / `Remove` / `Rename`
+  - `Util.JsonEncode` / `JsonDecode` / `JsonPrettify`, `FS.CreateDirectory` / `Exists` / `Remove` / `Rename`
 - **Events and the data shapes we parse:**
   - `onVehicleSpawn(pid, vid, data)` and `onVehicleEdited(pid, vid, data)`. The data is `...:pid-vid:{json}`, and we parse from the first `{`. The JSON has `jbm` (model) and `vcf.partConfigFilename` / `vcf.parts`. Returning `1` from an edit **deletes the car**.
   - **Traffic is synced like any car:** BeamMP sends every car a player's game spawns, traffic included, through `onVehicleSpawn`, counts it against `MaxCars` and shows it to everyone. Nothing in the data marks traffic, so the server trusts the game's own report (`cnr_trafficCars`) and caps the extra cars. Moving a traffic car to a new spot reaches us as `onVehicleReset` for that car.
