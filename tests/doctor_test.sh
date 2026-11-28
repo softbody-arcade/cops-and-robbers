@@ -41,6 +41,10 @@ case $tool in
     gh)
         case "$*" in
             --version) echo "gh version ${GH_REPORT:-2.106.0} (2026-01-01)" ;;
+            'project view 1 --owner softbody-arcade')
+                printf '%s\n' 'private-project-fixture'
+                [[ ${PROJECT_READABLE:-no} == yes ]]
+                exit $? ;;
             'auth status --active --hostname github.com --no-refresh')
                 [[ ${GH_PROMPT_DISABLED:-} == 1 && ${NO_COLOR:-} == 1 ]] || exit 2
                 case ${GH_LOGGED_IN:-yes} in
@@ -111,6 +115,9 @@ run_doctor() {
         if [[ ${expect_auth:-yes} == yes ]]; then
             printf '%s\n' 'gh auth status --active --hostname github.com --no-refresh'
         fi
+        if [[ ${expect_probe:-no} == yes ]]; then
+            printf '%s\n' 'gh project view 1 --owner softbody-arcade'
+        fi
         printf '%s\n' 'git config user.email' 'git config core.hooksPath' 'git ls-files -s -- base' 'git submodule status -- base'
         if [[ ${expect_pin:-yes} == yes ]]; then
             printf '%s\n' 'git -C base rev-parse HEAD' 'git rev-parse HEAD:base'
@@ -121,6 +128,7 @@ run_doctor() {
     fi
     assert_private 'doctor-test-account'
     assert_private 'gho_fixture_masked'
+    assert_private 'private-project-fixture'
     assert_private "$valid_email"
 }
 
@@ -225,13 +233,16 @@ expect_line 'missing gh project access.*network.*'
 run_doctor 1 GH_LOGGED_IN=no
 expect_line 'missing gh project access.*gh auth login.*'
 
-run_doctor 1 OMIT_SCOPES=yes
+expect_probe=yes run_doctor 0 OMIT_SCOPES=yes PROJECT_READABLE=yes
+expect_line 'ok gh project access'
+
+expect_probe=yes run_doctor 1 OMIT_SCOPES=yes PROJECT_READABLE=no
 expect_line 'missing gh project access.*classic token.*'
 
-run_doctor 1 GH_SCOPES=none
+expect_probe=yes run_doctor 1 GH_SCOPES=none
 expect_line 'missing gh project access.*gh auth refresh.*'
 
-run_doctor 1 "GH_SCOPES='repo', 'project:read'"
+expect_probe=yes run_doctor 1 "GH_SCOPES='repo', 'project:read'"
 expect_line 'missing gh project access.*gh auth refresh.*'
 
 email="private-contributor@"

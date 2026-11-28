@@ -85,7 +85,9 @@ check_project_access() {
             fi
         fi
     done <<< "$auth"
-    if [[ -z $scopes ]]; then
+    if GH_HOST=github.com GH_PROMPT_DISABLED=1 gh project view 1 --owner softbody-arcade >/dev/null 2>&1; then
+        report ok 'gh project access'
+    elif [[ -z $scopes ]]; then
         report missing 'gh project access — check token project permissions; use a classic token with read:project if needed'
     else
         report missing 'gh project access — run gh auth refresh --hostname github.com -s read:project, or update token permissions'
