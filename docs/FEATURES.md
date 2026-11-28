@@ -1,4 +1,4 @@
-# Cops and Robbers 2.15.1: features
+# Cops and Robbers 2.16.0: features
 
 A BeamMP server plugin with a client mod that BeamMP downloads automatically. The mod enforces the group's cops-and-robbers rules. It uses BeamMP vehicle positions in the level's 3D coordinates.
 
@@ -162,7 +162,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - Shown in the Cops and Robbers Leaderboard app, and the top 3 in the result card after each round.
 - **Saved per run:** runner, time, map, car, the round's conditions (time of day, the worst weather of the round and the weather it started with, day length, date, whether weather affected driving), the traffic per player and whether it was for the runner only, end reason (caught, called, escaped, disconnect), catchers, every cop in the round with their seconds of sight, the runner's hidden time and how often they lost the cops, the car mode and build step, and a timeline of what happened (cops released, lost the cops, crash penalties, illegal resets, teleports, parts changes, the end).
 - A cancelled round and a practice round are never recorded.
-- **Fresh start in 1.7.0:** the leaderboard file has a new format. An older file is moved to `data/leaderboard-1.6.json` (kept, not used).
+- **Leaderboard file format:** the leaderboard file has a format number. A file whose content is malformed or in another format is moved aside as `data/leaderboard.json.corrupt-<time>` (kept, not used), and a fresh leaderboard starts.
 
 ## Leaderboard app
 
@@ -275,7 +275,7 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 
 ## Quiet
 
-- **No chat commands.** `/cnr color`, `/cnr addstation`, `/cnr removestation`, `/cnr help` and `/cnr version` are gone. Their jobs moved to the colour picker, the Map tab, How to play and the panel header. A typed `/cnr ...` is hidden from chat, and the sender gets a notice pointing to the Cops and Robbers card.
+- **No chat commands.** `/cnr color`, `/cnr addstation`, `/cnr removestation`, `/cnr help` and `/cnr version` are gone. Their jobs moved to the colour picker, the Map tab, How to play and the panel header. The mod doesn't read chat: a typed `/cnr ...` is an ordinary chat message.
 - **No chat messages and no pop-ups.** Round flow, results, rule breaks and build changes show in the apps as they happen (see HUD). The Leaderboard's Rounds tab keeps each round's result and timeline; for the build, the Car tab shows the last change and the full history stays in `data/build.json`. Replies to the host's clicks show in the panel's reply line.
 
 ## Settings (`config.json`, or the panel)
@@ -331,5 +331,5 @@ All round controls are in the Cops and Robbers Panel (Host panel button on the l
 - **Install:** players install nothing. The server needs the plugin in `Resources/Server` and the zip in `Resources/Client`.
 - **Mods panel:** the zip carries a title, description, version and icon (`mod_info`) for mod panels.
 - **Stuck controls:** Cancel always unlocks everyone, and so does a plugin restart.
-- **Bad files:** a broken `config.json` gives a warning and uses the defaults. A broken or malformed leaderboard is moved aside.
+- **Bad files:** a broken or empty `config.json` gives a warning and uses the defaults. The file is first copied next to it as `config.json.corrupt-<date>-<time>`, and the warning names the copy; if the copy fails, the warning gives the reason instead. A broken or malformed leaderboard is moved aside.
 - **Tests:** The automated tests cover the rules, the server wiring and the client, which runs against stubbed game functions in `tests/test_client.lua` (run with `make test`).

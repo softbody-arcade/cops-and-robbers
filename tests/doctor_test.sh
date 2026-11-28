@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 bin=$(mktemp -d)
 trap 'rm -rf "$bin"' EXIT
 runner=$BASH
+repo=$PWD
 failures=0
 valid_email="123+contributor@"
 valid_email+="users.noreply.github.com"
@@ -25,10 +26,15 @@ esac
 case $tool in
     bash) echo "GNU bash, version ${BASH_REPORT:-4.4.23}(1)-release" ;;
     git)
+        [[ $1 != config ]] || printf '%s\n' "$PWD" >> "$PWD_LOG"
         case "$*" in
             --version) echo "git version ${GIT_REPORT:-2.56.1}" ;;
             'config user.email') printf '%s\n' "${EMAIL_REPORT-123+contributor@$noreply_domain}" ;;
             'config core.hooksPath') printf '%s\n' "${HOOKS_REPORT-.githooks}" ;;
+            'submodule status -- base') printf '%s\n' "${BASE_REPORT- 6198cea32b7b8469a390bf2d12e012cafe35d8de base (v0.1.0)}" ;;
+            '-C base rev-parse HEAD') printf '%s\n' "${BASE_HEAD-6198cea32b7b8469a390bf2d12e012cafe35d8de}" ;;
+            'rev-parse HEAD:base') printf '%s\n' "${BASE_PIN-6198cea32b7b8469a390bf2d12e012cafe35d8de}" ;;
+            'ls-files -s -- base') [[ -z ${BASE_STAGED-x} ]] || printf '160000 %s 0\tbase\n' "${BASE_STAGED-6198cea32b7b8469a390bf2d12e012cafe35d8de}" ;;
             *) exit 2 ;;
         esac ;;
     node) echo "v${NODE_REPORT:-22.1.0}" ;;
@@ -36,8 +42,12 @@ case $tool in
         case "$*" in
             --version) echo "gh version ${GH_REPORT:-2.106.0} (2026-01-01)" ;;
             'auth status --active --hostname github.com --no-refresh')
+                [[ ${GH_PROMPT_DISABLED:-} == 1 && ${NO_COLOR:-} == 1 ]] || exit 2
                 case ${GH_LOGGED_IN:-yes} in
                     no) exit 1 ;;
+                    network) printf '%s\n' 'github.com' '  X Failed to log in to github.com using token (GH_TOKEN)' '  - Active account: true' '  - The token in GH_TOKEN is invalid.' "  - Error: Post \"https://api.github.com/graphql\": proxyconnect tcp: $GH_ERROR" >&2; exit 1 ;;
+                    deadline) printf '%s\n' 'github.com' '  X Failed to log in to github.com using token (GH_TOKEN)' '  - Active account: true' '  - The token in GH_TOKEN is invalid.' '  - Error: Post "https://api.github.com/graphql": context deadline exceeded' >&2; exit 1 ;;
+                    timeout) printf '%s\n' '  X Timeout trying to log in to github.com account test (keyring)' >&2; exit 1 ;;
                     offline)
                         printf '%s\n' 'error connecting to api.github.com' 'Check your internet connection or https://githubstatus.com' >&2
                         exit 1 ;;
@@ -47,7 +57,9 @@ case $tool in
                     '  - Active account: true' \
                     '  - Git operations protocol: https' \
                     '  - Token: gho_fixture_masked' >&2
-                if [[ ${CLICOLOR_FORCE:-0} == 1 ]]; then
+                if [[ ${OMIT_SCOPES:-no} == yes ]]; then
+                    :
+                elif [[ ${CLICOLOR_FORCE:-0} == 1 ]]; then
                     printf '  - \033[1mToken scopes:\033[0m %s\n' "${GH_SCOPES-$default_scopes}" >&2
                 else
                     printf '  - Token scopes: %s\n' "${GH_SCOPES-$default_scopes}" >&2
@@ -66,7 +78,7 @@ case $tool in
 esac
 STUB
 chmod +x "$bin/tool"
-for tool in bash git lua5.3 lua luajit python3 node npm zip unzip rsync tar jq gh ssh-keygen; do
+for tool in bash git lua5.3 lua luajit python3 node npm zip unzip rsync tar jq gh ssh-keygen gzip sha256sum; do
     ln -s tool "$bin/$tool"
 done
 
@@ -79,7 +91,8 @@ run_doctor() {
     local expected=$1 status=0 lua=lua5.3
     shift
     : > "$bin/calls"
-    output=$(env PATH="$bin" CALL_LOG="$bin/calls" "$@" "$runner" scripts/doctor 2>&1) || status=$?
+    : > "$bin/pwds"
+    output=$(env PATH="$bin" CALL_LOG="$bin/calls" PWD_LOG="$bin/pwds" "$@" "$runner" "$repo/scripts/doctor" 2>&1) || status=$?
     if [[ $status != "$expected" ]]; then
         fail "Expected doctor exit $expected, got $status ($*)"
     fi
@@ -87,8 +100,10 @@ run_doctor() {
     [[ -e $bin/lua5.3 ]] || lua=lua
     {
         printf '%s\n' 'bash --version' 'git --version' "$lua -v" 'luajit -v' \
-            'python3 --version' 'node --version' 'npm --version' 'zip -v' \
-            'unzip -v' 'rsync --version' 'tar --version'
+            'python3 --version' 'node --version' 'npm --version' 'zip -v'
+        [[ ! -e $bin/gzip ]] || printf '%s\n' 'gzip --version'
+        [[ ! -e $bin/sha256sum ]] || printf '%s\n' 'sha256sum --version'
+        printf '%s\n' 'unzip -v' 'rsync --version' 'tar --version'
         if [[ -e $bin/jq ]]; then
             printf '%s\n' 'jq --version'
         fi
@@ -96,7 +111,10 @@ run_doctor() {
         if [[ ${expect_auth:-yes} == yes ]]; then
             printf '%s\n' 'gh auth status --active --hostname github.com --no-refresh'
         fi
-        printf '%s\n' 'git config user.email' 'git config core.hooksPath'
+        printf '%s\n' 'git config user.email' 'git config core.hooksPath' 'git ls-files -s -- base' 'git submodule status -- base'
+        if [[ ${expect_pin:-yes} == yes ]]; then
+            printf '%s\n' 'git -C base rev-parse HEAD' 'git rev-parse HEAD:base'
+        fi
     } > "$bin/expected-calls"
     if ! diff -u "$bin/expected-calls" "$bin/calls"; then
         fail "Unexpected tool calls ($*)"
@@ -119,7 +137,16 @@ assert_private() {
     fi
 }
 
+mkdir "$bin/elsewhere"
+cd "$bin/elsewhere"
 run_doctor 0
+if [[ $(cat "$bin/pwds") != "$(printf '%s\n%s' "$repo" "$repo")" ]]; then
+    fail 'Git config did not run from the repository root'
+fi
+cd "$repo"
+run_doctor 0
+expect_line 'ok gzip.*'
+expect_line 'ok sha256sum.*'
 expect_line 'ok git 2\.56\.1'
 expect_line 'ok node 22\.1\.0'
 expect_line 'ok gh 2\.106\.0'
@@ -135,6 +162,20 @@ done
 expect_line 'ok gh project access'
 expect_line 'ok git noreply email'
 expect_line 'ok git hooks'
+expect_line 'ok base submodule'
+
+expect_pin=no run_doctor 1 'BASE_REPORT=-6198cea32b7b8469a390bf2d12e012cafe35d8de base'
+expect_line 'missing base submodule — not initialised; run git submodule update --init.*'
+expect_pin=no run_doctor 1 'BASE_REPORT=-6198cea32b7b8469a390bf2d12e012cafe35d8de base' BASE_STAGED=
+expect_line 'missing base submodule — the index has no base pin; see .*docs/DEVELOPMENT.md.*'
+expect_pin=no run_doctor 1 'BASE_REPORT=U0000000000000000000000000000000000000000 base'
+expect_line 'missing base submodule — the base pin has a merge conflict; see .*docs/DEVELOPMENT.md.*'
+run_doctor 1 'BASE_REPORT=+0123456789abcdef0123456789abcdef01234567 base (heads/develop)' BASE_HEAD=0123456789abcdef0123456789abcdef01234567
+expect_line 'missing base submodule — base/ is at 0123456789ab, the index pins 6198cea32b7b and the last commit pins 6198cea32b7b; see .*docs/DEVELOPMENT.md.*'
+run_doctor 1 BASE_STAGED=0123456789abcdef0123456789abcdef01234567 BASE_HEAD=0123456789abcdef0123456789abcdef01234567
+expect_line 'missing base submodule — base/ is at 0123456789ab, the index pins 0123456789ab and the last commit pins 6198cea32b7b; see .*docs/DEVELOPMENT.md.*'
+run_doctor 1 BASE_STAGED=0123456789abcdef0123456789abcdef01234567
+expect_line 'missing base submodule — base/ is at 6198cea32b7b, the index pins 0123456789ab and the last commit pins 6198cea32b7b; see .*docs/DEVELOPMENT.md.*'
 
 run_doctor 0 "GH_SCOPES='repo', 'project'" NODE_REPORT=24.1.0
 expect_line 'ok gh project access'
@@ -167,11 +208,28 @@ expect_line 'missing node.*brew install node.*'
 run_doctor 0 CLICOLOR_FORCE=1
 expect_line 'ok gh project access'
 
+for error in 'dial tcp 127.0.0.1:9: connect: connection refused' 'dial tcp: lookup api.github.com: no such host' 'connection reset by peer' 'i/o timeout' 'network is unreachable'; do
+    run_doctor 1 GH_LOGGED_IN=network GH_ERROR="$error"
+    expect_line 'missing gh project access.*network.*'
+done
+
+run_doctor 1 GH_LOGGED_IN=deadline
+expect_line 'missing gh project access.*network.*'
+
+run_doctor 1 GH_LOGGED_IN=timeout
+expect_line 'missing gh project access.*network.*'
+
 run_doctor 1 GH_LOGGED_IN=offline
 expect_line 'missing gh project access.*network.*'
 
 run_doctor 1 GH_LOGGED_IN=no
 expect_line 'missing gh project access.*gh auth login.*'
+
+run_doctor 1 OMIT_SCOPES=yes
+expect_line 'missing gh project access.*classic token.*'
+
+run_doctor 1 GH_SCOPES=none
+expect_line 'missing gh project access.*gh auth refresh.*'
 
 run_doctor 1 "GH_SCOPES='repo', 'project:read'"
 expect_line 'missing gh project access.*gh auth refresh.*'
@@ -189,10 +247,20 @@ for email in '@users.noreply.github.com' "${valid_email}.example.invalid" "prefi
     assert_private "$email"
 done
 
+rm "$bin/gzip" "$bin/sha256sum"
+run_doctor 1
+expect_line 'missing gzip.*pacman -S gzip.*apt install gzip.*brew install gzip.*'
+expect_line 'missing sha256sum.*pacman -S coreutils.*apt install coreutils.*brew install coreutils.*'
+
 rm "$bin/lua5.3" "$bin/jq" "$bin/ssh-keygen"
 run_doctor 1
 expect_line 'ok Lua 5\.4\.8'
 expect_line 'missing jq.*pacman.*apt.*brew.*'
 expect_line 'missing ssh-keygen.*'
+output=''
+if grep -nE '\$\{[^}]*(,,|\^\^)' "$repo/scripts/doctor"; then
+    fail 'scripts/doctor uses Bash 4 case conversion, which Bash 3.2 cannot parse'
+fi
+
 (( failures == 0 )) || exit 1
 printf 'doctor: all checks passed\n'

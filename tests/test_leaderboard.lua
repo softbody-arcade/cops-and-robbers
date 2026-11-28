@@ -5,6 +5,7 @@ local function run(player, s, model)
 end
 
 test("load handles nil and missing runs", function()
+  assertEq(leaderboard.load(nil).format, 2)
   assertEq(#leaderboard.load(nil).runs, 0)
   assertEq(#leaderboard.load({}).runs, 0)
   assertEq(#leaderboard.load({runs={run("a", 1)}}).runs, 1)
@@ -64,10 +65,12 @@ test("best groups runs by account key and shows the latest name", function()
 end)
 
 
-test("validRuns detects a wrong shape", function()
+test("validShape accepts a missing file or a current board with a runs table", function()
   assertEq(leaderboard.validShape(nil), true)
-  assertEq(leaderboard.validShape({runs={}}), true)
-  assertEq(leaderboard.validShape({runs=5}), false)
+  assertEq(leaderboard.validShape({ format = 2, runs = {} }), true)
+  assertEq(leaderboard.validShape({ runs = {} }), false)
+  assertEq(leaderboard.validShape({ format = 1, runs = {} }), false)
+  assertEq(leaderboard.validShape({ format = 2, runs = 5 }), false)
   assertEq(leaderboard.validShape({1, 2}), false)
 end)
 
@@ -136,13 +139,6 @@ test("a renamed player shows the latest name everywhere", function()
   leaderboard.add(b, fullRun({ player = "Ann", s = 10, at = 9, cops = { "k:Bob" }, copNames = { "Bobby" }, copSight = { 1 } }))
   local p = byName(leaderboard.players(b, nil, 20))
   assertEq(p.Bobby ~= nil, true); assertEq(p.Bob, nil)
-end)
-
-test("isCurrent accepts format 2 and a missing file only", function()
-  assertEq(leaderboard.isCurrent(nil), true)
-  assertEq(leaderboard.isCurrent({ format = 2, runs = {} }), true)
-  assertEq(leaderboard.isCurrent({ runs = {} }), false)
-  assertEq(leaderboard.load(nil).format, 2)
 end)
 
 test("a renamed player shows the latest name in every tab and map filter", function()

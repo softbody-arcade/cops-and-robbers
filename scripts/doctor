@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+script_dir=${BASH_SOURCE[0]%/*}
+[[ $script_dir != "${BASH_SOURCE[0]}" ]] || script_dir=.
+CDPATH= cd -- "$script_dir/.." || exit 1
+
 export LC_ALL=C
 failed=0
 
@@ -59,12 +63,14 @@ check_project_access() {
     local auth line scopes
     local project_scope='(^|,)[[:blank:]]*(read:project|project)[[:blank:]]*(,|$)'
     if ! auth=$(GH_PROMPT_DISABLED=1 NO_COLOR=1 CLICOLOR_FORCE=0 gh auth status --active --hostname github.com --no-refresh 2>&1); then
-        case "${auth,,}" in
-            *"couldn't connect"*|*"could not connect"*|*"error connecting"*|*"timeout trying to log in"*)
+        shopt -s nocasematch
+        case "$auth" in
+            *"couldn't connect"*|*"could not connect"*|*"error connecting"*|*"timeout trying to log in"*|*"- Error:"*"dial tcp"*|*"- Error:"*"no such host"*|*"- Error:"*"connection refused"*|*"- Error:"*"i/o timeout"*|*"- Error:"*"network is unreachable"*|*"- Error:"*"connection reset by peer"*|*"- Error:"*"context deadline exceeded"*)
                 report missing 'gh project access — check your network connection to GitHub, then rerun make doctor' ;;
             *)
                 report missing 'gh project access — run gh auth login --hostname github.com, then gh auth refresh --hostname github.com -s read:project' ;;
         esac
+        shopt -u nocasematch
         return
     fi
 
@@ -79,7 +85,11 @@ check_project_access() {
             fi
         fi
     done <<< "$auth"
-    report missing 'gh project access — run gh auth refresh --hostname github.com -s read:project'
+    if [[ -z $scopes ]]; then
+        report missing 'gh project access — check token project permissions; use a classic token with read:project if needed'
+    else
+        report missing 'gh project access — run gh auth refresh --hostname github.com -s read:project, or update token permissions'
+    fi
 }
 
 check_tool bash bash --version 4.4 'Install or upgrade Bash (pacman -S bash, apt install bash, brew install bash).'
@@ -92,6 +102,8 @@ check_tool python3 python3 --version '' 'Install Python (pacman -S python, apt i
 check_tool node node --version 22 'Install Node 22 or newer (pacman -S nodejs, apt install nodejs, brew install node) or see https://nodejs.org/download.'
 check_tool npm npm --version '' 'Install npm (pacman -S npm, apt install npm, brew install node).'
 check_tool zip zip -v '' 'Install Zip (pacman -S zip, apt install zip, brew install zip).'
+check_tool gzip gzip --version '' 'Install gzip (pacman -S gzip, apt install gzip, brew install gzip).'
+check_tool sha256sum sha256sum --version '' 'Install GNU coreutils for sha256sum (pacman -S coreutils, apt install coreutils, brew install coreutils).'
 check_tool unzip unzip -v '' 'Install UnZip (pacman -S unzip, apt install unzip, brew install unzip).'
 check_tool rsync rsync --version '' 'Install rsync (pacman -S rsync, apt install rsync, brew install rsync).'
 check_tool tar tar --version '' 'Install GNU tar (pacman -S tar or apt install tar). On macOS, run brew install gnu-tar, then put its gnubin directory first on PATH.' 'GNU tar'
@@ -113,6 +125,30 @@ if [[ $(git config core.hooksPath 2>/dev/null) == .githooks ]]; then
     report ok 'git hooks'
 else
     report missing 'git hooks — run make hooks'
+fi
+
+base_staged= base_entries=0
+while IFS=$'\t' read -r base_meta base_path; do
+    base_entries=$((base_entries + 1))
+    read -r _ base_sha base_stage <<< "$base_meta"
+    [[ $base_path != base || $base_stage != 0 ]] || base_staged=$base_sha
+done < <(git ls-files -s -- base 2>/dev/null)
+base_status=$(git submodule status -- base 2>/dev/null)
+if (( base_entries == 0 )); then
+    report missing 'base submodule — the index has no base pin; see "The base submodule" in docs/DEVELOPMENT.md'
+else
+    case ${base_status:0:1} in
+        U) report missing 'base submodule — the base pin has a merge conflict; see "The base submodule" in docs/DEVELOPMENT.md' ;;
+        '' | -) report missing 'base submodule — not initialised; run git submodule update --init (base/ holds the shared rules)' ;;
+        *)
+            base_checkout=$(git -C base rev-parse HEAD 2>/dev/null)
+            base_committed=$(git rev-parse HEAD:base 2>/dev/null)
+            if [[ ${base_status:0:1} == ' ' && -n $base_checkout && $base_checkout == "$base_committed" && $base_staged == "$base_committed" ]]; then
+                report ok 'base submodule'
+            else
+                report missing "base submodule — base/ is at ${base_checkout:0:12}, the index pins ${base_staged:0:12} and the last commit pins ${base_committed:0:12}; see \"The base submodule\" in docs/DEVELOPMENT.md"
+            fi ;;
+    esac
 fi
 
 exit "$failed"

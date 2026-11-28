@@ -7,17 +7,13 @@ function M.load(decoded)
   return { format = M.FORMAT, runs = runs }
 end
 
-function M.isCurrent(decoded)
-  return decoded == nil or (type(decoded) == "table" and decoded.format == M.FORMAT)
-end
-
 function M.add(board, run)
   board.runs[#board.runs + 1] = run
 end
 
 function M.validShape(decoded)
   if decoded == nil then return true end
-  return type(decoded) == "table" and type(decoded.runs) == "table"
+  return type(decoded) == "table" and decoded.format == M.FORMAT and type(decoded.runs) == "table"
 end
 
 local function matches(r, filter)

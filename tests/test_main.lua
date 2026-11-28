@@ -1,234 +1,8 @@
-local function encode(v)
-  if type(v) == "table" then
-    local n = 0
-    for _ in pairs(v) do n = n + 1 end
-    if n > 0 and n == #v then
-      local items = {}
-      for i, x in ipairs(v) do items[i] = encode(x) end
-      return "[" .. table.concat(items, ",") .. "]"
-    end
-    local parts = {}
-    for k, x in pairs(v) do parts[#parts + 1] = string.format("%q:%s", tostring(k), encode(x)) end
-    return "{" .. table.concat(parts, ",") .. "}"
-  elseif type(v) == "string" then return string.format("%q", v) end
-  return tostring(v)
-end
-
-function decodeJson(str)
-  local pos = 1
-  local function ws() pos = str:find("%S", pos) or #str + 1 end
-  local value
-  local function stringValue()
-    local out = {}
-    pos = pos + 1
-    while true do
-      local c = str:sub(pos, pos)
-      if c == "" then error("bad json") end
-      if c == '"' then pos = pos + 1 break end
-      if c == "\\" then pos = pos + 1; c = str:sub(pos, pos) end
-      out[#out + 1] = c
-      pos = pos + 1
-    end
-    return table.concat(out)
-  end
-  function value()
-    ws()
-    local c = str:sub(pos, pos)
-    if c == "{" then
-      local t = {}
-      pos = pos + 1; ws()
-      if str:sub(pos, pos) == "}" then pos = pos + 1 return t end
-      while true do
-        ws()
-        if str:sub(pos, pos) ~= '"' then error("bad json") end
-        local k = stringValue()
-        ws()
-        if str:sub(pos, pos) ~= ":" then error("bad json") end
-        pos = pos + 1
-        t[k] = value()
-        ws()
-        local d = str:sub(pos, pos)
-        pos = pos + 1
-        if d == "}" then return t end
-        if d ~= "," then error("bad json") end
-      end
-    elseif c == "[" then
-      local t = {}
-      pos = pos + 1; ws()
-      if str:sub(pos, pos) == "]" then pos = pos + 1 return t end
-      while true do
-        t[#t + 1] = value()
-        ws()
-        local d = str:sub(pos, pos)
-        pos = pos + 1
-        if d == "]" then return t end
-        if d ~= "," then error("bad json") end
-      end
-    elseif c == '"' then
-      return stringValue()
-    elseif str:sub(pos, pos + 3) == "true" then pos = pos + 4 return true
-    elseif str:sub(pos, pos + 4) == "false" then pos = pos + 5 return false
-    elseif str:sub(pos, pos + 3) == "null" then pos = pos + 4 return nil
-    else
-      local num = str:match("^-?%d+%.?%d*[eE]?[-+]?%d*", pos)
-      if not num or num == "" then error("bad json") end
-      pos = pos + #num
-      return tonumber(num)
-    end
-  end
-  local v = value()
-  ws()
-  if pos <= #str then error("bad json") end
-  return v
-end
-
-local function boot(opts)
-  opts = opts or {}
-  local env = { sent = {}, chats = {}, events = {}, timers = {}, removed = {}, logs = {}, clock = 0, positions = {}, vidPositions = {} }
-  local tmp = os.tmpname(); os.remove(tmp)
-  env.dir = tmp .. "_cnr/"
-  os.execute("mkdir -p '" .. env.dir .. "'")
-  for name, text in pairs(opts.files or {}) do
-    os.execute("mkdir -p '" .. env.dir .. "data'")
-    local ef = assert(io.open(env.dir .. name, "w"))
-    ef:write(text)
-    ef:close()
-  end
-  if opts.leaderboard then
-    os.execute("mkdir -p '" .. env.dir .. "data'")
-    local lf = assert(io.open(env.dir .. "data/leaderboard.json", "w"))
-    lf:write(opts.leaderboard)
-    lf:close()
-  end
-  local f = assert(io.open(env.dir .. "config.json", "w"))
-  f:write(opts.config or assert(io.open("server/CopsAndRobbers/config.json")):read("*a"))
-  f:close()
-  env.vehicles = opts.vehicles or { [1] = { [0] = "x" }, [2] = { [0] = "x" } }
-
-  _G.MP = {
-    Settings = { Map = 4, MaxCars = 2 },
-    Get = function(key)
-      if key == 2 then return opts.maxCars or 1 end
-      return opts.map or "/levels/west_coast_usa/info.json"
-    end,
-    CreateTimer = function()
-      local start = env.clock
-      return { GetCurrent = function()
-        local elapsed = env.clock - start
-        if opts.floatTimer then return (string.unpack("f", string.pack("f", elapsed))) end
-        return elapsed
-      end, Start = function() start = env.clock end }
-    end,
-    SendChatMessage = function(pid, msg) env.chats[#env.chats + 1] = { pid, msg } end,
-    TriggerClientEvent = function(pid, ev, data)
-      if env.loading and env.loading[pid] then return false, "Player hasn't joined yet" end
-      env.sent[#env.sent + 1] = { pid = pid, ev = ev, data = data }
-      return true, ""
-    end,
-    GetPlayers = function()
-      local t = {}
-      for pid, name in pairs(env.names or { "Reinder", "Bob" }) do t[pid] = name end
-      return t
-    end,
-    GetPlayerName = function(pid) return (env.names or { "Reinder", "Bob" })[pid] end,
-    GetPlayerIdentifiers = function(pid) return (env.ids or {})[pid] or {} end,
-    GetPlayerVehicles = function(pid) return env.vehicles[pid] end,
-    GetPositionRaw = function(pid, vid)
-      local byVid = env.vidPositions[pid .. "-" .. tostring(vid)]
-      if byVid then return byVid, "" end
-      local p = env.positions[pid]
-      if not p then return nil, "Vehicle not found" end
-      return { pos = { p, 0, 0 }, vel = { 0, 0, 0 } }, ""
-    end,
-    RemoveVehicle = function(pid, vid) env.removed[#env.removed + 1] = pid .. "-" .. vid end,
-    RegisterEvent = function(ev, fn) env.events[ev] = fn end,
-    CreateEventTimer = function(ev, ms) env.timers[ev] = ms end,
-    CancelEventTimer = function(ev) env.timers[ev] = nil end,
-  }
-  _G.Util = {
-    JsonEncode = encode,
-    JsonDecode = function(s) return decodeJson(s) end,
-    JsonPrettify = function(s) return s end,
-  }
-  _G.FS = {
-    CreateDirectory = function(p) os.execute("mkdir -p '" .. p .. "'") end,
-    Remove = function(p) os.remove(p) end,
-    Rename = function(a, b)
-      if opts.renameFails and a:find("leaderboard.json$") then return false, "denied" end
-      return os.rename(a, b) ~= nil
-    end,
-    Exists = function(p)
-      local f = io.open(p)
-      if f then f:close() end
-      return f ~= nil
-    end,
-  }
-
-  local realPrint = print
-  print = function(...)
-    local parts = {}
-    for i = 1, select("#", ...) do parts[#parts + 1] = tostring((select(i, ...))) end
-    env.logs[#env.logs + 1] = table.concat(parts, " ")
-  end
-  local src = assert(io.open("server/CopsAndRobbers/main.lua")):read("*a")
-  local chunk = assert(load(src, env.dir .. "main.lua"))
-  local ok, err = pcall(chunk)
-  print = realPrint
-  assert(ok, err)
-
-  function env.call(ev, ...)
-    local outer = print
-    print = function(...)
-      local parts = {}
-      for i = 1, select("#", ...) do parts[#parts + 1] = tostring((select(i, ...))) end
-      env.logs[#env.logs + 1] = table.concat(parts, " ")
-      if outer ~= realPrint then outer(...) end
-    end
-    local results = table.pack(xpcall(_G[env.events[ev]], debug.traceback, ...))
-    print = outer
-    if not results[1] then error(results[2], 0) end
-    return table.unpack(results, 2, results.n)
-  end
-  function env.lastSent(ev)
-    for i = #env.sent, 1, -1 do if env.sent[i].ev == ev then return env.sent[i] end end
-  end
-  function env.noticeHas(text, tone)
-    for _, m in ipairs(env.sent) do
-      if m.ev == "cnr_notice" then
-        local d = decodeJson(m.data)
-        if d.msg:find(text, 1, true) and (tone == nil or d.tone == tone) then return true end
-      end
-    end
-    return false
-  end
-  function env.replyHas(text)
-    local r = env.lastSent("cnr_panelReply")
-    return r ~= nil and decodeJson(r.data).text:find(text, 1, true) ~= nil
-  end
-  function env.caught()
-    local r = env.lastSent("cnr_roundEnd")
-    return r ~= nil and r.data:find('"reason":"caught"', 1, true) ~= nil
-  end
-  function env.logHas(text)
-    for _, l in ipairs(env.logs) do if l:find(text, 1, true) then return true end end
-    return false
-  end
-  function env.startRound()
-    env.panel(2, "start rein")
-    env.positions[1], env.positions[2] = 0, 5
-    env.call("cnr_vehiclePicked", 2, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
-  end
-  function env.panel(pid, text)
-    env.call("cnr_panel", pid, '{"action":"command","text":"' .. text .. '"}')
-  end
-  function env.go() env.panel(1, "go") end
-  function env.cleanup() os.execute("rm -rf '" .. env.dir .. "'") end
-  return env
-end
+dofile("tests/server_boot.lua")
+local boot, encode = serverBoot.boot, serverBoot.encode
 
 test("main registers events and timer", function()
   local env = boot()
-  assertEq(env.events.onChatMessage ~= nil, true)
   assertEq(env.events.cnr_vehiclePicked ~= nil, true)
   assertEq(env.timers.cnr_tick, 250)
   env.cleanup()
@@ -241,10 +15,21 @@ test("plugin dir resolves without @ chunk name, so config.json is read", functio
   env.cleanup()
 end)
 
-test("corrupt config.json logs a warning", function()
-  local env = boot({ config = '{"headStartSeconds": 3,}' })
-  assertEq(env.logHas("config.json is not valid JSON"), true)
+test("server startup logs the name of the preserved corrupt config.json", function()
+  local date = os.date
+  os.date = function(format, ...)
+    if format == "%Y%m%d-%H%M%S" then return "20261128-101500" end
+    return date(format, ...)
+  end
+  local ok, env = pcall(boot, { config = '{"headStartSeconds": 3,}' })
+  os.date = date
+  assert(ok, env)
+  local name = "config.json.corrupt-20261128-101500"
+  local logged = env.logHas("config.json is not valid JSON, using defaults; kept a copy as " .. name)
+  local exists = FS.Exists(env.dir .. name)
   env.cleanup()
+  assertEq(logged, true)
+  assertEq(exists, true)
 end)
 
 test("plugin load unlocks any client left in a round", function()
@@ -271,9 +56,9 @@ test("a vehicle pick that times out tells the host why", function()
   env.cleanup()
 end)
 
-test("non-command chat passes through", function()
+test("the mod leaves chat messages to BeamMP", function()
   local env = boot()
-  assertEq(env.call("onChatMessage", 1, "Reinder", "hello"), 0)
+  assertEq(env.events.onChatMessage, nil)
   env.cleanup()
 end)
 
@@ -1086,7 +871,7 @@ test("panel state is pushed on change, not every tick", function()
   env.cleanup()
 end)
 
-test("chat change is pushed to panel subscribers", function()
+test("changing auto mode in the panel updates subscribers", function()
   local env = boot()
   env.call("cnr_panel", 1, '{"action":"open"}')
   env.panel(2, "auto on")
@@ -1397,11 +1182,22 @@ local function readFileAt(path)
   return text
 end
 
-test("an old leaderboard is moved aside and the board starts fresh", function()
-  local env = boot({ leaderboard = '{"runs":[{"player":"Old","survivedSeconds":999,"map":"west_coast_usa","endedAt":1}]}' })
-  assertEq(readFileAt(env.dir .. "data/leaderboard-1.6.json"):find("Old", 1, true) ~= nil, true)
+test("an old leaderboard is moved aside as unreadable and the board starts empty", function()
+  local old = '{"runs":[{"player":"Old","survivedSeconds":999,"map":"west_coast_usa","endedAt":1}]}'
+  local env = boot({ leaderboard = old })
+  local data = env.dir .. "data/"
+  local files = assert(io.popen('ls "' .. data .. '"'))
+  local boards = {}
+  for name in files:lines() do
+    if name:match("^leaderboard") then boards[#boards + 1] = name end
+  end
+  assert(files:close())
+  assertEq(#boards, 1)
+  assertEq(boards[1]:match("^leaderboard%.json%.corrupt%-%d+$"), boards[1])
+  assertEq(readFileAt(data .. boards[1]), old)
+  assertEq(env.logHas("leaderboard.json was unreadable, moved to " .. data .. boards[1]), true)
   env.call("cnr_board", 1, '{"action":"open"}')
-  assertEq(env.lastSent("cnr_boardState").data:find("Old", 1, true), nil)
+  assertEq(#decodeJson(env.lastSent("cnr_boardState").data).rounds, 0)
   env.cleanup()
 end)
 
@@ -1457,36 +1253,12 @@ test("if the old leaderboard can't be moved aside, it is never overwritten", fun
   env.cleanup()
 end)
 
-test("an existing backup name is never reused", function()
-  local env = boot({ leaderboard = '{"runs":[{"player":"Second","survivedSeconds":5,"map":"x","endedAt":1}]}',
-    files = { ["data/leaderboard-1.6.json"] = "first backup" } })
-  assertEq(readFileAt(env.dir .. "data/leaderboard-1.6.json"), "first backup")
-  local found = false
-  for name in io.popen('ls "' .. env.dir .. 'data"'):lines() do
-    if name:match("^leaderboard%-1%.6%-%d+%.json$") then found = true end
-  end
-  assertEq(found, true)
-  env.cleanup()
-end)
-
 test("changing a setting refreshes open leaderboards", function()
   local env = boot()
   env.call("cnr_board", 2, '{"action":"open"}')
   env.sent = {}
   env.call("cnr_panel", 1, '{"action":"settings","id":1,"values":{"assistMinSightPercent":40}}')
   assertEq(env.lastSent("cnr_boardState") ~= nil, true)
-  env.cleanup()
-end)
-
-test("chat commands are swallowed with a notice", function()
-  local env = boot()
-  assertEq(env.call("onChatMessage", 1, "Reinder", "/cnr color #ff0000"), 1)
-  local n = decodeJson(env.lastSent("cnr_notice").data)
-  assertEq(env.lastSent("cnr_notice").pid, 1)
-  assertEq(n.msg:find("Chat commands are gone: use the Cops and Robbers card at the bottom of your screen.", 1, true) ~= nil, true)
-  env.call("onChatMessage", 1, "Reinder", "/cnr start bob")
-  assertEq(env.lastSent("cnr_pickVehicle"), nil)
-  assertEq(#env.chats, 0)
   env.cleanup()
 end)
 
@@ -1898,13 +1670,10 @@ test("no colour clears it", function()
   env.cleanup()
 end)
 
-test("no colour also clears a colour saved under the old name key", function()
+test("joining with a colour saved only under the bare name sends no colour", function()
   local env = boot({ files = { ["data/colors.json"] = '{"Reinder":"#ff0000"}' } })
   env.call("onPlayerJoin", 1)
-  assertEq(sentTo(env, "cnr_myColor", 1):find('"hex":"#ff0000"', 1, true) ~= nil, true)
-  env.call("cnr_color", 1, '{"hex":""}')
-  assertEq(sentTo(env, "cnr_myColor", 1):find('"hex"', 1, true), nil)
-  assertEq(assert(io.open(env.dir .. "data/colors.json")):read("*a"):find("Reinder", 1, true), nil)
+  assertEq(decodeJson(sentTo(env, "cnr_myColor", 1)).hex, nil)
   env.cleanup()
 end)
 
@@ -2175,18 +1944,17 @@ test("a lobby change still goes out when the panel push errors", function()
   env.call("cnr_panel", 1, '{"action":"open"}')
   env.call("cnr_tick")
   env.names = { "Reinder" }
+  env.sent = {}
   local realGet, failed = MP.GetPlayers, 0
   MP.GetPlayers = function()
-    if debug.getinfo(2, "n").name == "panelState" then
-      failed = failed + 1
-      error("boom")
-    end
-    return realGet()
+    MP.GetPlayers = realGet
+    failed = failed + 1
+    error("boom")
   end
   capturingLogs(function() env.call("cnr_tick") end)
   MP.GetPlayers = realGet
-  assertEq(failed > 0, true)
-  assertEq(env.lastSent("cnr_lobby").data:find('"online":1', 1, true) ~= nil, true)
+  assertEq(failed, 1)
+  assertEq(decodeJson(assert(env.lastSent("cnr_lobby")).data).online, 1)
   env.cleanup()
 end)
 

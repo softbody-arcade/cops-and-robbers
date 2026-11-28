@@ -1,3 +1,4 @@
+local traffic = require("arcade.traffic")
 local M = {}
 
 local function whole(v)
@@ -5,17 +6,10 @@ local function whole(v)
   return math.max(0, math.floor(n))
 end
 
-function M.perPlayer(setting, maxCars, practice)
-  local n = whole(setting)
-  local cars = tonumber(maxCars)
-  if cars then n = math.min(n, math.max(0, math.floor(cars) - (practice and 3 or 1))) end
-  return n
-end
-
 function M.note(setting, maxCars, players, runnerOnly)
   local wanted = whole(setting)
   if wanted <= 0 then return nil end
-  local n = M.perPlayer(setting, maxCars, false)
+  local n = traffic.perPlayer(setting, maxCars, false)
   if n < wanted then
     if n == 0 then return string.format("MaxCars is %d on this server: no room for traffic", math.floor(tonumber(maxCars))) end
     return string.format("MaxCars is %d on this server: %d %s", math.floor(tonumber(maxCars)), n, runnerOnly and "for the runner" or "per player")

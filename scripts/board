@@ -7,9 +7,11 @@ fi
 shopt -s inherit_errexit
 usage() {
   echo 'Usage: board list [--all] [lane] | waiting [--all] | show N | new TYPE [PRIORITY [EFFORT]] TITLE [--body-file F] | triage N TYPE PRIORITY [EFFORT] | effort N High|Medium|Low | priority N Urgent|High|Medium|Low | start N design|build | move N LANE [--staged SHA] | result N pass|fail|defer [--checks-file F] | release [vX.Y.Z] [--dry-run] | check | parent N PARENT | unparent N | milestone N x.y.z|none | block|unblock N --by M | decide N --file F | labels'
-  echo 'Quote multiword titles. Effort is High, Medium or Low. Triage keeps existing effort. Missing effort defaults to Medium when leaving Inbox.'
-  echo 'Start work from Next with start. From Design, move to Build after plan approval. Work cards entering Playtest require --staged with a full local commit SHA.'
-  echo 'Closed issues enter Accepted. Release moves eligible cards to Done and archives Done cards after 14 days without updates. Use --dry-run to preview changes.'
+  echo 'Quote multiword titles. Triage moves Inbox cards to Backlog and updates fields in place in other lanes except Done. Omitted effort keeps its value or defaults to Medium.'
+  echo 'Start work from Next with start. Move from Design to Build after plan approval or from Review or Playtest to Build for rework. To rework merged work in Accepted, reopen the issue: the board returns it to Inbox for triage.'
+  echo 'Stage or re-stage a work card with move N playtest --staged SHA using the full local commit SHA of its linked open PR.'
+  echo 'Move an In-game check from Inbox, Backlog or Next to Playtest after setting priority. Move it from Playtest to Backlog to defer testing.'
+  echo 'Closed issues enter Accepted. Only release can move eligible cards to Done. Board refuses move N done. Release archives closed Done cards after 14 days without updates. Use --dry-run to preview changes.'
   echo 'Requires jq, Bash 4.4+ and gh 2.106.0+ for project item-edit --field/--value.'
 }
 bad() { echo "$*" >&2; usage >&2; exit 2; }
@@ -99,6 +101,7 @@ parse() {
 load() {
   local rows row
   rows=$(cards)
+  unset game num field size type milestone labels assigned prs blockers state caption
   lane=-
   while IFS= read -r row; do
     [[ $row == "$repo|$n|"* ]] || continue
@@ -107,7 +110,7 @@ load() {
   done <<< "$rows"
 }
 edit_field() {
-  gh project item-edit "$project_number" --owner "$owner" --url "https://github.com/$repo/issues/$n" --field "$1" --value "$2"
+  gh project item-edit "$project_number" --owner "$owner" --url "https://github.com/$repo/issues/$n" --field "$1" --value "$2" >/dev/null
 }
 classified() {
   [[ $type != - && $field != - ]] || refuse 'Set type and priority first'
@@ -119,7 +122,7 @@ set_select() {
   IFS=$'\t' read -r fid opt <<< "$ids"
   [[ -n $fid && -n $opt ]] || error "Cannot resolve $1 option $2"
   node=$(issue view "$n" --json id --jq .id)
-  gh api graphql -f issue="$node" -f field="$fid" -f option="$opt" -f query='mutation($issue:ID!,$field:ID!,$option:ID!){setIssueFieldValue(input:{issueId:$issue,issueFields:[{fieldId:$field,singleSelectOptionId:$option}]}){clientMutationId}}'
+  gh api graphql -f issue="$node" -f field="$fid" -f option="$opt" -f query='mutation($issue:ID!,$field:ID!,$option:ID!){setIssueFieldValue(input:{issueId:$issue,issueFields:[{fieldId:$field,singleSelectOptionId:$option}]}){clientMutationId}}' >/dev/null
 }
 create() {
   local k=$1 p=$2 requested_size=$3 heading=$4 dest=$5 url deadline
@@ -128,7 +131,7 @@ create() {
   n=${url##*/}
   number "$n"
   echo "$url"
-  gh project item-add "$project_number" --owner "$owner" --url "$url"
+  gh project item-add "$project_number" --owner "$owner" --url "$url" >/dev/null
   if [[ -n $p ]]; then
     deadline=$((SECONDS+30))
     while :; do
@@ -152,7 +155,7 @@ release_cards() {
       def old: fromdateiso8601 <= (now - 14*86400);
       .data[$namespace].projectV2 | .id as $project |
       .items.nodes[] | select(.content.repository.nameWithOwner == $repo and (.isArchived | not)) |
-      select(.status.name == "Accepted" or (.status.name == "Done" and (.updatedAt | old) and (.content.updatedAt | old))) |
+      select(.status.name == "Accepted" or (.status.name == "Done" and .content.state == "CLOSED" and (.updatedAt | old) and (.content.updatedAt | old))) |
       [$project, .id, .status.name, .content.number, .content.state,
        (.content.stateReason // "-"), (.content.issueType.name // "-")] | @tsv' || exit 2
 }
@@ -161,31 +164,33 @@ release_prs() {
     repository(owner:$owner,name:$name){issue(number:$issue){closedByPullRequestsReferences(first:50,after:$endCursor,includeClosedPrs:true){
     pageInfo{hasNextPage endCursor} nodes{merged mergeCommit{oid}}}}}}' --jq '
       .data.repository.issue.closedByPullRequestsReferences.nodes[] |
-      if .merged then .mergeCommit.oid // "-" else "-" end'
+      if .merged then .mergeCommit.oid // "-" else "unmerged" end'
 }
 release_action() {
-  local state=$1 reason=$2 type=$3 prs sha comparison
-  if [[ $state == CLOSED ]]; then
-    if [[ $reason == NOT_PLANNED || $reason == DUPLICATE || $type == 'In-game check' ]]; then
-      echo move
-      return
-    fi
-    prs=$(release_prs "$n")
-    if [[ $reason == COMPLETED && -z $prs ]]; then
-      echo move
-      return
-    fi
-    [[ -n $tag ]] || { echo wait; return; }
-    while IFS= read -r sha; do
-      [[ -n $sha && $sha != - ]] || continue
-      comparison=$(gh api "repos/$repo/compare/$tag...$sha" --jq .status)
-      if [[ $comparison == behind || $comparison == identical ]]; then
-        echo move
-        return
-      fi
-    done <<< "$prs"
+  local state=$1 reason=$2 type=$3 prs sha comparison action=unmerged shipped=
+  if [[ $state != CLOSED ]]; then echo open; return; fi
+  if [[ $reason == NOT_PLANNED || $reason == DUPLICATE || $type == 'In-game check' ]]; then
+    echo move
+    return
   fi
-  echo wait
+  prs=$(release_prs "$n")
+  if [[ -z $prs ]]; then
+    if [[ $reason == COMPLETED ]]; then echo move; else echo unresolved; fi
+    return
+  fi
+  while IFS= read -r sha; do
+    [[ $sha != unmerged ]] || continue
+    action=wait
+    if [[ -z $tag || $sha == - ]]; then echo wait; return; fi
+    if ! comparison=$(gh api "repos/$repo/compare/$tag...$sha" --jq .status 2>&1); then
+      [[ $comparison == *'(HTTP 404)'* ]] || error "$comparison"
+      echo wait
+      return
+    fi
+    if [[ $comparison != behind && $comparison != identical ]]; then echo wait; return; fi
+    shipped=1
+  done <<< "$prs"
+  if [[ -n $shipped ]]; then echo move; else echo "$action"; fi
 }
 owned_entries() {
   gh api --paginate "$1" | jq -c --arg login "$me" '.[] | select(.user.login == $login)'
@@ -204,8 +209,12 @@ find_created() {
       select(.pull_request == null and .type.name == $type and ((.body // "") | split("\n")[0]) == $marker) | .number'
 }
 linked() {
-  [[ $prs == "https://github.com/$repo/pull/"* && ${prs##*/} =~ ^[0-9]+$ && $prs != *,* ]] || refuse "Requires one linked open PR in this repository${1:-}"
-  pull=${prs##*/}
+  open_pr=$(gh api graphql --paginate -f owner="${repo%/*}" -f name="${repo#*/}" -F issue="$n" -f query='query openLinkedPrs($owner:String!,$name:String!,$issue:Int!,$endCursor:String){
+    repository(owner:$owner,name:$name){issue(number:$issue){closedByPullRequestsReferences(first:50,after:$endCursor){
+    pageInfo{hasNextPage endCursor} nodes{url state}}}}}' --jq '
+      .data.repository.issue.closedByPullRequestsReferences.nodes[] | select(.state=="OPEN") | .url')
+  [[ $open_pr == "https://github.com/$repo/pull/"* && ${open_pr##*/} =~ ^[0-9]+$ && $open_pr != *$'\n'* ]] || refuse "Requires one linked open PR in this repository${1:-}"
+  pull=${open_pr##*/}
 }
 ready() {
   local body heading missing=()
@@ -244,7 +253,8 @@ case $cmd in
       .data.repository.latestRelease | select(. and (.isDraft | not) and (.isPrerelease | not)) | .tagName')
     [[ -n $tag ]] || echo 'No published release yet: shipped work waits for one'
   else
-    gh api "repos/$repo/releases/tags/$tag" >/dev/null
+    published=$(gh api "repos/$repo/releases/tags/$tag" --jq '(.draft == false and .prerelease == false)')
+    [[ $published == true ]] || refuse "Release $tag is a draft or prerelease"
   fi
   project
   rows=$(release_cards)
@@ -259,16 +269,25 @@ case $cmd in
     read -r action n project_id item <<< "$row"
     case $action in
       move)
-        if [[ $dry_run == false ]]; then edit_field Status Done >/dev/null; fi
-        echo "#$n moved to Done"
+        if [[ $dry_run == true ]]; then
+          echo "#$n would move to Done"
+        else
+          edit_field Status Done
+          echo "#$n moved to Done"
+        fi
         ;;
       archive)
-        if [[ $dry_run == false ]]; then
+        if [[ $dry_run == true ]]; then
+          echo "#$n would archive"
+        else
           gh api graphql -f project="$project_id" -f item="$item" -f query='mutation($project:ID!,$item:ID!){
             archiveProjectV2Item(input:{projectId:$project,itemId:$item}){clientMutationId}}' >/dev/null
+          echo "#$n archived"
         fi
-        echo "#$n archived"
         ;;
+      open) echo "#$n is still open";;
+      unmerged) echo "#$n has no merged PR";;
+      unresolved) echo "#$n has no completion reason or linked PR";;
       wait) echo "#$n waiting for a release";;
     esac
   done
@@ -288,6 +307,7 @@ case $cmd in
   while IFS= read -r row; do
     [[ -n $row ]] || continue
     parse "$row"
+    [[ $cmd != check || $state != CLOSED ]] || continue
     if [[ $cmd == check && $lane == Next ]]; then next_count=$((next_count+1)); fi
     [[ $game == "$repo" || $all == true ]] || continue
     if [[ $cmd == check ]]; then
@@ -321,9 +341,11 @@ case $cmd in
   while IFS='|' read -r name color description; do
     gh label create "$name" --repo "$repo" --force --color "$color" --description "$description"
   done <<'LABELS'
-needs-decision|fbca04|Waiting for a maintainer decision
-needs-playtest|c5def5|Requires an in-game playtest
-accessibility|0075ca|Barrier affecting players with disabilities
+good first issue|7057ff|Good for newcomers
+help wanted|008672|Extra attention is needed
+needs-decision|D93F0B|Waiting on a maintainer decision
+needs-playtest|5319E7|PR changes something a player sees, hears or feels
+accessibility|f143ab|Barrier affecting people with disabilities
 LABELS
   ;;
  new)
@@ -405,8 +427,11 @@ LABELS
       [[ $selected != - || $# == 3 ]] || selected=Medium
       effort "$selected"
       k=$(kind "$1"); priority "$2"
-      [[ $lane == Inbox ]] || refuse 'Triage requires Inbox'
-      issue edit "$n" --type "$k"; set_select Priority "$2"; set_select Effort "$selected"; edit_field Status Backlog
+      [[ $lane != Done ]] || refuse 'Cannot triage a Done card'
+      issue edit "$n" --type "$k" >/dev/null
+      set_select Priority "$2"
+      set_select Effort "$selected"
+      if [[ $lane == Inbox ]]; then edit_field Status Backlog; fi
       ;;
      start)
       [[ $# == 1 && $1 =~ ^(design|build)$ ]] || bad 'Expected design or build'
@@ -421,7 +446,13 @@ LABELS
       [[ $# == 1 || ( $# == 3 && $2 == --staged ) ]] || bad 'Expected lane [--staged SHA]'
       dest=$(lane_name "$1")
       [[ $dest != Done ]] || refuse 'Use board release to move Accepted cards to Done'
-      [[ $lane != Playtest || $dest == Build || $dest == Playtest ]] || refuse 'From Playtest, record a result, re-stage, or move to Build for rework'
+      if [[ $lane == Accepted && $dest == Build ]]; then
+        [[ $state != OPEN ]] || refuse "#$n is already open: move it to Inbox with board move $n inbox, then triage it again"
+        refuse "To rework merged work, reopen #$n: the board returns it to Inbox, then triage it again"
+      fi
+      if [[ $lane == Playtest && $dest != Build && $dest != Playtest ]]; then
+        [[ $type == 'In-game check' && $dest == Backlog ]] || refuse 'From Playtest, record a result, re-stage, or move to Build for rework'
+      fi
       [[ $dest != Design && ( $dest != Build || $lane =~ ^(Design|Review|Playtest)$ ) ]] || refuse 'Use start from Next to enter Design or Build'
       [[ $# != 3 || $type != 'In-game check' ]] || bad 'Unexpected --staged'
       if [[ $type == 'In-game check' && $dest == Playtest && $lane =~ ^(Inbox|Backlog|Next)$ ]]; then
@@ -458,7 +489,8 @@ LABELS
         if [[ $outcome == fail ]]; then
           marker="Failed in-game check #$original"
           existing=$(find_created "$marker" Bug)
-          if [[ -z $existing ]]; then create Bug '' '' "Failed check: $caption" Inbox --body "$marker"$'\n'"$notes"; fi
+          if [[ -z $existing ]]; then create Bug '' '' "Failed check: $caption" Inbox --body "$marker"$'\n'"$notes"
+          else gh project item-add "$project_number" --owner "$owner" --url "https://github.com/$repo/issues/${existing%%$'\n'*}" >/dev/null; fi
         fi
         comment_once issue "$original" "Playtest $outcome"$'\n'"$notes"
         issue close "$original"
@@ -481,7 +513,7 @@ LABELS
             case "$p:$rank" in *:Urgent|Low:*|Medium:High) p=$rank;; esac
             checklist+="- [ ] $line"$'\n'
           done <<< "$notes"
-          build="Build: $head ($prs), work card #$original"
+          build="Build: $head ($open_pr), work card #$original"
           existing=$(find_created "$build" 'In-game check')
           if [[ -n $existing ]]; then
             n=${existing%%$'\n'*}

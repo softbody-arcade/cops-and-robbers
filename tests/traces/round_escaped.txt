@@ -1,0 +1,361 @@
+0.000 fs mkdir <dir>data/stations/
+0.000 log [CnR] 0 gas stations loaded for west_coast_usa
+0.000 timer cancel cnr_tick
+0.000 timer create cnr_tick 250
+0.000 -1 cnr_roundEnd {"reason":"cancelled"}
+0.000 -1 cnr_mode {"startGrid":true,"version":"<version>"}
+0.000 -1 cnr_rules {"carMode":"random","catchHoldSeconds":7,"catchMaxSpeedKmh":3,"catchRadiusMeters":10,"copResetMinDistanceMeters":1000,"crashPenaltySeconds":10,"crashSpeedLossKmh":50,"headStartSeconds":7,"helicopter":true,"helicopterArrivalSeconds":60,"helicopterRefuelSeconds":90,"helicopterUpSeconds":120,"resetWaitSeconds":7,"roundTimeLimitSeconds":30,"runnerCountdownSeconds":3,"sightMaxMeters":400,"sirensAllowed":true,"trafficPerPlayer":0,"trafficRunnerOnly":false,"weatherChanges":true}
+0.000 -1 cnr_lobby {"active":false,"online":2}
+0.000 log [CnR] Cops and Robbers <version> loaded on west_coast_usa (<dir>)
+call cnr_panel
+0.000 2 cnr_requestStations {"map":"west_coast_usa"}
+0.000 2 cnr_pickVehicle {"excludedModels":{},"includeMods":false}
+ret
+call cnr_vehiclePicked
+0.000 1 cnr_roundSetup {"config":"vehicles/pickup/base.pc","copIndex":0,"copSpawnMax":150,"copSpawnMin":50,"model":"pickup","phase":"prep","role":"runner","runnerId":1,"runnerName":"Reinder","runnerPos":{"x":0,"y":0,"z":0},"runnerShown":true,"sightMaxMeters":400,"sky":{"changes":{},"day":12,"daySeconds":1800,"driving":true,"gameStart":0.7333333333,"lightningMaxSeconds":20,"lightningMinSeconds":5,"lightningSeed":1062517886,"month":12,"releaseAt":10,"temps":[{"c":6.963667917,"hour":14,"t":-0.65},{"c":3.963667917,"hour":6,"t":0.01666666667},{"c":6.963667917,"hour":14,"t":0.35}],"time":"sunrise","weather":"cloudy","windDir":61,"windSeed":1508029951,"year":2026}}
+0.000 log [CnR] setup sent to Reinder: runner, prep
+0.000 2 cnr_roundSetup {"config":"vehicles/pickup/base.pc","copIndex":1,"copSpawnMax":150,"copSpawnMin":50,"model":"pickup","phase":"prep","role":"cop","runnerId":1,"runnerName":"Reinder","runnerPos":{"x":0,"y":0,"z":0},"runnerShown":true,"sightMaxMeters":400,"sky":{"changes":{},"day":12,"daySeconds":1800,"driving":true,"gameStart":0.7333333333,"lightningMaxSeconds":20,"lightningMinSeconds":5,"lightningSeed":1062517886,"month":12,"releaseAt":10,"temps":[{"c":6.963667917,"hour":14,"t":-0.65},{"c":3.963667917,"hour":6,"t":0.01666666667},{"c":6.963667917,"hour":14,"t":0.35}],"time":"sunrise","weather":"cloudy","windDir":61,"windSeed":1508029951,"year":2026}}
+0.000 log [CnR] setup sent to Bob: cop, prep
+ret
+call cnr_panel
+0.000 -1 cnr_countdown {"seconds":3}
+ret
+call cnr_tick
+0.250 -1 cnr_lobby {"active":true,"online":2}
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+3.000 -1 cnr_runnerGo {"headStartSeconds":7}
+3.000 1 cnr_state {"catchProgress":0,"resetAllowed":false,"resetHint":"Stay still 7s to reset"}
+3.000 2 cnr_runnerShown {"shown":false}
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+4.000 1 cnr_state {"catchProgress":0,"resetAllowed":false,"resetHint":"Stay still 6s to reset"}
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+5.000 1 cnr_state {"catchProgress":0,"resetAllowed":false,"resetHint":"Stay still 5s to reset"}
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+6.000 1 cnr_state {"catchProgress":0,"resetAllowed":false,"resetHint":"Stay still 4s to reset"}
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+7.000 1 cnr_state {"catchProgress":0,"resetAllowed":false,"resetHint":"Stay still 3s to reset"}
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+8.000 1 cnr_state {"catchProgress":0,"resetAllowed":false,"resetHint":"Stay still 2s to reset"}
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+9.000 1 cnr_state {"catchProgress":0,"resetAllowed":false,"resetHint":"Stay still 1s to reset"}
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+10.000 -1 cnr_release {}
+10.000 -1 cnr_heli {"phase":"arriving","seconds":60}
+10.000 1 cnr_state {"catchProgress":0,"resetAllowed":true,"resetHint":"Reset available"}
+10.000 2 cnr_state {"catchProgress":0,"resetAllowed":true,"resetHint":"Reset available (far from runner)"}
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+40.000 -1 cnr_roundEnd {"catchers":{},"explode":false,"reason":"escaped","runnerId":1,"runnerName":"Reinder","survivedSeconds":30}
+40.000 fs remove <dir>data/leaderboard.json
+40.000 fs write <dir>data/leaderboard.json {"format":2,"runs":[{"catchers":{},"chaseSeconds":30,"config":"vehicles/pickup/base.pc","copNames":["Bob"],"copSightSeconds":[0],"cops":["name:Bob"],"endReason":"escaped","endedAt":1795000000,"hiddenSeconds":30,"key":"name:Reinder","lostCount":0,"map":"west_coast_usa","mode":"random","model":"pickup","player":"Reinder","releasedAt":1794999970,"sky":{"day":12,"dayLength":"moderate","driving":true,"month":12,"time":"sunrise","weather":"cloudy","weatherStart":"cloudy","year":2026},"survivedSeconds":30,"timeline":{}}]}
+40.000 1 cnr_top {"rows":[{"me":true,"player":"Reinder","rank":1,"time":"0:30"}]}
+40.000 2 cnr_top {"rows":[{"player":"Reinder","rank":1,"time":"0:30"}]}
+ret

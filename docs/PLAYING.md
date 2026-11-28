@@ -51,7 +51,7 @@ Switch "Evolving car" on in the panel. Instead of a random car each round, every
 
 ## Leaderboard
 
-"Cops and Robbers Leaderboard" has the look of the game's multiplayer scoreboard and four tabs: **Runners** (best survival times), **Cops** (catches, assists, fastest catch), **Players** (stats per player) and **Rounds** (every recorded round, newest first, with a timeline of what happened and each cop's share of sight). Filter by map, car mode and traffic. It refreshes after every round. The leaderboard started fresh in 1.7.0; the old file is kept as `data/leaderboard-1.6.json`.
+"Cops and Robbers Leaderboard" has the look of the game's multiplayer scoreboard and four tabs: **Runners** (best survival times), **Cops** (catches, assists, fastest catch), **Players** (stats per player) and **Rounds** (every recorded round, newest first, with a timeline of what happened and each cop's share of sight). Filter by map, car mode and traffic. It refreshes after every round.
 
 ## Players and cops
 

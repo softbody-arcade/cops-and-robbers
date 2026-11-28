@@ -1,0 +1,174 @@
+0.000 fs mkdir <dir>data/stations/
+0.000 log [CnR] 0 gas stations loaded for west_coast_usa
+0.000 timer cancel cnr_tick
+0.000 timer create cnr_tick 250
+0.000 -1 cnr_roundEnd {"reason":"cancelled"}
+0.000 -1 cnr_mode {"startGrid":true,"version":"<version>"}
+0.000 -1 cnr_rules {"carMode":"random","catchHoldSeconds":7,"catchMaxSpeedKmh":3,"catchRadiusMeters":10,"copResetMinDistanceMeters":1000,"crashPenaltySeconds":10,"crashSpeedLossKmh":50,"headStartSeconds":7,"helicopter":true,"helicopterArrivalSeconds":60,"helicopterRefuelSeconds":90,"helicopterUpSeconds":120,"resetWaitSeconds":7,"roundTimeLimitSeconds":1800,"runnerCountdownSeconds":3,"sightMaxMeters":400,"sirensAllowed":true,"trafficPerPlayer":0,"trafficRunnerOnly":false,"weatherChanges":true}
+0.000 -1 cnr_lobby {"active":false,"online":2}
+0.000 log [CnR] Cops and Robbers <version> loaded on west_coast_usa (<dir>)
+call cnr_sitOut
+0.000 1 cnr_sitOut {"on":true}
+ret
+call cnr_panel
+0.000 1 cnr_pickVehicle {"excludedModels":{},"includeMods":false}
+ret
+call cnr_vehiclePicked
+0.000 log [CnR] Reinder spectates (prep)
+0.000 1 cnr_spectate {"phase":"prep","runnerId":-10,"runnerName":"AI runner","sky":{"changes":[{"afterStay":true,"at":1403.644291,"forecastFrom":1319.570715,"to":"fog"}],"day":12,"daySeconds":1800,"driving":true,"gameStart":0.7333333333,"lightningMaxSeconds":20,"lightningMinSeconds":5,"lightningSeed":1062517886,"month":12,"releaseAt":10,"temps":[{"c":6.963667917,"hour":14,"t":-0.65},{"c":3.963667917,"hour":6,"t":0.01666666667},{"c":6.963667917,"hour":14,"t":0.35},{"c":1.238673421,"hour":6,"t":1.016666667},{"c":3.238673421,"hour":14,"t":1.35}],"time":"sunrise","weather":"cloudy","windDir":61,"windSeed":1508029951,"year":2026}}
+0.000 2 cnr_parkBystanderCars {"on":true}
+0.000 1 cnr_setupAI {"ai":[{"color":{"b":0.1725490196,"g":0.2274509804,"hex":"#d83a2c","r":0.8470588235},"id":-10,"index":1,"name":"AI runner","role":"runner"},{"color":{"b":0.8784313725,"g":0.4352941176,"hex":"#1f6fe0","r":0.1215686275},"id":-11,"index":2,"name":"AI cop 1","role":"cop"},{"color":{"b":1,"g":0.6901960784,"hex":"#6fb0ff","r":0.4352941176},"id":-12,"index":3,"name":"AI cop 2","role":"cop"}],"aiOnly":true,"config":"vehicles/pickup/base.pc","copSpawnMax":150,"copSpawnMin":50,"model":"pickup","runnerId":-10,"sightMaxMeters":400}
+ret
+call onVehicleSpawn
+ret 0
+call onVehicleSpawn
+ret 0
+call onVehicleSpawn
+ret 0
+call cnr_aiVehicles
+ret
+call cnr_panel
+0.000 1 cnr_countdown {"seconds":3}
+ret
+call cnr_tick
+0.250 -1 cnr_lobby {"active":false,"online":2,"practice":"Reinder"}
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+3.000 1 cnr_runnerGo {"headStartSeconds":7}
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+10.000 1 cnr_release {}
+10.000 1 cnr_heli {"phase":"arriving","seconds":60}
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+17.000 2 cnr_parkBystanderCars {"on":false}
+17.000 1 cnr_roundEnd {"catchers":["AI cop 1"],"explode":false,"reason":"caught","runnerId":-10,"runnerName":"AI runner","survivedSeconds":7}
+ret
