@@ -16,10 +16,21 @@ test("plugin dir resolves without @ chunk name, so config.json is read", functio
   env.cleanup()
 end)
 
-test("corrupt config.json logs a warning", function()
-  local env = boot({ config = '{"headStartSeconds": 3,}' })
-  assertEq(env.logHas("config.json is not valid JSON"), true)
+test("server startup logs the name of the preserved corrupt config.json", function()
+  local date = os.date
+  os.date = function(format, ...)
+    if format == "%Y%m%d-%H%M%S" then return "20261128-101500" end
+    return date(format, ...)
+  end
+  local ok, env = pcall(boot, { config = '{"headStartSeconds": 3,}' })
+  os.date = date
+  assert(ok, env)
+  local name = "config.json.corrupt-20261128-101500"
+  local logged = env.logHas("config.json is not valid JSON, using defaults; kept a copy as " .. name)
+  local exists = FS.Exists(env.dir .. name)
   env.cleanup()
+  assertEq(logged, true)
+  assertEq(exists, true)
 end)
 
 test("plugin load unlocks any client left in a round", function()

@@ -248,15 +248,34 @@ function M.applyValues(raw, values, decl)
   return updated, keys
 end
 
+local function keepBrokenFile(path, bytes)
+  local prefix = path .. ".corrupt-" .. os.date("%Y%m%d-%H%M%S")
+  local dest, index = prefix, 1
+  while FS.Exists(dest) do
+    if store.read(dest) == bytes then return dest end
+    index = index + 1
+    dest = prefix .. "-" .. index
+  end
+  local ok, err = store.copy(path, dest)
+  if not ok then return nil, err end
+  return dest
+end
+
 function M.new(path, decl, log)
   local s = {}
   log = log or print
 
   function s:load()
-    local raw, corrupt = store.decode(path)
-    if corrupt then
+    local raw, corrupt, bytes = store.decode(path)
+    if corrupt or bytes == "" then
       local basename = path:match("[^/\\]+$")
-      log(basename .. " is not valid JSON, using defaults")
+      local warning = basename .. " is not valid JSON, using defaults; "
+      local copy, err = keepBrokenFile(path, bytes)
+      if copy then
+        log(warning .. "kept a copy as " .. copy:match("[^/\\]+$"))
+      else
+        log(warning .. "could not keep a copy: " .. err)
+      end
     end
     raw = raw or {}
     local cfg, warnings = M.merge(raw, decl)

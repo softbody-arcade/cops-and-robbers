@@ -144,13 +144,88 @@ test("an invalid value keeps the original error text", function()
   assertEq(err, "Invalid value for lightningMinSeconds: 0")
 end)
 
-test("invalid settings log the basename of the file", function()
-  local env = serverBoot.boot({ files = { ["game.json"] = "{broken" } })
+local copyName = "game.json.corrupt-20261128-101500"
+local warning = "game.json is not valid JSON, using defaults; "
+local kept = warning .. "kept a copy as " .. copyName
+
+local function withSettings(bytes, check)
+  local env = serverBoot.boot({ files = { ["game.json"] = bytes } })
+  local path = env.dir .. "game.json"
   local logs = {}
-  settings.new(env.dir .. "game.json", decl, function(line) logs[#logs + 1] = line end):load()
+  local service = settings.new(path, decl, function(line) logs[#logs + 1] = line end)
+  local date, copy = os.date, store.copy
+  os.date = function(format)
+    assertEq(format, "%Y%m%d-%H%M%S")
+    return "20261128-101500"
+  end
+  local ok, err = pcall(check, service, path, env.dir .. copyName, logs)
+  os.date, store.copy = date, copy
   env.cleanup()
-  local prefix = "game.json is not valid JSON, using defaults"
-  assertEq(logs[1]:sub(1, #prefix), prefix)
+  assert(ok, err)
+end
+
+test("broken settings keep their exact bytes and reuse the copy on reload", function()
+  local bytes = "{broken\r\n"
+  withSettings(bytes, function(service, path, backup, logs)
+    sameValues(service:load(), defaults)
+    assertEq(store.read(backup), bytes)
+    assertEq(store.read(path), bytes)
+    store.copy = function() error("identical settings were copied twice") end
+    sameValues(service:load(), defaults)
+    sameValues(logs, { kept, kept })
+    assertEq(FS.Exists(backup .. "-2"), false)
+  end)
+end)
+
+test("distinct broken settings in the same second keep separate copies", function()
+  withSettings("{first", function(service, path, backup, logs)
+    service:load()
+    store.write(path, "{second")
+    service:load()
+    service:load()
+    assertEq(store.read(backup), "{first")
+    assertEq(store.read(backup .. "-2"), "{second")
+    assertEq(store.read(path), "{second")
+    assertEq(FS.Exists(backup .. "-3"), false)
+    sameValues(logs, { kept, kept .. "-2", kept .. "-2" })
+  end)
+end)
+
+test("copy failure logs the error and loads defaults", function()
+  withSettings("{broken", function(service, path, backup, logs)
+    local called = false
+    store.copy = function(src, dst)
+      assertEq(src, path)
+      assertEq(dst, backup)
+      assertEq(FS.Exists(dst), false)
+      called = true
+      return nil, "denied"
+    end
+    sameValues(service:load(), defaults)
+    assertEq(called, true)
+    sameValues(logs, { warning .. "could not keep a copy: denied" })
+    assertEq(store.read(path), "{broken")
+  end)
+end)
+
+test("an empty settings file keeps an empty copy", function()
+  withSettings("", function(service, path, backup, logs)
+    sameValues(service:load(), defaults)
+    assertEq(store.read(backup), "")
+    assertEq(store.read(path), "")
+    sameValues(logs, { kept })
+  end)
+end)
+
+test("missing and valid settings load without making a copy", function()
+  withSettings(nil, function(service, path, backup, logs)
+    sameValues(service:load(), defaults)
+    assertEq(FS.Exists(backup), false)
+    store.write(path, '{"headStartSeconds":3}')
+    assertEq(service:load().headStartSeconds, 3)
+    assertEq(FS.Exists(backup), false)
+    sameValues(logs, {})
+  end)
 end)
 
 test("saving a raw edit preserves unknowns and drops retired entries", function()
