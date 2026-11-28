@@ -21,7 +21,7 @@
 ## Review Focus
 
 - A re-record that silently changes an existing golden line: Task 1's re-record must only add lines.
-- Chat commands: typing `/cnr ...` in chat must still produce "Chat commands are gone: ...", and other chat must not.
+- Chat: until Task 7, typing `/cnr ...` in chat still produces "Chat commands are gone: ..." and other chat doesn't. From Task 7 on (#86), the mod registers no chat handler, and the panel's command parsing is unchanged.
 - A broken `config.json` must never be deleted or changed by the copy step, a failed copy must never be logged as kept, and two different broken versions must both be kept.
 - A game declaration with a wrong-typed override or an invalid choice must fail at `combine`, with the key in the message.
 - Renames in Task 5 (`schedule` → `nextRound`, roster `r` → `roster`) must not change behaviour; the goldens prove it.
