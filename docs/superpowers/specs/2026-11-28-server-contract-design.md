@@ -38,6 +38,7 @@ The maintainer's, recorded on #72 (2026-11-28):
 3. **Checking the contract:** a small fake game in the tests only, plus a review rule: every task review and the final review check each contract item against Street racing and Wheel racing.
 4. **Order:** this design and its plan are written now. Step 1 and the #84 batch are released before step 2's build starts.
 5. **One `config.json`** through 2.x. The split into global and per-game files, stored outside the install folders, is part of 3.0.0.
+6. **A host's disk edit survives a panel toggle.** Turning automatic rounds on or off re-reads `config.json` and changes only that key, so a setting the host edited on disk is kept and used from the next round on (see "Behaviour change").
 
 The live server stays on 2.15.1 until 3.0.0, so 2.x releases are playtested locally and not deployed.
 
@@ -51,13 +52,13 @@ The game is built with `cnr.game.new(ctx)` and returns an object. The manager ca
 |---|---|---|
 | `manifest()` | → `{ id, name, version, minPlayers }` | Cops and Robbers: `id = "cnr"`, `version` = `CNR_VERSION` handed in by `main.lua`, `minPlayers = 1` |
 | `settingsDeclaration()` | → the game's declaration (`cnr.config.GAME`) | The manager combines it with `arcade.settings.GLOBAL` |
-| `canStart(request)` | → `prepared` or `nil, reason` | `request` = `{ issuer, kind, text }` from the panel or automatic rounds. `prepared` carries the resolved choice (Cops and Robbers: the runner), so checking and starting never draw twice |
+| `canStart(request)` | → `prepared` or `nil, reason` | `request` = `{ issuer, kind, text }` from the panel or automatic rounds. `prepared` carries the resolved choice (Cops and Robbers: the runner), so checking and starting never draw twice. The game runs first and keeps today's start sequence: ending a running practice, the build check, cancelling a pending automatic start, refusing with today's texts, watch-only practice for a player who sits out. The manager's own check of `minPlayers` (playing, not sitting-out players) runs after it, only for real rounds. For Cops and Robbers (`minPlayers = 1`) it can't fire, because the game already refuses with "Everyone is sitting out" |
 | `start(prepared, snapshot, now)` | → nothing | `snapshot` is the copied effective settings for this round |
 | `tick(now)` | → nothing | Called every 250 ms while the manager is in a round |
-| `join(pid, name, now)` / `leave(pid, now)` | → nothing | The manager calls these at fixed points in its own join and leave order (see "Ordering") |
-| `checkVehicle(kind, pid, vid, decoded, facts)` | → `allow`, `reason` | Synchronous. `kind` is `"spawn"` or `"edit"`. Only the manager returns BeamMP's `0` or `1` and logs refusals |
+| `join(pid, name, now)` / `leave(pid, now)` | → nothing | `leave` sits at a fixed point in the manager's disconnect order. In 2.x, `join` drives the whole join sequence (see "Ordering") and calls the manager's services for the manager's parts, because today's order interleaves game and manager messages. At 3.0.0, when message order may change, the manager takes the generic parts (own colour, lobby, round-car list) |
+| `checkVehicle(kind, pid, vid, decoded, facts)` | → `allow`, `reason` | Synchronous. `kind` is `"spawn"` or `"edit"`. Only the manager returns BeamMP's `0` or `1` and logs refusals. Whether an allowed spawn fulfils an expected round car is the manager's: when the game sends a setup it registers the expectation (`ctx.cars.expect(pid, model, config)`), and the car tools match a spawn against it, consume it and update the registry. Today's `roundSpawn` result of `vehicleAllowed` (`main.lua:971`) becomes that match |
 | `onVehicle(kind, pid, vid, facts, now)` | → nothing | Placement, replacement, deletion and reset notices at their current points |
-| `panelState()` / `lobbyFields()` | → data | Built lazily: only when someone has the panel open (computing it can pick the next runner) |
+| `panelState()` / `lobbyFields()` | → data | `panelState` is built lazily, only when someone has the panel open, because computing it can pick the next runner. `lobbyFields` is computed every tick, as `lobbyState` is today; it draws nothing, and the lobby goes out when its content changes |
 | `panelAction(pid, action, payload)` | → nothing | The game's panel actions and round commands. The manager keeps the subscriptions, the allow-list, the reply mirroring and the common commands (`auto`, `next`, `reload`) |
 | `clientEvent(name, pid, data)` | → nothing | The game's own client events (`cnr_sight`, `cnr_setup`, …). The manager registers them on BeamMP and routes them here |
 
@@ -98,6 +99,8 @@ Today, turning automatic rounds on or off with the panel during a round re-reads
 
 After this step, the round keeps its snapshot. The automatic-next setting is read live when the round ends, so `auto off` during a chase still prevents that round's next countdown. Panel saves and reloads stay locked during a round, as now.
 
+A second, smaller fix: today the toggle writes the server's cached copy of `config.json` before reloading it, which silently erases a setting the host edited on disk. After this step, `set(key, text)` re-reads the file, changes only that key and saves, so the host's edit is kept and used from the next round on.
+
 The golden traces don't edit `config.json` mid-round, so they stay identical. A new test pins the new behaviour, and the PR and release notes mention it.
 
 ### Ordering
@@ -112,7 +115,7 @@ The traces pin message order. The new code keeps these orders exactly:
   5. position sampling for the round's players;
   6. lightning announcement;
   7. the game's tick.
-- **Join:**
+- **Join** (driven by the game's `join` hook in 2.x):
   1. `cnr_mode`;
   2. own colour;
   3. rules;
@@ -147,7 +150,8 @@ As in step 1: `main.lua` builds fresh manager services and a fresh game on every
 - `make test`, `luajit`, `vuecheck`, `privacy` and `package` pass.
 - A grep shows `arcade/` requires no `cnr.` module, and `main.lua` holds no game logic: no `current:` calls and no effect kinds.
 - The fake game's tests pass.
-- The snapshot test: a mid-round `auto off` still stops the next countdown, and a mid-round disk edit doesn't change the running round.
+- The snapshot test: a mid-round `auto off` still stops the next countdown, and a mid-round disk edit doesn't change the running round but is kept and used by the next round.
+- The fake game's start with too few players is refused by the manager's `minPlayers` check.
 - The reload test passes.
 
 ## In-game checks
@@ -159,6 +163,16 @@ The six checks from step 1, run by the playtest extension (the shared rules: an 
 4. saving a setting;
 5. the Rounds tab;
 6. automatic rounds on, one round, off.
+
+## Calls made after the builder check
+
+A fresh reader checked this design for gaps on 2026-11-28. Four answers came from the parity rule and the code; they are my calls, marked here for the maintainer to check:
+- the start order, with the manager's `minPlayers` check after `canStart`;
+- the game's `join` hook driving the join sequence in 2.x;
+- expected spawns owned by the car tools through `ctx.cars.expect`;
+- only `panelState` lazy.
+
+The disk-edit fix (decision 6) was the maintainer's.
 
 ## Choices left to the builder
 
