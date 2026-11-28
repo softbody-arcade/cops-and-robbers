@@ -13,6 +13,31 @@ test("trace lines preserve log text", function()
   assertEq(traceLine({ kind = "log", t = 0, text = "[CnR] hi" }), "0.000 log [CnR] hi")
 end)
 
+test("trace runs preserve non-JSON send payloads", function()
+  local trace = traceRun({ steps = function(env)
+    env.events.probe = "traceProbe"
+    function traceProbe() MP.TriggerClientEvent(1, "cnr_probe", "not json") end
+    env.call("probe")
+  end })
+  assert(trace:find("0.000 1 cnr_probe raw:not json\n", 1, true))
+end)
+
+test("trace runs replace only standalone version tokens", function()
+  local trace = traceRun({ steps = function(env)
+    env.events.probe = "traceProbe"
+    function traceProbe()
+      MP.TriggerClientEvent(1, "cnr_probe", encode({ v = CNR_VERSION, name = "x" .. CNR_VERSION }))
+      print("." .. CNR_VERSION, CNR_VERSION .. ".", CNR_VERSION .. "x")
+    end
+    env.call("probe")
+  end })
+  local expected = '0.000 1 cnr_probe {"name":"x' .. CNR_VERSION .. '","v":"<version>"}'
+  assert(trace:find(expected .. "\n", 1, true), expected)
+  for _, token in ipairs({ "." .. CNR_VERSION, CNR_VERSION .. ".", CNR_VERSION .. "x" }) do
+    assert(trace:find(token, 1, true), token)
+  end
+end)
+
 test("trace records vehicle removal, chat, timer operations and file writes", function()
   local env = boot()
   local target = env.dir .. "a"

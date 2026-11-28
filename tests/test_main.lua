@@ -1961,18 +1961,17 @@ test("a lobby change still goes out when the panel push errors", function()
   env.call("cnr_panel", 1, '{"action":"open"}')
   env.call("cnr_tick")
   env.names = { "Reinder" }
+  env.sent = {}
   local realGet, failed = MP.GetPlayers, 0
   MP.GetPlayers = function()
-    if debug.getinfo(2, "n").name == "panelState" then
-      failed = failed + 1
-      error("boom")
-    end
-    return realGet()
+    MP.GetPlayers = realGet
+    failed = failed + 1
+    error("boom")
   end
   capturingLogs(function() env.call("cnr_tick") end)
   MP.GetPlayers = realGet
-  assertEq(failed > 0, true)
-  assertEq(env.lastSent("cnr_lobby").data:find('"online":1', 1, true) ~= nil, true)
+  assertEq(failed, 1)
+  assertEq(decodeJson(assert(env.lastSent("cnr_lobby")).data).online, 1)
   env.cleanup()
 end)
 

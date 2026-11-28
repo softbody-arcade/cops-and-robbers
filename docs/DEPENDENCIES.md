@@ -65,9 +65,7 @@ Then do the checks for whatever actually updated.
 - **Account identity:** play a round and check that the leaderboard shows the account names. If they're missing, the `GetPlayerIdentifiers` format changed.
 - **Positions and catching:** catching needs `GetPositionRaw`. If the catch bar never fills, check its return shape.
 
-### The arcade folder
-
-The [arcade folder](../server/CopsAndRobbers/arcade/) holds the manager services for JSON storage and settings, client messages, the player roster and colours, traffic allowances and reported cars, panel subscriptions, commands and automatic rounds. `main.lua` connects these services to the chase rules in `cnr/` and creates fresh service instances on each load. Dependencies run from the game to the manager. For example, [cnr.config](../server/CopsAndRobbers/cnr/config.lua) uses `arcade.settings` to combine game and global settings.
+**The arcade folder.** The generic server services moved from `main.lua` to [`server/CopsAndRobbers/arcade/`](../server/CopsAndRobbers/arcade/). They handle JSON storage and settings, client messages, the player roster and colours, traffic allowances and reported cars, panel subscriptions, commands and automatic rounds. `main.lua` connects these services to the chase rules in `cnr/` and creates fresh service instances on each load. The `cnr/*.lua` modules call no BeamMP API. Dependencies run from the game to the manager. For example, [cnr.config](../server/CopsAndRobbers/cnr/config.lua) uses `arcade.settings` to combine game and global settings.
 
 ## BeamMP Client (in-game Lua and launcher)
 
