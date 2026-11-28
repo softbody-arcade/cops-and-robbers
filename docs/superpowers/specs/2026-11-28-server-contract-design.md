@@ -187,6 +187,17 @@ The six checks from step 1, run by the playtest extension (the shared rules: an 
 5. the Rounds tab;
 6. automatic rounds on, one round, off.
 
+## Refinements from planning
+
+The plan review on 2026-11-28 settled these contract details. They refine the hook table above without changing the approach:
+
+- **Static game functions.** `manifest(version)` and `settingsDeclaration()` are functions of the game module, not of an instance, because the settings service must exist before the game is built. The manifest also lists `commands` (`exact` words and `prefixes`) and `clientEvents`.
+- **Two notification hooks.** `roundFinished()` and `settingsChanged(keys)` let the game send its own output at today's positions: the rules after a round ends, and the rules, a panel push and the board after a settings save.
+- **Vehicle verdicts.** `checkVehicle` returns a table `{ allow, reason, roundCar, notify }`. `onVehicle(kind, pid, vid, decoded, facts, now)` also receives the decoded packet. `notify = false` covers today's early accepts. A replaced confirmed car is reported as `onVehicle("replaced", …)`, so sight invalidation goes through dispatch too.
+- **Car tools.** `setup`, `requestPick`, `rebuild` with a per-target delivery map and pending acknowledgements, the round-car permissions, identity and publication. Spectating and parking are one `spectators` service.
+- **Safe saves keep today's file-system order.** The new file is written and checked first, then the original is removed and the new file renamed into place. If the rename fails, the original bytes are restored. So the golden traces still show `fs remove` then `fs write`.
+- **The panel's automatic-next indicator** reads the live setting, and the delay before the next round comes from the round's snapshot.
+
 ## Calls made after the builder check
 
 A fresh reader checked this design for gaps on 2026-11-28. Four answers came from the parity rule and the code; they are my calls, marked here for the maintainer to check:
