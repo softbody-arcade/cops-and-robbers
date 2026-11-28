@@ -4287,3 +4287,34 @@ test("an encoding error while replacing a build restores its file", function()
   assertEq(panelOf(env).build.label, "Old build · change 3")
   env.cleanup()
 end)
+
+test("watch-only practice by a sitting-out player still starts", function()
+  local env = boot()
+  env.names = { [7] = "Ann" }
+  sitOut(env, 7, true)
+  env.panel(7, "test runner")
+  env.call("cnr_vehiclePicked", 7, PICK)
+  assertEq(decodeJson(sentTo(env, "cnr_setupAI", 7)).aiOnly, true)
+  env.cleanup()
+end)
+
+test("an automatic start after the issuer left is issued by the lowest player id", function()
+  local env = boot({ config = '{"autoNextRound":true,"autoNextDelaySeconds":5}' })
+  runToChase(env)
+  env.panel(2, "end")
+  env.names = { [19] = "Bob", [7] = "Ann", [11] = "Kim" }
+  env.call("onPlayerDisconnect", 2)
+  env.sent = {}
+  env.clock = env.clock + 5
+  env.call("cnr_tick")
+  assertEq(env.lastSent("cnr_pickVehicle").pid, 7)
+  env.cleanup()
+end)
+
+test("a real round starts when the only connected player is player 7", function()
+  local env = boot()
+  env.names = { [7] = "Ann" }
+  env.panel(7, "start Ann")
+  assertEq(env.lastSent("cnr_pickVehicle").pid, 7)
+  env.cleanup()
+end)

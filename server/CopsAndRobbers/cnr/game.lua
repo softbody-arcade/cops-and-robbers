@@ -5,7 +5,26 @@ local round = require("cnr.round")
 local rules = require("cnr.rules")
 local sky = require("cnr.sky")
 local strikeSchedule = require("cnr.strikeSchedule")
+local commands = require("cnr.commands")
+local config = require("cnr.config")
+local build = require("cnr.build")
+local vec = require("cnr.vec")
+local trafficNote = require("cnr.traffic").note
 local M = {}
+
+function M.manifest(version)
+  return {
+    id = "cnr", name = "Cops and Robbers", version = version, minPlayers = 1,
+    commands = panel.commands(), actions = { "build", "apply", "station", "stations" },
+    clientEvents = {
+      "cnr_startGridReady", "cnr_startGrid", "cnr_vehiclePicked", "cnr_stations", "cnr_myVehicle",
+      "cnr_aiVehicles", "cnr_trafficCars", "cnr_color", "cnr_sitOut", "cnr_sight", "cnr_cover",
+      "cnr_lightningClock", "cnr_board", "cnr_setup", "cnr_change", "cnr_missing",
+    },
+  }
+end
+
+function M.settingsDeclaration() return config.GAME end
 
 local PARTS_PLACING_SECONDS, PARTS_SETTLE_SECONDS = 10, 3
 local AI_SETUP_WAIT_SECONDS = 15
@@ -21,6 +40,7 @@ local ROUNDS_DEFAULT, ROUNDS_STEP, ROUNDS_MAX = 30, 30, 300
 
 function M.new(ctx)
   local game = {
+    current = round.new(ctx.settings:effective()), mapName = ctx.map,
     leaderboardPath = ctx.dataDir .. "leaderboard.json",
     stations = {}, partsBaseline = {}, missingCount = {}, runCounts = {},
     aiCars = {}, aiSlotSerial = {}, aiVidSerial = {}, previousRoundSerial = 0, aiSpawnsLeft = 0,
@@ -29,6 +49,9 @@ function M.new(ctx)
   local cars, roster, spectators = ctx.cars, ctx.roster, ctx.spectators
   local send, log = ctx.messages.send, ctx.messages.log
   local now = ctx.clock.now
+  local gridClients = roster:perPlayer("gridClients", "early")
+  local stationsRequested = roster:perPlayer("stationsRequested", "early")
+  local refuse, reply = ctx.messages.refuse, ctx.messages.reply
   local sharedRulesSignature
   local boardSubs = roster:perPlayer("boardSubs", "early")
 
@@ -128,10 +151,12 @@ function M.new(ctx)
   end
 
   function game:roundFinished()
+    self.current.cfg = ctx.settings:effective()
     self:pushRules(nil, true)
   end
 
   function game:rulesChanged()
+    if not self.current:isActive() then self.current.cfg = ctx.settings:effective() end
     self:pushRules()
   end
 
@@ -420,6 +445,307 @@ function M.new(ctx)
         end
       end
     end
+  end
+
+  local function buildOpts()
+    local currentBuild = game.currentBuild
+    if not currentBuild then return nil end
+    return {
+      model = currentBuild.model, step = currentBuild.step, name = currentBuild.name,
+      config = { format = 2, model = currentBuild.model, parts = currentBuild.parts, vars = currentBuild.vars },
+    }
+  end
+
+  function game:roundCarActive()
+    local current = game.current
+    return current.vehicle ~= nil and current.state ~= "idle" and current.state ~= "picking"
+  end
+
+  local function stationsPath() return ctx.dataDir .. "stations/" .. game.mapName .. ".json" end
+
+  function game:loadStations()
+    local decoded = ctx.store.decode(stationsPath())
+    game.stations = {}
+    for _, s in ipairs(decoded and decoded.stations or {}) do
+      local v = vec.toVec(s)
+      if v then
+        v.r = tonumber(s.r) or 0
+        game.stations[#game.stations + 1] = v
+      end
+    end
+    log(string.format("%d gas stations loaded for %s", #game.stations, game.mapName))
+  end
+
+  function game:saveStations(updated)
+    local ok, err = ctx.store.writeJson(stationsPath(), { stations = updated })
+    if not ok then
+      log("could not save " .. game.mapName .. ".json: " .. err)
+      return nil, err
+    end
+    game.stations = updated
+    return true
+  end
+
+  function game:requestStations(pid)
+    if #game.stations > 0 or stationsRequested[pid] then return end
+    stationsRequested[pid] = true
+    send(pid, "cnr_requestStations", { map = game.mapName })
+  end
+
+  local function plannedRunner(players)
+    local countsByName = {}
+    for p, name in pairs(players) do countsByName[name] = game.runCounts[roster:key(p)] or 0 end
+    local lastPid = game.lastRunnerKey and roster:pidForKey(game.lastRunnerKey)
+    local lastName = lastPid and roster:name(lastPid) or nil
+    local eligible = commands.eligibleNext(players, countsByName, lastName)
+    if game.plannedRunnerKey then
+      for _, p in ipairs(eligible) do
+        if roster:key(p) == game.plannedRunnerKey then return p end
+      end
+    end
+    local pid = commands.matchPlayer("next", players, nil, countsByName, lastName)
+    game.plannedRunnerKey = pid and roster:key(pid) or nil
+    return pid
+  end
+
+  function game:gridReady(pid)
+    gridClients[pid] = true
+  end
+
+  local function reject(pid, reason)
+    refuse(pid, reason)
+    return nil, reason
+  end
+
+  function game:canStart(request)
+    local pid, command = request.issuer, request.command
+    local current = self.current
+    local practice = command == "test"
+    if not practice and current:isActive() and current.test then
+      self:applyEffects(current:stop(now(), current.issuerId))
+    end
+    if current:isActive() then return reject(pid, "A round is already running") end
+    if current.cfg.carMode == "evolving" and not self.currentBuild then return reject(pid, "Start a new build first") end
+    local players = roster:players()
+    if practice then
+      local aiOnly = roster:sittingOut(pid)
+      local role = request.text
+      if not aiOnly and role ~= "runner" and role ~= "cop" then return reject(pid, "Pick practice as runner or as cop") end
+      return { participants = aiOnly and {} or { pid }, solo = true, role = role, aiOnly = aiOnly, issuer = pid, players = players }
+    end
+    ctx.autoRounds:cancel()
+    local participants = roster:playingList(players)
+    if #participants == 0 then return reject(pid, "Everyone is sitting out") end
+    local candidates = roster:playing(players)
+    local query = command == "next" and "next" or request.text
+    local runnerId, err
+    if query and query:lower() == "again" then
+      runnerId = game.lastRunnerKey and roster:pidForKey(game.lastRunnerKey)
+      if not runnerId then return reject(pid, "No previous runner online") end
+    else
+      if query and query:lower() == "next" then
+        runnerId = plannedRunner(candidates)
+      else
+        runnerId, err = commands.matchPlayer(query, candidates)
+      end
+      if not runnerId then
+        local anyone = commands.matchPlayer(query, players)
+        if anyone and roster:sittingOut(anyone) then runnerId = anyone end
+      end
+    end
+    if not runnerId then return reject(pid, err) end
+    if roster:sittingOut(runnerId) then return reject(pid, string.format("%s is sitting out", players[runnerId] or tostring(runnerId))) end
+    return { participants = participants, issuer = pid, runnerId = runnerId, players = players }
+  end
+
+  function game:start(prepared, snapshot, startedAt)
+    local pid, runnerId = prepared.issuer, prepared.runnerId
+    if not prepared.solo then self:requestStations(pid) end
+    cars:clearRound()
+    ctx.traffic:clearRound()
+    self.partsBaseline, self.missingCount = {}, {}
+    self.current = round.new(snapshot)
+    local planner = prepared.solo and pid or runnerId
+    local opts = {
+      gridPlanner = gridClients[planner] and planner,
+      build = snapshot.carMode == "evolving" and buildOpts() or nil,
+      sky = sky.pick(snapshot, math.random),
+    }
+    if prepared.solo then
+      self.previousRoundSerial = self.connectionSerial[pid] or 0
+      opts.test, opts.role, opts.aiOnly = true, prepared.role, prepared.aiOnly
+    else
+      self.lastResult = nil
+      opts.traffic = ctx.traffic:allowance(snapshot, 1, true)
+      opts.trafficRunnerOnly = snapshot.trafficRunnerOnly == true
+      opts.sittingOut = roster:sitOutSnapshot()
+    end
+    self:applyEffects(self.current:start(startedAt, runnerId, pid, prepared.players, opts))
+  end
+
+  local function startCommand(pid, cmd)
+    ctx.round:start({ issuer = pid, command = cmd.name, text = cmd.rest })
+  end
+
+  ctx.panel:command("start", startCommand)
+  ctx.panel:command("test", startCommand)
+
+  function game:lobbyFields()
+    local current = game.current
+    local players = roster:players()
+    local online = 0
+    for _ in pairs(players) do online = online + 1 end
+    local practice
+    if current:isActive() and current.test then practice = current.players[current.issuerId] or roster:name(current.issuerId) or "someone" end
+    return { online = online, practice = practice, active = current:isActive() and not current.test or false }
+  end
+
+  ctx.panel:command("go", function(pid)
+    game:applyEffects(game.current:go(now(), pid))
+  end)
+
+  ctx.panel:command("stop", function(pid)
+    local current = game.current
+    local wasActive = current:isActive()
+    game:applyEffects(current:stop(now(), pid))
+    if not wasActive then send(-1, "cnr_roundEnd", { reason = "cancelled" }) end
+  end)
+
+  ctx.panel:command("end", function(pid)
+    game:applyEffects(game.current:endCalled(now(), pid))
+  end)
+
+  ctx.panel:command("reroll", function(pid)
+    game:applyEffects(game.current:reroll(now(), pid))
+  end)
+
+  ctx.panel:command("sky", function(pid)
+    local current = game.current
+    if current.state ~= "prep" and current.state ~= "ready" then return refuse(pid, "You can only change the sky before GO") end
+    local cfg = current.cfg
+    if not sky.hasRandom(cfg) then return refuse(pid, "Set time of day or weather to random first") end
+    local before = current.sky or {}
+    local picked = sky.pick(cfg, math.random)
+    for _ = 1, 10 do
+      if picked.time ~= before.time or picked.weather ~= before.weather then break end
+      picked = sky.pick(cfg, math.random)
+    end
+    current.sky = picked
+    local data = sky.payload(current.sky, cfg, nil)
+    local targets = current.test and { [current.issuerId] = true } or roster:players()
+    for p in pairs(targets) do send(p, "cnr_sky", data) end
+  end)
+
+  ctx.panel:command("addstation", function(pid)
+    local car = game:carFor(pid)
+    if not car then return refuse(pid, "You need to be in a vehicle") end
+    local updated = table.move(game.stations, 1, #game.stations, 1, {})
+    updated[#updated + 1] = { x = car.pos.x, y = car.pos.y, z = car.pos.z, r = 0 }
+    local ok, err = game:saveStations(updated)
+    if not ok then return refuse(pid, err) end
+    reply(pid, string.format("Gas station added (%d on %s)", #game.stations, game.mapName))
+  end)
+
+  ctx.panel:command("removestation", function(pid)
+    local car = game:carFor(pid)
+    if not car then return refuse(pid, "You need to be in a vehicle") end
+    local bestIndex, bestDist
+    for i, s in ipairs(game.stations) do
+      local d = vec.dist(car.pos, s)
+      if d <= 50 and (not bestDist or d < bestDist) then bestIndex, bestDist = i, d end
+    end
+    if not bestIndex then return refuse(pid, "No gas station within 50 m") end
+    local updated = table.move(game.stations, 1, #game.stations, 1, {})
+    table.remove(updated, bestIndex)
+    local ok, err = game:saveStations(updated)
+    if not ok then return refuse(pid, err) end
+    reply(pid, string.format("Gas station removed (%d left on %s)", #game.stations, game.mapName))
+  end)
+
+  local function nextRunnerName(players)
+    local pid = plannedRunner(players)
+    return pid and players[pid] or nil
+  end
+
+  local function playerEntries(players, realRound)
+    local current = game.current
+    local entries, loading = {}, 0
+    for pid, name in pairs(players) do
+      local entry = { name = name, runs = game.runCounts[roster:key(pid)] or 0, sitOut = roster:sittingOut(pid) or nil }
+      if realRound and current.players[pid] ~= nil then
+        local isRunner = pid == current.runnerId
+        entry.role = isRunner and "runner" or "cop"
+        local placingNow = game.partsBaseline[pid] and game.partsBaseline[pid].placing
+        if placingNow then loading = loading + 1 end
+        local changes = current.queued and current.queued.changes
+        if placingNow then
+          entry.state = "loading"
+        elseif game.missingCount[pid] then
+          entry.state, entry.missing = "missing", game.missingCount[pid]
+        elseif isRunner and current.evolving and current.state == "prep" and changes and changes[1] then
+          entry.state, entry.change = "changing", tostring(changes[1].label)
+        else
+          entry.state = "ready"
+        end
+      end
+      entries[#entries + 1] = entry
+    end
+    return entries, loading
+  end
+
+  function game:panelState()
+    local current = self.current
+    local cfg = current.cfg
+    local running = current.state == "running"
+    local players = roster:players()
+    local candidates, count = roster:playing(players)
+    local realRound = current:isActive() and not current.test
+    local entries, loading = playerEntries(players, realRound)
+    local nextName = not realRound and nextRunnerName(candidates) or nil
+    local lastPid = game.lastRunnerKey and roster:pidForKey(game.lastRunnerKey)
+    local autoNext
+    local autoNextAt = ctx.autoRounds:pending()
+    if autoNextAt and not realRound then
+      autoNext = { seconds = math.max(0, math.ceil(autoNextAt - now())), runner = nextName }
+    end
+    local buildInfo
+    local currentBuild = game.currentBuild
+    if currentBuild then
+      buildInfo = { label = build.label(currentBuild), step = currentBuild.step, name = currentBuild.name, lastChange = build.lastChange(currentBuild) }
+    end
+    return panel.snapshot({
+      version = ctx.version, map = game.mapName, phase = current.state,
+      runner = current.runnerId and current:runnerName() or nil,
+      car = self:roundCarActive() and current.vehicle.model or nil,
+      test = current.test == true,
+      elapsed = running and current.releasedAt and math.max(0, now() - current.releasedAt) or nil,
+      players = entries, cfg = cfg, defaults = config.DEFAULTS,
+      autoNextRound = ctx.settings:get("autoNextRound"),
+      evolving = current.evolving == true,
+      build = buildInfo,
+      nextRunner = nextName, lastRunner = lastPid and players[lastPid] or nil,
+      loading = loading, autoNext = autoNext, lastResult = game.lastResult,
+      stationCount = #game.stations,
+      skyRandom = sky.hasRandom(cfg),
+      trafficNote = trafficNote(cfg.trafficPerPlayer, ctx.traffic:maxCars(), count, cfg.trafficRunnerOnly == true),
+    })
+  end
+
+  function game:tick(tickAt)
+    local current = self.current
+    game:dispatchAISetup()
+    if game.pendingAISetup and tickAt >= game.pendingAISetup.deadline then
+      local pid = game.pendingAISetup.pid
+      local waitingForCar = not game.pendingAISetup.payload.aiOnly and cars:placementPending(pid)
+      game:applyEffects(current:stop(tickAt, pid))
+      ctx.messages.notify(pid, waitingForCar and "Practice cancelled: your round car did not register in time."
+        or "Practice cancelled: too few free vehicle slots for the AI. Free a slot or increase MaxCars.", "warn")
+      return
+    end
+    local positions = {}
+    for pid in pairs(current.players) do positions[pid] = game:carFor(pid) end
+    game:announceLightning(positions[current.runnerId])
+    game:applyEffects(current:tick(tickAt, positions, game.stations, ctx.traffic:cars()))
   end
 
   return game

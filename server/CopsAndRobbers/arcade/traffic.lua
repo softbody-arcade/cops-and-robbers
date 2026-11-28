@@ -26,9 +26,18 @@ function traffic.new(r, m)
   local trafficOpen = r:perPlayer("trafficOpen", "late")
   local trafficVids = r:perPlayer("trafficVids", "late")
 
+  function t:maxCars()
+    return traffic.maxCars()
+  end
+
+  function t:clearRound()
+    r:clear("trafficOpen")
+    r:clear("trafficVids")
+  end
+
   function t:allowance(cfg, reserved, eligible)
     if not eligible then return 0 end
-    return traffic.perPlayer(cfg.trafficPerPlayer, traffic.maxCars(), reserved)
+    return traffic.perPlayer(cfg.trafficPerPlayer, self:maxCars(), reserved)
   end
 
   function t:open(pid, count)

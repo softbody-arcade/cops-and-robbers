@@ -4,22 +4,11 @@ local config = require("cnr.config")
 
 local M = {}
 
-M.COMMANDS = {
-  ["go"] = true, ["reroll"] = true, ["end"] = true, ["stop"] = true, ["auto on"] = true, ["auto off"] = true,
-  ["test runner"] = true, ["test cop"] = true, ["reload"] = true, ["next"] = true, ["sky"] = true,
-}
-
-local MAX_COMMAND_LENGTH = 64
-
-function M.allow(text)
-  if type(text) ~= "string" then return nil end
-  local t = text:match("^%s*(.-)%s*$")
-  if #t > MAX_COMMAND_LENGTH then return nil end
-  local lower = t:lower()
-  if M.COMMANDS[lower] then return lower end
-  if lower:match("^start %S") then return "start " .. t:sub(7) end
-  return nil
+function M.commands()
+  return { exact = { "go", "reroll", "end", "stop", "test runner", "test cop", "sky" }, prefixes = { "start " } }
 end
+
+M.allow = arcadePanel.allowList(M.commands())
 
 function M.can(state, test, evolving, skyRandom)
   return {
