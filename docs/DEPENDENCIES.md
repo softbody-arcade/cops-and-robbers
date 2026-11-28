@@ -37,7 +37,7 @@ Then do the checks for whatever actually updated.
 
 ## BeamMP Server (plugin API)
 
-**Used in:** `server/CopsAndRobbers/main.lua`. The `cnr/*.lua` modules are pure Lua and use no API.
+**Used in:** `server/CopsAndRobbers/main.lua` and the server services in `arcade/`.
 
 **What we use:**
 - **Functions:**
@@ -55,7 +55,7 @@ Then do the checks for whatever actually updated.
   - `onVehicleDeleted`, `onVehicleReset`, `onPlayerJoin`, `onPlayerDisconnect`.
 - **Loading:**
   - The plugin chunk name has **no `@`**. `pluginDir` handles both forms.
-  - The plugin folder is added to `package.path` and modules load as `require("cnr.x")`.
+  - The plugin folder is added to `package.path` and modules load as `require("arcade.x")` or `require("cnr.x")`.
 - **Lua version:** 5.3. We use integer/float formatting such as `%.10g` and `math.floor`.
 
 **On update, check:**
@@ -64,6 +64,10 @@ Then do the checks for whatever actually updated.
 - **Parts edits:** during a round, change a part (through the console, since the menus are locked) and check that a yellow HUD notice shows `<name> changed parts during the round: <slots>`. If it shows up after a round setup, repaint or Apply, or when nothing changed, the `vcf.parts` shape changed or BeamMP reports it later than the quiet window in `main.lua` (`PARTS_SETTLE_SECONDS`).
 - **Account identity:** play a round and check that the leaderboard shows the account names. If they're missing, the `GetPlayerIdentifiers` format changed.
 - **Positions and catching:** catching needs `GetPositionRaw`. If the catch bar never fills, check its return shape.
+
+### The arcade folder
+
+The [arcade folder](../server/CopsAndRobbers/arcade/) holds the manager services for JSON storage and settings, client messages, the player roster and colours, traffic allowances and reported cars, panel subscriptions, commands and automatic rounds. `main.lua` connects these services to the chase rules in `cnr/` and creates fresh service instances on each load. Dependencies run from the game to the manager. For example, [cnr.config](../server/CopsAndRobbers/cnr/config.lua) uses `arcade.settings` to combine game and global settings.
 
 ## BeamMP Client (in-game Lua and launcher)
 

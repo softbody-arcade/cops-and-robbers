@@ -1,0 +1,205 @@
+0.000 log [CnR] 0 gas stations loaded for west_coast_usa
+0.000 -1 cnr_roundEnd {"reason":"cancelled"}
+0.000 -1 cnr_mode {"startGrid":true,"version":"<version>"}
+0.000 -1 cnr_rules {"carMode":"random","catchHoldSeconds":7,"catchMaxSpeedKmh":3,"catchRadiusMeters":10,"copResetMinDistanceMeters":1000,"crashPenaltySeconds":10,"crashSpeedLossKmh":50,"headStartSeconds":7,"helicopter":true,"helicopterArrivalSeconds":60,"helicopterRefuelSeconds":90,"helicopterUpSeconds":120,"resetWaitSeconds":7,"roundTimeLimitSeconds":1800,"runnerCountdownSeconds":3,"sightMaxMeters":400,"sirensAllowed":true,"trafficPerPlayer":0,"trafficRunnerOnly":false,"weatherChanges":true}
+0.000 -1 cnr_lobby {"active":false,"online":2}
+0.000 log [CnR] Cops and Robbers <version> loaded on west_coast_usa (<dir>)
+call cnr_panel
+0.000 1 cnr_pickVehicle {"excludedModels":{},"includeMods":false}
+ret
+call cnr_vehiclePicked
+0.000 1 cnr_roundSetup {"color":{"b":0.1725490196,"g":0.2274509804,"hex":"#d83a2c","r":0.8470588235},"config":"vehicles/pickup/base.pc","copIndex":0,"copSpawnMax":150,"copSpawnMin":50,"inPlace":true,"model":"pickup","phase":"prep","practice":true,"role":"runner","runnerId":1,"runnerName":"Reinder","runnerPos":{"x":0,"y":0,"z":0},"runnerShown":true,"sightMaxMeters":400,"sky":{"changes":[{"afterStay":true,"at":1403.644291,"forecastFrom":1319.570715,"to":"fog"}],"day":12,"daySeconds":1800,"driving":true,"gameStart":0.7333333333,"lightningMaxSeconds":20,"lightningMinSeconds":5,"lightningSeed":1062517886,"month":12,"releaseAt":10,"temps":[{"c":6.963667917,"hour":14,"t":-0.65},{"c":3.963667917,"hour":6,"t":0.01666666667},{"c":6.963667917,"hour":14,"t":0.35},{"c":1.238673421,"hour":6,"t":1.016666667},{"c":3.238673421,"hour":14,"t":1.35}],"time":"sunrise","weather":"cloudy","windDir":61,"windSeed":1508029951,"year":2026}}
+0.000 log [CnR] setup sent to Reinder: runner, prep
+0.000 2 cnr_parkBystanderCars {"on":true}
+ret
+call cnr_myVehicle
+0.000 log [CnR] Reinder placed the round car (vid 0)
+0.000 1 cnr_setupAI {"ai":[{"color":{"b":0.8784313725,"g":0.4352941176,"hex":"#1f6fe0","r":0.1215686275},"id":-10,"index":1,"name":"AI cop 1","role":"cop"},{"color":{"b":1,"g":0.6901960784,"hex":"#6fb0ff","r":0.4352941176},"id":-11,"index":2,"name":"AI cop 2","role":"cop"}],"config":"vehicles/pickup/base.pc","copSpawnMax":150,"copSpawnMin":50,"model":"pickup","runnerId":1,"sightMaxMeters":400}
+0.000 -1 cnr_roundCars {"keys":["1-0"]}
+ret
+call onVehicleSpawn
+ret 0
+call cnr_aiVehicles
+ret
+call cnr_panel
+0.000 1 cnr_countdown {"seconds":3}
+ret
+call cnr_tick
+0.250 -1 cnr_lobby {"active":false,"online":2,"practice":"Reinder"}
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+3.000 1 cnr_runnerGo {"headStartSeconds":7}
+3.000 1 cnr_state {"catchProgress":0,"resetAllowed":false,"resetHint":"Stay still 7s to reset"}
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+4.000 1 cnr_state {"catchProgress":0,"resetAllowed":false,"resetHint":"Stay still 6s to reset"}
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+5.000 1 cnr_state {"catchProgress":0,"resetAllowed":false,"resetHint":"Stay still 5s to reset"}
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+6.000 1 cnr_state {"catchProgress":0,"resetAllowed":false,"resetHint":"Stay still 4s to reset"}
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+7.000 1 cnr_state {"catchProgress":0,"resetAllowed":false,"resetHint":"Stay still 3s to reset"}
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+8.000 1 cnr_state {"catchProgress":0,"resetAllowed":false,"resetHint":"Stay still 2s to reset"}
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+9.000 1 cnr_state {"catchProgress":0,"resetAllowed":false,"resetHint":"Stay still 1s to reset"}
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+ret
+call cnr_tick
+10.000 1 cnr_release {}
+10.000 1 cnr_heli {"phase":"arriving","seconds":60}
+10.000 1 cnr_state {"catchProgress":0,"resetAllowed":true,"resetHint":"Reset available"}
+ret
+call cnr_tick
+10.250 1 cnr_state {"catchProgress":0.03,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+10.500 1 cnr_state {"catchProgress":0.07,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+10.750 1 cnr_state {"catchProgress":0.1,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+11.000 1 cnr_state {"catchProgress":0.14,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+11.250 1 cnr_state {"catchProgress":0.17,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+11.500 1 cnr_state {"catchProgress":0.21,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+11.750 1 cnr_state {"catchProgress":0.25,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+12.000 1 cnr_state {"catchProgress":0.28,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+12.250 1 cnr_state {"catchProgress":0.32,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+12.500 1 cnr_state {"catchProgress":0.35,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+12.750 1 cnr_state {"catchProgress":0.39,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+13.000 1 cnr_state {"catchProgress":0.42,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+13.250 1 cnr_state {"catchProgress":0.46,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+13.500 1 cnr_state {"catchProgress":0.5,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+13.750 1 cnr_state {"catchProgress":0.53,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+14.000 1 cnr_state {"catchProgress":0.57,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+14.250 1 cnr_state {"catchProgress":0.6,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+14.500 1 cnr_state {"catchProgress":0.64,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+14.750 1 cnr_state {"catchProgress":0.67,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+15.000 1 cnr_state {"catchProgress":0.71,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+15.250 1 cnr_state {"catchProgress":0.75,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+15.500 1 cnr_state {"catchProgress":0.78,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+15.750 1 cnr_state {"catchProgress":0.82,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+16.000 1 cnr_state {"catchProgress":0.85,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+16.250 1 cnr_state {"catchProgress":0.89,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+16.500 1 cnr_state {"catchProgress":0.92,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+16.750 1 cnr_state {"catchProgress":0.96,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+ret
+call cnr_tick
+17.000 1 cnr_state {"catchProgress":1,"resetAllowed":false,"resetHint":"Can't reset while being caught"}
+17.000 2 cnr_parkBystanderCars {"on":false}
+17.000 1 cnr_roundEnd {"catchers":["AI cop 1"],"explode":false,"reason":"caught","runnerId":1,"runnerName":"Reinder","survivedSeconds":7}
+17.000 -1 cnr_roundCars {"keys":{}}
+ret
