@@ -544,9 +544,8 @@ function M.new(ctx)
     end
     if not roundPlayer then return vehicleVerdict(true) end
     if not matchesRoundVehicle(current, decoded) then return vehicleVerdict(false) end
-    local retryPlacement = roundSpawn and not facts.confirmed and facts.placementPending
-      and not facts.activeVid and not cars:firstVid(pid)
-    return vehicleVerdict(true, nil, roundSpawn and not retryPlacement or nil)
+    if roundSpawn and cars:firstVid(pid) then return vehicleVerdict(false) end
+    return vehicleVerdict(true)
   end
 
   function game:onVehicle(kind, pid, vid, decoded, facts, at)

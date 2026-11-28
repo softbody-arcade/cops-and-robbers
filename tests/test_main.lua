@@ -4319,13 +4319,25 @@ test("a real round starts when the only connected player is player 7", function(
   env.cleanup()
 end)
 
-test("a second round spawn cannot reuse a permit while the first spawn is still registering", function()
+test("a driver whose confirmed round car vanished without a delete can spawn the round car again", function()
   local env = boot({ vehicles = { [1] = {}, [2] = {} } })
   env.startRound()
-  local first = env.call("onVehicleSpawn", 2, 4, spawnOf(2, 4, "pickup"))
+  assertEq(env.call("onVehicleSpawn", 2, 4, spawnOf(2, 4, "pickup")), 0)
+  env.vehicles[2][4] = "round car"
+  env.call("cnr_myVehicle", 2, '{"vid":4}')
+  env.vehicles[2][4] = nil
+  local again = env.call("onVehicleSpawn", 2, 5, spawnOf(2, 5, "pickup"))
+  env.cleanup()
+  assertEq(again, 0)
+end)
+
+test("a driver who still owns a vehicle cannot spawn a second round car", function()
+  local env = boot({ vehicles = { [1] = {}, [2] = {} } })
+  env.startRound()
+  assertEq(env.call("onVehicleSpawn", 2, 4, spawnOf(2, 4, "pickup")), 0)
+  env.vehicles[2][4] = "round car"
   local second = env.call("onVehicleSpawn", 2, 5, spawnOf(2, 5, "pickup"))
   env.cleanup()
-  assertEq(first, 0)
   assertEq(second, 1)
 end)
 
