@@ -60,17 +60,21 @@ check_tool() {
 }
 
 check_project_access() {
-    local auth line scopes
+    local auth line scopes hint
     local project_scope='(^|,)[[:blank:]]*(read:project|project)[[:blank:]]*(,|$)'
     if ! auth=$(GH_PROMPT_DISABLED=1 NO_COLOR=1 CLICOLOR_FORCE=0 gh auth status --active --hostname github.com --no-refresh 2>&1); then
+        local network_message="couldn't connect|could not connect|error connecting|timeout trying to log in"
+        local network_error='^- Error:.*(dial tcp|no such host|connection refused|i/o timeout|network is unreachable|connection reset by peer|context deadline exceeded)'
+        hint='run gh auth login --hostname github.com, then gh auth refresh --hostname github.com -s read:project'
         shopt -s nocasematch
-        case "$auth" in
-            *"couldn't connect"*|*"could not connect"*|*"error connecting"*|*"timeout trying to log in"*|*"- Error:"*"dial tcp"*|*"- Error:"*"no such host"*|*"- Error:"*"connection refused"*|*"- Error:"*"i/o timeout"*|*"- Error:"*"network is unreachable"*|*"- Error:"*"connection reset by peer"*|*"- Error:"*"context deadline exceeded"*)
-                report missing 'gh project access — check your network connection to GitHub, then rerun make doctor' ;;
-            *)
-                report missing 'gh project access — run gh auth login --hostname github.com, then gh auth refresh --hostname github.com -s read:project' ;;
-        esac
+        while read -r line; do
+            if [[ $line =~ $network_message || $line =~ $network_error ]]; then
+                hint='check your network connection to GitHub, then rerun make doctor'
+                break
+            fi
+        done <<< "$auth"
         shopt -u nocasematch
+        report missing "gh project access — $hint"
         return
     fi
 

@@ -49,9 +49,15 @@ case $tool in
                 [[ ${GH_PROMPT_DISABLED:-} == 1 && ${NO_COLOR:-} == 1 ]] || exit 2
                 case ${GH_LOGGED_IN:-yes} in
                     no) exit 1 ;;
-                    network) printf '%s\n' 'github.com' '  X Failed to log in to github.com using token (GH_TOKEN)' '  - Active account: true' '  - The token in GH_TOKEN is invalid.' "  - Error: Post \"https://api.github.com/graphql\": proxyconnect tcp: $GH_ERROR" >&2; exit 1 ;;
-                    deadline) printf '%s\n' 'github.com' '  X Failed to log in to github.com using token (GH_TOKEN)' '  - Active account: true' '  - The token in GH_TOKEN is invalid.' '  - Error: Post "https://api.github.com/graphql": context deadline exceeded' >&2; exit 1 ;;
-                    timeout) printf '%s\n' '  X Timeout trying to log in to github.com account test (keyring)' >&2; exit 1 ;;
+                    network)
+                        printf '%s\n' 'github.com' '  X Failed to log in to github.com using token (GH_TOKEN)' \
+                            '  - Active account: true' '  - The token in GH_TOKEN is invalid.' "$GH_ERROR_LINE" >&2
+                        exit 1 ;;
+                    timeout)
+                        printf '%s\n' 'github.com' '  X Timeout trying to log in to github.com account test (keyring)' \
+                            '  - Active account: true' "$GH_ERROR_LINE" >&2
+                        exit 1 ;;
+                    message) printf '%s\n' "$GH_MESSAGE" >&2; exit 1 ;;
                     offline)
                         printf '%s\n' 'error connecting to api.github.com' 'Check your internet connection or https://githubstatus.com' >&2
                         exit 1 ;;
@@ -96,7 +102,7 @@ run_doctor() {
     shift
     : > "$bin/calls"
     : > "$bin/pwds"
-    output=$(env PATH="$bin" CALL_LOG="$bin/calls" PWD_LOG="$bin/pwds" "$@" "$runner" "$repo/scripts/doctor" 2>&1) || status=$?
+    output=$(env PATH="$bin" CALL_LOG="$bin/calls" PWD_LOG="$bin/pwds" "$@" "$runner" "${doctor_path:-$repo/scripts/doctor}" 2>&1) || status=$?
     if [[ $status != "$expected" ]]; then
         fail "Expected doctor exit $expected, got $status ($*)"
     fi
@@ -134,7 +140,7 @@ run_doctor() {
 
 expect_line() {
     if ! grep -Eq "^$1$" <<< "$output"; then
-        fail "Missing expected line matching $1"
+        fail "Missing expected line matching $1${2:+ ($2)}"
     fi
 }
 
@@ -145,13 +151,25 @@ assert_private() {
     fi
 }
 
+expect_repo_root() {
+    if [[ $(cat "$bin/pwds") != "$(printf '%s\n%s' "$repo" "$repo")" ]]; then
+        fail 'Git config did not run from the repository root'
+    fi
+}
+
 mkdir "$bin/elsewhere"
 cd "$bin/elsewhere"
 run_doctor 0
-if [[ $(cat "$bin/pwds") != "$(printf '%s\n%s' "$repo" "$repo")" ]]; then
-    fail 'Git config did not run from the repository root'
-fi
+expect_repo_root
+cd "$repo/scripts"
+doctor_path=doctor run_doctor 0
+expect_repo_root
+
+mkdir "$bin/scripts"
 cd "$repo"
+doctor_path=scripts/doctor run_doctor 0 CDPATH="$bin"
+expect_repo_root
+
 run_doctor 0
 expect_line 'ok gzip.*'
 expect_line 'ok sha256sum.*'
@@ -216,21 +234,36 @@ expect_line 'missing node.*brew install node.*'
 run_doctor 0 CLICOLOR_FORCE=1
 expect_line 'ok gh project access'
 
-for error in 'dial tcp 127.0.0.1:9: connect: connection refused' 'dial tcp: lookup api.github.com: no such host' 'connection reset by peer' 'i/o timeout' 'network is unreachable'; do
-    run_doctor 1 GH_LOGGED_IN=network GH_ERROR="$error"
-    expect_line 'missing gh project access.*network.*'
+for error_line in \
+    '  - Error: Post "https://api.github.com/graphql": dial tcp: connect: operation timed out' \
+    '  - Error: Post "https://api.github.com/graphql": lookup doctor-fixture.invalid: no such host' \
+    '  - Error: Post "https://api.github.com/graphql": connect: connection refused' \
+    '  - Error: Post "https://api.github.com/graphql": connection reset by peer' \
+    '  - Error: Post "https://api.github.com/graphql": i/o timeout' \
+    '  - Error: Post "https://api.github.com/graphql": network is unreachable' \
+    '  - Error: Post "https://api.github.com/graphql": context deadline exceeded'; do
+    run_doctor 1 GH_LOGGED_IN=network GH_ERROR_LINE="$error_line"
+    expect_line 'missing gh project access.*network.*' "$error_line"
 done
 
-run_doctor 1 GH_LOGGED_IN=deadline
-expect_line 'missing gh project access.*network.*'
+for message in "couldn't connect to api.github.com" 'could not connect to api.github.com'; do
+    run_doctor 1 GH_LOGGED_IN=message GH_MESSAGE="$message"
+    expect_line 'missing gh project access.*network.*' "$message"
+done
 
-run_doctor 1 GH_LOGGED_IN=timeout
-expect_line 'missing gh project access.*network.*'
+run_doctor 1 GH_LOGGED_IN=message GH_MESSAGE=$'github.com\n  - Error: Bad credentials\nSee troubleshooting advice for "no such host".'
+expect_line 'missing gh project access.*gh auth login.*'
+
+for timeout in 'context deadline exceeded' 'request canceled'; do
+    run_doctor 1 GH_LOGGED_IN=timeout GH_ERROR_LINE="  - Error: Get \"https://api.github.com/\": $timeout"
+    expect_line 'missing gh project access.*network.*' "Timeout headline with $timeout"
+done
 
 run_doctor 1 GH_LOGGED_IN=offline
 expect_line 'missing gh project access.*network.*'
 
-run_doctor 1 GH_LOGGED_IN=no
+run_doctor 1 GH_LOGGED_IN=no EMAIL_REPORT="${valid_email%@*}@USERS.NOREPLY.GITHUB.COM"
+expect_line 'missing git noreply email.*'
 expect_line 'missing gh project access.*gh auth login.*'
 
 expect_probe=yes run_doctor 0 OMIT_SCOPES=yes PROJECT_READABLE=yes
