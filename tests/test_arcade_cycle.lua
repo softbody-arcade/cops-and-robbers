@@ -184,3 +184,131 @@ test("a cancelled countdown cannot supply the issuer for a later next start", fu
   f.cycle:startNext()
   assertEq(f.request.issuer, 9)
 end)
+
+local savedMP, savedUtil = MP, Util
+local vehiclePacket = 'USER:Ann:7-4:{"jbm":"coupe","vcf":{"parts":{"engine":"stock"}}}'
+
+local function vehicleFixture(verdict)
+  local f = { time = 20, logs = {}, replies = {}, published = {}, events = {}, owned = {}, decodes = 0 }
+  MP = {
+    GetPlayerVehicles = function() return f.owned end,
+    GetPlayerName = function() return "Ann" end,
+  }
+  Util = { JsonDecode = function(data)
+    f.decodes = f.decodes + 1
+    return decodeJson(data)
+  end }
+  local messages = {
+    log = function(line) f.logs[#f.logs + 1] = line end,
+    refuse = function(pid, reason) f.replies[#f.replies + 1] = { pid, reason } end,
+    send = function(pid, event, data)
+      if event == "cnr_roundCars" then f.published[#f.published + 1] = table.concat(data.keys, ",") end
+    end,
+  }
+  local r = roster.new()
+  f.traffic = traffic.new(r, messages)
+  f.cars = require("arcade.cars").new(r, messages, f.traffic)
+  f.cars:setPublishing(true)
+  f.cycle = require("arcade.cycle").new({
+    roster = r, messages = messages, panel = panel.new(messages, r), cars = f.cars,
+    traffic = f.traffic, clock = { now = function() return f.time end },
+  }, stub.manifest())
+  f.cycle:attach({
+    checkVehicle = function(_, kind, pid, vid, decoded, facts)
+      f.checked = { kind = kind, pid = pid, vid = vid, decoded = decoded, facts = facts }
+      return verdict
+    end,
+    onVehicle = function(_, kind, pid, vid, decoded, facts, now)
+      f.events[#f.events + 1] = { kind = kind, pid = pid, vid = vid, decoded = decoded, facts = facts, now = now }
+    end,
+  })
+  return f
+end
+
+test("a refused spawn replies each time but logs only once per ten seconds", function()
+  local f = vehicleFixture({ allow = false, reason = "Grid is closed", notify = false })
+  for _, at in ipairs({ 20, 29.9, 30 }) do
+    f.time = at
+    assertEq(f.cycle:onVehicleSpawn(7, 4, vehiclePacket), 1)
+    assertEq(#f.logs, at == 30 and 2 or 1)
+  end
+  assertEq(f.logs[1], "Ann spawned coupe (vid 4): refused")
+  assertEq(#f.replies, 3)
+  assertEq(f.replies[2][1], 7)
+  assertEq(f.replies[2][2], "Grid is closed")
+  assertEq(#f.events, 0)
+end)
+
+test("a round car without a permit or replacement right is refused", function()
+  local f = vehicleFixture({ allow = true, roundCar = true, notify = true })
+  assertEq(f.cycle:onVehicleSpawn(7, 4, vehiclePacket), 1)
+  assertEq(f.replies[1][2], "Only the round car is allowed")
+  assertEq(f.logs[1], "Ann spawned coupe (vid 4): refused")
+  assertEq(f.cars:activeVid(7), nil)
+  assertEq(#f.events, 0)
+end)
+
+test("a first round car uses a permit and waits for confirmation to publish", function()
+  local f = vehicleFixture({ allow = true, roundCar = true, notify = true })
+  f.owned[4] = "spare"
+  f.cars:setup(7, {})
+  assertEq(f.cycle:onVehicleSpawn(7, 4, vehiclePacket), 0)
+  assertEq(f.checked.facts.permitted, true)
+  assertEq(f.checked.facts.placementPending, true)
+  assertEq(f.checked.facts.confirmed, false)
+  assertEq(f.checked.facts.preRound, true)
+  assertEq(f.cars:isPreRound(7, 4), false)
+  assertEq(f.cars:permitted(7), false)
+  assertEq(f.cars:activeVid(7), 4)
+  assertEq(f.events[1].kind, "spawn")
+  assertEq(#f.published, 0)
+  f.cars:confirm(7, 4)
+  f.cars:publish()
+  assertEq(f.published[1], "7-4")
+end)
+
+test("deleting a confirmed car allows one immediate replacement above the traffic cap", function()
+  local f = vehicleFixture({ allow = true, roundCar = true, notify = true })
+  f.cars:setup(7, {})
+  f.cars:confirm(7, 0)
+  f.cars:publish()
+  f.traffic:open(7, 1)
+  f.owned = { [1] = "traffic", [2] = "spare" }
+  assertEq(f.cycle:onVehicleDeleted(7, 0), nil)
+  assertEq(f.events[1].kind, "replaced")
+  assertEq(f.events[2].kind, "delete")
+  assertEq(f.published[2], "")
+  assertEq(f.cycle:onVehicleSpawn(7, 4, vehiclePacket), 0)
+  assertEq(f.checked.facts.replacementAllowed, true)
+  assertEq(f.checked.facts.trafficOpen, 1)
+  assertEq(f.events[3].kind, "replaced")
+  assertEq(f.events[3].vid, 4)
+  assertEq(f.events[3].decoded, nil)
+  assertEq(f.events[4].kind, "spawn")
+  assertEq(f.published[3], "7-4")
+  assertEq(f.cycle:onVehicleSpawn(7, 5, vehiclePacket), 1)
+  assertEq(f.cycle:onVehicleReset(7, 4), nil)
+  assertEq(f.events[5].kind, "reset")
+  assertEq(f.events[5].facts.activeVid, 4)
+end)
+
+test("only a notifying edit delivers its once-decoded packet to the game", function()
+  local verdict = { allow = true, notify = false }
+  local f = vehicleFixture(verdict)
+  assertEq(f.cycle:onVehicleEdited(7, 4, vehiclePacket), 0)
+  assertEq(#f.events, 0)
+  verdict.notify = true
+  assertEq(f.cycle:onVehicleEdited(7, 4, vehiclePacket), 0)
+  assertEq(f.decodes, 2)
+  assertEq(f.checked.kind, "edit")
+  assertEq(f.checked.decoded.vcf.parts.engine, "stock")
+  local edit = f.events[1]
+  assertEq(edit.kind, "edit")
+  assertEq(edit.pid, 7)
+  assertEq(edit.vid, 4)
+  assertEq(edit.decoded, f.checked.decoded)
+  assertEq(edit.facts, f.checked.facts)
+  assertEq(edit.now, 20)
+end)
+
+MP, Util = savedMP, savedUtil

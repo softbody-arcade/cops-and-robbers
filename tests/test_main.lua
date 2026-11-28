@@ -4318,3 +4318,38 @@ test("a real round starts when the only connected player is player 7", function(
   assertEq(env.lastSent("cnr_pickVehicle").pid, 7)
   env.cleanup()
 end)
+
+test("a second round spawn cannot reuse a permit while the first spawn is still registering", function()
+  local env = boot({ vehicles = { [1] = {}, [2] = {} } })
+  env.startRound()
+  local first = env.call("onVehicleSpawn", 2, 4, spawnOf(2, 4, "pickup"))
+  local second = env.call("onVehicleSpawn", 2, 5, spawnOf(2, 5, "pickup"))
+  env.cleanup()
+  assertEq(first, 0)
+  assertEq(second, 1)
+end)
+
+test("a traffic capacity refusal keeps its model-independent log entry", function()
+  local env = trafficBoot({ config = '{"trafficPerPlayer":1}', maxCars = 3 })
+  env.startRound()
+  env.call("cnr_myVehicle", 2, '{"vid":0}')
+  env.vehicles[2][1] = "traffic"
+  assertEq(env.call("onVehicleSpawn", 2, 2, spawnOf(2, 2, "etk800")), 1)
+  assertEq(env.logHas("Bob spawned ? (vid 2): refused"), true)
+  env.cleanup()
+end)
+
+test("a driver can retry placement after their provisional car is deleted before confirmation", function()
+  local env = boot({ vehicles = { [1] = {}, [2] = {} } })
+  env.startRound()
+  local first = env.call("onVehicleSpawn", 2, 4, spawnOf(2, 4, "pickup"))
+  env.call("onVehicleDeleted", 2, 4)
+  local retry = env.call("onVehicleSpawn", 2, 5, spawnOf(2, 5, "pickup"))
+  env.vehicles[2][5] = "round car"
+  env.call("cnr_myVehicle", 2, '{"vid":5}')
+  local keys = decodeJson(env.lastSent("cnr_roundCars").data).keys
+  env.cleanup()
+  assertEq(first, 0)
+  assertEq(retry, 0)
+  assertEq(table.concat(keys, ","), "2-5")
+end)

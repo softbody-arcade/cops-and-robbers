@@ -2,6 +2,16 @@ local panel = require("arcade.panel")
 local autoRounds = require("arcade.autoRounds")
 local M = {}
 
+function M.parseVehicleData(data)
+  if type(data) ~= "string" then return nil end
+  local start = data:find("{", 1, true)
+  if not start then return nil end
+  local json = data:sub(start)
+  local ok, decoded = pcall(Util.JsonDecode, json)
+  if ok and type(decoded) == "table" then return decoded end
+  return nil
+end
+
 function M.new(services, manifest)
   local y, ctx = {}, {}
   for key, service in pairs(services) do ctx[key] = service end
@@ -9,6 +19,7 @@ function M.new(services, manifest)
   local state = "lobby"
   local transport = services.panel
   local now = ctx.clock.now
+  local refusalLoggedAt = ctx.roster:perPlayer("refusalLoggedAt", "early")
   local allow = panel.allowList(manifest.commands)
   ctx.round, ctx.panel = {}, {}
   ctx.version = manifest.version
@@ -20,6 +31,64 @@ function M.new(services, manifest)
 
   function y:dispatch(hook, ...)
     return game[hook](game, ...)
+  end
+
+  local function vehicleFacts(pid, vid)
+    local cars = ctx.cars
+    return {
+      permitted = cars:permitted(pid), placementPending = cars:placementPending(pid),
+      confirmed = cars:confirmed(pid), replacementAllowed = cars:replacementAllowed(pid),
+      activeVid = cars:activeVid(pid), preRound = cars:isPreRound(pid, vid),
+      trafficOpen = ctx.traffic:openCount(pid),
+    }
+  end
+
+  local function refuseVehicle(kind, pid, vid, model, reason, at)
+    local last = refusalLoggedAt[pid]
+    if not last or at - last >= 10 then
+      refusalLoggedAt[pid] = at
+      ctx.messages.log(string.format("%s %s %s (vid %s): refused", ctx.roster:name(pid) or tostring(pid),
+        kind == "spawn" and "spawned" or "edited", tostring(model or "?"), tostring(vid)))
+    end
+    ctx.messages.refuse(pid, reason or "Only the round car is allowed")
+    return 1
+  end
+
+  local function checkVehicle(kind, pid, vid, data)
+    local decoded = M.parseVehicleData(data)
+    local facts, at = vehicleFacts(pid, vid), now()
+    local verdict = y:dispatch("checkVehicle", kind, pid, vid, decoded, facts)
+    if not verdict.allow then
+      local extraTraffic = kind == "spawn" and facts.trafficOpen and verdict.roundCar == false
+      return refuseVehicle(kind, pid, vid, not extraTraffic and decoded and decoded.jbm, verdict.reason, at)
+    end
+    if kind == "spawn" then
+      if verdict.roundCar then
+        local right, replaced = ctx.cars:claim(pid, vid)
+        if not right then return refuseVehicle(kind, pid, vid, decoded and decoded.jbm, verdict.reason, at) end
+        if replaced then y:dispatch("onVehicle", "replaced", pid, vid, nil, facts, at) end
+      end
+      ctx.cars:forgetPreRound(pid, vid)
+    end
+    if verdict.notify then y:dispatch("onVehicle", kind, pid, vid, decoded, facts, at) end
+    return 0
+  end
+
+  function y:onVehicleSpawn(pid, vid, data) return checkVehicle("spawn", pid, vid, data) end
+  function y:onVehicleEdited(pid, vid, data) return checkVehicle("edit", pid, vid, data) end
+
+  function y:onVehicleDeleted(pid, vid)
+    local facts, at = vehicleFacts(pid, vid), now()
+    ctx.cars:forgetPreRound(pid, vid)
+    if facts.activeVid == vid and ctx.cars:setActive(pid, nil) then
+      self:dispatch("onVehicle", "replaced", pid, vid, nil, facts, at)
+      ctx.cars:publish()
+    end
+    self:dispatch("onVehicle", "delete", pid, vid, nil, facts, at)
+  end
+
+  function y:onVehicleReset(pid, vid)
+    self:dispatch("onVehicle", "reset", pid, vid, nil, vehicleFacts(pid, vid), now())
   end
 
   function ctx.round:start(request)

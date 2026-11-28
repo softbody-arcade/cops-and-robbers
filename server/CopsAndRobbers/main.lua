@@ -25,7 +25,8 @@ local spectators = require("arcade.spectators").new(roster, messages)
 local playerColors = require("arcade.playerColors").new(dataDir .. "colors.json", roster, messages)
 local panelService = require("arcade.panel").new(messages, roster)
 local nextRound = require("arcade.autoRounds").new()
-local cycle = require("arcade.cycle").new({
+local cycleModule = require("arcade.cycle")
+local cycle = cycleModule.new({
   messages = messages, roster = roster, store = store, clock = clock,
   settings = settings, traffic = trafficService, cars = cars, spectators = spectators,
   playerColors = playerColors, panel = panelService, autoRounds = nextRound,
@@ -42,10 +43,7 @@ local round = require("cnr.round")
 local leaderboard = require("cnr.leaderboard")
 local tables = require("cnr.tables")
 local build = require("cnr.build")
-local REFUSAL_LOG_SECONDS = 10
-local refusalLoggedAt = roster:perPlayer("refusalLoggedAt", "early")
 local START_ROAD_SEARCH = 2000
-local WATCHING_AI = "You can't spawn a car while watching the AI"
 
 math.randomseed(os.time())
 
@@ -100,34 +98,6 @@ local function backupBuild()
   local moved, err = FS.Rename(buildPath, aside)
   if not moved then return saveError(buildPath, err or "rename failed") end
   return true, aside
-end
-
-local function parseVehicleData(data)
-  if type(data) ~= "string" then return nil end
-  local start = data:find("{", 1, true)
-  if not start then return nil end
-  local json = data:sub(start)
-  local ok, decoded = pcall(Util.JsonDecode, json)
-  if ok and type(decoded) == "table" then return decoded end
-  return nil
-end
-
-local function aiSlotForVid(vid)
-  for id, car in pairs(game.aiCars) do
-    if car.vid == vid then return id end
-  end
-end
-
-local function removeAICar(id)
-  if id and game.aiCars[id] then
-    game.aiCars[id] = nil
-    game.current:forgetVehicleSight(id)
-  end
-end
-
-local function normalizeConfig(path)
-  if type(path) ~= "string" then return nil end
-  return (path:gsub("\\", "/"):gsub("^/", ""):lower())
 end
 
 local function panelBuild(pid, msg)
@@ -285,137 +255,10 @@ function cnrOnMissing(pid, data)
   send(current.test and current.issuerId or -1, "cnr_notice", { msg = string.format("⚠ %s is missing: %s", MP.GetPlayerName(pid) or tostring(pid), table.concat(names, ", ")), tone = "warn" })
 end
 
-local function matchesRoundVehicle(decoded)
-  local current = game.current
-  if not decoded or decoded.jbm ~= current.vehicle.model then return false end
-  local pcFile = type(decoded.vcf) == "table" and decoded.vcf.partConfigFilename
-  return not pcFile or current.evolving or normalizeConfig(pcFile) == normalizeConfig(current.vehicle.config)
-end
-
-local function vehicleAllowed(pid, vid, data, isSpawn)
-  local current = game.current
-  if current:isActive() and current.aiOnly and pid == current.issuerId then
-    local decoded = parseVehicleData(data)
-    if current.state == "picking" then return not isSpawn, decoded, isSpawn and WATCHING_AI or nil end
-    local model = current.vehicle and current.vehicle.model
-    local roundModel = model ~= nil and decoded ~= nil and decoded.jbm == model
-    if not roundModel or (isSpawn and game.aiSpawnsLeft <= 0) then return false, decoded, isSpawn and WATCHING_AI or nil end
-    if isSpawn then game.aiSpawnsLeft = game.aiSpawnsLeft - 1 end
-    return true, decoded
-  end
-  local own = cars:activeVid(pid)
-  local trafficCount = trafficService:openCount(pid)
-  local roundPlayer = game:roundCarActive() and current.players[pid] ~= nil
-  if isSpawn and roundPlayer and not current.test and (cars:permitted(pid) or cars:replacementAllowed(pid)) then
-    local decoded = parseVehicleData(data)
-    if matchesRoundVehicle(decoded) then return true, decoded, nil, true end
-    if not own or not trafficCount then return false, decoded end
-  end
-  if current:isActive() and trafficCount and current.players[pid] ~= nil and vid ~= own then
-    if current.test and pid == current.issuerId then return true end
-    if not isSpawn then return true end
-    return own ~= nil and trafficService:extraCars(pid, own) < trafficCount
-  end
-  if not roundPlayer then return true end
-  local decoded = parseVehicleData(data)
-  if not matchesRoundVehicle(decoded) then return false, decoded end
-  if isSpawn and not current.test and cars:firstVid(pid) then return false, decoded end
-  return true, decoded
-end
-
-local function checkParts(pid, decoded)
-  local current = game.current
-  if not decoded or type(decoded.vcf) ~= "table" or decoded.vcf.parts == nil then return end
-  local parts = decoded.vcf.parts
-  local entry = game.partsBaseline[pid]
-  local mayChange = current.evolving and (current.state == "prep" or current.state == "applying") and pid == current.runnerId
-  if entry == nil then
-    game.partsBaseline[pid] = { parts = parts, announced = false }
-  elseif entry.parts == nil or mayChange or (entry.quietUntil and now() < entry.quietUntil) then
-    entry.parts = parts
-  elseif not tables.deepEqual(parts, entry.parts) then
-    if not entry.announced then
-      entry.announced = true
-      local msg = string.format("⚠ %s changed parts during the round: %s", MP.GetPlayerName(pid) or tostring(pid), tables.diffKeys(entry.parts, parts, 5))
-      log(msg)
-      current:note(now(), "partsChanged", MP.GetPlayerName(pid) or tostring(pid))
-      if current.test then notify(current.issuerId, msg, "warn") else broadcast(msg, "warn") end
-    end
-    entry.parts = parts
-  end
-end
-
-local function tracksActive(pid)
-  local current = game.current
-  return current:isActive() and not (current.test and pid == current.issuerId)
-end
-
-local function logVehicleRefusal(pid, action, vid, decoded)
-  local last = refusalLoggedAt[pid]
-  if last and now() - last < REFUSAL_LOG_SECONDS then return end
-  refusalLoggedAt[pid] = now()
-  log(string.format("%s %s %s (vid %s): refused", MP.GetPlayerName(pid) or tostring(pid), action,
-    tostring(decoded and decoded.jbm or "?"), tostring(vid)))
-end
-
-function cnrOnVehicleSpawn(pid, vid, data)
-  local current = game.current
-  if current.vehicle and not current.test and current.players[pid] == nil then
-    logVehicleRefusal(pid, "spawned", vid, parseVehicleData(data))
-    refuse(pid, "You can't spawn a car while spectating")
-    return 1
-  end
-  local allowed, decoded, why, roundSpawn = vehicleAllowed(pid, vid, data, true)
-  if not allowed then
-    logVehicleRefusal(pid, "spawned", vid, decoded)
-    refuse(pid, why or "Only the round car is allowed")
-    return 1
-  end
-  cars:forgetPreRound(pid, vid)
-  if roundSpawn then
-    local _, replaced = cars:claim(pid, vid)
-    if replaced then current:forgetVehicleSight(pid) end
-  elseif tracksActive(pid) and not cars:confirmed(pid) and not trafficService:openCount(pid) then
-    cars:setActive(pid, vid)
-  end
-  return 0
-end
-
-function cnrOnVehicleEdited(pid, vid, data)
-  local current = game.current
-  if cars:isPreRound(pid, vid) then return 0 end
-  if cars:confirmed(pid) and cars:activeVid(pid) ~= vid then
-    if pid ~= current.issuerId or not aiSlotForVid(vid) then return 0 end
-  end
-  local allowed, decoded, why = vehicleAllowed(pid, vid, data, false)
-  if not allowed then
-    logVehicleRefusal(pid, "edited", vid, decoded)
-    refuse(pid, why or "Only the round car is allowed")
-    return 1
-  end
-  local notOwn = vid ~= cars:activeVid(pid) and (current.test or trafficService:openCount(pid))
-  if game:roundCarActive() and current.players[pid] and not notOwn then checkParts(pid, decoded) end
-  if tracksActive(pid) and not trafficService:openCount(pid) then
-    if cars:setActive(pid, vid) then current:forgetVehicleSight(pid) end
-  end
-  return 0
-end
-
-function cnrOnVehicleDeleted(pid, vid)
-  local current = game.current
-  if pid == current.issuerId then removeAICar(aiSlotForVid(vid)) end
-  cars:forgetPreRound(pid, vid)
-  if cars:activeVid(pid) == vid and cars:setActive(pid, nil) then
-    current:forgetVehicleSight(pid)
-    cars:publish()
-  end
-end
-
-function cnrOnVehicleReset(pid, vid)
-  local own = cars:activeVid(pid)
-  if (own or cars:confirmed(pid) or trafficService:openCount(pid)) and own ~= vid then return end
-  game:applyEffects(game.current:vehicleReset(now(), pid))
-end
+function cnrOnVehicleSpawn(pid, vid, data) return cycle:onVehicleSpawn(pid, vid, data) end
+function cnrOnVehicleEdited(pid, vid, data) return cycle:onVehicleEdited(pid, vid, data) end
+function cnrOnVehicleDeleted(pid, vid) return cycle:onVehicleDeleted(pid, vid) end
+function cnrOnVehicleReset(pid, vid) return cycle:onVehicleReset(pid, vid) end
 
 function cnrOnColor(pid, data)
   local current = game.current
@@ -498,7 +341,7 @@ local function plannerPosition(pid)
   local vehicles = cars:vehicles(pid)
   local vid, data = next(vehicles)
   if not vid or next(vehicles, vid) then return nil end
-  local vehicle = parseVehicleData(data)
+  local vehicle = cycleModule.parseVehicleData(data)
   if vehicle and vehicle.jbm == "unicycle" then return nil end
   local raw = cars:rawPosition(pid, vid)
   if raw then return vec.toVec(raw.pos) end
@@ -559,7 +402,7 @@ function cnrOnMyVehicle(pid, data)
   local vid = ok and type(decoded) == "table" and tonumber(decoded.vid)
   if not integer(vid) or vid < 0 or not game:roundCarActive() or current.players[pid] == nil then return end
   local owned = cars:vehicles(pid)
-  if not owned[vid] or (pid == current.issuerId and aiSlotForVid(vid)) then return end
+  if not owned[vid] or (pid == current.issuerId and game:aiSlotForVid(vid)) then return end
   if cars:confirm(pid, vid) then current:forgetVehicleSight(pid) end
   game:placed(pid)
   log(string.format("%s placed the round car (vid %s)", MP.GetPlayerName(pid) or tostring(pid), tostring(vid)))
@@ -576,7 +419,7 @@ function cnrOnTrafficCars(pid, data)
   local ok, d = pcall(Util.JsonDecode, data)
   if not ok or type(d) ~= "table" or type(d.vids) ~= "table" then return end
   trafficService:report(pid, d.vids, cars:activeVid(pid), function(vid)
-    return current.test and pid == current.issuerId and aiSlotForVid(vid)
+    return current.test and pid == current.issuerId and game:aiSlotForVid(vid)
   end)
 end
 
@@ -593,8 +436,8 @@ local function registerAICar(pid, a, owned)
   elseif game.aiSlotSerial[id] or game.aiVidSerial[vid] or (game.aiCars[id] and game.aiCars[id].vid == vid) then
     return
   end
-  removeAICar(id)
-  removeAICar(aiSlotForVid(vid))
+  game:removeAICar(id)
+  game:removeAICar(game:aiSlotForVid(vid))
   game.aiCars[id] = {vid=vid, instance=serial}
   cars:forgetPreRound(pid, vid)
 end

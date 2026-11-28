@@ -7,6 +7,7 @@ local sky = require("cnr.sky")
 local strikeSchedule = require("cnr.strikeSchedule")
 local commands = require("cnr.commands")
 local config = require("cnr.config")
+local tables = require("cnr.tables")
 local build = require("cnr.build")
 local vec = require("cnr.vec")
 local trafficNote = require("cnr.traffic").note
@@ -37,6 +38,21 @@ end
 
 local BOARD_TOP = 20
 local ROUNDS_DEFAULT, ROUNDS_STEP, ROUNDS_MAX = 30, 30, 300
+
+local function normalizeConfig(path)
+  if type(path) ~= "string" then return nil end
+  return (path:gsub("\\", "/"):gsub("^/", ""):lower())
+end
+
+local function matchesRoundVehicle(current, decoded)
+  if not decoded or decoded.jbm ~= current.vehicle.model then return false end
+  local pcFile = type(decoded.vcf) == "table" and decoded.vcf.partConfigFilename
+  return not pcFile or current.evolving or normalizeConfig(pcFile) == normalizeConfig(current.vehicle.config)
+end
+
+local function vehicleVerdict(allow, reason, roundCar)
+  return { allow = allow, reason = reason, roundCar = roundCar, notify = allow }
+end
 
 function M.new(ctx)
   local game = {
@@ -459,6 +475,101 @@ function M.new(ctx)
   function game:roundCarActive()
     local current = game.current
     return current.vehicle ~= nil and current.state ~= "idle" and current.state ~= "picking"
+  end
+
+  function game:aiSlotForVid(vid)
+    for id, car in pairs(self.aiCars) do
+      if car.vid == vid then return id end
+    end
+  end
+
+  function game:removeAICar(id)
+    if id and self.aiCars[id] then
+      self.aiCars[id] = nil
+      self.current:forgetVehicleSight(id)
+    end
+  end
+
+  local function checkParts(pid, decoded, at)
+    local current = game.current
+    if not decoded or type(decoded.vcf) ~= "table" or decoded.vcf.parts == nil then return end
+    local parts = decoded.vcf.parts
+    local entry = game.partsBaseline[pid]
+    local mayChange = current.evolving and (current.state == "prep" or current.state == "applying") and pid == current.runnerId
+    if entry == nil then
+      game.partsBaseline[pid] = { parts = parts, announced = false }
+    elseif entry.parts == nil or mayChange or (entry.quietUntil and at < entry.quietUntil) then
+      entry.parts = parts
+    elseif not tables.deepEqual(parts, entry.parts) then
+      if not entry.announced then
+        entry.announced = true
+        local msg = string.format("⚠ %s changed parts during the round: %s", MP.GetPlayerName(pid) or tostring(pid), tables.diffKeys(entry.parts, parts, 5))
+        log(msg)
+        current:note(at, "partsChanged", MP.GetPlayerName(pid) or tostring(pid))
+        if current.test then ctx.messages.notify(current.issuerId, msg, "warn") else ctx.messages.broadcast(msg, "warn") end
+      end
+      entry.parts = parts
+    end
+  end
+
+  function game:checkVehicle(kind, pid, vid, decoded, facts)
+    local current = self.current
+    local spawn = kind == "spawn"
+    if spawn and current.vehicle and not current.test and current.players[pid] == nil then
+      return vehicleVerdict(false, "You can't spawn a car while spectating")
+    end
+    if not spawn and (facts.preRound or (facts.confirmed and vid ~= facts.activeVid
+        and (pid ~= current.issuerId or not self:aiSlotForVid(vid)))) then
+      return { allow = true, notify = false }
+    end
+    if current:isActive() and current.aiOnly and pid == current.issuerId then
+      local watching = spawn and "You can't spawn a car while watching the AI" or nil
+      if current.state == "picking" then return vehicleVerdict(not spawn, watching) end
+      local model = current.vehicle and current.vehicle.model
+      if not model or not decoded or decoded.jbm ~= model or (spawn and self.aiSpawnsLeft <= 0) then
+        return vehicleVerdict(false, watching)
+      end
+      return vehicleVerdict(true)
+    end
+    local roundPlayer = self:roundCarActive() and current.players[pid] ~= nil
+    local roundSpawn = spawn and roundPlayer and not current.test
+    if roundSpawn and (facts.permitted or facts.replacementAllowed) then
+      if matchesRoundVehicle(current, decoded) then return vehicleVerdict(true, nil, true) end
+      if not facts.activeVid or not facts.trafficOpen then return vehicleVerdict(false) end
+    end
+    if current:isActive() and facts.trafficOpen and current.players[pid] ~= nil and vid ~= facts.activeVid then
+      if not spawn or (current.test and pid == current.issuerId) then return vehicleVerdict(true) end
+      local room = facts.activeVid ~= nil and ctx.traffic:extraCars(pid, facts.activeVid) < facts.trafficOpen
+      return vehicleVerdict(room, nil, false)
+    end
+    if not roundPlayer then return vehicleVerdict(true) end
+    if not matchesRoundVehicle(current, decoded) then return vehicleVerdict(false) end
+    local retryPlacement = roundSpawn and not facts.confirmed and facts.placementPending
+      and not facts.activeVid and not cars:firstVid(pid)
+    return vehicleVerdict(true, nil, roundSpawn and not retryPlacement or nil)
+  end
+
+  function game:onVehicle(kind, pid, vid, decoded, facts, at)
+    local current = self.current
+    if kind == "replaced" then
+      current:forgetVehicleSight(pid)
+    elseif kind == "delete" then
+      if pid == current.issuerId then self:removeAICar(self:aiSlotForVid(vid)) end
+    elseif kind == "reset" then
+      if (facts.activeVid or facts.confirmed or facts.trafficOpen) and facts.activeVid ~= vid then return end
+      self:applyEffects(current:vehicleReset(at, pid))
+    else
+      if kind == "edit" then
+        local notOwn = vid ~= facts.activeVid and (current.test or facts.trafficOpen)
+        if self:roundCarActive() and current.players[pid] and not notOwn then checkParts(pid, decoded, at) end
+      elseif current:isActive() and current.aiOnly and pid == current.issuerId then
+        self.aiSpawnsLeft = self.aiSpawnsLeft - 1
+      end
+      if current:isActive() and not (current.test and pid == current.issuerId)
+          and not facts.confirmed and not facts.trafficOpen and cars:activeVid(pid) ~= vid then
+        cars:setActive(pid, vid)
+      end
+    end
   end
 
   local function stationsPath() return ctx.dataDir .. "stations/" .. game.mapName .. ".json" end
