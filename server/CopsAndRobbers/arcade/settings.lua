@@ -36,10 +36,6 @@ M.GLOBAL = {
   RETIRED_KEYS = { clockSpeed = true },
   RETIRED_VALUES = { timeOfDay = "map", weather = "map" },
 }
-for minKey, maxKey in pairs(M.GLOBAL.TIMING_RANGES) do
-  M.GLOBAL.WHOLE[minKey], M.GLOBAL.WHOLE[maxKey] = true, true
-  M.GLOBAL.POSITIVE[minKey], M.GLOBAL.POSITIVE[maxKey] = true, true
-end
 
 function M.combine(global, game)
   local decl = { fix = game.fix }
@@ -52,8 +48,15 @@ function M.combine(global, game)
     end
     decl[field] = combined
   end
+  for minKey, maxKey in pairs(decl.TIMING_RANGES) do
+    decl.WHOLE[minKey], decl.WHOLE[maxKey] = true, true
+    decl.POSITIVE[minKey], decl.POSITIVE[maxKey] = true, true
+  end
   for key, default in pairs(game.OVERRIDES or {}) do
     assert(global.DEFAULTS[key] ~= nil, "Cannot override unknown global setting " .. key)
+    assert(type(default) == type(global.DEFAULTS[key]), "Invalid override type for " .. key)
+    local choices = global.CHOICES and global.CHOICES[key]
+    assert(not choices or choices[default], "Invalid override choice for " .. key)
     decl.DEFAULTS[key] = default
   end
   return decl

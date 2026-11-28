@@ -76,6 +76,32 @@ test("duplicate declarations fail even when the shared default is false", functi
   assertEq(ok, false)
 end)
 
+test("game timing ranges require positive whole seconds at both ends", function()
+  local combined = settings.combine(settings.GLOBAL, {
+    DEFAULTS = { fooMinSeconds = 2, fooMaxSeconds = 4 },
+    TIMING_RANGES = { fooMinSeconds = "fooMaxSeconds" },
+  })
+  for _, key in ipairs({ "fooMinSeconds", "fooMaxSeconds" }) do
+    assertEq(combined.WHOLE[key], true, key)
+    assertEq(combined.POSITIVE[key], true, key)
+  end
+  local cfg, warnings = settings.merge({ fooMinSeconds = 1.5 }, combined)
+  assertEq(cfg.fooMinSeconds, 2)
+  sameValues(warnings, { "fooMinSeconds has invalid value 1.5, using 2" })
+end)
+
+test("an override with the wrong type fails with the setting name", function()
+  local ok, err = pcall(settings.combine, settings.GLOBAL, { OVERRIDES = { autoNextRound = "yes" } })
+  assertEq(ok, false)
+  assert(err:find("autoNextRound", 1, true), err)
+end)
+
+test("an override outside the global choices fails with the setting name", function()
+  local ok, err = pcall(settings.combine, settings.GLOBAL, { OVERRIDES = { weather = "hail" } })
+  assertEq(ok, false)
+  assert(err:find("weather", 1, true), err)
+end)
+
 test("overrides change only the chosen global default for this game", function()
   local combined = settings.combine(settings.GLOBAL, { DEFAULTS = {}, OVERRIDES = { weather = "rain" } })
   local expected = {}
