@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Fix the five follow-ups the final review of #71 deferred (#78–#82), and drop the chat redirect (#86), as the fix batch #84.
+**Goal:** Fix the five follow-ups the final review of #71 deferred (#78–#82), drop the chat redirect (#86) and two old data migrations (#87), as the fix batch #84.
 
 **Architecture:** Task 1 widens what the golden traces record and adds the uncovered paths, then re-records the goldens once. Every later task leaves the goldens byte-identical. Tasks 2–4 make `arcade/` game-neutral and harden settings. Tasks 5–6 are tidy-ups.
 
@@ -210,6 +210,27 @@ Added on 2026-11-28 by the maintainer's decision on #86. It runs after Task 6, b
 - [ ] **Step 2: Run** → FAIL. **Step 3: Implement.** Remove the code listed above, the `parse` tests from `tests/test_commands.lua` and `tests/test_arcade_commands.lua` (keep the `parseText` tests), and the `onChatMessage` bullet from `docs/DEPENDENCIES.md`. Afterwards `grep -rn 'ChatMessage' server/ docs/DEPENDENCIES.md` and `grep -rn 'commands.parse(' server/ tests/` print nothing.
 - [ ] **Step 4: Run** `make test` → PASS; golden gate.
 - [ ] **Step 5: Commit** with the message "Drop the chat redirect: the mod no longer handles chat".
+
+### Task 8: Drop the pre-1.6 leaderboard migration and the colour lookup by name (#87)
+
+Added on 2026-11-28 by the maintainer's decision on #87. It runs after Task 7. The retired-settings mechanism stays.
+
+**Files:** `server/CopsAndRobbers/main.lua` (`loadLeaderboard`), `server/CopsAndRobbers/cnr/leaderboard.lua`, `server/CopsAndRobbers/arcade/playerColors.lua`, `tests/test_leaderboard.lua`, `tests/test_main.lua`, and the colour tests (`tests/test_arcade_player_colors.lua`, plus `tests/test_main.lua` if colour cases live there)
+
+**Interfaces:**
+- Removes: `leaderboard.isCurrent`, and the "is the old format" branch in `loadLeaderboard` with its `leaderboard-1.6` names.
+- Changes: `leaderboard.validShape(decoded)` returns true only for nil, or a table with `format == M.FORMAT` and a table `runs`. A file in another format then takes the existing "was unreadable" path: it is moved to `leaderboard.json.corrupt-<os.time()>` with the existing log line, and a fresh board starts.
+- Changes: `playerColors` `c:get(pid)` and `c:clear(pid)` use only `r:key(pid)`, with no `MP.GetPlayerName` fallback.
+
+- [ ] **Step 1: Failing tests:**
+  - `leaderboard.validShape({ runs = {} })` is false, and `validShape({ format = 2, runs = {} })` is true.
+  - In `tests/test_main.lua`, boot with a format-1 `leaderboard.json` (`{"runs":[...]}`). The file is moved to `data/leaderboard.json.corrupt-<time>`, the log says `leaderboard.json was unreadable, moved to ...`, no `leaderboard-1.6.json` exists, and the board starts empty.
+  - A colour saved only under the player's name is not applied to that player, and clearing a colour removes only the identity-keyed entry.
+
+  Replace the tests that pin the old behaviour: the `isCurrent` test, the `leaderboard-1.6` cases near `tests/test_main.lua:1177` and `:1237`, and any name-fallback colour test.
+- [ ] **Step 2: Run** → FAIL. **Step 3: Implement.** Afterwards `grep -rn 'leaderboard-1.6\|isCurrent' server/ tests/` prints nothing, and `grep -n 'GetPlayerName' server/CopsAndRobbers/arcade/playerColors.lua` prints nothing.
+- [ ] **Step 4: Run** `make test` → PASS; golden gate.
+- [ ] **Step 5: Commit** with the message "Drop the pre-1.6 leaderboard migration and the colour lookup by name".
 
 ### Batch completion (controller)
 
