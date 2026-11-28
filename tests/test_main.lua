@@ -2121,6 +2121,27 @@ test("a held-back change reaches players once at round end", function()
   env.cleanup()
 end)
 
+test("round end synchronizes traffic rules when a joiner received a different slot limit", function()
+  for _, limits in ipairs({ { maxCars = 2, traffic = 1 }, { maxCars = 4, traffic = 3 } }) do
+    local opts = { config = '{"trafficPerPlayer":5}', maxCars = 4 }
+    local env = boot(opts)
+    assertEq(decodeJson(env.lastSent("cnr_rules").data).trafficPerPlayer, 3)
+    env.startRound()
+    opts.maxCars = 2
+    env.names = { "Reinder", "Bob", "Kim" }
+    env.call("onPlayerJoin", 3)
+    assertEq(decodeJson(sentTo(env, "cnr_rules", 3)).trafficPerPlayer, 1)
+    opts.maxCars = limits.maxCars
+    env.sent = {}
+    env.panel(1, "stop")
+    local update = env.lastSent("cnr_rules")
+    env.cleanup()
+    assert(update, "players missed the final traffic limit for MaxCars " .. limits.maxCars)
+    assertEq(update.pid, -1)
+    assertEq(decodeJson(update.data).trafficPerPlayer, limits.traffic)
+  end
+end)
+
 test("a subscribed panel shows auto off at once during a chase", function()
   local env = boot({ config = '{"autoNextRound":true}' })
   runToChase(env)
@@ -2949,6 +2970,24 @@ test("practice parks only bystanders, including late joiners, and releases them 
   assertEq(decodeJson(sentTo(env, "cnr_parkBystanderCars", 3)).on, false)
   assertEq(sentTo(env, "cnr_parkBystanderCars", 1), nil)
   assertEq(sentTo(env, "cnr_parkBystanderCars", 2), nil)
+  env.cleanup()
+end)
+
+test("a practice end unparks bystanders before the issuer's roundEnd", function()
+  local env = boot()
+  env.panel(1, "test runner")
+  env.call("cnr_vehiclePicked", 1, PICK)
+  env.sent = {}
+  env.panel(1, "stop")
+  local unpark, ended
+  for i, event in ipairs(env.sent) do
+    if event.ev == "cnr_parkBystanderCars" and event.pid == 2 and decodeJson(event.data).on == false then
+      unpark = i
+    elseif event.ev == "cnr_roundEnd" and event.pid == 1 then
+      ended = i
+    end
+  end
+  assert(unpark and ended and unpark < ended, "expected Bob to be unparked before the issuer's roundEnd")
   env.cleanup()
 end)
 

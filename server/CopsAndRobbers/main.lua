@@ -6,7 +6,6 @@ local messages = require("arcade.messages").new({ prefix = "[CnR] " })
 local roster = require("arcade.roster").new()
 local vec = require("cnr.vec")
 local config = require("cnr.config")
-local rules = require("cnr.rules")
 local round = require("cnr.round")
 local leaderboard = require("cnr.leaderboard")
 local commands = require("cnr.commands")
@@ -19,6 +18,7 @@ local nextRound = autoRounds.new()
 local sky = require("cnr.sky")
 local traffic = require("arcade.traffic")
 local trafficService = traffic.new(roster, messages)
+trafficService.maxCars = traffic.maxCars
 local cars = require("arcade.cars").new(roster, messages, trafficService)
 local spectators = require("arcade.spectators").new(roster, messages)
 local trafficNote = require("cnr.traffic").note
@@ -28,7 +28,6 @@ local log, send, notify = messages.log, messages.send, messages.notify
 local reply, refuse, broadcast = messages.reply, messages.refuse, messages.broadcast
 local dataDir = pluginDir .. "data/"
 local stationsDir = dataDir .. "stations/"
-local leaderboardPath = dataDir .. "leaderboard.json"
 local buildPath = dataDir .. "build.json"
 local settings = require("arcade.settings").new(pluginDir .. "config.json", config.declaration, log)
 local playerColors = require("arcade.playerColors").new(dataDir .. "colors.json", roster, messages)
@@ -48,21 +47,19 @@ math.randomseed(os.time())
 
 local function now() return serverClock:GetCurrent() end
 
-local boardSubs = roster:perPlayer("boardSubs", "early")
-local leaderboardLocked = false
-
 local function useConfig(values)
   cfg = values
   game.current.cfg = values
 end
 
 local function loadLeaderboard()
+  local leaderboardPath = game.leaderboardPath
   local decoded, corrupt = store.decode(leaderboardPath)
   if corrupt or not leaderboard.validShape(decoded) then
     local aside = leaderboardPath .. ".corrupt-" .. os.time()
     local moved, err = FS.Rename(leaderboardPath, aside)
     if moved == false then
-      leaderboardLocked = true
+      game.leaderboardLocked = true
       log(string.format("leaderboard.json was unreadable but could not be moved to %s (%s): runs are not saved until this is fixed", aside, tostring(err)))
     else
       log(string.format("leaderboard.json was unreadable, moved to %s; starting a fresh one", aside))
@@ -115,12 +112,6 @@ local function buildOpts()
     model = currentBuild.model, step = currentBuild.step, name = currentBuild.name,
     config = { format = 2, model = currentBuild.model, parts = currentBuild.parts, vars = currentBuild.vars },
   }
-end
-
-local function saveLeaderboard(run)
-  leaderboard.add(game.board, run)
-  if leaderboardLocked then return log("leaderboard not saved: the old file could not be moved aside") end
-  if not saveJson(leaderboardPath, game.board) then table.remove(game.board.runs) end
 end
 
 local function roundCarActive()
@@ -184,81 +175,22 @@ local function normalizeConfig(path)
   return (path:gsub("\\", "/"):gsub("^/", ""):lower())
 end
 
-local function anonymous(key)
-  local h = 5381
-  for i = 1, #key do h = (h * 33 + key:byte(i)) % 4294967296 end
-  return string.format("p%08x", h)
+local roundService = {}
+
+function roundService:finish(endPayload, audience, scheduleNext)
+  spectators:releaseAll()
+  local delay = scheduleNext and settings:get("autoNextRound") and cfg.autoNextDelaySeconds
+  if delay then endPayload.autoNextSeconds = delay end
+  send(audience, "cnr_roundEnd", endPayload)
+  cars:clearRound()
+  roster:clear("trafficOpen")
+  roster:clear("trafficVids")
+  cars:clearPublished()
+  if delay then nextRound:schedule(now() + delay) end
+  useConfig(settings:effective())
+  cars:setPublishing(false)
+  game:roundFinished()
 end
-
-local BOARD_TOP = 20
-local ROUNDS_DEFAULT, ROUNDS_STEP, ROUNDS_MAX = 30, 30, 300
-
-local function boardState(sub, viewerKey)
-  sub = type(sub) == "table" and sub or { map = game.mapName }
-  local f = {
-    map = sub.map ~= "all" and sub.map or nil,
-    mode = (sub.mode == "random" or sub.mode == "evolving") and sub.mode or nil,
-    traffic = (sub.traffic == "with" or sub.traffic == "runner" or sub.traffic == "without") and sub.traffic or nil,
-  }
-  local runners, mine = {}, nil
-  for rank, entry in ipairs(leaderboard.runners(game.board, f, math.huge)) do
-    if rank <= BOARD_TOP then
-      runners[rank] = entry
-    elseif entry.key == viewerKey then
-      mine = { rank = rank, player = entry.player, survivedSeconds = entry.survivedSeconds, model = entry.model, map = entry.map }
-      break
-    end
-  end
-  for _, e in ipairs(runners) do
-    if e.key == viewerKey then e.me = true end
-    e.key = nil
-  end
-  local cops = leaderboard.cops(game.board, f, BOARD_TOP, cfg.assistMinSightPercent)
-  for _, c in ipairs(cops) do
-    if c.key == viewerKey then c.me = true end
-    c.key = nil
-  end
-  local players = leaderboard.players(game.board, f, cfg.assistMinSightPercent)
-  for _, p in ipairs(players) do
-    if p.key == viewerKey then p.me = true end
-    p.key = anonymous(tostring(p.key))
-  end
-  local limit = sub.rounds or ROUNDS_DEFAULT
-  local rounds, total = leaderboard.rounds(game.board, f, limit)
-  for _, r in ipairs(rounds) do
-    r.playerKey = anonymous(tostring(r.playerKey))
-    for _, c in ipairs(r.cops) do c.key = anonymous(tostring(c.key)) end
-  end
-  return {
-    map = game.mapName, maps = leaderboard.maps(game.board), filter = sub.map or game.mapName, mode = f.mode or "all", traffic = f.traffic or "all",
-    runners = runners, cops = cops, players = players, mine = mine,
-    rounds = rounds, moreRounds = (total > #rounds and limit < ROUNDS_MAX) or nil,
-  }
-end
-
-local function sendBoard(pid)
-  local ok, state = pcall(boardState, boardSubs[pid], roster:key(pid))
-  if ok then send(pid, "cnr_boardState", state) else log("board update failed: " .. tostring(state)) end
-end
-
-local function pushBoard()
-  for pid in pairs(boardSubs) do sendBoard(pid) end
-end
-
-local lastRulesSignature
-local function pushRules(pid, onlyChanged)
-  local payload = rules.payload(cfg, traffic.perPlayer(cfg.trafficPerPlayer, traffic.maxCars(), 1))
-  local signature = panel.signature(payload)
-  if onlyChanged and signature == lastRulesSignature then return end
-  send(pid or -1, "cnr_rules", payload)
-  lastRulesSignature = signature
-end
-
-game = require("cnr.game").new({
-  messages = messages, roster = roster, cars = cars, spectators = spectators,
-  traffic = trafficService, playerColors = playerColors, settings = settings, nextRound = nextRound,
-  now = now, useConfig = useConfig, pushRules = pushRules, saveLeaderboard = saveLeaderboard, pushBoard = pushBoard,
-})
 
 local function plannedRunner(players)
   local countsByName = {}
@@ -479,6 +411,14 @@ local function panelState()
   })
 end
 
+game = require("cnr.game").new({
+  messages = messages, roster = roster, cars = cars, spectators = spectators,
+  traffic = trafficService, playerColors = playerColors, settings = settings, round = roundService,
+  clock = { now = now, timer = MP.CreateTimer, unixTime = os.time },
+  panel = { push = function() panelService:push(panelState) end },
+  store = store, dataDir = dataDir,
+})
+
 local function panelBuild(pid, msg)
   local function answer(text, tone) send(pid, "cnr_panelReply", { text = text, tone = tone }) end
   if game.current:isActive() then return answer("Stop the round first", "warn") end
@@ -523,9 +463,7 @@ local function panelSettings(pid, values, id)
   if not keys then return answer(false, err) end
   reloadRound()
   answer(true, "Saved", keys)
-  pushRules()
-  panelService:push(panelState)
-  pushBoard()
+  game:settingsChanged(keys)
 end
 
 function cnrOnPanel(pid, data)
@@ -806,7 +744,7 @@ function cnrOnPlayerJoin(pid)
   local current = game.current
   send(pid, "cnr_mode", { version = VERSION, startGrid = true })
   playerColors:sendMine(pid)
-  pushRules(pid)
+  game:pushRules(pid)
   panelService:pushLobby(lobbyState, pid)
   requestStations(pid)
   game:applyEffects(current:playerJoined(now(), pid, MP.GetPlayerName(pid)))
@@ -981,23 +919,7 @@ end
 function cnrOnBoard(pid, data)
   local ok, msg = pcall(Util.JsonDecode, data)
   if not ok or type(msg) ~= "table" then return end
-  if msg.action == "close" then
-    boardSubs[pid] = nil
-  elseif msg.action == "open" or msg.action == "filter" then
-    local sub = boardSubs[pid] or { map = game.mapName }
-    if msg.action == "filter" then
-      sub = {
-        map = type(msg.map) == "string" and msg.map or sub.map, mode = type(msg.mode) == "string" and msg.mode or nil,
-        traffic = type(msg.traffic) == "string" and msg.traffic or nil, rounds = sub.rounds,
-      }
-    end
-    boardSubs[pid] = sub
-    sendBoard(pid)
-  elseif msg.action == "more" and boardSubs[pid] then
-    local sub = boardSubs[pid]
-    sub.rounds = math.min((sub.rounds or ROUNDS_DEFAULT) + ROUNDS_STEP, ROUNDS_MAX)
-    sendBoard(pid)
-  end
+  game:updateBoard(pid, msg)
 end
 
 function cnrOnSight(pid, data)
@@ -1054,7 +976,7 @@ local startScheduled = autoRounds.register(panelService, {
   a = nextRound,
   pushRules = function()
     if not game.current:isActive() then useConfig(settings:effective()) end
-    pushRules()
+    game:rulesChanged()
   end,
   startNext = startNext,
   reloadRound = reloadRound,
@@ -1119,6 +1041,6 @@ MP.CreateEventTimer("cnr_tick", 250)
 
 send(-1, "cnr_roundEnd", { reason = "cancelled" })
 send(-1, "cnr_mode", { version = VERSION, startGrid = true })
-pushRules()
+game:rulesChanged()
 panelService:pushLobby(lobbyState)
 log("Cops and Robbers " .. VERSION .. " loaded on " .. game.mapName .. " (" .. pluginDir .. ")")

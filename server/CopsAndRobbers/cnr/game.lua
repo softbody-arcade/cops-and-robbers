@@ -1,7 +1,8 @@
 local colors = require("arcade.colors")
-local traffic = require("arcade.traffic")
 local leaderboard = require("cnr.leaderboard")
+local panel = require("cnr.panel")
 local round = require("cnr.round")
+local rules = require("cnr.rules")
 local sky = require("cnr.sky")
 local strikeSchedule = require("cnr.strikeSchedule")
 local M = {}
@@ -9,15 +10,136 @@ local M = {}
 local PARTS_PLACING_SECONDS, PARTS_SETTLE_SECONDS = 10, 3
 local AI_SETUP_WAIT_SECONDS = 15
 
+local function anonymous(key)
+  local h = 5381
+  for i = 1, #key do h = (h * 33 + key:byte(i)) % 4294967296 end
+  return string.format("p%08x", h)
+end
+
+local BOARD_TOP = 20
+local ROUNDS_DEFAULT, ROUNDS_STEP, ROUNDS_MAX = 30, 30, 300
+
 function M.new(ctx)
   local game = {
+    leaderboardPath = ctx.dataDir .. "leaderboard.json",
     stations = {}, partsBaseline = {}, missingCount = {}, runCounts = {},
     aiCars = {}, aiSlotSerial = {}, aiVidSerial = {}, previousRoundSerial = 0, aiSpawnsLeft = 0,
     connectionSerial = ctx.roster:perPlayer("connectionSerial", "early"),
   }
   local cars, roster, spectators = ctx.cars, ctx.roster, ctx.spectators
   local send, log = ctx.messages.send, ctx.messages.log
-  local now = ctx.now
+  local now = ctx.clock.now
+  local sharedRulesSignature
+  local boardSubs = roster:perPlayer("boardSubs", "early")
+
+  local function saveLeaderboard(run)
+    leaderboard.add(game.board, run)
+    if game.leaderboardLocked then return log("leaderboard not saved: the old file could not be moved aside") end
+    local ok, err = ctx.store.writeJson(game.leaderboardPath, game.board)
+    if not ok then
+      log("could not save leaderboard.json: " .. err)
+      table.remove(game.board.runs)
+    end
+  end
+
+  local function boardState(sub, viewerKey)
+    sub = type(sub) == "table" and sub or { map = game.mapName }
+    local f = {
+      map = sub.map ~= "all" and sub.map or nil,
+      mode = (sub.mode == "random" or sub.mode == "evolving") and sub.mode or nil,
+      traffic = (sub.traffic == "with" or sub.traffic == "runner" or sub.traffic == "without") and sub.traffic or nil,
+    }
+    local runners, mine = {}, nil
+    for rank, entry in ipairs(leaderboard.runners(game.board, f, math.huge)) do
+      if rank <= BOARD_TOP then
+        runners[rank] = entry
+      elseif entry.key == viewerKey then
+        mine = { rank = rank, player = entry.player, survivedSeconds = entry.survivedSeconds, model = entry.model, map = entry.map }
+        break
+      end
+    end
+    for _, e in ipairs(runners) do
+      if e.key == viewerKey then e.me = true end
+      e.key = nil
+    end
+    local cops = leaderboard.cops(game.board, f, BOARD_TOP, game.current.cfg.assistMinSightPercent)
+    for _, c in ipairs(cops) do
+      if c.key == viewerKey then c.me = true end
+      c.key = nil
+    end
+    local players = leaderboard.players(game.board, f, game.current.cfg.assistMinSightPercent)
+    for _, p in ipairs(players) do
+      if p.key == viewerKey then p.me = true end
+      p.key = anonymous(tostring(p.key))
+    end
+    local limit = sub.rounds or ROUNDS_DEFAULT
+    local rounds, total = leaderboard.rounds(game.board, f, limit)
+    for _, r in ipairs(rounds) do
+      r.playerKey = anonymous(tostring(r.playerKey))
+      for _, c in ipairs(r.cops) do c.key = anonymous(tostring(c.key)) end
+    end
+    return {
+      map = game.mapName, maps = leaderboard.maps(game.board), filter = sub.map or game.mapName, mode = f.mode or "all", traffic = f.traffic or "all",
+      runners = runners, cops = cops, players = players, mine = mine,
+      rounds = rounds, moreRounds = (total > #rounds and limit < ROUNDS_MAX) or nil,
+    }
+  end
+
+  local function sendBoard(pid)
+    local ok, state = pcall(boardState, boardSubs[pid], roster:key(pid))
+    if ok then send(pid, "cnr_boardState", state) else log("board update failed: " .. tostring(state)) end
+  end
+
+  local function pushBoard()
+    for pid in pairs(boardSubs) do sendBoard(pid) end
+  end
+
+  function game:updateBoard(pid, msg)
+    if msg.action == "close" then
+      boardSubs[pid] = nil
+    elseif msg.action == "open" or msg.action == "filter" then
+      local sub = boardSubs[pid] or { map = game.mapName }
+      if msg.action == "filter" then
+        sub = {
+          map = type(msg.map) == "string" and msg.map or sub.map, mode = type(msg.mode) == "string" and msg.mode or nil,
+          traffic = type(msg.traffic) == "string" and msg.traffic or nil, rounds = sub.rounds,
+        }
+      end
+      boardSubs[pid] = sub
+      sendBoard(pid)
+    elseif msg.action == "more" and boardSubs[pid] then
+      local sub = boardSubs[pid]
+      sub.rounds = math.min((sub.rounds or ROUNDS_DEFAULT) + ROUNDS_STEP, ROUNDS_MAX)
+      sendBoard(pid)
+    end
+  end
+
+  function game:pushRules(pid, onlyChanged)
+    local cfg = self.current.cfg
+    local payload = rules.payload(cfg, ctx.traffic:allowance(cfg, 1, true))
+    local signature = panel.signature(payload)
+    if onlyChanged and signature == sharedRulesSignature then return end
+    send(pid or -1, "cnr_rules", payload)
+    if not pid then
+      sharedRulesSignature = signature
+    elseif signature ~= sharedRulesSignature then
+      sharedRulesSignature = nil
+    end
+  end
+
+  function game:roundFinished()
+    self:pushRules(nil, true)
+  end
+
+  function game:rulesChanged()
+    self:pushRules()
+  end
+
+  function game:settingsChanged(keys)
+    self:rulesChanged()
+    ctx.panel:push()
+    pushBoard()
+  end
 
   function game:placing(pid)
     local entry = self.partsBaseline[pid] or {}
@@ -130,7 +252,7 @@ function M.new(ctx)
           sky = sky.payload(current.sky, current.cfg, current:clockSeconds(now())),
         })
         if delivered == false then
-          log(string.format("setup failed for %s: %s", MP.GetPlayerName(e.pid) or tostring(e.pid), tostring(reason)))
+          log(string.format("setup failed for %s: %s", roster:name(e.pid) or tostring(e.pid), tostring(reason)))
           local removedVid = cars:confirmedVid(e.pid)
           cars:removeParticipant(e.pid)
           self:applyEffects(current:setupFailed(now(), e.pid))
@@ -138,7 +260,7 @@ function M.new(ctx)
           if removedVid then cars:publish() end
         else
           self:placing(e.pid)
-          log(string.format("setup sent to %s: %s, %s", MP.GetPlayerName(e.pid) or tostring(e.pid), e.role, tostring(e.phase)))
+          log(string.format("setup sent to %s: %s, %s", roster:name(e.pid) or tostring(e.pid), e.role, tostring(e.phase)))
           if e.role == "runner" and not current.test then
             local key = roster:key(e.pid)
             self.lastRunnerKey = key
@@ -154,14 +276,14 @@ function M.new(ctx)
           sky = sky.payload(current.sky, current.cfg, current:clockSeconds(now())),
         }, e.phase)
       elseif e.kind == "setupAI" then
-        for pid in pairs(MP.GetPlayers() or {}) do self:parkBystander(pid) end
+        for pid in pairs(roster:players()) do self:parkBystander(pid) end
         local list = {}
         for _, a in ipairs(e.ai) do
           list[#list + 1] = { id = a.id, role = a.role, index = current.startGrid and a.index or #list + 1, startPose = a.startPose, name = a.name, color = colors.parseHex(a.colorHex) }
         end
         if e.aiOnly then cars:rememberPreRound(e.pid) end
         self.aiSpawnsLeft = 0
-        local capacity = traffic.maxCars()
+        local capacity = ctx.traffic:maxCars()
         local payload = {
           model = current.vehicle.model, config = current.vehicle.config, ai = list,
           runnerId = current.runnerId, copSpawnMin = current.cfg.copSpawnMinMeters, copSpawnMax = current.cfg.copSpawnMaxMeters,
@@ -172,7 +294,7 @@ function M.new(ctx)
         self:dispatchAISetup()
       elseif e.kind == "countdown" then
         if sky.hasThunderstorm(current.sky) then
-          current.sky.lightningTimer = MP.CreateTimer()
+          current.sky.lightningTimer = ctx.clock.timer()
           current.sky.strikeCursor = strikeSchedule.new(current.sky.lightningSeed)
           self:announceLightning(self:carFor(current.runnerId))
         end
@@ -199,29 +321,20 @@ function M.new(ctx)
       elseif e.kind == "state" then
         send(e.pid, "cnr_state", { resetAllowed = e.resetAllowed, resetHint = e.resetHint, catchProgress = e.catchProgress })
       elseif e.kind == "roundEnd" then
-        spectators:releaseAll()
-        local autoNext = ctx.settings:get("autoNextRound") and e.reason ~= "cancelled" and not e.to
-        send(e.to or -1, "cnr_roundEnd", {
+        local hasResult = not current.test and not e.to and e.reason ~= "cancelled"
+        ctx.round:finish({
           runnerId = e.runnerId, runnerName = e.runnerName, survivedSeconds = e.survivedSeconds,
           reason = e.reason, explode = e.explode, catchers = e.catchers, message = e.message,
-          autoNextSeconds = autoNext and current.cfg.autoNextDelaySeconds or nil,
-        })
-        cars:setPublishing(false)
-        cars:clearRound()
-        roster:clear("trafficOpen")
-        roster:clear("trafficVids")
+        }, e.to or -1, hasResult)
         self.aiSpawnsLeft = 0
         self.pendingAISetup = nil
-        cars:clearPublished()
         self.partsBaseline = {}
         self.missingCount = {}
-        if not current.test and not e.to and e.reason ~= "cancelled" then
+        if hasResult then
           self.lastResult = { runner = e.runnerName, seconds = e.survivedSeconds, reason = e.reason }
         end
         self.aiCars, self.aiSlotSerial, self.aiVidSerial = {}, {}, {}
-        if autoNext then ctx.nextRound:schedule(now() + current.cfg.autoNextDelaySeconds) end
-        ctx.useConfig(ctx.settings:effective())
-        ctx.pushRules(nil, true)
+        self.previousRoundSerial = 0
       elseif e.kind == "live" then
         for pid in pairs(current.players) do
           if pid ~= current.runnerId and not round.isAI(pid) then
@@ -271,7 +384,7 @@ function M.new(ctx)
         end
       elseif e.kind == "record" then
         local run = e.run
-        local endedAt = os.time()
+        local endedAt = ctx.clock.unixTime()
         run.map = self.mapName
         run.releasedAt = endedAt - math.floor(run.survivedSeconds + 0.5)
         run.endedAt = endedAt
@@ -279,13 +392,13 @@ function M.new(ctx)
         run.cops, run.copNames, run.copSightSeconds = {}, {}, {}
         for i, pid in ipairs(run.copIds or {}) do
           run.cops[i] = roster:key(pid)
-          run.copNames[i] = MP.GetPlayerName(pid) or tostring(pid)
+          run.copNames[i] = roster:name(pid) or tostring(pid)
           run.copSightSeconds[i] = math.floor((run.copSight[i] or 0) * 10 + 0.5) / 10
         end
         run.copIds, run.copSight = nil, nil
         if type(run.catchers) == "table" and #run.catchers > 0 then
           local byName = {}
-          for pid, name in pairs(MP.GetPlayers() or {}) do byName[name] = pid end
+          for pid, name in pairs(roster:players()) do byName[name] = pid end
           run.catcherKeys = {}
           for i, name in ipairs(run.catchers) do
             local pid = byName[name]
@@ -294,10 +407,10 @@ function M.new(ctx)
         end
         if self.currentRunnerKey then self.runCounts[self.currentRunnerKey] = (self.runCounts[self.currentRunnerKey] or 0) + 1 end
         self.plannedRunnerKey = nil
-        ctx.saveLeaderboard(run)
-        ctx.pushBoard()
+        saveLeaderboard(run)
+        pushBoard()
         local top = leaderboard.runners(self.board, self.mapName, 3)
-        for pid in pairs(MP.GetPlayers() or {}) do
+        for pid in pairs(roster:players()) do
           local viewerKey = roster:key(pid)
           local rows = {}
           for i, e in ipairs(top) do
