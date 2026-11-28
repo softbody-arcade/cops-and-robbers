@@ -85,27 +85,64 @@ test("copy reports a destination open failure and preserves the source", functio
   assertEq(store.read(src), "[1")
 end)
 
-for _, case in ipairs({
-  { step = "write", file = function(real) return { write = function() return nil, "No space left on device" end, close = function() return real:close() end } end },
-  { step = "close", file = function(real) return { write = function(_, bytes) return real:write(bytes) end, close = function() real:close() return nil, "No space left on device" end } end },
-}) do
-  test("copy removes a partial destination when the " .. case.step .. " fails", function()
+local function failingFile(step)
+  return function(real)
+    if step == "write" then
+      return { write = function() return nil, "No space left on device" end, close = function() return real:close() end }
+    end
+    return { write = function(_, bytes) return real:write(bytes) end, close = function() real:close() return nil, "No space left on device" end }
+  end
+end
+
+local function withOpen(target, wrap, fn)
+  local realOpen = io.open
+  io.open = function(path, mode)
+    if path == target then return wrap(realOpen(path, mode)) end
+    return realOpen(path, mode)
+  end
+  local ok, a, b = pcall(fn)
+  io.open = realOpen
+  assert(ok, a)
+  return a, b
+end
+
+for _, step in ipairs({ "write", "close" }) do
+  test("copy removes only its own temporary file when the " .. step .. " fails", function()
     local src = fixture("[1")
     local dst = fixture(nil)
-    local realOpen = io.open
-    io.open = function(path, mode)
-      if path == dst then return case.file(realOpen(path, mode)) end
-      return realOpen(path, mode)
-    end
-    local ran, copied, copyErr = pcall(store.copy, src, dst)
-    io.open = realOpen
-    assertEq(ran, true)
+    local copied, err = withOpen(dst .. ".tmp", failingFile(step), function() return store.copy(src, dst) end)
     assertEq(copied, nil)
-    assertEq(copyErr, "No space left on device")
+    assertEq(err, "No space left on device")
     assertEq(FS.Exists(dst), false)
+    assertEq(FS.Exists(dst .. ".tmp"), false)
     assertEq(store.read(src), "[1")
   end)
 end
+
+test("copy refuses an existing destination and leaves it untouched", function()
+  local src, dst = fixture("[1"), fixture("keep")
+  local copied, err = store.copy(src, dst)
+  assertEq(copied, nil)
+  assertEq(type(err), "string")
+  assertEq(store.read(dst), "keep")
+  assertEq(FS.Exists(dst .. ".tmp"), false)
+end)
+
+test("copy does not replace a destination that appears while it writes", function()
+  local src, dst = fixture("[1"), fixture(nil)
+  local copied, err = withOpen(dst .. ".tmp", function(real)
+    return { write = function(_, bytes) return real:write(bytes) end, close = function()
+      local other = assert(io.open(dst, "wb"))
+      other:write("other")
+      other:close()
+      return real:close()
+    end }
+  end, function() return store.copy(src, dst) end)
+  assertEq(copied, nil)
+  assertEq(type(err), "string")
+  assertEq(store.read(dst), "other")
+  assertEq(FS.Exists(dst .. ".tmp"), false)
+end)
 
 FS, Util = originalFS, originalUtil
 for _, path in ipairs(paths) do os.remove(path) end

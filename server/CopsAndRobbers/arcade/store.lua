@@ -14,13 +14,24 @@ function store.copy(src, dst)
   if src == dst then return nil, "source and destination are the same" end
   local bytes, readErr = store.read(src)
   if not bytes then return nil, readErr end
-  local f, err = io.open(dst, "wb")
+  if FS.Exists(dst) then return nil, "destination exists" end
+  local tmp = dst .. ".tmp"
+  local f, err = io.open(tmp, "wb")
   if not f then return nil, err end
   local written, writeErr = f:write(bytes)
   local closed, closeErr = f:close()
   if not written or not closed then
-    os.remove(dst)
+    os.remove(tmp)
     return nil, written and closeErr or writeErr
+  end
+  if FS.Exists(dst) then
+    os.remove(tmp)
+    return nil, "destination exists"
+  end
+  local moved, moveErr = FS.Rename(tmp, dst)
+  if not moved then
+    os.remove(tmp)
+    return nil, moveErr or "rename failed"
   end
   return true
 end
