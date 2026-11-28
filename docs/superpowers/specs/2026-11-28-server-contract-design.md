@@ -111,6 +111,11 @@ After this step:
 - **The automatic-next setting is read live** when the round ends, so `auto off` during a chase still prevents that round's next countdown.
 - Panel saves and reloads stay locked during a round, as now.
 
+Fixes of obvious bugs that this refactor touches are also allowed. The maintainer counts them as in scope, and each is tested and listed in the PR's release notes:
+- a failed `auto off` no longer cancels a pending countdown;
+- a build reset no longer reports success after its backup failed;
+- when a confirmed cop's re-setup fails and the round goes on, the round-car list drops their car at once, instead of at the next confirm, delete or disconnect.
+
 The golden traces don't edit `config.json` mid-round, so they stay identical. A regression test shows the edit surviving a mid-round toggle, the running round keeping its rules, and the next round using the edit. The PR and release notes mention both changes.
 
 ### Ordering

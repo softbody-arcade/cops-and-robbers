@@ -197,6 +197,7 @@
   - `c:replacementAllowed(pid) -> bool`: confirmed, and no active car.
 - Identity:
   - `c:claim(pid, vid) -> "permit" | "replacement" | nil` takes a spawn the game marked `roundCar`. It uses up the permission if there is one, otherwise the replacement right. It records the provisional car, and placement stays pending. It returns which right it used, or `nil` when neither applies.
+  - `c:confirmed(pid) -> bool`, and `claim`'s second return value (whether it published at once), added in Task 4.
   - `c:confirm(pid, vid) -> replaced`, for `cnr_myVehicle`, sets confirmed and clears pending, permission and pre-round exclusions. It returns true when it changed an already confirmed car's ID; the game then drops that car's sight, as today (`tests/test_main.lua:3639`).
   - `c:activeVid(pid)`, `c:confirmedVid(pid)`, `c:vidFor(pid)` and `c:firstVid(pid)`.
   - `c:setActive(pid, vid) -> replaced` returns true when a confirmed car's ID changed. The caller reports that to the game.
