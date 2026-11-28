@@ -9,8 +9,16 @@ local env = serverBoot.boot({ files = {
 } })
 env.ids = { [1] = { beammp = 42 } }
 
+local logged = {}
+local function loggedHas(text)
+  for _, line in ipairs(logged) do if line:find(text, 1, true) then return true end end
+  return false
+end
+
 local function loadColors(file)
-  local c = playerColors.new(env.dir .. file, roster.new(), messages.new({ prefix = "[CnR] " }))
+  local m = messages.new({ prefix = "[CnR] " })
+  m.log = function(text) logged[#logged + 1] = text end
+  local c = playerColors.new(env.dir .. file, roster.new(), m)
   c:load()
   return c
 end
@@ -71,7 +79,8 @@ for _, method in ipairs({ "set", "clear" }) do
     FS.Rename = rename
     assert(called, ok)
     assertEq(ok, false)
-    assertEq(err, "denied")
+    assertEq(err, "Could not save " .. method .. "-failed.json")
+    assertEq(loggedHas("could not save " .. method .. "-failed.json: denied"), true)
     assertEq(c:get(1).hex, "#ff0000")
     assertEq(loadColors(method .. "-failed.json"):get(1).hex, "#ff0000")
   end)

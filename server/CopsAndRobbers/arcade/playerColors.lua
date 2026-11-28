@@ -6,13 +6,17 @@ local playerColors = {}
 function playerColors.new(path, r, m)
   local c = {}
   local entries = {}
+  local basename = path:match("[^/\\]+$")
 
   local function save(pid, hex)
     local updated = {}
     for key, value in pairs(entries) do updated[key] = value end
     updated[r:key(pid)] = hex
     local ok, err = store.writeJson(path, updated)
-    if not ok then return false, err end
+    if not ok then
+      m.log("could not save " .. basename .. ": " .. tostring(err))
+      return false, "Could not save " .. basename
+    end
     entries = updated
     return true
   end

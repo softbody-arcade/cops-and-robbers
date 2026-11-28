@@ -789,6 +789,7 @@ function M.new(ctx)
           local restored, restoreErr = os.rename(aside, buildPath)
           if not restored then
             log(string.format("could not restore build.json (%s), original kept at %s", tostring(restoreErr), aside))
+            err = err .. "; the previous build is kept as " .. aside:match("[^/\\]+$")
           end
         end
         return answer(err, "warn")

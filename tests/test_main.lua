@@ -4189,11 +4189,13 @@ for _, hex in ipairs({ "#00ff00", "" }) do
   test("a colour that can't be saved isn't applied (" .. hex .. ")", function()
     local env = boot()
     env.call("cnr_color", 1, '{"hex":"#ff0000"}')
-    denyRenameFrom(env.dir .. "data/colors.json.tmp")
+    local tmp = env.dir .. "data/colors.json.tmp"
+    denyRenameFrom(tmp, tmp .. ": rename denied")
     env.call("cnr_color", 1, encode({ hex = hex }))
     local mine = decodeJson(env.lastSent("cnr_myColor").data)
-    assertEq(mine.error, "rename denied")
+    assertEq(mine.error, "Could not save colors.json")
     assertEq(mine.hex, "#ff0000")
+    assertEq(env.logHas("could not save colors.json: " .. tmp .. ": rename denied"), true)
     env.cleanup()
   end)
 end
@@ -4445,7 +4447,7 @@ test("a temporary leaderboard read error at startup cannot replace earlier runs"
   assertEq(saved, bytes)
 end)
 
-test("a failed build restore keeps the backup path in the server log", function()
+test("a failed build restore names the kept backup and logs its path", function()
   local env = boot({ files = { ["data/build.json"] = oldBuildBytes } })
   local path = env.dir .. "data/build.json"
   denyRenameFrom(path .. ".tmp", path .. ".tmp: rename denied")
@@ -4460,7 +4462,8 @@ test("a failed build restore keeps the backup path in the server log", function(
   local ok, err = pcall(newBuild, env)
   os.rename = rename
   assert(ok, err)
-  assertEq(decodeJson(env.lastSent("cnr_panelReply").data).text, "Could not save build.json")
+  assertEq(decodeJson(env.lastSent("cnr_panelReply").data).text,
+    "Could not save build.json; the previous build is kept as " .. backup:match("[^/\\]+$"))
   assertEq(env.logHas(path .. ".tmp: rename denied"), true)
   assertEq(env.logHas(backup .. ": restore denied"), true)
   assertEq(readFileAt(backup), oldBuildBytes)
