@@ -37,7 +37,7 @@
 
 ### Before Task 1 (controller)
 
-- [ ] Step 1 (#71) and the #84 batch are released (decision on #72). Check `gh release list -R softbody-arcade/cops-and-robbers -L 1`: its tag is newer than v2.15.1 and contains PR #85. If it isn't, stop and ask the maintainer.
+- [ ] Step 1 (#71) and the #84 batch are released (decision on #72). Run `git fetch --tags origin`, take the newest release tag from `gh release list -R softbody-arcade/cops-and-robbers -L 1`, and check that `git merge-base --is-ancestor aaffd27 <tag>` succeeds (`aaffd27` is PR #85's merge). If it doesn't, stop and ask the maintainer.
 
 ### Task 1: Vectors, traffic slots and the sit-out snapshot
 
@@ -54,12 +54,14 @@
 - Produces: `t:allowance(cfg, reserved, eligible)`; the unused `pid` is dropped.
 - Produces: `r:sitOutSnapshot() -> { [pid] = true }`, a fresh copy.
 - Produces: `r:players() -> { [pid] = name }`, wrapping `MP.GetPlayers() or {}`, and `r:name(pid) -> string | nil`, wrapping `MP.GetPlayerName`. Later tasks use these instead of engine calls in game code.
+- Produces: `r:playingList(players) -> { pid, … }`: the pids `r:playing` counts, sorted ascending, as a dense list.
 
 - [ ] **Step 1: Failing tests.**
   - `perPlayer(5, 6, 3) == 3`, `perPlayer(5, 6, 1) == 5`, `perPlayer(5, nil, 3) == 5`, and `perPlayer(5, 2, 3) == 0`. Update today's boolean fixtures: `false` → `1`, `true` → `3`.
   - `t:allowance({ trafficPerPlayer = 5 }, 1, false) == 0`.
   - `traffic.whole("2.7") == 2` and `traffic.whole(-1) == 0`.
   - After `r:setSitOut(2, true)`, `r:sitOutSnapshot()` is `{ [2] = true }`, and changing the returned table doesn't change `r:sittingOut(2)`.
+  - `r:playingList({ [7] = "Kim" })` is `{ 7 }`, so `#` counts it.
 - [ ] **Step 2: Run** `make test` → those tests FAIL.
 - [ ] **Step 3: Implement.** Callers in `main.lua`:
   - `openTraffic` passes `current.test and pid == current.issuerId and 3 or 1`;
@@ -75,15 +77,17 @@
 - Test: `tests/test_arcade_store.lua`, `tests/test_arcade_settings.lua`, `tests/test_config.lua`, `tests/test_arcade_player_colors.lua`, `tests/test_main.lua`
 
 **Interfaces:**
-- Produces: `store.write(path, content) -> true | nil, err`. It keeps today's file-system call order, so the traces still record `fs remove` then `fs write`:
-  1. Write `<path>.tmp`, checking `open`, `write` and `close`. A failure removes only the `.tmp` and returns.
-  2. Read the original's bytes, if it exists.
+- Produces: `store.write(path, content) -> true | nil, err`. It keeps today's `FS` call order, so the traces still record `fs remove` then `fs write`:
+  1. Write `<path>.tmp`, checking `open`, `write` and `close`. A failure removes only the `.tmp` and returns `nil, err`.
+  2. If `path` exists, copy it to `<path>.bak` with a checked binary read and write. These are plain `io` and `os` calls, not `FS`, so the recorder doesn't see them. A failure removes the `.tmp` and returns `nil, err`, before anything is removed.
   3. `FS.Remove(path)`.
   4. `FS.Rename(tmp, path)`.
-  5. If the rename fails: write the saved original bytes back to `path` with a checked binary write, remove the `.tmp`, and return `nil, err`. If that restore also fails, keep the `.tmp`, and return an error naming both files.
+  5. On success, `os.remove(<path>.bak)` and return `true`.
+  6. If the rename fails: copy `<path>.bak` back to `path`, remove the `.tmp`, remove the `.bak` and return `nil, err`. If that restore fails, leave `<path>.bak` in place and return an error naming it, so the old bytes are always on disk.
 - Callers handle the error:
   - **Settings, build, stations, leaderboard:** log `could not save <basename>: <err>` and keep their in-memory state as it was before the change.
-  - **Player colours:** `c:set` only changes the in-memory colour after a successful save; on failure it returns `false, err`, and `sendMine` reports the error, as today's invalid-colour path does.
+  - **Player colours:** `c:set` and `c:clear` change the in-memory entries only after a successful save. On failure they return `false, err`, and the `cnr_color` handler passes the error to `sendMine`, as today's invalid-colour path does, also for a clear.
+  - **Build replacement and reset:** `backupBuild` moves `build.json` aside before the new build is saved (`main.lua:831`). If the save then fails, the aside file is renamed back to `build.json`, the in-memory build stays the old one, and the panel replies with the error.
 - Produces: the settings service `s = settings.new(path, decl, log)`:
   - `s:load() -> cfg, warnings, raw`, as today, and kept inside `s`;
   - `s:effective() -> cfg`, the live settings;
@@ -129,7 +133,9 @@
     - a `cnr_panelReply` with `ok = false` and `id = 7`;
     - the original bytes on disk;
     - the panel's `settings.headStartSeconds` unchanged.
-  - `"a colour that can't be saved isn't applied"`.
+  - `"a colour that can't be saved isn't applied"`: for both a set and a clear of a saved colour, the player's `cnr_myColor` reply carries the error, and the old colour stays.
+  - `"a new build that can't be saved keeps the old build"`: with an existing `build.json`, make the save fail. `build.json` keeps its bytes, the panel reply carries the error, and the panel still shows the old build.
+  - In `tests/test_arcade_store.lua`: `"a failed rename and a failed restore leave the original in <path>.bak"`, and `"an unreadable original stops the save before anything is removed"`.
 - [ ] **Step 4: Run** `make test` → the new tests FAIL.
 - [ ] **Step 5: Implement.** `main.lua`'s `readSettings`, `panelSettings` (now `settings:apply`) and the automatic-rounds adapter keep their behaviour otherwise; Task 3 rewires the toggle.
 - [ ] **Step 6: Run** `make test` → PASS, and the golden gate is clean.
@@ -151,7 +157,7 @@
   - **Panel `auto` and `settings.autoNextRound`:** always live, `settings:get("autoNextRound")`. `cnr.panel.snapshot` takes them as a separate `autoNextRound` input.
   - **Other panel settings:** `cfg`.
   - **Scheduling at round end:** live `autoNextRound`, and the snapshot's `autoNextDelaySeconds`.
-  - **`cnr_rules`:** goes out on join and on the toggle unconditionally, as today. At round end it is sent to everyone only when the payload differs from the last one sent; keep its signature.
+  - **`cnr_rules`:** goes out on join, on the toggle and on `reload` unconditionally, as today and at today's position (before the reply, before `cnr_autoNext`). At round end it is sent to everyone only when the payload differs from the last one sent; keep its signature.
 
 - [ ] **Step 1: Failing tests** in `tests/test_main.lua`:
   - `"a disk edit survives a mid-round auto toggle and applies from the next round"`:
@@ -182,8 +188,8 @@
 - Produces: `cars.new(roster, messages, traffic) -> c`. It owns today's `activeVid`, `registeredRoundCar`, `preRoundVehicles`, `lastRoundCars`, and the split of `allowRoundSpawn`. Operations:
   - `c:setup(pid, payload) -> delivered, reason` sends `cnr_roundSetup` with the game's payload. When delivered, it grants the one-use permission and marks placement pending.
   - `c:requestPick(pid, payload)` sends `cnr_pickVehicle`.
-  - `c:rebuild(targets, payload) -> { [pid] = delivered }` sends `cnr_rebuild` to each target and marks each delivered target pending a rebuild acknowledgement.
-  - `c:acknowledgeRebuild(pid)` clears that player's pending rebuild. The game's rebuild ID decides whether the report counts.
+  - `c:rebuild(targets, payload, id) -> { [pid] = delivered }` sends `cnr_rebuild` to each target and marks each delivered target pending rebuild `id`.
+  - `c:acknowledgeRebuild(pid, id) -> bool` clears that player's pending rebuild only when `id` matches, and returns whether it did.
   - `c:pendingRebuild(pid) -> bool`.
 - Permissions:
   - `c:permitted(pid) -> bool`;
@@ -191,13 +197,16 @@
   - `c:replacementAllowed(pid) -> bool`: confirmed, and no active car.
 - Identity:
   - `c:claim(pid, vid) -> "permit" | "replacement" | nil` takes a spawn the game marked `roundCar`. It uses up the permission if there is one, otherwise the replacement right. It records the provisional car, and placement stays pending. It returns which right it used, or `nil` when neither applies.
-  - `c:confirm(pid, vid)`, for `cnr_myVehicle`, sets confirmed and clears pending, permission and pre-round exclusions.
+  - `c:confirm(pid, vid) -> replaced`, for `cnr_myVehicle`, sets confirmed and clears pending, permission and pre-round exclusions. It returns true when it changed an already confirmed car's ID; the game then drops that car's sight, as today (`tests/test_main.lua:3639`).
   - `c:activeVid(pid)`, `c:confirmedVid(pid)`, `c:vidFor(pid)` and `c:firstVid(pid)`.
   - `c:setActive(pid, vid) -> replaced` returns true when a confirmed car's ID changed. The caller reports that to the game.
   - `c:rememberPreRound(pid)`, `c:isPreRound(pid, vid)` and `c:forgetPreRound(pid, vid)`.
-  - `c:position(owner, vid) -> { pos, vel } | nil`, using `arcade.vec`.
+  - `c:position(owner, vid) -> { pos, vel } | nil`, using `arcade.vec`; `nil` unless both are valid, as `carFor` today.
+  - `c:rawPosition(owner, vid) -> raw | nil, err`, wrapping `MP.GetPositionRaw`, for callers that need the position without a velocity (the start-grid planner).
+  - `c:vehicles(owner) -> { [vid] = packet }`, wrapping `MP.GetPlayerVehicles` (the AI capacity check, the planner's single car, ownership checks).
+  - `c:removeParticipant(pid)`: the game calls it when it drops a player from the round without a disconnect (a failed setup, a removed cop). That player's key leaves the published list at the next `publish`.
 - Publication:
-  - `c:publish(pid?)` sends `cnr_roundCars` of every confirmed car, sorted and de-duplicated, with today's signature skip and a single-player send when `pid` is given. Only confirmed players have keys, so no participant list is needed.
+  - `c:publish(pid?)` sends `cnr_roundCars` of every confirmed car of a round participant, sorted and de-duplicated, with today's signature skip and a single-player send when `pid` is given. A player becomes a participant at their first `setup` and stops being one at `removeParticipant` or when they leave.
   - `c:setPublishing(on)` turns publishing on or off; the cycle turns it on at round start and off at finish. `publish` does nothing while off, as `pushRoundCars` does when no round is active.
   - `c:clearPublished()` does what `clearRoundCars` does.
   - `c:clearRound()` clears the per-round tables, as round end does today.
@@ -218,7 +227,9 @@
   - a reroll's new setup lets `claim` return `"permit"` while the old car is still confirmed;
   - `publish` sends nothing when the key list hasn't changed or publishing is off;
   - `clearPublished` sends `{keys = {}}` only after a non-empty publish;
-  - `rebuild` returns a delivery map, and `pendingRebuild` clears on `acknowledgeRebuild`.
+  - `rebuild` returns a delivery map; `acknowledgeRebuild` with an old ID returns false and keeps `pendingRebuild`, and the current ID clears it;
+  - `confirm` returns `replaced = true` only when a confirmed car's ID changes;
+  - a cop who confirmed a car and is then removed with `removeParticipant` (a failed reroll setup) is absent from the next `publish` and from the list a joining spectator gets.
 
   For `spectators`: an undelivered park isn't remembered, and `releaseAll` sends `on=false` once to each parked player.
 - [ ] **Step 2: Test (characterization)** in `tests/test_main.lua`: `"in driven practice a spawn before cnr_myVehicle doesn't release AI setup"`:
@@ -266,7 +277,7 @@
   - `ctx.clock` for the countdown's lightning timer;
   - `ctx.cars` and `ctx.spectators` for car and spectator work;
   - `ctx.traffic` for slots;
-  - `roundEnd` calls `ctx.round:finish(endPayload, audience, scheduleNext)` (below), then clears its own state: `pendingAISetup`, `aiSpawnsLeft`, `partsBaseline`, `missingCount`, `aiCars` and the serials, and `lastResult` as today. None of these clears sends anything.
+  - `roundEnd` calls `ctx.round:finish(endPayload, audience, scheduleNext)` (below), then clears its own state: `pendingAISetup`, `aiSpawnsLeft`, `partsBaseline`, `missingCount`, `aiCars` and the serials. None of these clears sends anything. `lastResult` is not cleared here: as today, it is set when a real round ends with a result (not practice, not cancelled, not issuer-only) and cleared only when a new round starts.
 - Produces: `ctx.round:finish(endPayload, audience, scheduleNext)`, implemented in `main.lua` for now. In order:
   1. `spectators:releaseAll()`;
   2. `cnr_roundEnd` with `endPayload` to `audience` (`-1` or the issuer);
@@ -276,7 +287,7 @@
   6. switch `cfg` back to live.
 
   It then calls the game's `roundFinished()`, which sends `cnr_rules` if it changed (Task 3's rule).
-- The `record` effect stays a separate game effect after it. The panel save calls the game's `settingsChanged(keys)`, which sends rules, calls `ctx.panel:push()`, then pushes its board: today's order after the reply.
+- The `record` effect stays a separate game effect after it. The panel save calls the game's `settingsChanged(keys)`, which sends rules, calls `ctx.panel:push()`, then pushes its board: today's order after the reply. The automatic-rounds toggle and `reload` call the game's `rulesChanged()`, which sends `cnr_rules` unconditionally, at the point `pushRules` sits today.
 
 - [ ] **Step 1: Test (characterization)**: `"a practice end unparks bystanders before the issuer's roundEnd"`. In a practice with a second player, `cnr_parkBystanderCars {on=false}` comes before `cnr_roundEnd` to the issuer in `env.sent`.
 - [ ] **Step 2: Replace** the branches one effect kind at a time, running `make test` and the golden gate after each.
@@ -292,19 +303,24 @@
 
 **Interfaces:**
 - Produces: the game module's static functions, read before anything is built:
-  - `cnr.game.manifest(version) -> { id = "cnr", name = "Cops and Robbers", version, minPlayers = 1, commands = { exact = { "go", "reroll", "end", "stop", "test runner", "test cop", "sky" }, prefixes = { "start " } }, clientEvents = { … every `cnr_*` client event Cops and Robbers registers today except `cnr_panel` … } }`;
+  - `cnr.game.manifest(version) -> { id = "cnr", name = "Cops and Robbers", version, minPlayers = 1, commands = { exact = { "go", "reroll", "end", "stop", "test runner", "test cop", "sky" }, prefixes = { "start " } }, actions = { "build", "apply", "station", "stations" }, clientEvents = { … every `cnr_*` client event Cops and Robbers registers today except `cnr_panel` … } }`. `actions` are the structured panel actions the game handles itself; the manager keeps `open`, `close`, `command` and `settings`;
   - `cnr.game.settingsDeclaration() -> cnr.config.GAME`.
 
   `cnr/panel.lua` keeps only the game's commands; the manager adds its own.
-- Produces: the construction order in `main.lua`:
-  1. messages, roster and store;
+- Produces: the construction order in `main.lua`. Each service is built before its first consumer:
+  1. messages, roster, store and the clock (`ctx.clock`, Task 6);
   2. `gameModule = require("cnr.game")`;
   3. `manifest = gameModule.manifest(VERSION)`;
   4. `settings = settings.new(path, settings.combine(settings.GLOBAL, gameModule.settingsDeclaration()), log)`;
-  5. cars, spectators, traffic, the panel service and autoRounds;
-  6. `cycle = cycle.new(services, manifest)`;
-  7. `game = gameModule.new(cycle:context())`;
-  8. `cycle:attach(game)`.
+  5. traffic (`traffic.new(roster, messages)`);
+  6. cars (`cars.new(roster, messages, traffic)`);
+  7. spectators and player colours;
+  8. the panel service and autoRounds;
+  9. `cycle = cycle.new(services, manifest)`;
+  10. `game = gameModule.new(cycle:context())`;
+  11. `cycle:attach(game)`.
+
+  The fake-game test in Task 11 uses the same order.
 - Produces: `cycle.new(services, manifest) -> y`:
   - `y:context() -> ctx` holds the services plus `ctx.round` and `ctx.panel`;
   - `y:attach(game)`;
@@ -312,7 +328,7 @@
   - `y:dispatch(hook, ...)` is the only place the manager calls a game instance. It calls `game[hook](game, ...)` and returns all its results; step 5 wraps it;
   - the panel allow-list is the manager's exact commands (`auto on`, `auto off`, `next`, `reload`) plus `manifest.commands.exact` and `manifest.commands.prefixes`. A prefix matches `^<prefix>%S`, as today's `start ` rule.
 - `ctx.round:start(request) -> true | nil, reason`, in order:
-  1. `prepared, reason = dispatch("canStart", request)`. On `nil`, return `nil, reason`: no snapshot, no state change, no `start`. The game has already sent any refusal.
+  1. `prepared, reason = dispatch("canStart", request)`. `prepared.participants` is a dense, ascending list of pids (Cops and Robbers uses `roster:playingList`). On `nil`, return `nil, reason`: no snapshot, no state change, no `start`. The game has already sent any refusal.
   2. Refuse with `"Not enough players"` unless `prepared.solo` or `#prepared.participants >= manifest.minPlayers`.
   3. `snapshot = settings:snapshot()`.
   4. State → round; `cars:setPublishing(true)`.
@@ -329,7 +345,7 @@
   - `start(prepared, snapshot, now)`;
   - `tick(now)`;
   - `panelState()` and `lobbyFields()`;
-  - `roundFinished()` and `settingsChanged(keys)`.
+  - `roundFinished()`, `settingsChanged(keys)` and `rulesChanged()`.
 
   The game's `start`, `test runner` and `test cop` commands call `ctx.round:start({ issuer = pid, command = <word>, text = <rest> })`. Practice returns `prepared.solo = true`. A real round returns `prepared.participants` = the playing roster.
 
@@ -342,7 +358,7 @@
   - `finish` moves to results and dispatches `roundFinished`, then a new start moves to round;
   - `startNext` sends `command = "next"`;
   - `tick` calls `panelState` only while someone has the panel open, and `lobbyFields` every tick;
-  - a manifest prefix command reaches the game, and an unknown command never does.
+  - a real round with only player 7 connected passes the minimum-players check.
 - [ ] **Step 2: Tests (characterization)** in `tests/test_main.lua`:
   - `"watch-only practice by a sitting-out player still starts"`, which pins `tests/test_main.lua:3131` through the cycle;
   - `"an automatic start after the issuer left is issued by the lowest player id"`.
@@ -370,7 +386,7 @@
   `notify = false` covers today's early `return 0` paths: pre-round cars, and a non-active car of a confirmed driver that isn't an AI slot.
 - `y:onVehicleDeleted(pid, vid)` and `y:onVehicleReset(pid, vid)` update the registry, publish as today, then run `dispatch("onVehicle", "delete" | "reset", pid, vid, nil, facts, now)`.
 - When `cars:setActive` reports a replaced confirmed car, the cycle runs `dispatch("onVehicle", "replaced", pid, vid, nil, facts, now)`, so the game drops the old car's sight.
-- `cnr_myVehicle` stays a game client event (Task 9). It calls `ctx.cars:confirm` and `ctx.cars:acknowledgeRebuild`, and `ctx.cars:publish()`, as today.
+- `cnr_myVehicle` stays a game client event (Task 9). It calls `ctx.cars:confirm` (and drops sight when it reports `replaced`), `ctx.cars:acknowledgeRebuild(pid, rebuildId)` and `ctx.cars:publish()`, as today.
 - Produces: in `cnr/game.lua`, `checkVehicle` and `onVehicle`. They hold today's policy:
   - `vehicleAllowed`'s rules;
   - `matchesRoundVehicle` with the missing-config-filename and evolving cases;
@@ -399,16 +415,16 @@
 - Produces:
   - `y:onPlayerJoin(pid)` → `dispatch("join", pid, name, now)`. In 2.x the game's `join` sends the whole join sequence in the spec's order and calls `ctx` services for the manager's parts: own colour, the lobby push (`ctx.panel:pushLobby(pid)`) and `ctx.cars:publish(pid)`.
   - `y:onPlayerDisconnect(pid)`, in order: `roster:leaveEarly`, `dispatch("leave", pid, now)`, `roster:leaveLate`, `cars:publish()`. `publish` does nothing if `leave` finished the round.
-  - `y:onPanel(pid, data)` handles these itself: `open`, `close`, the manager's commands, and settings saves. A save runs `settings:apply`, replies with the request ID, reloads, then `dispatch("settingsChanged", keys)`. A game command or action passes the allow-list, then `dispatch("panelAction", pid, action, payload)`.
+  - `y:onPanel(pid, data)` handles these itself: `open`, `close`, the manager's commands, and settings saves. A save runs `settings:apply`, reloads (so config warnings log before the reply, as today), replies with the request ID, then `dispatch("settingsChanged", keys)`. A `command` whose text passes the allow-list, or an action named in `manifest.actions`, goes to `dispatch("panelAction", pid, action, payload)`. Anything else is dropped.
   - `y:onClientEvent(name, pid, data)` → `dispatch("clientEvent", name, pid, data)`, for each name in `manifest.clientEvents`.
 - Produces: in `cnr/game.lua`, the hooks `join`, `leave`, `panelAction` and `clientEvent`. They hold today's Cops and Robbers logic from `main.lua`: colour paint, sit-out notices, grid, picked, `cnr_myVehicle`, setup, change, missing, sight, cover, stations, board, AI vehicles, traffic reports and the lightning clock.
 
 - [ ] **Step 1: Failing unit tests** in `tests/test_arcade_cycle.lua`, with a stub game:
   - in the disconnect order, the stub `leave` sees `leaveEarly` done and `leaveLate` not yet;
-  - an unknown panel command never reaches `panelAction`;
+  - a manifest prefix command and a manifest action reach `panelAction`, and an unknown command or action never does;
   - a declared client event reaches `clientEvent`;
   - a settings save dispatches `settingsChanged` after the reply.
-- [ ] **Step 2: Failing test** in `tests/test_main.lua`: `"a runner leaving mid-chase sends exactly one empty cnr_roundCars"`.
+- [ ] **Step 2: Test (characterization)** in `tests/test_main.lua`: `"a runner leaving mid-chase sends exactly one empty cnr_roundCars"`. Precondition: a non-empty `cnr_roundCars` was published before the disconnect.
 - [ ] **Step 3: Run** → FAIL. **Step 4: Implement**, moving one handler group at a time, with `make test` and the golden gate after each.
 - [ ] **Step 5: Run** `make test` → PASS, and the golden gate is clean.
 - [ ] **Step 6: Commit** with the message "Join, leave, panel and client events reach the game only through the contract".
@@ -433,7 +449,7 @@
   2. `env.reload()`.
   3. Start a new round and rebuild.
   4. Acknowledge driver 2 with the current ID.
-  5. Replay the old ID for driver 1, and assert no `cnr_applied`.
+  5. Replay the old ID for driver 1, and assert no `cnr_applied` and that `cars:pendingRebuild(1)` is still true.
   6. Send the current ID for driver 1, and assert `cnr_applied`.
 - [ ] **Step 2: Failing test:** `"grid ids from before a reload don't release the current setup"`:
   1. Replay a `cnr_startGrid` response from the expected planner that is valid except for its old ID, and assert no `cnr_roundSetup`.
@@ -463,9 +479,9 @@
 **Interfaces:**
 - Consumes: `arcade.cycle`, `arcade.cars`, `arcade.spectators`, the settings service, and the hooks and static functions from Tasks 7 to 9.
 - Produces: the `fake_game` module, a racing game:
-  - `manifest(version) -> { id = "race", name = "Race", version, minPlayers = 2, commands = { exact = { "race" }, prefixes = {} }, clientEvents = { "race_lap" } }`;
+  - `manifest(version) -> { id = "race", name = "Race", version, minPlayers = 2, commands = { exact = { "race" }, prefixes = {} }, actions = {}, clientEvents = { "race_lap" } }`;
   - `settingsDeclaration()` with one game setting, `{ DEFAULTS = { laps = 3 }, POSITIVE = { laps = true }, WHOLE = { laps = true } }`;
-  - `new(ctx)` returns an instance with every hook, phases `grid` → `race`, a `ctx.cars:setup` for every racer, a targeted rebuild through `ctx.cars:rebuild({ racer }, payload)`, and finishing through `ctx.round:finish`.
+  - `new(ctx)` returns an instance with every hook, phases `grid` → `race`, a `ctx.cars:setup` for every racer, a targeted rebuild through `ctx.cars:rebuild({ racer }, payload, id)`, and finishing through `ctx.round:finish`.
 
   No runner, cop, practice or effect list. The test builds the services and `arcade.cycle` with this module in Task 7's construction order, on `serverBoot.fakes`.
 
@@ -487,5 +503,5 @@
 - [ ] Each task gets a counterpart task review with the review rule above before the next task's review closes. Fixes go back to the implementer and are re-reviewed.
 - [ ] On the final head: `make test`, `make vuecheck` and `make package` pass, and all five CI jobs are green.
 - [ ] The whole-branch review is clean and posted on PR #94.
-- [ ] Release notes: the PR body gets a "Release notes" section with the two settings changes (a round keeps its start settings; the auto toggle keeps disk edits) and the safe saves. It is copied into the release PR for the next 2.x version.
+- [ ] Release notes: the PR body gets a "Release notes" section with the two settings changes (a round keeps its start settings; the auto toggle keeps disk edits) and the safe saves. The release publisher uses a fixed note plus GitHub's generated notes and doesn't read PR bodies. So after the next 2.x release is published (by the maintainer, or an agent with their release go), check its GitHub Release text. If the three changes are missing, add them with `gh release edit <tag> --notes-file`, with the maintainer's go.
 - [ ] #72 moves to Review, and the playtest runs through the playtest extension with the step 1 checks. Merge after the maintainer's go.
