@@ -212,8 +212,8 @@ end
 local function openTraffic(pid)
   if not current:isActive() or current.players[pid] == nil or trafficService:openCount(pid) then return end
   local eligible = current.test or not cfg.trafficRunnerOnly or pid == current.runnerId
-  local practice = current.test and pid == current.issuerId
-  trafficService:open(pid, trafficService:allowance(pid, cfg, practice, eligible))
+  local reserved = current.test and pid == current.issuerId and 3 or 1
+  trafficService:open(pid, trafficService:allowance(cfg, reserved, eligible))
 end
 
 local function confirmedVid(pid)
@@ -666,8 +666,8 @@ panelService:command("start", function(pid, cmd)
   partsBaseline = {}
   missingCount = {}
   lastResult = nil
-  local sittingOut = roster:perPlayer("sitOut", "early")
-  applyEffects(current:start(now(), runnerId, pid, players, { gridPlanner = gridClients[runnerId] and runnerId, build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random), traffic = traffic.perPlayer(cfg.trafficPerPlayer, traffic.maxCars(), false), trafficRunnerOnly = cfg.trafficRunnerOnly == true, sittingOut = sittingOut }))
+  local sittingOut = roster:sitOutSnapshot()
+  applyEffects(current:start(now(), runnerId, pid, players, { gridPlanner = gridClients[runnerId] and runnerId, build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random), traffic = traffic.perPlayer(cfg.trafficPerPlayer, traffic.maxCars(), 1), trafficRunnerOnly = cfg.trafficRunnerOnly == true, sittingOut = sittingOut }))
 end)
 
 panelService:command("test", function(pid, cmd)
@@ -685,7 +685,7 @@ panelService:command("test", function(pid, cmd)
 end)
 
 local function pushRules(pid)
-  send(pid or -1, "cnr_rules", rules.payload(cfg, traffic.perPlayer(cfg.trafficPerPlayer, traffic.maxCars(), false)))
+  send(pid or -1, "cnr_rules", rules.payload(cfg, traffic.perPlayer(cfg.trafficPerPlayer, traffic.maxCars(), 1)))
 end
 
 local function lobbyState()
