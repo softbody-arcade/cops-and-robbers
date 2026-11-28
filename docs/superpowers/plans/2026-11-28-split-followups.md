@@ -63,22 +63,22 @@
 - [ ] **Step 2: Run** `make test` → that test FAILS (no op entries).
 - [ ] **Step 3: Implement.** In each fake, append the op entry first, then keep its current behaviour (`env.removed`, `env.chats`, `env.timerOps`, `env.timers`, the real file operations, `renameFails`) unchanged.
 - [ ] **Step 4: Run** `make test`. The new test passes, and the golden scenarios FAIL because the goldens lack the op lines. That is expected.
-- [ ] **Step 5: Add scenarios** to `tests/test_traces.lua`. In each, take the send index after the pick (`local picked = #env.sent`) and look for later events from there, so boot's own `cnr_roundEnd` can't satisfy an assertion.
+- [ ] **Step 5: Add scenarios** to `tests/test_traces.lua`. In the two setup scenarios, take the send index after the pick (`local picked = #env.sent`); in the disconnect cases, take it right before each `onPlayerDisconnect`. Look for later events only from there, so boot's own `cnr_roundEnd` can't satisfy an assertion.
   - `practice_setup_car_late`, booted with `{ vehicles = { [1] = { [0] = "x" } } }`:
     - `env.panel(1, "test runner")`, then `cnr_vehiclePicked` from 1 with the `pick` payload, and no `cnr_myVehicle`.
-    - Tick until a `cnr_notice` to 1 after `picked`.
-    - Assert its `msg` contains "did not register in time", and that a `cnr_roundEnd` follows `picked`.
+    - Tick until a `cnr_roundEnd` after `picked` and assert `reason == "cancelled"`. The server first sends the notice "Round cancelled", then `cnr_roundEnd`, then the notice that explains the timeout.
+    - Assert the next `cnr_notice` to 1 after that `cnr_roundEnd` contains "did not register in time".
   - `practice_setup_no_slots`, booted with `{ maxCars = 3 }` (player 1 keeps the default occupied vehicle):
     - `cnr_sitOut` on for 1, `env.panel(1, "test runner")`, then `cnr_vehiclePicked`, and no `cnr_aiVehicles`.
-    - Tick until a `cnr_notice` to 1 after `picked`.
-    - Assert its `msg` contains "too few free vehicle slots". The reviewer measured this at about 15 s of ticks.
+    - Tick until a `cnr_roundEnd` after `picked` (about 15 s of ticks) and assert `reason == "cancelled"`.
+    - Assert the next `cnr_notice` to 1 after that `cnr_roundEnd` contains "too few free vehicle slots".
   - `disconnect_picking`. Set `env.names = { "Reinder", "Bob", "Kim" }` and call `onPlayerJoin` for 3 first. Then three cases, each starting a fresh round with `env.panel(2, "start rein")`, so 2 is the issuer, 1 the runner and 3 a cop. Before each `onPlayerDisconnect(pid)`, remove that pid from `env.names`, and restore it with `onPlayerJoin` before the next case.
     - **Runner leaves:** 1 disconnects before any pick. Assert `cnr_roundEnd` with `reason == "cancelled"`, and a notice "Runner left, round cancelled".
     - **Issuer leaves:** 2 disconnects while picking. Assert `cnr_roundEnd` with `reason == "cancelled"`, and a notice "Round cancelled".
     - **Cop leaves:** 3 disconnects while picking. Assert no `cnr_roundEnd` after it. Then 2 sends `cnr_vehiclePicked`, and `cnr_roundSetup` goes out to 1 and 2.
 - [ ] **Step 6: Re-record** with `UPDATE_TRACES=1 make test`, then `make test`, which must pass.
 - [ ] **Step 7: Gate.**
-  - `git diff -U0 -- tests/traces | grep '^-[^-]'` must print nothing: existing files only gain lines.
+  - `git diff -U0 HEAD -- tests/traces | grep '^-[^-]'` must print nothing: existing files only gain lines.
   - `git status --short tests/traces` must list exactly the three new files as untracked before the commit.
   - Paste both outputs and `git diff --stat -- tests/traces` in the report.
 - [ ] **Step 8: Commit** all changed and new files (the three new goldens included) with the message "Traces: record removals, chat, timers and file writes; cover setup cancels and picking disconnects".
@@ -133,7 +133,7 @@
 
 **Interfaces:**
 - Produces: `store.copy(src, dst) -> true | nil, err`. It reads `src` in binary (`"rb"`) and writes `dst` with `io.open(dst, "wb")`, checking the results of `open`, `write` and `close`. It returns `nil, err` on any failure and never touches `src`.
-- Produces: `s:load()` handles a corrupt file like this:
+- Produces: `s:load()` handles a broken file like this. Broken means `store.decode` reports it corrupt, or the file exists but is empty: `store.decode` returns `nil, false` for both an empty and a missing file, so check `store.read(path) == ""`. A missing file stays as now, with no copy and no message.
   1. Read its bytes.
   2. Choose the copy name: start with `<path>.corrupt-<os.date("%Y%m%d-%H%M%S")>`. If that file exists with the same bytes, reuse it and write nothing. If it exists with different bytes, try `-2`, `-3`, and so on, until a free name or one with the same bytes.
   3. Call `store.copy`.
@@ -145,7 +145,8 @@
   - A corrupt file leaves `<path>.corrupt-20261128-101500` with identical bytes. The original is unchanged, and the log line matches exactly.
   - A second load of the same bytes in the same second writes nothing new and logs the same copy name.
   - A second load after the file's bytes changed (still invalid) keeps both: the first copy is unchanged, and the new one is `<path>.corrupt-20261128-101500-2`.
-  - Make the copy fail by creating a directory with the copy's name first. The log ends `could not keep a copy: <err>`, the defaults load, and the original bytes are unchanged.
+  - Make the copy fail by stubbing `store.copy` to return `nil, "denied"` for a free destination, and restore it afterwards. Assert the stub was called, the log ends `could not keep a copy: denied`, the defaults load, and the original bytes are unchanged.
+  - An existing zero-byte `config.json` gets a zero-byte copy and the same log line. A missing `config.json` makes no copy and no "not valid JSON" line.
   - A valid file makes no copy.
   - Strengthen `test_main.lua:21` so it checks the logged copy name, and that the copy file exists in `env.dir`.
 - [ ] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** `make test` → PASS; golden gate.
@@ -193,7 +194,7 @@
 - [ ] **Step 7: Run** `make test` → PASS; golden gate.
 - [ ] **Step 8: Commit** with the message "Tidy: standalone store test, name-independent fault test, raw payloads and token-safe version in traces, reload cleanup, docs".
 
-**#82 item handed to #72:** the ad-hoc `ctx.settings` `{get, set}` adapter. Step 2 (#72) redesigns the game interface it belongs to. The controller records the handoff on #72 and #82 (pending the maintainer's agreement).
+**#82 item handed to #72:** the ad-hoc `ctx.settings` `{get, set}` adapter. Step 2 (#72) redesigns the game interface it belongs to. The controller records the handoff on #72 and #82 (the maintainer agreed on 2026-11-28; decision on #82).
 
 ### Batch completion (controller)
 
