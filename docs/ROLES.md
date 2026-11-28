@@ -10,7 +10,7 @@ The board's one auto-add workflow covers this repo: an issue filed here lands in
 
 ## Required checks
 
-`develop-checks` and `main-checks` require the five CI checks: `test`, `luajit`, `vuecheck`, `privacy` and `package`. A maintainer merges a PR only when all five are green. arcade-base currently requires only `test` and `privacy`.
+`develop-checks` and `main-checks` require the five CI checks: `test`, `luajit`, `vuecheck`, `privacy` and `package`. A maintainer merges a PR only when all five are green. arcade-base currently requires `test`, `privacy` and `links`.
 
 ## Automations
 
