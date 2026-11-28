@@ -155,11 +155,9 @@ local function buildOpts()
 end
 
 local function saveLeaderboard(run)
-  if leaderboardLocked then return saveError(leaderboardPath, "the old file could not be moved aside") end
   leaderboard.add(board, run)
-  local saved, err = saveJson(leaderboardPath, board)
-  if not saved then table.remove(board.runs) end
-  return saved, err
+  if leaderboardLocked then return log("leaderboard not saved: the old file could not be moved aside") end
+  if not saveJson(leaderboardPath, board) then table.remove(board.runs) end
 end
 
 local function roundCarActive()
@@ -620,10 +618,9 @@ local function applyEffects(effects)
           run.catcherKeys[i] = pid and roster:key(pid) or ("name:" .. name)
         end
       end
-      if saveLeaderboard(run) then
-        if currentRunnerKey then runCounts[currentRunnerKey] = (runCounts[currentRunnerKey] or 0) + 1 end
-        plannedRunnerKey = nil
-      end
+      if currentRunnerKey then runCounts[currentRunnerKey] = (runCounts[currentRunnerKey] or 0) + 1 end
+      plannedRunnerKey = nil
+      saveLeaderboard(run)
       pushBoard()
       local top = leaderboard.runners(board, mapName, 3)
       for pid in pairs(MP.GetPlayers() or {}) do
@@ -1370,15 +1367,15 @@ end
 function cnrOnStations(pid, data)
   local ok, decoded = pcall(Util.JsonDecode, data)
   if not ok or type(decoded) ~= "table" or decoded.map ~= mapName or #stations > 0 then return end
-  local updated = {}
   for _, s in ipairs(decoded.stations or {}) do
     local v = vec.toVec(s)
     if v then
       v.r = tonumber(s.r) or 0
-      updated[#updated + 1] = v
+      stations[#stations + 1] = v
     end
   end
-  if #updated > 0 and saveStations(updated) then
+  if #stations > 0 then
+    saveStations(stations)
     log(string.format("%d gas stations detected for %s", #stations, mapName))
   end
 end

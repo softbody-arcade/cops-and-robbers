@@ -1253,6 +1253,11 @@ test("if the old leaderboard can't be moved aside, it is never overwritten", fun
   for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
   env.panel(1, "end")
   assertEq(readFileAt(env.dir .. "data/leaderboard.json"):find("Old", 1, true) ~= nil, true)
+  env.call("cnr_board", 1, '{"action":"open"}')
+  local rounds = decodeJson(env.lastSent("cnr_boardState").data).rounds
+  assertEq(#rounds, 1)
+  assertEq(rounds[1].player, "Reinder")
+  assertEq(env.logHas("leaderboard not saved: the old file could not be moved aside"), true)
   env.cleanup()
 end)
 
@@ -4148,7 +4153,7 @@ test("an unsaved evolving setup keeps the build and its step", function()
   env.cleanup()
 end)
 
-for _, op in ipairs({ "add", "remove", "discovery" }) do
+for _, op in ipairs({ "add", "remove" }) do
   test("a failed station " .. op .. " keeps the station list", function()
     local env = boot()
     local path = env.dir .. "data/stations/west_coast_usa.json"
@@ -4156,17 +4161,29 @@ for _, op in ipairs({ "add", "remove", "discovery" }) do
     if op == "remove" then env.call("cnr_panel", 1, '{"action":"station","op":"add"}') end
     local count, bytes = panelOf(env).stationCount, readFileAt(path)
     denyRenameFrom(path .. ".tmp")
-    if op == "discovery" then
-      env.call("cnr_stations", 1, '{"map":"west_coast_usa","stations":[{"x":1,"y":2,"z":3}]}')
-    else
-      env.call("cnr_panel", 1, encode({ action = "station", op = op }))
-    end
+    env.call("cnr_panel", 1, encode({ action = "station", op = op }))
     assertEq(env.logHas("could not save west_coast_usa.json: rename denied"), true)
     assertEq(panelOf(env).stationCount, count)
     assertEq(readFileAt(path), bytes)
     env.cleanup()
   end)
 end
+
+test("discovered stations stay usable for the session when their save fails", function()
+  local env = boot()
+  local path = env.dir .. "data/stations/west_coast_usa.json"
+  denyRenameFrom(path .. ".tmp")
+  env.call("cnr_stations", 1, '{"map":"west_coast_usa","stations":[{"x":1,"y":2,"z":3,"r":12}]}')
+  env.call("cnr_panel", 1, '{"action":"stations"}')
+  local stations = decodeJson(sentTo(env, "cnr_stationList", 1)).stations
+  assertEq(#stations, 1)
+  assertEq(stations[1].x, 1)
+  assertEq(stations[1].y, 2)
+  assertEq(stations[1].z, 3)
+  assertEq(readFileAt(path), nil)
+  assertEq(env.logHas("could not save west_coast_usa.json: rename denied"), true)
+  env.cleanup()
+end)
 
 test("a failed leaderboard save leaves the old standings on disk and in the app", function()
   local bytes = '{"format":2,"runs":[]}'
@@ -4180,6 +4197,7 @@ test("a failed leaderboard save leaves the old standings on disk and in the app"
   env.call("cnr_board", 1, '{"action":"open"}')
   assertEq(env.logHas("could not save leaderboard.json: rename denied"), true)
   assertEq(#decodeJson(env.lastSent("cnr_boardState").data).rounds, 0)
+  assertEq(rowOf(panelOf(env), "Reinder").runs, 1)
   assertEq(readFileAt(path), bytes)
   env.cleanup()
 end)
