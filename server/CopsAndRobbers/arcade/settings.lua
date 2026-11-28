@@ -36,10 +36,6 @@ M.GLOBAL = {
   RETIRED_KEYS = { clockSpeed = true },
   RETIRED_VALUES = { timeOfDay = "map", weather = "map" },
 }
-for minKey, maxKey in pairs(M.GLOBAL.TIMING_RANGES) do
-  M.GLOBAL.WHOLE[minKey], M.GLOBAL.WHOLE[maxKey] = true, true
-  M.GLOBAL.POSITIVE[minKey], M.GLOBAL.POSITIVE[maxKey] = true, true
-end
 
 function M.combine(global, game)
   local decl = { fix = game.fix }
@@ -52,8 +48,15 @@ function M.combine(global, game)
     end
     decl[field] = combined
   end
+  for minKey, maxKey in pairs(decl.TIMING_RANGES) do
+    decl.WHOLE[minKey], decl.WHOLE[maxKey] = true, true
+    decl.POSITIVE[minKey], decl.POSITIVE[maxKey] = true, true
+  end
   for key, default in pairs(game.OVERRIDES or {}) do
     assert(global.DEFAULTS[key] ~= nil, "Cannot override unknown global setting " .. key)
+    assert(type(default) == type(global.DEFAULTS[key]), "Invalid override type for " .. key)
+    local choices = global.CHOICES and global.CHOICES[key]
+    assert(not choices or choices[default], "Invalid override choice for " .. key)
     decl.DEFAULTS[key] = default
   end
   return decl
@@ -245,13 +248,35 @@ function M.applyValues(raw, values, decl)
   return updated, keys
 end
 
+local function keepBrokenFile(path, bytes)
+  local prefix = path .. ".corrupt-" .. os.date("%Y%m%d-%H%M%S")
+  local dest, index = prefix, 1
+  while FS.Exists(dest) do
+    if store.read(dest) == bytes then return dest end
+    index = index + 1
+    dest = prefix .. "-" .. index
+  end
+  local ok, err = store.copy(path, dest)
+  if not ok then return nil, err end
+  return dest
+end
+
 function M.new(path, decl, log)
   local s = {}
   log = log or print
 
   function s:load()
-    local raw, corrupt = store.decode(path)
-    if corrupt then log("config.json is not valid JSON, using defaults") end
+    local raw, corrupt, bytes = store.decode(path)
+    if corrupt or bytes == "" then
+      local basename = path:match("[^/\\]+$")
+      local warning = basename .. " is not valid JSON, using defaults; "
+      local copy, err = keepBrokenFile(path, bytes)
+      if copy then
+        log(warning .. "kept a copy as " .. copy:match("[^/\\]+$"))
+      else
+        log(warning .. "could not keep a copy: " .. tostring(err))
+      end
+    end
     raw = raw or {}
     local cfg, warnings = M.merge(raw, decl)
     for _, w in ipairs(warnings) do log("config: " .. w) end

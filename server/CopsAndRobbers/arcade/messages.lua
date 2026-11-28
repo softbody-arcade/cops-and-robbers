@@ -2,7 +2,7 @@ local messages = {}
 
 function messages.new(options)
   local m = {}
-  local prefix = options.prefix
+  local prefix = assert(options and options.prefix, "messages require a prefix")
   local panelMirror
 
   function m.log(text)

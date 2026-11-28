@@ -3,7 +3,7 @@ package.path = pluginDir .. "?.lua;" .. package.path
 
 local store = require("arcade.store")
 local messages = require("arcade.messages").new({ prefix = "[CnR] " })
-local r = require("arcade.roster").new()
+local roster = require("arcade.roster").new()
 local vec = require("cnr.vec")
 local config = require("cnr.config")
 local rules = require("cnr.rules")
@@ -14,13 +14,13 @@ local colors = require("arcade.colors")
 local tables = require("cnr.tables")
 local build = require("cnr.build")
 local panel = require("cnr.panel")
-local panelService = require("arcade.panel").new(messages, r)
+local panelService = require("arcade.panel").new(messages, roster)
 local autoRounds = require("arcade.autoRounds")
-local schedule = autoRounds.new()
+local nextRound = autoRounds.new()
 local sky = require("cnr.sky")
 local strikeSchedule = require("cnr.strikeSchedule")
 local traffic = require("arcade.traffic")
-local trafficService = traffic.new(r, messages)
+local trafficService = traffic.new(roster, messages)
 local trafficNote = require("cnr.traffic").note
 
 local VERSION = "2.15.1"
@@ -32,23 +32,23 @@ local leaderboardPath = dataDir .. "leaderboard.json"
 local buildPath = dataDir .. "build.json"
 local currentBuild
 local settings = require("arcade.settings").new(pluginDir .. "config.json", config.declaration, log)
-local playerColors = require("arcade.playerColors").new(dataDir .. "colors.json", r, messages)
+local playerColors = require("arcade.playerColors").new(dataDir .. "colors.json", roster, messages)
 
 local cfg
 local current
 local board
 local mapName
 local stations = {}
-local activeVid = r:perPlayer("activeVid", "late")
-local registeredRoundCar = r:perPlayer("registeredRoundCar", "late")
-local allowRoundSpawn = r:perPlayer("allowRoundSpawn", "late")
-local preRoundVehicles = r:perPlayer("preRoundVehicles", "late")
+local activeVid = roster:perPlayer("activeVid", "late")
+local registeredRoundCar = roster:perPlayer("registeredRoundCar", "late")
+local allowRoundSpawn = roster:perPlayer("allowRoundSpawn", "late")
+local preRoundVehicles = roster:perPlayer("preRoundVehicles", "late")
 local lastRoundCars
-local stationsRequested = r:perPlayer("stationsRequested", "early")
+local stationsRequested = roster:perPlayer("stationsRequested", "early")
 local partsBaseline = {}
 local aiCars = {}
 local aiSlotSerial, aiVidSerial = {}, {}
-local connectionSerial = r:perPlayer("connectionSerial", "early")
+local connectionSerial = roster:perPlayer("connectionSerial", "early")
 local previousRoundSerial = 0
 local runCounts = {}
 local lastRunnerKey
@@ -60,12 +60,12 @@ local lastIssuer
 local rawConfig = {}
 local PARTS_PLACING_SECONDS, PARTS_SETTLE_SECONDS = 10, 3
 local REFUSAL_LOG_SECONDS = 10
-local refusalLoggedAt = r:perPlayer("refusalLoggedAt", "early")
-local parkedBystanders = r:perPlayer("parkedBystanders", "early")
+local refusalLoggedAt = roster:perPlayer("refusalLoggedAt", "early")
+local parkedBystanders = roster:perPlayer("parkedBystanders", "early")
 local aiSpawnsLeft = 0
 local pendingAISetup
 local AI_SETUP_WAIT_SECONDS = 15
-local gridClients = r:perPlayer("gridClients", "early")
+local gridClients = roster:perPlayer("gridClients", "early")
 local START_ROAD_SEARCH = 2000
 local WATCHING_AI = "You can't spawn a car while watching the AI"
 local serverClock = MP.CreateTimer()
@@ -87,34 +87,24 @@ local function placed(pid)
   end
 end
 
-local boardSubs = r:perPlayer("boardSubs", "early")
+local boardSubs = roster:perPlayer("boardSubs", "early")
 local leaderboardLocked = false
 
 local function readSettings()
-  local warnings
-  cfg, warnings, rawConfig = settings:load()
+  local _
+  cfg, _, rawConfig = settings:load()
 end
 
 local function loadLeaderboard()
   local decoded, corrupt = store.decode(leaderboardPath)
-  if not corrupt and not leaderboard.validShape(decoded) then
-    corrupt = true
-    decoded = nil
-  end
-  local aside, why
-  if corrupt then
-    aside, why = leaderboardPath .. ".corrupt-" .. os.time(), "was unreadable"
-  elseif not leaderboard.isCurrent(decoded) then
-    aside, why = dataDir .. "leaderboard-1.6.json", "is the old format"
-    if FS.Exists(aside) then aside = dataDir .. "leaderboard-1.6-" .. os.time() .. ".json" end
-  end
-  if aside then
+  if corrupt or not leaderboard.validShape(decoded) then
+    local aside = leaderboardPath .. ".corrupt-" .. os.time()
     local moved, err = FS.Rename(leaderboardPath, aside)
     if moved == false then
       leaderboardLocked = true
-      log(string.format("leaderboard.json %s but could not be moved to %s (%s): runs are not saved until this is fixed", why, aside, tostring(err)))
+      log(string.format("leaderboard.json was unreadable but could not be moved to %s (%s): runs are not saved until this is fixed", aside, tostring(err)))
     else
-      log(string.format("leaderboard.json %s, moved to %s; starting a fresh one", why, aside))
+      log(string.format("leaderboard.json was unreadable, moved to %s; starting a fresh one", aside))
     end
     decoded = nil
   end
@@ -371,7 +361,7 @@ local function boardState(sub, viewerKey)
 end
 
 local function sendBoard(pid)
-  local ok, state = pcall(boardState, boardSubs[pid], r:key(pid))
+  local ok, state = pcall(boardState, boardSubs[pid], roster:key(pid))
   if ok then send(pid, "cnr_boardState", state) else log("board update failed: " .. tostring(state)) end
 end
 
@@ -453,7 +443,7 @@ local function applyEffects(effects)
         allowRoundSpawn[e.pid] = true
         log(string.format("setup sent to %s: %s, %s", MP.GetPlayerName(e.pid) or tostring(e.pid), e.role, tostring(e.phase)))
         if e.role == "runner" and not current.test then
-          local key = r:key(e.pid)
+          local key = roster:key(e.pid)
           lastRunnerKey = key
           plannedRunnerKey = nil
           currentRunnerKey = key
@@ -514,19 +504,19 @@ local function applyEffects(effects)
       send(e.pid, "cnr_state", { resetAllowed = e.resetAllowed, resetHint = e.resetHint, catchProgress = e.catchProgress })
     elseif e.kind == "roundEnd" then
       for pid in pairs(parkedBystanders) do send(pid, "cnr_parkBystanderCars", { on = false }) end
-      r:clear("parkedBystanders")
+      roster:clear("parkedBystanders")
       local autoNext = cfg.autoNextRound and e.reason ~= "cancelled" and not e.to
       send(e.to or -1, "cnr_roundEnd", {
         runnerId = e.runnerId, runnerName = e.runnerName, survivedSeconds = e.survivedSeconds,
         reason = e.reason, explode = e.explode, catchers = e.catchers, message = e.message,
         autoNextSeconds = autoNext and cfg.autoNextDelaySeconds or nil,
       })
-      r:clear("activeVid")
-      r:clear("registeredRoundCar")
-      r:clear("allowRoundSpawn")
-      r:clear("preRoundVehicles")
-      r:clear("trafficOpen")
-      r:clear("trafficVids")
+      roster:clear("activeVid")
+      roster:clear("registeredRoundCar")
+      roster:clear("allowRoundSpawn")
+      roster:clear("preRoundVehicles")
+      roster:clear("trafficOpen")
+      roster:clear("trafficVids")
       aiSpawnsLeft = 0
       pendingAISetup = nil
       clearRoundCars()
@@ -536,7 +526,7 @@ local function applyEffects(effects)
         lastResult = { runner = e.runnerName, seconds = e.survivedSeconds, reason = e.reason }
       end
       aiCars, aiSlotSerial, aiVidSerial = {}, {}, {}
-      if autoNext then schedule:schedule(now() + cfg.autoNextDelaySeconds) end
+      if autoNext then nextRound:schedule(now() + cfg.autoNextDelaySeconds) end
     elseif e.kind == "live" then
       for pid in pairs(current.players) do
         if pid ~= current.runnerId and not round.isAI(pid) then
@@ -593,7 +583,7 @@ local function applyEffects(effects)
       plannedRunnerKey = nil
       run.cops, run.copNames, run.copSightSeconds = {}, {}, {}
       for i, pid in ipairs(run.copIds or {}) do
-        run.cops[i] = r:key(pid)
+        run.cops[i] = roster:key(pid)
         run.copNames[i] = MP.GetPlayerName(pid) or tostring(pid)
         run.copSightSeconds[i] = math.floor((run.copSight[i] or 0) * 10 + 0.5) / 10
       end
@@ -604,7 +594,7 @@ local function applyEffects(effects)
         run.catcherKeys = {}
         for i, name in ipairs(run.catchers) do
           local pid = byName[name]
-          run.catcherKeys[i] = pid and r:key(pid) or ("name:" .. name)
+          run.catcherKeys[i] = pid and roster:key(pid) or ("name:" .. name)
         end
       end
       leaderboard.add(board, run)
@@ -613,7 +603,7 @@ local function applyEffects(effects)
       pushBoard()
       local top = leaderboard.runners(board, mapName, 3)
       for pid in pairs(MP.GetPlayers() or {}) do
-        local viewerKey = r:key(pid)
+        local viewerKey = roster:key(pid)
         local rows = {}
         for i, e in ipairs(top) do
           rows[i] = { rank = i, player = e.player, time = leaderboard.formatTime(e.survivedSeconds), me = e.key == viewerKey or nil }
@@ -626,17 +616,17 @@ end
 
 local function plannedRunner(players)
   local countsByName = {}
-  for p, name in pairs(players) do countsByName[name] = runCounts[r:key(p)] or 0 end
-  local lastPid = lastRunnerKey and r:pidForKey(lastRunnerKey)
+  for p, name in pairs(players) do countsByName[name] = runCounts[roster:key(p)] or 0 end
+  local lastPid = lastRunnerKey and roster:pidForKey(lastRunnerKey)
   local lastName = lastPid and MP.GetPlayerName(lastPid) or nil
   local eligible = commands.eligibleNext(players, countsByName, lastName)
   if plannedRunnerKey then
     for _, p in ipairs(eligible) do
-      if r:key(p) == plannedRunnerKey then return p end
+      if roster:key(p) == plannedRunnerKey then return p end
     end
   end
   local pid = commands.matchPlayer("next", players, nil, countsByName, lastName)
-  plannedRunnerKey = pid and r:key(pid) or nil
+  plannedRunnerKey = pid and roster:key(pid) or nil
   return pid
 end
 
@@ -646,15 +636,15 @@ panelService:command("start", function(pid, cmd)
   end
   if current:isActive() then return refuse(pid, "A round is already running") end
   if cfg.carMode == "evolving" and not currentBuild then return refuse(pid, "Start a new build first") end
-  schedule:cancel()
+  nextRound:cancel()
   lastIssuer = pid
   local players = MP.GetPlayers() or {}
-  local candidates, count = r:playing(players)
+  local candidates, count = roster:playing(players)
   if count == 0 then return refuse(pid, "Everyone is sitting out") end
   local query = cmd.rest
   local runnerId, err
   if query and query:lower() == "again" then
-    runnerId = lastRunnerKey and r:pidForKey(lastRunnerKey)
+    runnerId = lastRunnerKey and roster:pidForKey(lastRunnerKey)
     if not runnerId then return refuse(pid, "No previous runner online") end
   else
     if query and query:lower() == "next" then
@@ -664,33 +654,33 @@ panelService:command("start", function(pid, cmd)
     end
     if not runnerId then
       local anyone = commands.matchPlayer(query, players)
-      if anyone and r:sittingOut(anyone) then runnerId = anyone end
+      if anyone and roster:sittingOut(anyone) then runnerId = anyone end
     end
   end
   if not runnerId then return refuse(pid, err) end
-  if r:sittingOut(runnerId) then return refuse(pid, string.format("%s is sitting out", players[runnerId] or tostring(runnerId))) end
+  if roster:sittingOut(runnerId) then return refuse(pid, string.format("%s is sitting out", players[runnerId] or tostring(runnerId))) end
   requestStations(pid)
-  r:clear("activeVid")
-  r:clear("trafficOpen")
-  r:clear("trafficVids")
+  roster:clear("activeVid")
+  roster:clear("trafficOpen")
+  roster:clear("trafficVids")
   partsBaseline = {}
   missingCount = {}
   lastResult = nil
-  local sittingOut = r:perPlayer("sitOut", "early")
+  local sittingOut = roster:perPlayer("sitOut", "early")
   applyEffects(current:start(now(), runnerId, pid, players, { gridPlanner = gridClients[runnerId] and runnerId, build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random), traffic = traffic.perPlayer(cfg.trafficPerPlayer, traffic.maxCars(), false), trafficRunnerOnly = cfg.trafficRunnerOnly == true, sittingOut = sittingOut }))
 end)
 
 panelService:command("test", function(pid, cmd)
   if current:isActive() then return refuse(pid, "A round is already running") end
-  r:clear("activeVid")
-  r:clear("trafficOpen")
-  r:clear("trafficVids")
+  roster:clear("activeVid")
+  roster:clear("trafficOpen")
+  roster:clear("trafficVids")
   partsBaseline = {}
   missingCount = {}
   previousRoundSerial = connectionSerial[pid] or 0
   local role = cmd.args[1] and cmd.args[1]:lower()
   if cfg.carMode == "evolving" and not currentBuild then return refuse(pid, "Start a new build first") end
-  local opts = { gridPlanner = gridClients[pid] and pid, test = true, role = role, aiOnly = r:sittingOut(pid), build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random) }
+  local opts = { gridPlanner = gridClients[pid] and pid, test = true, role = role, aiOnly = roster:sittingOut(pid), build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random) }
   applyEffects(current:start(now(), nil, pid, MP.GetPlayers() or {}, opts))
 end)
 
@@ -770,7 +760,7 @@ end
 local function playerEntries(players, realRound)
   local entries, loading = {}, 0
   for pid, name in pairs(players) do
-    local entry = { name = name, runs = runCounts[r:key(pid)] or 0, sitOut = r:sittingOut(pid) or nil }
+    local entry = { name = name, runs = runCounts[roster:key(pid)] or 0, sitOut = roster:sittingOut(pid) or nil }
     if realRound and current.players[pid] ~= nil then
       local isRunner = pid == current.runnerId
       entry.role = isRunner and "runner" or "cop"
@@ -795,13 +785,13 @@ end
 local function panelState()
   local running = current.state == "running"
   local players = MP.GetPlayers() or {}
-  local candidates, count = r:playing(players)
+  local candidates, count = roster:playing(players)
   local realRound = current:isActive() and not current.test
   local entries, loading = playerEntries(players, realRound)
   local nextName = not realRound and nextRunnerName(candidates) or nil
-  local lastPid = lastRunnerKey and r:pidForKey(lastRunnerKey)
+  local lastPid = lastRunnerKey and roster:pidForKey(lastRunnerKey)
   local autoNext
-  local autoNextAt = schedule:pending()
+  local autoNextAt = nextRound:pending()
   if autoNextAt and not realRound then
     autoNext = { seconds = math.max(0, math.ceil(autoNextAt - now())), runner = nextName }
   end
@@ -972,12 +962,6 @@ function cnrOnMissing(pid, data)
   send(current.test and current.issuerId or -1, "cnr_notice", { msg = string.format("⚠ %s is missing: %s", MP.GetPlayerName(pid) or tostring(pid), table.concat(names, ", ")), tone = "warn" })
 end
 
-function cnrOnChatMessage(pid, name, msg)
-  if not commands.parse(msg) then return 0 end
-  notify(pid, "Chat commands are gone: use the Cops and Robbers card at the bottom of your screen.")
-  return 1
-end
-
 local function matchesRoundVehicle(decoded)
   if not decoded or decoded.jbm ~= current.vehicle.model then return false end
   local pcFile = type(decoded.vcf) == "table" and decoded.vcf.partConfigFilename
@@ -1121,7 +1105,7 @@ end
 function cnrOnSitOut(pid, data)
   local ok, d = pcall(Util.JsonDecode, data)
   if not ok or type(d) ~= "table" or type(d.on) ~= "boolean" then return end
-  r:setSitOut(pid, d.on)
+  roster:setSitOut(pid, d.on)
   send(pid, "cnr_sitOut", { on = d.on })
   if current:isActive() and not current.test then
     notify(pid, d.on and "You sit out from the next round" or "You play again from the next round")
@@ -1143,9 +1127,9 @@ function cnrOnPlayerJoin(pid)
 end
 
 function cnrOnPlayerDisconnect(pid)
-  r:leaveEarly(pid)
+  roster:leaveEarly(pid)
   applyEffects(current:playerLeft(now(), pid))
-  r:leaveLate(pid)
+  roster:leaveLate(pid)
   pushRoundCars()
 end
 
@@ -1376,7 +1360,7 @@ local startScheduled = autoRounds.register(panelService, {
     get = function(key) return cfg[key] end,
     set = function(key, text) settings:save(config.setValue(rawConfig, key, text)) end,
   },
-  a = schedule,
+  a = nextRound,
   pushRules = pushRules,
   startNext = startNext,
   refreshConfig = function()
@@ -1390,7 +1374,7 @@ local startScheduled = autoRounds.register(panelService, {
 
 function cnrTick()
   panelService:tick(panelState, lobbyState)
-  if schedule:due(now()) then startScheduled() end
+  if nextRound:due(now()) then startScheduled() end
   if not current:isActive() then return end
   dispatchAISetup()
   if pendingAISetup and now() >= pendingAISetup.deadline then
@@ -1416,7 +1400,6 @@ mapName = (tostring(MP.Get(MP.Settings.Map) or ""):match("levels/([^/]+)/")) or 
 loadStations()
 current = round.new(cfg)
 
-MP.RegisterEvent("onChatMessage", "cnrOnChatMessage")
 MP.RegisterEvent("onVehicleSpawn", "cnrOnVehicleSpawn")
 MP.RegisterEvent("onVehicleEdited", "cnrOnVehicleEdited")
 MP.RegisterEvent("onVehicleDeleted", "cnrOnVehicleDeleted")

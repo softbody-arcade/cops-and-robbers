@@ -103,6 +103,10 @@ local function initialize(env, opts)
   f:close()
   env.vehicles = opts.vehicles or { [1] = { [0] = "x" }, [2] = { [0] = "x" } }
 
+  local function recordOp(detail)
+    env.stream[#env.stream + 1] = { kind = "op", t = env.clock, text = string.format("%.3f %s", env.clock, detail) }
+  end
+
   _G.MP = {
     Settings = { Map = 4, MaxCars = 2 },
     Get = function(key)
@@ -117,7 +121,10 @@ local function initialize(env, opts)
         return elapsed
       end, Start = function() start = env.clock end }
     end,
-    SendChatMessage = function(pid, msg) env.chats[#env.chats + 1] = { pid, msg } end,
+    SendChatMessage = function(pid, msg)
+      recordOp("chat " .. pid .. " " .. msg)
+      env.chats[#env.chats + 1] = { pid, msg }
+    end,
     TriggerClientEvent = function(pid, ev, data)
       env.stream[#env.stream + 1] = { kind = "send", t = env.clock, to = pid, ev = ev, data = data }
       if env.loading and env.loading[pid] then return false, "Player hasn't joined yet" end
@@ -139,13 +146,19 @@ local function initialize(env, opts)
       if not p then return nil, "Vehicle not found" end
       return { pos = { p, 0, 0 }, vel = { 0, 0, 0 } }, ""
     end,
-    RemoveVehicle = function(pid, vid) env.removed[#env.removed + 1] = pid .. "-" .. vid end,
+    RemoveVehicle = function(pid, vid)
+      local vehicle = pid .. "-" .. vid
+      recordOp("remove " .. vehicle)
+      env.removed[#env.removed + 1] = vehicle
+    end,
     RegisterEvent = function(ev, fn) env.events[ev] = fn end,
     CreateEventTimer = function(ev, ms)
+      recordOp("timer create " .. ev .. " " .. ms)
       env.timerOps[#env.timerOps + 1] = { op = "create", name = ev, ms = ms }
       env.timers[ev] = ms
     end,
     CancelEventTimer = function(ev)
+      recordOp("timer cancel " .. ev)
       env.timerOps[#env.timerOps + 1] = { op = "cancel", name = ev }
       env.timers[ev] = nil
     end,
@@ -156,9 +169,24 @@ local function initialize(env, opts)
     JsonPrettify = function(s) return s end,
   }
   _G.FS = {
-    CreateDirectory = function(p) os.execute("mkdir -p '" .. p .. "'") end,
-    Remove = function(p) os.remove(p) end,
+    CreateDirectory = function(p)
+      recordOp("fs mkdir " .. p)
+      os.execute("mkdir -p '" .. p .. "'")
+    end,
+    Remove = function(p)
+      recordOp("fs remove " .. p)
+      os.remove(p)
+    end,
     Rename = function(a, b)
+      local file = io.open(a, "rb")
+      local content = ""
+      if file then
+        content = file:read("*a") or ""
+        file:close()
+        local ok, value = pcall(decodeJson, content)
+        if ok then content = encode(value, true) end
+      end
+      recordOp("fs write " .. b .. " " .. content)
       if opts.renameFails and a:find("leaderboard.json$") then return false, "denied" end
       return os.rename(a, b) ~= nil
     end,

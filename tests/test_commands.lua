@@ -1,30 +1,5 @@
 local commands = require("cnr.commands")
 
-test("parse start with args", function()
-  local c = commands.parse("/cnr start rei")
-  assertEq(c.name, "start"); assertEq(c.args[1], "rei")
-end)
-
-test("parse is case-insensitive for prefix and name", function()
-  assertEq(commands.parse("/CNR TOP").name, "top")
-  assertEq(commands.parse("  /cnr   stop  ").name, "stop")
-end)
-
-test("parse ignores other chat", function()
-  assertEq(commands.parse("hello"), nil)
-  assertEq(commands.parse("/cnrx start"), nil)
-  assertEq(commands.parse("/help"), nil)
-end)
-
-test("bare /cnr is help", function()
-  assertEq(commands.parse("/cnr").name, "help")
-end)
-
-test("start keeps multi-word name", function()
-  assertEq(commands.parse("/cnr start Big Bob").args[1], "Big")
-  assertEq(commands.parse("/cnr start Big Bob").rest, "Big Bob")
-end)
-
 local players = {[1]="Reinder", [2]="Bob", [3]="ReinderAlt"}
 
 test("matchPlayer unique prefix", function()

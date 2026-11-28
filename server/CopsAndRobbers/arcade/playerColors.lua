@@ -16,7 +16,7 @@ function playerColors.new(path, r, m)
   end
 
   function c:get(pid)
-    return colors.get(entries, r:key(pid)) or colors.get(entries, MP.GetPlayerName(pid) or "")
+    return colors.get(entries, r:key(pid))
   end
 
   function c:set(pid, hex)
@@ -29,7 +29,6 @@ function playerColors.new(path, r, m)
 
   function c:clear(pid)
     colors.clear(entries, r:key(pid))
-    colors.clear(entries, MP.GetPlayerName(pid) or "")
     save()
   end
 

@@ -1,4 +1,7 @@
+0.000 fs mkdir <dir>data/stations/
 0.000 log [CnR] 0 gas stations loaded for west_coast_usa
+0.000 timer cancel cnr_tick
+0.000 timer create cnr_tick 250
 0.000 -1 cnr_roundEnd {"reason":"cancelled"}
 0.000 -1 cnr_mode {"startGrid":true,"version":"<version>"}
 0.000 -1 cnr_rules {"carMode":"random","catchHoldSeconds":7,"catchMaxSpeedKmh":3,"catchRadiusMeters":10,"copResetMinDistanceMeters":1000,"crashPenaltySeconds":10,"crashSpeedLossKmh":50,"headStartSeconds":7,"helicopter":true,"helicopterArrivalSeconds":60,"helicopterRefuelSeconds":90,"helicopterUpSeconds":120,"resetWaitSeconds":7,"roundTimeLimitSeconds":1800,"runnerCountdownSeconds":3,"sightMaxMeters":400,"sirensAllowed":true,"trafficPerPlayer":0,"trafficRunnerOnly":false,"weatherChanges":true}

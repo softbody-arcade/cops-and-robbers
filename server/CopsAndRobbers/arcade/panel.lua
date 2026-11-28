@@ -55,7 +55,7 @@ function M.new(m, r)
   end
 
   function p:run(pid, text)
-    local cmd = commands.parse("/cnr " .. text)
+    local cmd = commands.parseText(text)
     local handler = cmd and handlers[cmd.name]
     if handler then handler(pid, cmd, m) end
   end

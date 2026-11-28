@@ -1,7 +1,6 @@
 dofile("tests/server_boot.lua")
 
-test("hot reload resets panel subscriptions and the pending automatic round", function()
-  local env = serverBoot.boot({ config = '{"autoNextDelaySeconds":5}' })
+local function checkReload(env)
   env.call("cnr_panel", 1, '{"action":"open"}')
   env.panel(1, "auto on")
   env.startRound()
@@ -42,7 +41,13 @@ test("hot reload resets panel subscriptions and the pending automatic round", fu
 
   env.clock = reloadTime + oldDeadline + 0.25
   env.call("cnr_tick")
-  env.cleanup()
   assertEq(env.lastSent("cnr_panelState"), nil)
   assertEq(env.lastSent("cnr_pickVehicle"), nil)
+end
+
+test("hot reload resets panel subscriptions and the pending automatic round", function()
+  local env = serverBoot.boot({ config = '{"autoNextDelaySeconds":5}' })
+  local ok, err = xpcall(checkReload, debug.traceback, env)
+  env.cleanup()
+  if not ok then error(err, 0) end
 end)

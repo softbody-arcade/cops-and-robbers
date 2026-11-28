@@ -22,6 +22,23 @@ local function assertSend(index, pid, event, data)
   assertEq(sent[index].data, data)
 end
 
+test("messages require a prefix at construction", function()
+  local ok, err = pcall(messages.new, {})
+  assertEq(ok, false)
+  assert(err:find("prefix", 1, true), err)
+end)
+
+test("log prints the configured prefix and text", function()
+  local m = messages.new({ prefix = "[Test] " })
+  local oldPrint, lines = print, {}
+  print = function(...) lines[#lines + 1] = table.concat({...}, "\t") end
+  local ok, err = pcall(m.log, "x")
+  print = oldPrint
+  assert(ok, err)
+  assertEq(#lines, 1)
+  assertEq(lines[1], "[Test] x")
+end)
+
 test("send ignores invalid player IDs and returns the engine result for player zero", function()
   local m = service()
   m.send(-2, "cnr_test")

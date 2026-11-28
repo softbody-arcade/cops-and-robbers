@@ -1,5 +1,7 @@
 local function payload(entry)
-  return serverBoot.encode(decodeJson(entry.data), true)
+  local ok, value = pcall(decodeJson, entry.data)
+  if not ok then return "raw:" .. tostring(entry.data) end
+  return serverBoot.encode(value, true)
 end
 
 local function sendLine(entry, data)
@@ -79,7 +81,8 @@ function traceRun(scenario)
       return table.unpack(values, 1, values.n)
     end
     scenario.steps(env)
-    return render(env.stream):gsub(literalPattern(env.dir), "<dir>"):gsub(literalPattern(CNR_VERSION), "<version>")
+    local versionToken = "%f[%w.]" .. literalPattern(CNR_VERSION) .. "%f[^%w.]"
+    return render(env.stream):gsub(literalPattern(env.dir), "<dir>"):gsub(versionToken, "<version>")
   end, debug.traceback)
 
   clearModules()

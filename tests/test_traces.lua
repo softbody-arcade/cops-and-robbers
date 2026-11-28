@@ -13,6 +13,71 @@ test("trace lines preserve log text", function()
   assertEq(traceLine({ kind = "log", t = 0, text = "[CnR] hi" }), "0.000 log [CnR] hi")
 end)
 
+test("trace runs preserve non-JSON send payloads", function()
+  local trace = traceRun({ steps = function(env)
+    env.events.probe = "traceProbe"
+    function traceProbe() MP.TriggerClientEvent(1, "cnr_probe", "not json") end
+    env.call("probe")
+  end })
+  assert(trace:find("0.000 1 cnr_probe raw:not json\n", 1, true))
+end)
+
+test("trace lines render a payload that isn't text instead of aborting", function()
+  assertEq(traceLine({ kind = "send", t = 0, to = 1, ev = "cnr_probe" }), "0.000 1 cnr_probe raw:nil")
+end)
+
+test("trace runs replace only standalone version tokens", function()
+  local trace = traceRun({ steps = function(env)
+    env.events.probe = "traceProbe"
+    function traceProbe()
+      MP.TriggerClientEvent(1, "cnr_probe", encode({ v = CNR_VERSION, name = "x" .. CNR_VERSION }))
+      print("." .. CNR_VERSION, CNR_VERSION .. ".", CNR_VERSION .. "x")
+    end
+    env.call("probe")
+  end })
+  local expected = '0.000 1 cnr_probe {"name":"x' .. CNR_VERSION .. '","v":"<version>"}'
+  assert(trace:find(expected .. "\n", 1, true), expected)
+  for _, token in ipairs({ "." .. CNR_VERSION, CNR_VERSION .. ".", CNR_VERSION .. "x" }) do
+    assert(trace:find(token, 1, true), token)
+  end
+end)
+
+test("trace records vehicle removal, chat, timer operations and file writes", function()
+  local env = boot()
+  local target = env.dir .. "a"
+  local file = assert(io.open(target .. ".tmp", "wb"))
+  assert(file:write('{"b":1,"a":2}'))
+  assert(file:close())
+  local before = #env.stream
+  MP.RemoveVehicle(1, 3)
+  MP.SendChatMessage(2, "hi")
+  MP.CreateEventTimer("x", 100)
+  MP.CancelEventTimer("x")
+  FS.CreateDirectory(env.dir .. "d")
+  FS.Remove(target)
+  FS.Rename(target .. ".tmp", target)
+  local exists = FS.Exists(target)
+  env.cleanup()
+
+  local expected = {
+    "0.000 remove 1-3",
+    "0.000 chat 2 hi",
+    "0.000 timer create x 100",
+    "0.000 timer cancel x",
+    "0.000 fs mkdir " .. env.dir .. "d",
+    "0.000 fs remove " .. target,
+    "0.000 fs write " .. target .. ' {"a":2,"b":1}',
+  }
+  assertEq(#env.stream - before, #expected, "operation count")
+  for i, line in ipairs(expected) do
+    local entry = env.stream[before + i]
+    assertEq(entry.kind, "op")
+    assertEq(entry.t, 0)
+    assertEq(entry.text, line)
+  end
+  assertEq(exists, true)
+end)
+
 test("trace lines use ten significant digits for numbers", function()
   local entry = { kind = "send", t = 0, to = 1, ev = "cnr_test", data = '{"x":16.653397805827}' }
   local expected = '0.000 1 cnr_test {"x":16.65339781}'
@@ -189,6 +254,37 @@ scenario("late_joiner", {}, function(env)
   assertEq(expectAfter(env, beforeLeave, "cnr_roundEnd").reason, "disconnect")
 end)
 
+scenario("disconnect_picking", {}, function(env)
+  env.names = { "Reinder", "Bob", "Kim" }
+  env.call("onPlayerJoin", 3)
+  local function disconnectWhilePicking(pid)
+    env.panel(2, "start rein")
+    env.names[pid] = nil
+    local before = #env.sent
+    env.call("onPlayerDisconnect", pid)
+    return before
+  end
+
+  local runnerLeft = disconnectWhilePicking(1)
+  assertEq(expectAfter(env, runnerLeft, "cnr_roundEnd").reason, "cancelled")
+  assertEq(expectAfter(env, runnerLeft, "cnr_notice").msg, "Runner left, round cancelled")
+  env.names[1] = "Reinder"
+  env.call("onPlayerJoin", 1)
+
+  local issuerLeft = disconnectWhilePicking(2)
+  assertEq(expectAfter(env, issuerLeft, "cnr_roundEnd").reason, "cancelled")
+  assertEq(expectAfter(env, issuerLeft, "cnr_notice").msg, "Round cancelled")
+  env.names[2] = "Bob"
+  env.call("onPlayerJoin", 2)
+
+  local copLeft = disconnectWhilePicking(3)
+  assertEq(findAfter(env, copLeft, "cnr_roundEnd"), nil)
+  local beforePick = #env.sent
+  env.call("cnr_vehiclePicked", 2, pick)
+  expectAfter(env, beforePick, "cnr_roundSetup", 1)
+  expectAfter(env, beforePick, "cnr_roundSetup", 2)
+end)
+
 local function spawnAI(env, vid)
   local packet = string.format('USER:Reinder:1-%d:{"jbm":"pickup","vcf":{"partConfigFilename":"vehicles/pickup/base.pc"}}', vid)
   assertEq(env.call("onVehicleSpawn", 1, vid, packet), 0)
@@ -228,6 +324,25 @@ scenario("practice_watch_ai", {}, function(env)
     env.vidPositions["1-" .. vid] = { pos = { x, 0, 0 }, vel = { 0, 0, 0 } }
   end
   expectAICatch(env)
+end)
+
+local function expectPracticeSetupTimeout(env, explanation)
+  env.panel(1, "test runner")
+  env.call("cnr_vehiclePicked", 1, pick)
+  local picked = #env.sent
+  local outcome, finished = tickUntil(env, picked, "cnr_roundEnd")
+  assertEq(outcome.reason, "cancelled")
+  local notice = expectAfter(env, finished, "cnr_notice", 1)
+  assert(notice.msg:find(explanation, 1, true), notice.msg)
+end
+
+scenario("practice_setup_car_late", { vehicles = { [1] = { [0] = "x" } } }, function(env)
+  expectPracticeSetupTimeout(env, "did not register in time")
+end)
+
+scenario("practice_setup_no_slots", { maxCars = 3 }, function(env)
+  env.call("cnr_sitOut", 1, '{"on":true}')
+  expectPracticeSetupTimeout(env, "too few free vehicle slots")
 end)
 
 scenario("evolving", {}, function(env)
