@@ -42,9 +42,12 @@ case $tool in
         case "$*" in
             --version) echo "gh version ${GH_REPORT:-2.106.0} (2026-01-01)" ;;
             'project view 1 --owner softbody-arcade')
+                if [[ ${GH_HOST:-} != github.com || ${PROJECT_READABLE:-no} != yes ]]; then
+                    printf '%s\n' 'private-project-error' >&2
+                    exit 1
+                fi
                 printf '%s\n' 'private-project-fixture'
-                [[ ${PROJECT_READABLE:-no} == yes ]]
-                exit $? ;;
+                ;;
             'auth status --active --hostname github.com --no-refresh')
                 [[ ${GH_PROMPT_DISABLED:-} == 1 && ${NO_COLOR:-} == 1 ]] || exit 2
                 case ${GH_LOGGED_IN:-yes} in
@@ -135,6 +138,7 @@ run_doctor() {
     assert_private 'doctor-test-account'
     assert_private 'gho_fixture_masked'
     assert_private 'private-project-fixture'
+    assert_private 'private-project-error'
     assert_private "$valid_email"
 }
 
@@ -254,6 +258,9 @@ done
 run_doctor 1 GH_LOGGED_IN=message GH_MESSAGE=$'github.com\n  - Error: Bad credentials\nSee troubleshooting advice for "no such host".'
 expect_line 'missing gh project access.*gh auth login.*'
 
+run_doctor 1 GH_LOGGED_IN=message GH_MESSAGE='See troubleshooting advice for "- Error: no such host".'
+expect_line 'missing gh project access.*gh auth login.*'
+
 for timeout in 'context deadline exceeded' 'request canceled'; do
     run_doctor 1 GH_LOGGED_IN=timeout GH_ERROR_LINE="  - Error: Get \"https://api.github.com/\": $timeout"
     expect_line 'missing gh project access.*network.*' "Timeout headline with $timeout"
@@ -266,7 +273,7 @@ run_doctor 1 GH_LOGGED_IN=no EMAIL_REPORT="${valid_email%@*}@USERS.NOREPLY.GITHU
 expect_line 'missing git noreply email.*'
 expect_line 'missing gh project access.*gh auth login.*'
 
-expect_probe=yes run_doctor 0 OMIT_SCOPES=yes PROJECT_READABLE=yes
+expect_probe=yes run_doctor 0 OMIT_SCOPES=yes PROJECT_READABLE=yes GH_HOST=enterprise.invalid
 expect_line 'ok gh project access'
 
 expect_probe=yes run_doctor 1 OMIT_SCOPES=yes PROJECT_READABLE=no
