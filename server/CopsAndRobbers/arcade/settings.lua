@@ -37,9 +37,48 @@ M.GLOBAL = {
   RETIRED_VALUES = { timeOfDay = "map", weather = "map" },
 }
 
+local function copyList(t)
+  local c = {}
+  for i, v in ipairs(t) do c[i] = v end
+  return c
+end
+
+local function validList(v, allowNumbers)
+  if type(v) ~= "table" then return false end
+  local n = 0
+  for key, item in pairs(v) do
+    if type(key) ~= "number" or key < 1 or key % 1 ~= 0 then return false end
+    if type(item) ~= "string" and not (allowNumbers and type(item) == "number") then return false end
+    n = n + 1
+  end
+  for i = 1, n do
+    if v[i] == nil then return false end
+  end
+  return true
+end
+
+local function validNumber(key, v, decl)
+  if type(v) ~= "number" or v ~= v or v == math.huge or v == -math.huge then return false end
+  if decl.MAXIMA[key] and v > decl.MAXIMA[key] then return false end
+  if decl.WHOLE[key] and v % 1 ~= 0 then return false end
+  if decl.POSITIVE[key] then return v > 0 end
+  return v >= 0
+end
+
+local function validValue(key, v, decl)
+  local kind = type(decl.DEFAULTS[key])
+  if type(v) ~= kind then return false end
+  if decl.CHOICES[key] and not decl.CHOICES[key][v] then return false end
+  if kind == "number" or decl.POSITIVE[key] or decl.MAXIMA[key] or decl.WHOLE[key] then
+    return validNumber(key, v, decl)
+  end
+  if kind == "table" then return validList(v) end
+  return kind == "boolean" or kind == "string"
+end
+
 function M.combine(global, game)
-  local decl = { fix = game.fix }
-  for _, field in ipairs({ "DEFAULTS", "CHOICES", "POSITIVE", "MAXIMA", "WHOLE", "TIMING_RANGES", "RETIRED_KEYS", "RETIRED_VALUES" }) do
+  local decl = {}
+  for _, field in ipairs({ "DEFAULTS", "CHOICES", "POSITIVE", "MAXIMA", "WHOLE", "RANGES", "TIMING_RANGES", "RETIRED_KEYS", "RETIRED_VALUES" }) do
     local combined = {}
     for key, value in pairs(global[field] or {}) do combined[key] = value end
     for key, value in pairs(game[field] or {}) do
@@ -55,36 +94,20 @@ function M.combine(global, game)
   for key, default in pairs(game.OVERRIDES or {}) do
     assert(global.DEFAULTS[key] ~= nil, "Cannot override unknown global setting " .. key)
     assert(type(default) == type(global.DEFAULTS[key]), "Invalid override type for " .. key)
-    local choices = global.CHOICES and global.CHOICES[key]
-    assert(not choices or choices[default], "Invalid override choice for " .. key)
     decl.DEFAULTS[key] = default
   end
-  return decl
-end
-
-local function copyList(t)
-  local c = {}
-  for i, v in ipairs(t) do c[i] = v end
-  return c
-end
-
-local function validList(v)
-  if type(v) ~= "table" then return false end
-  local n = 0
-  for _ in pairs(v) do n = n + 1 end
-  if n ~= #v then return false end
-  for _, item in ipairs(v) do
-    if type(item) ~= "string" then return false end
+  for key, value in pairs(decl.DEFAULTS) do
+    assert(validValue(key, value, decl), "Invalid default for " .. key)
   end
-  return true
-end
-
-local function validNumber(key, v, decl)
-  if type(v) ~= "number" or v ~= v or v == math.huge or v == -math.huge then return false end
-  if decl.MAXIMA[key] and v > decl.MAXIMA[key] then return false end
-  if decl.WHOLE[key] and v % 1 ~= 0 then return false end
-  if decl.POSITIVE[key] then return v > 0 end
-  return v >= 0
+  for _, ranges in ipairs({ decl.RANGES or {}, decl.TIMING_RANGES }) do
+    for minKey, maxKey in pairs(ranges) do
+      local min, max = decl.DEFAULTS[minKey], decl.DEFAULTS[maxKey]
+      assert(type(min) == "number", "Expected numeric default for " .. minKey)
+      assert(type(max) == "number", "Expected numeric default for " .. maxKey)
+      assert(max >= min, maxKey .. " default is below " .. minKey)
+    end
+  end
+  return decl
 end
 
 function M.merge(raw, decl)
@@ -92,34 +115,21 @@ function M.merge(raw, decl)
   raw = type(raw) == "table" and raw or {}
   for key, default in pairs(decl.DEFAULTS) do
     local v = raw[key]
-    if v == nil then
+    if v == nil or not validValue(key, v, decl) then
       cfg[key] = type(default) == "table" and copyList(default) or default
-    elseif type(default) == "table" then
-      if validList(v) then
-        cfg[key] = copyList(v)
-      else
-        cfg[key] = copyList(default)
-        warnings[#warnings + 1] = string.format("%s must be a list of names, using the default", key)
+      if v ~= nil then
+        local warning
+        if type(default) == "table" then
+          warning = string.format("%s must be a list of names, using the default", key)
+        elseif type(default) == "boolean" then
+          warning = string.format("%s must be true or false, using %s", key, tostring(default))
+        else
+          warning = string.format("%s has invalid value %s, using %s", key, tostring(v), tostring(default))
+        end
+        warnings[#warnings + 1] = warning
       end
-    elseif type(default) == "string" then
-      if type(v) == "string" and (not decl.CHOICES[key] or decl.CHOICES[key][v]) then
-        cfg[key] = v
-      else
-        cfg[key] = default
-        warnings[#warnings + 1] = string.format("%s has invalid value %s, using %s", key, tostring(v), default)
-      end
-    elseif type(default) == "boolean" then
-      if type(v) == "boolean" then
-        cfg[key] = v
-      else
-        cfg[key] = default
-        warnings[#warnings + 1] = string.format("%s must be true or false, using %s", key, tostring(default))
-      end
-    elseif validNumber(key, v, decl) then
-      cfg[key] = v
     else
-      cfg[key] = default
-      warnings[#warnings + 1] = string.format("%s has invalid value %s, using %s", key, tostring(v), tostring(default))
+      cfg[key] = type(v) == "table" and copyList(v) or v
     end
   end
   local unknown = {}
@@ -130,11 +140,12 @@ function M.merge(raw, decl)
   for _, key in ipairs(unknown) do
     warnings[#warnings + 1] = string.format("unknown setting %s ignored", key)
   end
-  if decl.fix then decl.fix(cfg, warnings) end
-  for minKey, maxKey in pairs(decl.TIMING_RANGES) do
-    if cfg[maxKey] < cfg[minKey] then
-      warnings[#warnings + 1] = string.format("%s (%s) is below %s, using %s", maxKey, tostring(cfg[maxKey]), minKey, tostring(cfg[minKey]))
-      cfg[maxKey] = cfg[minKey]
+  for _, ranges in ipairs({ decl.RANGES or {}, decl.TIMING_RANGES }) do
+    for minKey, maxKey in pairs(ranges) do
+      if cfg[maxKey] < cfg[minKey] then
+        warnings[#warnings + 1] = string.format("%s (%s) is below %s, using %s", maxKey, tostring(cfg[maxKey]), minKey, tostring(cfg[minKey]))
+        cfg[maxKey] = cfg[minKey]
+      end
     end
   end
   return cfg, warnings
@@ -184,18 +195,6 @@ function M.setValue(raw, key, text, decl)
   return updated
 end
 
-local function validListValue(v)
-  if type(v) == "string" then return true end
-  if type(v) ~= "table" then return false end
-  local n = 0
-  for _ in pairs(v) do n = n + 1 end
-  if n ~= #v then return false end
-  for _, item in ipairs(v) do
-    if type(item) ~= "string" and type(item) ~= "number" then return false end
-  end
-  return true
-end
-
 local function toText(v)
   if type(v) == "number" then return string.format("%.10g", v) end
   if type(v) == "table" then
@@ -220,7 +219,7 @@ function M.applyValues(raw, values, decl)
     return a < b
   end)
   for _, key in ipairs(keys) do
-    if type(decl.DEFAULTS[key]) == "table" and not validListValue(values[key]) then
+    if type(decl.DEFAULTS[key]) == "table" and type(values[key]) ~= "string" and not validList(values[key], true) then
       return nil, "Invalid value for " .. key
     end
   end
@@ -263,12 +262,23 @@ end
 
 function M.new(path, decl, log)
   local s = {}
+  local live, warnings, raw
+  local basename = path:match("[^/\\]+$")
   log = log or print
 
+  local function use(values)
+    raw = values
+    live, warnings = M.merge(raw, decl)
+  end
+
+  local function failed(err, reply)
+    log("could not save " .. basename .. ": " .. err)
+    return nil, reply or ("Could not save " .. basename)
+  end
+
   function s:load()
-    local raw, corrupt, bytes = store.decode(path)
+    local values, corrupt, bytes = store.decode(path)
     if corrupt or bytes == "" then
-      local basename = path:match("[^/\\]+$")
       local warning = basename .. " is not valid JSON, using defaults; "
       local copy, err = keepBrokenFile(path, bytes)
       if copy then
@@ -277,14 +287,54 @@ function M.new(path, decl, log)
         log(warning .. "could not keep a copy: " .. tostring(err))
       end
     end
-    raw = raw or {}
-    local cfg, warnings = M.merge(raw, decl)
+    use(values or {})
     for _, w in ipairs(warnings) do log("config: " .. w) end
-    return cfg, warnings, raw
+    return live, warnings, raw
   end
 
-  function s:save(raw)
-    store.write(path, Util.JsonPrettify(Util.JsonEncode(raw)))
+  function s:effective()
+    return live
+  end
+
+  function s:get(key)
+    return live[key]
+  end
+
+  function s:snapshot()
+    local snapshot = {}
+    for key, value in pairs(live) do
+      snapshot[key] = type(value) == "table" and copyList(value) or value
+    end
+    return snapshot
+  end
+
+  function s:save(values)
+    local ok, err = store.writeJson(path, values)
+    if not ok then return failed(err) end
+    use(values)
+    return true
+  end
+
+  function s:apply(values)
+    local disk, corrupt, bytes, err, code = store.decode(path)
+    if not disk and code ~= 2 then
+      if corrupt or bytes == "" then
+        local reason = basename .. " is not valid JSON"
+        return failed(reason, reason)
+      end
+      return failed(err or ("could not read " .. basename))
+    end
+    local updated, keys = M.applyValues(disk or {}, values, decl)
+    if not updated then return nil, keys end
+    local ok, saveErr = self:save(updated)
+    if not ok then return nil, saveErr end
+    return keys
+  end
+
+  function s:set(key, text)
+    local keys, err = self:apply({ [key] = text })
+    if not keys then return nil, err end
+    return true
   end
 
   return s

@@ -639,9 +639,12 @@ test("a mid-chase rejoin gets chaseElapsed in the spectator event", function()
   env.cleanup()
 end)
 
-local function countSent(env, ev, pid)
+local function countSent(env, ev, pid, offset)
   local n = 0
-  for _, s in ipairs(env.sent) do if s.ev == ev and (pid == nil or s.pid == pid) then n = n + 1 end end
+  for i = (offset or 0) + 1, #env.sent do
+    local s = env.sent[i]
+    if s.ev == ev and (pid == nil or s.pid == pid) then n = n + 1 end
+  end
   return n
 end
 
@@ -1250,6 +1253,12 @@ test("if the old leaderboard can't be moved aside, it is never overwritten", fun
   for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
   env.panel(1, "end")
   assertEq(readFileAt(env.dir .. "data/leaderboard.json"):find("Old", 1, true) ~= nil, true)
+  env.call("cnr_board", 1, '{"action":"open"}')
+  local rounds = decodeJson(env.lastSent("cnr_boardState").data).rounds
+  assertEq(#rounds, 1)
+  assertEq(rounds[1].player, "Reinder")
+  assertEq(env.logHas("runs are not saved until the server restarts"), true)
+  assertEq(env.logHas("leaderboard not saved: the old file could not be moved aside"), true)
   env.cleanup()
 end)
 
@@ -2066,6 +2075,155 @@ test("after a round with auto on the panel shows the next round", function()
   env.cleanup()
 end)
 
+local function editConfig(env, json)
+  local file = assert(io.open(env.dir .. "config.json", "w"))
+  assert(file:write(json))
+  assert(file:close())
+end
+
+test("a disk edit survives a mid-round auto toggle and applies from the next round", function()
+  local env = boot()
+  env.startRound()
+  editConfig(env, '{"headStartSeconds":9}')
+  env.panel(1, "auto on")
+  assertEq(decodeJson(readFileAt(env.dir .. "config.json")).headStartSeconds, 9)
+
+  local function runnerGoSeconds()
+    env.go()
+    env.clock = env.clock + 3
+    env.call("cnr_tick")
+    return decodeJson(env.lastSent("cnr_runnerGo").data).headStartSeconds
+  end
+  assertEq(runnerGoSeconds(), 7)
+  env.panel(2, "stop")
+  env.startRound()
+  assertEq(runnerGoSeconds(), 9)
+  env.cleanup()
+end)
+
+test("a held-back change reaches players once at round end", function()
+  local env = boot()
+  runToChase(env)
+  editConfig(env, '{"headStartSeconds":9}')
+  env.panel(1, "auto on")
+  assertEq(decodeJson(env.lastSent("cnr_rules").data).headStartSeconds, 7)
+  env.call("onPlayerJoin", 2)
+  assertEq(env.lastSent("cnr_rules").pid, 2)
+  assertEq(decodeJson(env.lastSent("cnr_rules").data).headStartSeconds, 7)
+  local offset = #env.sent
+  env.panel(2, "end")
+  assertEq(countSent(env, "cnr_rules", nil, offset), 1)
+  assertEq(env.lastSent("cnr_rules").pid, -1)
+  assertEq(decodeJson(env.lastSent("cnr_rules").data).headStartSeconds, 9)
+  env.startRound()
+  offset = #env.sent
+  env.panel(2, "stop")
+  assertEq(countSent(env, "cnr_rules", nil, offset), 0)
+  env.cleanup()
+end)
+
+test("round end synchronizes traffic rules when a joiner received a different slot limit", function()
+  for _, limits in ipairs({ { maxCars = 2, traffic = 1 }, { maxCars = 4, traffic = 3 } }) do
+    local opts = { config = '{"trafficPerPlayer":5}', maxCars = 4 }
+    local env = boot(opts)
+    assertEq(decodeJson(env.lastSent("cnr_rules").data).trafficPerPlayer, 3)
+    env.startRound()
+    opts.maxCars = 2
+    env.names = { "Reinder", "Bob", "Kim" }
+    env.call("onPlayerJoin", 3)
+    assertEq(decodeJson(sentTo(env, "cnr_rules", 3)).trafficPerPlayer, 1)
+    opts.maxCars = limits.maxCars
+    env.sent = {}
+    env.panel(1, "stop")
+    local update = env.lastSent("cnr_rules")
+    env.cleanup()
+    assert(update, "players missed the final traffic limit for MaxCars " .. limits.maxCars)
+    assertEq(update.pid, -1)
+    assertEq(decodeJson(update.data).trafficPerPlayer, limits.traffic)
+  end
+end)
+
+test("a subscribed panel shows auto off at once during a chase", function()
+  local env = boot({ config = '{"autoNextRound":true}' })
+  runToChase(env)
+  assertEq(panelOf(env).auto, true)
+  editConfig(env, '{"headStartSeconds":9}')
+  env.sent = {}
+  env.panel(2, "auto off")
+  local update = env.lastSent("cnr_panelState")
+  assertEq(update.pid, 1)
+  local state = decodeJson(update.data)
+  assertEq(state.phase, "running")
+  assertEq(state.auto, false)
+  assertEq(state.settings.autoNextRound, false)
+  assertEq(state.settings.headStartSeconds, 7)
+  env.panel(2, "end")
+  assertEq(decodeJson(env.lastSent("cnr_panelState").data).settings.headStartSeconds, 9)
+  env.cleanup()
+end)
+
+test("a disk edit to the delay doesn't change the running round's next countdown", function()
+  local env = boot({ config = '{"autoNextRound":false,"autoNextDelaySeconds":5}' })
+  runToChase(env)
+  editConfig(env, '{"autoNextDelaySeconds":15}')
+  env.panel(1, "auto on")
+  env.panel(2, "end")
+  assertEq(decodeJson(env.lastSent("cnr_roundEnd").data).autoNextSeconds, 5)
+  local state = panelOf(env)
+  assertEq(state.autoNext.seconds, 5)
+  assertEq(state.settings.autoNextDelaySeconds, 15)
+  env.cleanup()
+end)
+
+test("auto off mid-chase still stops the next countdown", function()
+  local env = boot({ config = '{"autoNextRound":true,"autoNextDelaySeconds":5}' })
+  runToChase(env)
+  env.panel(1, "auto off")
+  env.panel(2, "end")
+  local ended = decodeJson(env.lastSent("cnr_roundEnd").data)
+  assertEq(ended.reason, "called")
+  assertEq(ended.autoNextSeconds, nil)
+  env.sent = {}
+  env.clock = env.clock + 5
+  env.call("cnr_tick")
+  assertEq(env.lastSent("cnr_pickVehicle"), nil)
+  env.cleanup()
+end)
+
+test("auto on with an unreadable config.json changes nothing and says so", function()
+  local env = boot({ config = '{"autoNextRound":false}' })
+  local path = env.dir .. "config.json"
+  assert(os.remove(path))
+  FS.CreateDirectory(path)
+  local _, readError = require("arcade.store").read(path)
+  assert(readError)
+  env.sent = {}
+  env.panel(1, "auto on")
+  assertEq(env.replyHas("Could not save config.json"), true)
+  assertEq(env.logHas(readError), true)
+  assertEq(env.lastSent("cnr_rules"), nil)
+  assertEq(env.lastSent("cnr_autoNext"), nil)
+  local state = panelOf(env)
+  assertEq(state.auto, false)
+  assertEq(state.settings.autoNextRound, false)
+  env.cleanup()
+end)
+
+test("a failed auto off keeps the scheduled next round", function()
+  local env = boot({ config = '{"autoNextRound":true,"autoNextDelaySeconds":5}' })
+  runToChase(env)
+  env.panel(2, "end")
+  editConfig(env, "{broken")
+  env.sent = {}
+  env.panel(1, "auto off")
+  assertEq(env.replyHas("config.json is not valid JSON"), true)
+  assertEq(env.lastSent("cnr_autoNext"), nil)
+  env.clock = env.clock + 5
+  env.call("cnr_tick")
+  assertEq(env.lastSent("cnr_pickVehicle") ~= nil, true)
+  env.cleanup()
+end)
+
 test("round setup tells every player the runner's name", function()
   local env = boot()
   env.startRound()
@@ -2404,6 +2562,20 @@ test("round-car announcements wait for each driver's confirmed vehicle", functio
   env.cleanup()
 end)
 
+test("a failed reroll setup removes the cop's old car for current and joining clients", function()
+  local env = trafficBoot()
+  env.startRound()
+  placed(env, 1)
+  placed(env, 2)
+  env.panel(1, "reroll")
+  env.loading = { [2] = true }
+  env.call("cnr_vehiclePicked", 1, '{"model":"etk800","config":"vehicles/etk800/base.pc"}')
+  assertEq(table.concat(decodeJson(sentTo(env, "cnr_roundCars", -1)).keys, ","), "1-0")
+  env.call("onPlayerJoin", 3)
+  assertEq(table.concat(decodeJson(sentTo(env, "cnr_roundCars", 3)).keys, ","), "1-0")
+  env.cleanup()
+end)
+
 test("everyone learns the round cars, and they're cleared at round end", function()
   local env = trafficBoot()
   env.vehicles[2][3] = "round car"
@@ -2557,6 +2729,23 @@ end)
 test("How to play gets the effective traffic", function()
   local env = trafficBoot({ maxCars = 4 })
   assertEq(env.lastSent("cnr_rules").data:find('"trafficPerPlayer":3', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("in driven practice a spawn before cnr_myVehicle doesn't release AI setup", function()
+  local env = trafficBoot({ maxCars = 4, vehicles = { [1] = {} } })
+  env.panel(1, "test runner")
+  env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  assert(env.lastSent("cnr_roundSetup"))
+  assertEq(env.call("onVehicleSpawn", 1, 4, spawnOf(1, 4, "pickup", "vehicles/pickup/base.pc")), 0)
+  env.vehicles[1][4] = "pickup"
+  env.clock = 0.25
+  env.call("cnr_tick")
+  assertEq(env.lastSent("cnr_setupAI"), nil)
+  env.call("cnr_myVehicle", 1, '{"vid":4}')
+  env.clock = 0.5
+  env.call("cnr_tick")
+  assertEq(env.lastSent("cnr_setupAI").pid, 1)
   env.cleanup()
 end)
 
@@ -2786,6 +2975,24 @@ test("practice parks only bystanders, including late joiners, and releases them 
   env.cleanup()
 end)
 
+test("a practice end unparks bystanders before the issuer's roundEnd", function()
+  local env = boot()
+  env.panel(1, "test runner")
+  env.call("cnr_vehiclePicked", 1, PICK)
+  env.sent = {}
+  env.panel(1, "stop")
+  local unpark, ended
+  for i, event in ipairs(env.sent) do
+    if event.ev == "cnr_parkBystanderCars" and event.pid == 2 and decodeJson(event.data).on == false then
+      unpark = i
+    elseif event.ev == "cnr_roundEnd" and event.pid == 1 then
+      ended = i
+    end
+  end
+  assert(unpark and ended and unpark < ended, "expected Bob to be unparked before the issuer's roundEnd")
+  env.cleanup()
+end)
+
 test("a practice bystander still loading gets the parking request on join", function()
   local env = boot()
   env.loading = { [2] = true }
@@ -2823,32 +3030,122 @@ test("Sit out is answered, stored per player and cleared on disconnect", functio
   env.cleanup()
 end)
 
-test("Start is refused only when everyone sits out", function()
+test("A round needs two players who aren't sitting out", function()
   local env = boot()
+  env.names = { "Reinder", "Bob", "Kim" }
   sitOut(env, 1, true)
   sitOut(env, 2, true)
+  sitOut(env, 3, true)
   env.panel(2, "start next")
   assertEq(env.replyHas("Everyone is sitting out"), true)
   assertEq(env.lastSent("cnr_pickVehicle"), nil)
   sitOut(env, 2, false)
   env.panel(2, "start next")
+  assertEq(env.replyHas("Not enough players"), true)
+  assertEq(env.lastSent("cnr_pickVehicle"), nil)
+  sitOut(env, 3, false)
+  env.panel(2, "start Bob")
   assertEq(env.lastSent("cnr_pickVehicle") ~= nil, true)
   env.call("cnr_vehiclePicked", 2, PICK)
   assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 2)).role, "runner")
+  assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 3)).role, "cop")
   assertEq(sentTo(env, "cnr_spectate", 1) ~= nil, true)
   env.cleanup()
+end)
+
+test("A player alone can't start a round but can practise", function()
   local alone = boot()
   alone.names = { "Reinder" }
   alone.panel(1, "start next")
-  alone.call("cnr_vehiclePicked", 1, PICK)
-  assertEq(decodeJson(sentTo(alone, "cnr_roundSetup", 1)).role, "runner")
+  assertEq(alone.replyHas("Not enough players"), true)
+  assertEq(alone.lastSent("cnr_pickVehicle"), nil)
+  alone.panel(1, "test runner")
+  assertEq(alone.lastSent("cnr_pickVehicle") ~= nil, true)
   alone.cleanup()
 end)
 
-test("auto next round keeps going with one player who isn't sitting out", function()
+test("a refused start keeps a running practice", function()
+  local env = boot()
+  env.names = { "Reinder" }
+  env.panel(1, "test runner")
+  env.call("cnr_vehiclePicked", 1, PICK)
+  env.sent = {}
+  env.panel(1, "start next")
+  assertEq(env.replyHas("Not enough players"), true)
+  assertEq(env.lastSent("cnr_roundEnd"), nil)
+  assertEq(env.lastSent("cnr_pickVehicle"), nil)
+  env.cleanup()
+end)
+
+test("a start into evolving mode without a build is refused by the new round's settings, keeping practice", function()
+  local env = boot()
+  env.names = { "Reinder", "Bob" }
+  env.panel(1, "test runner")
+  env.call("cnr_vehiclePicked", 1, PICK)
+  editConfig(env, '{"carMode":"evolving"}')
+  env.panel(1, "auto on")
+  env.sent = {}
+  env.panel(1, "start next")
+  assertEq(env.replyHas("Start a new build first"), true)
+  assertEq(env.lastSent("cnr_roundEnd"), nil)
+  assertEq(env.lastSent("cnr_pickVehicle"), nil)
+  env.cleanup()
+end)
+
+test("a refused start doesn't fix who runs next", function()
+  local env = boot()
+  local random = math.random
+  math.random = function(n) if n then return n end return random() end
+  env.names = { "Reinder" }
+  env.panel(1, "start next")
+  assertEq(env.replyHas("Not enough players"), true)
+  env.names = { "Reinder", "Bob" }
+  env.panel(1, "start next")
+  env.call("cnr_vehiclePicked", 1, PICK)
+  math.random = random
+  assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 2)).role, "runner")
+  env.cleanup()
+end)
+
+test("a refused manual start keeps the pending automatic round", function()
   local env = boot({ config = '{"autoNextRound": true, "autoNextDelaySeconds": 5}' })
+  env.panel(2, "start Bob")
+  env.call("cnr_vehiclePicked", 2, PICK)
+  env.go()
+  for _ = 1, 50 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.panel(2, "end")
   sitOut(env, 1, true)
   env.panel(2, "start next")
+  assertEq(env.replyHas("Not enough players"), true)
+  env.sent = {}
+  for _ = 1, 24 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  assertEq(sentTo(env, "cnr_autoNext", -1) ~= nil, true)
+  env.cleanup()
+end)
+
+test("a refused Next from the panel replies to the player who pressed it", function()
+  local env = boot({ config = '{"autoNextRound": true, "autoNextDelaySeconds": 5}' })
+  env.panel(2, "start Bob")
+  env.call("cnr_vehiclePicked", 2, PICK)
+  env.go()
+  for _ = 1, 50 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.panel(2, "end")
+  sitOut(env, 2, true)
+  env.sent = {}
+  env.panel(1, "next")
+  local reply = env.lastSent("cnr_panelReply")
+  assertEq(reply.pid, 1)
+  assertEq(decodeJson(reply.data).text, "Not enough players")
+  assertEq(sentTo(env, "cnr_notice", 2), nil)
+  assertEq(sentTo(env, "cnr_autoNext", -1) ~= nil, true)
+  env.cleanup()
+end)
+
+test("auto next round keeps going while two players aren't sitting out", function()
+  local env = boot({ config = '{"autoNextRound": true, "autoNextDelaySeconds": 5}' })
+  env.names = { "Reinder", "Bob", "Kim" }
+  sitOut(env, 1, true)
+  env.panel(2, "start Bob")
   env.call("cnr_vehiclePicked", 2, PICK)
   env.go()
   for _ = 1, 50 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
@@ -2856,8 +3153,26 @@ test("auto next round keeps going with one player who isn't sitting out", functi
   env.sent = {}
   for _ = 1, 24 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
   assertEq(env.lastSent("cnr_pickVehicle") ~= nil, true)
+  assertEq(sentTo(env, "cnr_autoNext", -1), nil)
   env.call("cnr_vehiclePicked", env.lastSent("cnr_pickVehicle").pid, PICK)
-  assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 2)).role, "runner")
+  assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 3)).role, "runner")
+  assertEq(sentTo(env, "cnr_spectate", 1) ~= nil, true)
+  env.cleanup()
+end)
+
+test("an automatic start with one player left is refused and the countdown is withdrawn", function()
+  local env = boot({ config = '{"autoNextRound": true, "autoNextDelaySeconds": 5}' })
+  env.panel(2, "start Bob")
+  env.call("cnr_vehiclePicked", 2, PICK)
+  env.go()
+  for _ = 1, 50 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.panel(2, "end")
+  sitOut(env, 1, true)
+  env.sent = {}
+  for _ = 1, 24 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  assertEq(env.lastSent("cnr_pickVehicle"), nil)
+  assertEq(env.noticeHas("Not enough players"), true)
+  assertEq(sentTo(env, "cnr_autoNext", -1) ~= nil, true)
   env.cleanup()
 end)
 
@@ -3937,5 +4252,330 @@ test("a malformed registration leaves valid siblings usable and quoted null text
   env.call("cnr_sight", 1, encode({aiId=-10, instance=7, seen=true, details='ignored ":null'}))
   advanceSight(env)
   assertEq(runnerSpotted(env), true)
+  env.cleanup()
+end)
+
+local function denyRenameFrom(path, reason)
+  local rename = FS.Rename
+  FS.Rename = function(from, to)
+    if from == path then return false, reason or "rename denied" end
+    return rename(from, to)
+  end
+end
+
+for _, action in ipairs({ "settings", "auto on" }) do
+  test("a failed " .. action .. " save shows the filename and logs the full error", function()
+    local bytes = '{"headStartSeconds":3,"autoNextRound":false}'
+    local env = boot({ config = bytes })
+    local path = env.dir .. "config.json"
+    FS.CreateDirectory(path .. ".tmp")
+    local file, openError = io.open(path .. ".tmp", "wb")
+    assertEq(file, nil)
+    assert(openError:find(path, 1, true))
+    if action == "settings" then
+      env.call("cnr_panel", 1, '{"action":"settings","id":7,"values":{"headStartSeconds":9}}')
+    else
+      env.panel(1, action)
+    end
+    local reply = decodeJson(env.lastSent("cnr_panelReply").data)
+    if action == "settings" then
+      assertEq(reply.ok, false)
+      assertEq(reply.id, 7)
+    else
+      assertEq(reply.tone, "warn")
+    end
+    assertEq(reply.text, "Could not save config.json")
+    assertEq(env.logHas("could not save config.json: " .. openError), true)
+    assertEq(readFileAt(path), bytes)
+    local settings = panelOf(env).settings
+    assertEq(settings.headStartSeconds, 3)
+    assertEq(settings.autoNextRound, false)
+    env.cleanup()
+  end)
+end
+
+for _, hex in ipairs({ "#00ff00", "" }) do
+  test("a colour that can't be saved isn't applied (" .. hex .. ")", function()
+    local env = boot()
+    env.call("cnr_color", 1, '{"hex":"#ff0000"}')
+    local tmp = env.dir .. "data/colors.json.tmp"
+    denyRenameFrom(tmp, tmp .. ": rename denied")
+    env.call("cnr_color", 1, encode({ hex = hex }))
+    local mine = decodeJson(env.lastSent("cnr_myColor").data)
+    assertEq(mine.error, "Could not save colors.json")
+    assertEq(mine.hex, "#ff0000")
+    assertEq(env.logHas("could not save colors.json: " .. tmp .. ": rename denied"), true)
+    env.cleanup()
+  end)
+end
+
+local oldBuildBytes = '{"model":"pigeon","name":"Old build","parts":{},"step":3}'
+
+test("a new build that can't be saved keeps the old build", function()
+  local env = boot({ files = { ["data/build.json"] = oldBuildBytes } })
+  local path = env.dir .. "data/build.json"
+  denyRenameFrom(path .. ".tmp", path .. ".tmp: rename denied")
+  newBuild(env)
+  assertEq(decodeJson(env.lastSent("cnr_panelReply").data).text, "Could not save build.json")
+  assertEq(env.logHas("could not save build.json: " .. path .. ".tmp: rename denied"), true)
+  assertEq(readFileAt(path), oldBuildBytes)
+  assertEq(panelOf(env).build.label, "Old build · change 3")
+  env.cleanup()
+end)
+
+for _, op in ipairs({ "new", "reset" }) do
+  test("a failed build backup stops " .. op, function()
+    local env = boot({ files = { ["data/build.json"] = oldBuildBytes } })
+    local path = env.dir .. "data/build.json"
+    denyRenameFrom(path, path .. ": rename denied")
+    if op == "new" then newBuild(env) else env.call("cnr_panel", 1, '{"action":"build","op":"reset"}') end
+    assertEq(decodeJson(env.lastSent("cnr_panelReply").data).text, "Could not save build.json")
+    assertEq(env.logHas("could not save build.json: " .. path .. ": rename denied"), true)
+    assertEq(readFileAt(path), oldBuildBytes)
+    assertEq(panelOf(env).build.label, "Old build · change 3")
+    env.cleanup()
+  end)
+end
+
+test("an unsaved evolving setup keeps the build and its step", function()
+  local env = boot({ files = { ["data/build.json"] = oldBuildBytes } })
+  evolving(env)
+  env.panel(2, "start rein")
+  env.call("cnr_panel", 1, '{"action":"apply"}')
+  local path = env.dir .. "data/build.json"
+  denyRenameFrom(path .. ".tmp", path .. ".tmp: rename denied")
+  env.call("cnr_setup", 1, '{"parts":{"engine":"v8"},"changes":[{"label":"Engine"}]}')
+  assertEq(env.logHas("could not save build.json: " .. path .. ".tmp: rename denied"), true)
+  assertEq(decodeJson(env.lastSent("cnr_notice").data).msg, "Could not save build.json")
+  assertEq(panelOf(env).build.step, 3)
+  assertEq(readFileAt(path), oldBuildBytes)
+  assertEq(env.lastSent("cnr_rebuild"), nil)
+  env.cleanup()
+end)
+
+for _, op in ipairs({ "add", "remove" }) do
+  test("a failed station " .. op .. " keeps the station list", function()
+    local env = boot()
+    local path = env.dir .. "data/stations/west_coast_usa.json"
+    env.positions[1] = 0
+    if op == "remove" then env.call("cnr_panel", 1, '{"action":"station","op":"add"}') end
+    local count, bytes = panelOf(env).stationCount, readFileAt(path)
+    denyRenameFrom(path .. ".tmp", path .. ".tmp: rename denied")
+    env.call("cnr_panel", 1, encode({ action = "station", op = op }))
+    assertEq(decodeJson(env.lastSent("cnr_panelReply").data).text, "Could not save west_coast_usa.json")
+    assertEq(env.logHas("could not save west_coast_usa.json: " .. path .. ".tmp: rename denied"), true)
+    assertEq(panelOf(env).stationCount, count)
+    assertEq(readFileAt(path), bytes)
+    env.cleanup()
+  end)
+end
+
+test("discovered stations stay usable for the session when their save fails", function()
+  local env = boot()
+  local path = env.dir .. "data/stations/west_coast_usa.json"
+  denyRenameFrom(path .. ".tmp")
+  env.call("cnr_stations", 1, '{"map":"west_coast_usa","stations":[{"x":1,"y":2,"z":3,"r":12}]}')
+  env.call("cnr_panel", 1, '{"action":"stations"}')
+  local stations = decodeJson(sentTo(env, "cnr_stationList", 1)).stations
+  assertEq(#stations, 1)
+  assertEq(stations[1].x, 1)
+  assertEq(stations[1].y, 2)
+  assertEq(stations[1].z, 3)
+  assertEq(readFileAt(path), nil)
+  assertEq(env.logHas("could not save west_coast_usa.json: rename denied"), true)
+  env.cleanup()
+end)
+
+test("a failed leaderboard save leaves the old standings on disk and in the app", function()
+  local bytes = '{"format":2,"runs":[]}'
+  local env = boot({ leaderboard = bytes })
+  local path = env.dir .. "data/leaderboard.json"
+  denyRenameFrom(path .. ".tmp")
+  env.startRound()
+  env.go()
+  for _ = 1, 60 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.panel(1, "end")
+  env.call("cnr_board", 1, '{"action":"open"}')
+  assertEq(env.logHas("could not save leaderboard.json: rename denied"), true)
+  assertEq(#decodeJson(env.lastSent("cnr_boardState").data).rounds, 0)
+  assertEq(rowOf(panelOf(env), "Reinder").runs, 1)
+  assertEq(readFileAt(path), bytes)
+  env.cleanup()
+end)
+
+test("an encoding error while replacing a build restores its file", function()
+  local env = boot({ files = { ["data/build.json"] = oldBuildBytes } })
+  local encodeJson = Util.JsonEncode
+  Util.JsonEncode = function(value)
+    if value.model == "pickup" and value.startedFrom then error("encoding failed", 0) end
+    return encodeJson(value)
+  end
+  local called, err = pcall(newBuild, env)
+  Util.JsonEncode = encodeJson
+  assert(called, err)
+  assertEq(env.replyHas("Could not save build.json"), true)
+  assertEq(env.logHas("could not save build.json: encoding failed"), true)
+  assertEq(readFileAt(env.dir .. "data/build.json"), oldBuildBytes)
+  assertEq(panelOf(env).build.label, "Old build · change 3")
+  env.cleanup()
+end)
+
+test("watch-only practice by a sitting-out player still starts", function()
+  local env = boot()
+  env.names = { [7] = "Ann" }
+  sitOut(env, 7, true)
+  env.panel(7, "test runner")
+  env.call("cnr_vehiclePicked", 7, PICK)
+  assertEq(decodeJson(sentTo(env, "cnr_setupAI", 7)).aiOnly, true)
+  env.cleanup()
+end)
+
+test("an automatic start after the issuer left is issued by the lowest player id", function()
+  local env = boot({ config = '{"autoNextRound":true,"autoNextDelaySeconds":5}' })
+  runToChase(env)
+  env.panel(2, "end")
+  env.names = { [19] = "Bob", [7] = "Ann", [11] = "Kim" }
+  env.call("onPlayerDisconnect", 2)
+  env.sent = {}
+  env.clock = env.clock + 5
+  env.call("cnr_tick")
+  assertEq(env.lastSent("cnr_pickVehicle").pid, 7)
+  env.cleanup()
+end)
+
+test("a real round starts when the connected players are 7 and 9", function()
+  local env = boot()
+  env.names = { [7] = "Ann", [9] = "Kim" }
+  env.panel(7, "start Ann")
+  assertEq(env.lastSent("cnr_pickVehicle").pid, 7)
+  env.cleanup()
+end)
+
+test("a driver whose confirmed round car vanished without a delete can spawn the round car again", function()
+  local env = boot({ vehicles = { [1] = {}, [2] = {} } })
+  env.startRound()
+  assertEq(env.call("onVehicleSpawn", 2, 4, spawnOf(2, 4, "pickup")), 0)
+  env.vehicles[2][4] = "round car"
+  env.call("cnr_myVehicle", 2, '{"vid":4}')
+  env.vehicles[2][4] = nil
+  local again = env.call("onVehicleSpawn", 2, 5, spawnOf(2, 5, "pickup"))
+  env.cleanup()
+  assertEq(again, 0)
+end)
+
+test("a driver who still owns a vehicle cannot spawn a second round car", function()
+  local env = boot({ vehicles = { [1] = {}, [2] = {} } })
+  env.startRound()
+  assertEq(env.call("onVehicleSpawn", 2, 4, spawnOf(2, 4, "pickup")), 0)
+  env.vehicles[2][4] = "round car"
+  local second = env.call("onVehicleSpawn", 2, 5, spawnOf(2, 5, "pickup"))
+  env.cleanup()
+  assertEq(second, 1)
+end)
+
+test("a traffic capacity refusal keeps its model-independent log entry", function()
+  local env = trafficBoot({ config = '{"trafficPerPlayer":1}', maxCars = 3 })
+  env.startRound()
+  env.call("cnr_myVehicle", 2, '{"vid":0}')
+  env.vehicles[2][1] = "traffic"
+  assertEq(env.call("onVehicleSpawn", 2, 2, spawnOf(2, 2, "etk800")), 1)
+  assertEq(env.logHas("Bob spawned ? (vid 2): refused"), true)
+  env.cleanup()
+end)
+
+test("a driver can retry placement after their provisional car is deleted before confirmation", function()
+  local env = boot({ vehicles = { [1] = {}, [2] = {} } })
+  env.startRound()
+  local first = env.call("onVehicleSpawn", 2, 4, spawnOf(2, 4, "pickup"))
+  env.call("onVehicleDeleted", 2, 4)
+  local retry = env.call("onVehicleSpawn", 2, 5, spawnOf(2, 5, "pickup"))
+  env.vehicles[2][5] = "round car"
+  env.call("cnr_myVehicle", 2, '{"vid":5}')
+  local keys = decodeJson(env.lastSent("cnr_roundCars").data).keys
+  env.cleanup()
+  assertEq(first, 0)
+  assertEq(retry, 0)
+  assertEq(table.concat(keys, ","), "2-5")
+end)
+
+test("a runner leaving mid-chase sends exactly one empty cnr_roundCars", function()
+  local env = trafficBoot()
+  env.startRound()
+  placed(env, 1)
+  placed(env, 2)
+  chase(env)
+  env.call("cnr_panel", 2, '{"action":"open"}')
+  assertEq(decodeJson(env.lastSent("cnr_panelState").data).phase, "running")
+  assertEq(table.concat(decodeJson(env.lastSent("cnr_roundCars").data).keys, ","), "1-0,2-0")
+  env.sent = {}
+  env.call("onPlayerDisconnect", 1)
+  local count = 0
+  for _, msg in ipairs(env.sent) do
+    if msg.ev == "cnr_roundCars" then
+      count = count + 1
+      assertEq(msg.pid, -1)
+      assertEq(#decodeJson(msg.data).keys, 0)
+    end
+  end
+  env.cleanup()
+  assertEq(count, 1)
+end)
+
+test("a station report without a list leaves discovery open for the next report", function()
+  local env = boot()
+  env.call("cnr_stations", 1, '{"map":"west_coast_usa","stations":true}')
+  env.call("cnr_stations", 1, '{"map":"west_coast_usa","stations":[{"x":1,"y":2,"z":3}]}')
+  env.call("cnr_panel", 1, '{"action":"stations"}')
+  local stations = decodeJson(env.lastSent("cnr_stationList").data).stations
+  env.cleanup()
+  assertEq(#stations, 1)
+  assertEq(stations[1].x, 1)
+end)
+
+test("a temporary leaderboard read error at startup cannot replace earlier runs", function()
+  local bytes = '{"format":2,"runs":[{"player":"Old","survivedSeconds":999,"endedAt":1}]}'
+  local env = boot({ leaderboard = bytes })
+  local path = env.dir .. "data/leaderboard.json"
+  local store = require("arcade.store")
+  local read = store.read
+  store.read = function(name)
+    if name == path then return nil, "permission denied", 13 end
+    return read(name)
+  end
+  local ok, err = pcall(env.reload)
+  store.read = read
+  assert(ok, err)
+  runningRound(env)
+  env.panel(1, "end")
+  env.call("cnr_board", 1, '{"action":"open"}')
+  local rounds = decodeJson(env.lastSent("cnr_boardState").data).rounds
+  local saved = readFileAt(path)
+  env.cleanup()
+  assertEq(#rounds, 1)
+  assertEq(rounds[1].player, "Reinder")
+  assertEq(saved, bytes)
+  assertEq(env.logHas("permission denied; runs are not saved until the server restarts"), true)
+end)
+
+test("a failed build restore names the kept backup and logs its path", function()
+  local env = boot({ files = { ["data/build.json"] = oldBuildBytes } })
+  local path = env.dir .. "data/build.json"
+  denyRenameFrom(path .. ".tmp", path .. ".tmp: rename denied")
+  local rename, backup = os.rename
+  os.rename = function(from, to)
+    if to == path then
+      backup = from
+      return nil, from .. ": restore denied"
+    end
+    return rename(from, to)
+  end
+  local ok, err = pcall(newBuild, env)
+  os.rename = rename
+  assert(ok, err)
+  assertEq(decodeJson(env.lastSent("cnr_panelReply").data).text,
+    "Could not save build.json; the previous build is kept as " .. backup:match("[^/\\]+$"))
+  assertEq(env.logHas(path .. ".tmp: rename denied"), true)
+  assertEq(env.logHas(backup .. ": restore denied"), true)
+  assertEq(readFileAt(backup), oldBuildBytes)
   env.cleanup()
 end)

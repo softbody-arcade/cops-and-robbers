@@ -6,9 +6,19 @@ local playerColors = {}
 function playerColors.new(path, r, m)
   local c = {}
   local entries = {}
+  local basename = path:match("[^/\\]+$")
 
-  local function save()
-    store.write(path, Util.JsonPrettify(Util.JsonEncode(entries)))
+  local function save(pid, hex)
+    local updated = {}
+    for key, value in pairs(entries) do updated[key] = value end
+    updated[r:key(pid)] = hex
+    local ok, err = store.writeJson(path, updated)
+    if not ok then
+      m.log("could not save " .. basename .. ": " .. tostring(err))
+      return false, "Could not save " .. basename
+    end
+    entries = updated
+    return true
   end
 
   function c:load()
@@ -22,14 +32,11 @@ function playerColors.new(path, r, m)
   function c:set(pid, hex)
     local color, err = colors.parseHex(hex)
     if not color then return false, err end
-    colors.set(entries, r:key(pid), color.hex)
-    save()
-    return true
+    return save(pid, color.hex)
   end
 
   function c:clear(pid)
-    colors.clear(entries, r:key(pid))
-    save()
+    return save(pid, nil)
   end
 
   function c:sendMine(pid, err)

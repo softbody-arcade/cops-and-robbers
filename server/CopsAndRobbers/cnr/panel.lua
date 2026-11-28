@@ -4,21 +4,8 @@ local config = require("cnr.config")
 
 local M = {}
 
-M.COMMANDS = {
-  ["go"] = true, ["reroll"] = true, ["end"] = true, ["stop"] = true, ["auto on"] = true, ["auto off"] = true,
-  ["test runner"] = true, ["test cop"] = true, ["reload"] = true, ["next"] = true, ["sky"] = true,
-}
-
-local MAX_COMMAND_LENGTH = 64
-
-function M.allow(text)
-  if type(text) ~= "string" then return nil end
-  local t = text:match("^%s*(.-)%s*$")
-  if #t > MAX_COMMAND_LENGTH then return nil end
-  local lower = t:lower()
-  if M.COMMANDS[lower] then return lower end
-  if lower:match("^start %S") then return "start " .. t:sub(7) end
-  return nil
+function M.commands()
+  return { exact = { "go", "reroll", "end", "stop", "test runner", "test cop", "sky" }, prefixes = { "start " } }
 end
 
 function M.can(state, test, evolving, skyRandom)
@@ -70,7 +57,8 @@ function M.goBlocked(phase, evolving, runnerName, loading)
 end
 
 function M.snapshot(info)
-  local cfg = info.cfg or {}
+  local cfg = copy(info.cfg or {})
+  if info.autoNextRound ~= nil then cfg.autoNextRound = info.autoNextRound end
   return {
     version = info.version,
     map = info.map,
@@ -80,7 +68,7 @@ function M.snapshot(info)
     test = info.test == true,
     elapsed = info.elapsed and math.floor(info.elapsed) or nil,
     players = M.playerRows(info.players, info.nextRunner, info.lastRunner),
-    settings = copy(cfg),
+    settings = cfg,
     defaults = copy(info.defaults or {}),
     auto = cfg.autoNextRound == true,
     can = M.can(info.phase, info.test, info.evolving, info.skyRandom),

@@ -34,6 +34,7 @@ local GAME = {
   CHOICES = {
     carMode = { random = true, evolving = true },
   },
+  RANGES = { copSpawnMinMeters = "copSpawnMaxMeters" },
   POSITIVE = {
     catchHoldSeconds = true, catchRadiusMeters = true, crashSpeedLossKmh = true,
     catchMaxSpeedKmh = true, stillMaxSpeedKmh = true, sightLiveIntervalSeconds = true, helicopterUpSeconds = true,
@@ -42,13 +43,6 @@ local GAME = {
   RETIRED_KEYS = { lastSeenIntervalSeconds = true },
   OVERRIDES = {},
 }
-
-function GAME.fix(cfg, warnings)
-  if cfg.copSpawnMaxMeters < cfg.copSpawnMinMeters then
-    warnings[#warnings + 1] = string.format("copSpawnMaxMeters (%s) is below copSpawnMinMeters, using %s", tostring(cfg.copSpawnMaxMeters), tostring(cfg.copSpawnMinMeters))
-    cfg.copSpawnMaxMeters = cfg.copSpawnMinMeters
-  end
-end
 
 local declaration = settings.combine(settings.GLOBAL, GAME)
 local M = {

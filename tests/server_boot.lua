@@ -84,23 +84,11 @@ function decodeJson(str)
   return v
 end
 
-local function initialize(env, opts)
-  os.execute("mkdir -p '" .. env.dir .. "'")
-  for name, text in pairs(opts.files or {}) do
-    os.execute("mkdir -p '" .. env.dir .. "data'")
-    local ef = assert(io.open(env.dir .. name, "w"))
-    ef:write(text)
-    ef:close()
-  end
-  if opts.leaderboard then
-    os.execute("mkdir -p '" .. env.dir .. "data'")
-    local lf = assert(io.open(env.dir .. "data/leaderboard.json", "w"))
-    lf:write(opts.leaderboard)
-    lf:close()
-  end
-  local f = assert(io.open(env.dir .. "config.json", "w"))
-  f:write(opts.config or assert(io.open("server/CopsAndRobbers/config.json")):read("*a"))
-  f:close()
+local function fakes(env, opts)
+  opts = opts or {}
+  env.sent, env.chats, env.events, env.timers = {}, {}, {}, {}
+  env.removed, env.logs, env.stream, env.timerOps = {}, {}, {}, {}
+  env.clock, env.positions, env.vidPositions = 0, {}, {}
   env.vehicles = opts.vehicles or { [1] = { [0] = "x" }, [2] = { [0] = "x" } }
 
   local function recordOp(detail)
@@ -197,6 +185,30 @@ local function initialize(env, opts)
     end,
   }
 
+  function env.lastSent(ev)
+    for i = #env.sent, 1, -1 do if env.sent[i].ev == ev then return env.sent[i] end end
+  end
+end
+
+local function initialize(env, opts)
+  os.execute("mkdir -p '" .. env.dir .. "'")
+  for name, text in pairs(opts.files or {}) do
+    os.execute("mkdir -p '" .. env.dir .. "data'")
+    local ef = assert(io.open(env.dir .. name, "w"))
+    ef:write(text)
+    ef:close()
+  end
+  if opts.leaderboard then
+    os.execute("mkdir -p '" .. env.dir .. "data'")
+    local lf = assert(io.open(env.dir .. "data/leaderboard.json", "w"))
+    lf:write(opts.leaderboard)
+    lf:close()
+  end
+  local f = assert(io.open(env.dir .. "config.json", "w"))
+  f:write(opts.config or assert(io.open("server/CopsAndRobbers/config.json")):read("*a"))
+  f:close()
+  fakes(env, opts)
+
   local realPrint = print
   local function capture(...)
     local parts = {}
@@ -226,9 +238,6 @@ local function initialize(env, opts)
     print = outer
     if not results[1] then error(results[2], 0) end
     return table.unpack(results, 2, results.n)
-  end
-  function env.lastSent(ev)
-    for i = #env.sent, 1, -1 do if env.sent[i].ev == ev then return env.sent[i] end end
   end
   function env.noticeHas(text, tone)
     for _, m in ipairs(env.sent) do
@@ -265,7 +274,7 @@ end
 
 local function boot(opts)
   opts = opts or {}
-  local env = { sent = {}, chats = {}, events = {}, timers = {}, removed = {}, logs = {}, stream = {}, timerOps = {}, clock = 0, positions = {}, vidPositions = {} }
+  local env = {}
   local tmp = os.tmpname(); os.remove(tmp)
   env.dir = tmp .. "_cnr/"
   function env.cleanup() os.execute("rm -rf '" .. env.dir .. "'") end
@@ -274,4 +283,4 @@ local function boot(opts)
   return env
 end
 
-serverBoot = { boot = boot, encode = encode }
+serverBoot = { boot = boot, fakes = fakes, encode = encode }

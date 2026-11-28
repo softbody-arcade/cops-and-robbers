@@ -32,16 +32,24 @@ function roster.new()
     for _, entries in pairs(groups.late) do entries[pid] = nil end
   end
 
+  function r:players()
+    return MP.GetPlayers() or {}
+  end
+
+  function r:name(pid)
+    return MP.GetPlayerName(pid)
+  end
+
   function r:key(pid)
     local ids = MP.GetPlayerIdentifiers and MP.GetPlayerIdentifiers(pid)
     if type(ids) == "table" and ids.beammp and tostring(ids.beammp) ~= "" then
       return "beammp:" .. tostring(ids.beammp)
     end
-    return "name:" .. tostring(MP.GetPlayerName(pid) or pid)
+    return "name:" .. tostring(self:name(pid) or pid)
   end
 
   function r:pidForKey(key)
-    for pid in pairs(MP.GetPlayers() or {}) do
+    for pid in pairs(self:players()) do
       if self:key(pid) == key then return pid end
     end
     return nil
@@ -57,6 +65,12 @@ function roster.new()
     return sitOut[pid] == true
   end
 
+  function r:sitOutSnapshot()
+    local snapshot = {}
+    for pid, on in pairs(sitOut) do snapshot[pid] = on end
+    return snapshot
+  end
+
   function r:playing(players)
     local list, count = {}, 0
     for pid, name in pairs(players) do
@@ -66,6 +80,14 @@ function roster.new()
       end
     end
     return list, count
+  end
+
+  function r:playingList(players)
+    local playing = self:playing(players)
+    local pids = {}
+    for pid in pairs(playing) do pids[#pids + 1] = pid end
+    table.sort(pids)
+    return pids
   end
 
   return r

@@ -9,8 +9,16 @@ local env = serverBoot.boot({ files = {
 } })
 env.ids = { [1] = { beammp = 42 } }
 
+local logged = {}
+local function loggedHas(text)
+  for _, line in ipairs(logged) do if line:find(text, 1, true) then return true end end
+  return false
+end
+
 local function loadColors(file)
-  local c = playerColors.new(env.dir .. file, roster.new(), messages.new({ prefix = "[CnR] " }))
+  local m = messages.new({ prefix = "[CnR] " })
+  m.log = function(text) logged[#logged + 1] = text end
+  local c = playerColors.new(env.dir .. file, roster.new(), m)
   c:load()
   return c
 end
@@ -60,5 +68,22 @@ test("an invalid hex reports the parse error with the current colour", function(
   assertEq(payload.hex, "#aabbcc")
   assertEq(payload.error, err)
 end)
+
+for _, method in ipairs({ "set", "clear" }) do
+  test("a failed " .. method .. " reports the error and keeps the saved colour", function()
+    local c = loadColors(method .. "-failed.json")
+    assert(c:set(1, "#ff0000"))
+    local rename = FS.Rename
+    FS.Rename = function() return false, "denied" end
+    local called, ok, err = pcall(c[method], c, 1, "#00ff00")
+    FS.Rename = rename
+    assert(called, ok)
+    assertEq(ok, false)
+    assertEq(err, "Could not save " .. method .. "-failed.json")
+    assertEq(loggedHas("could not save " .. method .. "-failed.json: denied"), true)
+    assertEq(c:get(1).hex, "#ff0000")
+    assertEq(loadColors(method .. "-failed.json"):get(1).hex, "#ff0000")
+  end)
+end
 
 env.cleanup()

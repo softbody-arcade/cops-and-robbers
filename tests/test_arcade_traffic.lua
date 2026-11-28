@@ -15,36 +15,44 @@ local function setup()
   return t, sent, r
 end
 
-test("per player traffic is capped by MaxCars, practice leaves room for the AI", function()
-  assertEq(traffic.perPlayer(5, 6, false), 5)
-  assertEq(traffic.perPlayer(5, 4, false), 3)
-  assertEq(traffic.perPlayer(5, 4, true), 1)
-  assertEq(traffic.perPlayer(5, 2, true), 0)
-  assertEq(traffic.perPlayer(5, 1, false), 0)
-  assertEq(traffic.perPlayer(0, 6, false), 0)
+test("traffic leaves the requested number of slots free", function()
+  assertEq(traffic.perPlayer(5, 6, 1), 5)
+  assertEq(traffic.perPlayer(5, 6, 3), 3)
+  assertEq(traffic.perPlayer(5, 6, 2), 4)
+  assertEq(traffic.perPlayer(5, 4, 1), 3)
+  assertEq(traffic.perPlayer(5, 4, 3), 1)
+  assertEq(traffic.perPlayer(5, 2, 3), 0)
+  assertEq(traffic.perPlayer(5, 1, 1), 0)
+  assertEq(traffic.perPlayer(0, 6, 1), 0)
 end)
 
 test("unreadable MaxCars means no cap", function()
-  assertEq(traffic.perPlayer(5, nil, false), 5)
-  assertEq(traffic.perPlayer(5, "lots", false), 5)
+  assertEq(traffic.perPlayer(5, nil, 1), 5)
+  assertEq(traffic.perPlayer(5, nil, 3), 5)
+  assertEq(traffic.perPlayer(5, "lots", 1), 5)
 end)
 
-test("allowance follows eligibility, practice and the current MaxCars", function()
+test("whole rounds down and clamps negative counts to zero", function()
+  assertEq(traffic.whole("2.7"), 2)
+  assertEq(traffic.whole(-1), 0)
+end)
+
+test("allowance follows eligibility, reserved slots and the current MaxCars", function()
   local t = setup()
-  local cfg = { trafficPerPlayer = 7 }
+  local cfg = { trafficPerPlayer = 5 }
   MP.Settings = { MaxCars = 42 }
   MP.Get = function(key)
     assertEq(key, 42)
     return "5"
   end
   assertEq(traffic.maxCars(), 5)
-  assertEq(t:allowance(2, cfg, false, false), 0)
-  assertEq(t:allowance(2, cfg, false, true), 4)
-  assertEq(t:allowance(2, cfg, true, true), 2)
+  assertEq(t:allowance(cfg, 1, false), 0)
+  assertEq(t:allowance(cfg, 1, true), 4)
+  assertEq(t:allowance(cfg, 3, true), 2)
   MP.Get = function() error("setting unavailable") end
   assertEq(traffic.maxCars(), nil)
   MP.Settings = nil
-  assertEq(t:allowance(2, cfg, true, true), 7)
+  assertEq(t:allowance(cfg, 3, true), 5)
 end)
 
 test("opening a positive allowance sends it once and keeps the original count", function()
