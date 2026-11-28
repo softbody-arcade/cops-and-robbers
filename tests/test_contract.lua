@@ -30,14 +30,22 @@ end
 
 local function raceTest(name, check)
   test(name, function()
-    local mp, fs, util = MP, FS, Util
+    local mp, fs, util, realPrint = MP, FS, Util, print
     local path = os.tmpname()
     local file = assert(io.open(path, "w"))
     assert(file:write("{}"))
     assert(file:close())
     local env = { names = { "Alex", "Blair" } }
-    local ok, err = pcall(function() check(env, buildRace(env, path)) end)
-    MP, FS, Util = mp, fs, util
+    local ok, err = pcall(function()
+      local cycle, ctx, game = buildRace(env, path)
+      print = function(...)
+        local parts = {}
+        for i = 1, select("#", ...) do parts[i] = tostring((select(i, ...))) end
+        env.logs[#env.logs + 1] = table.concat(parts, " ")
+      end
+      check(env, cycle, ctx, game)
+    end)
+    MP, FS, Util, print = mp, fs, util, realPrint
     os.remove(path)
     assert(ok, err)
   end)
@@ -141,6 +149,11 @@ end)
 raceTest("a car the race doesn't allow is refused with 1", function(env, cycle, ctx)
   command(cycle, "race")
   assertEq(cycle:onVehicleSpawn(2, 7, '{"jbm":"van"}'), 1)
+  local logged = false
+  for _, line in ipairs(env.logs) do
+    if line:find("Blair spawned van (vid 7): refused", 1, true) then logged = true end
+  end
+  assertEq(logged, true)
   local notice = env.lastSent("cnr_notice")
   assertEq(notice.pid, 2)
   assertEq(decodeJson(notice.data).msg, "Race a coupe")

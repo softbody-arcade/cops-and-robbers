@@ -161,7 +161,7 @@ The traces pin message order. The new code keeps these orders exactly:
 
 As in step 1: `main.lua` builds fresh manager services and a fresh game on every load. No `arcade/` module keeps state at module level, and no `cnr/` module either, apart from the grid and rebuild counters above. One 250 ms timer, and the start-up messages repeat. `tests/test_reload.lua` covers it.
 
-On startup and plugin reload, the Cops and Robbers entry point loads the leaderboard, build, player colours and stations in that order. These direct loads belong to this game’s wiring. A second game loads its own data in its entry point when it constructs the game and services. The panel’s `reload` command reloads settings.
+On startup and plugin reload, the Cops and Robbers entry point loads the leaderboard, build, player colours and stations in that order. The leaderboard, build and station loads belong to this game’s wiring; a second game loads its own data in its entry point when it constructs the game and services. Every entry point also loads the manager’s stored services: `settings:load()` before the game is built, and `playerColors:load()` before any colour can be saved, because an unloaded colours service would overwrite the stored colours on its first save. The panel’s `reload` command reloads settings.
 
 ### Checking the contract
 
