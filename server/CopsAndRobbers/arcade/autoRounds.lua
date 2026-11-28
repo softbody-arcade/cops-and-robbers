@@ -39,7 +39,8 @@ function autoRounds.register(p, ctx)
 
   local function startScheduled()
     ctx.a:cancel()
-    if not ctx.isActive() then ctx.startNext() end
+    if ctx.isActive() then return end
+    if not ctx.startNext() then ctx.send(-1, "cnr_autoNext", {}) end
   end
 
   p:command("next", function(pid, cmd, m)

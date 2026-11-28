@@ -3030,32 +3030,45 @@ test("Sit out is answered, stored per player and cleared on disconnect", functio
   env.cleanup()
 end)
 
-test("Start is refused only when everyone sits out", function()
+test("A round needs two players who aren't sitting out", function()
   local env = boot()
+  env.names = { "Reinder", "Bob", "Kim" }
   sitOut(env, 1, true)
   sitOut(env, 2, true)
+  sitOut(env, 3, true)
   env.panel(2, "start next")
   assertEq(env.replyHas("Everyone is sitting out"), true)
   assertEq(env.lastSent("cnr_pickVehicle"), nil)
   sitOut(env, 2, false)
   env.panel(2, "start next")
+  assertEq(env.replyHas("Not enough players"), true)
+  assertEq(env.lastSent("cnr_pickVehicle"), nil)
+  sitOut(env, 3, false)
+  env.panel(2, "start Bob")
   assertEq(env.lastSent("cnr_pickVehicle") ~= nil, true)
   env.call("cnr_vehiclePicked", 2, PICK)
   assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 2)).role, "runner")
+  assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 3)).role, "cop")
   assertEq(sentTo(env, "cnr_spectate", 1) ~= nil, true)
   env.cleanup()
+end)
+
+test("A player alone can't start a round but can practise", function()
   local alone = boot()
   alone.names = { "Reinder" }
   alone.panel(1, "start next")
-  alone.call("cnr_vehiclePicked", 1, PICK)
-  assertEq(decodeJson(sentTo(alone, "cnr_roundSetup", 1)).role, "runner")
+  assertEq(alone.replyHas("Not enough players"), true)
+  assertEq(alone.lastSent("cnr_pickVehicle"), nil)
+  alone.panel(1, "test runner")
+  assertEq(alone.lastSent("cnr_pickVehicle") ~= nil, true)
   alone.cleanup()
 end)
 
-test("auto next round keeps going with one player who isn't sitting out", function()
+test("auto next round keeps going while two players aren't sitting out", function()
   local env = boot({ config = '{"autoNextRound": true, "autoNextDelaySeconds": 5}' })
+  env.names = { "Reinder", "Bob", "Kim" }
   sitOut(env, 1, true)
-  env.panel(2, "start next")
+  env.panel(2, "start Bob")
   env.call("cnr_vehiclePicked", 2, PICK)
   env.go()
   for _ = 1, 50 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
@@ -3063,8 +3076,23 @@ test("auto next round keeps going with one player who isn't sitting out", functi
   env.sent = {}
   for _ = 1, 24 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
   assertEq(env.lastSent("cnr_pickVehicle") ~= nil, true)
-  env.call("cnr_vehiclePicked", env.lastSent("cnr_pickVehicle").pid, PICK)
-  assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 2)).role, "runner")
+  assertEq(sentTo(env, "cnr_autoNext", -1), nil)
+  env.cleanup()
+end)
+
+test("an automatic start with one player left is refused and the countdown is withdrawn", function()
+  local env = boot({ config = '{"autoNextRound": true, "autoNextDelaySeconds": 5}' })
+  env.panel(2, "start Bob")
+  env.call("cnr_vehiclePicked", 2, PICK)
+  env.go()
+  for _ = 1, 50 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.panel(2, "end")
+  sitOut(env, 1, true)
+  env.sent = {}
+  for _ = 1, 24 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  assertEq(env.lastSent("cnr_pickVehicle"), nil)
+  assertEq(env.noticeHas("Not enough players"), true)
+  assertEq(sentTo(env, "cnr_autoNext", -1) ~= nil, true)
   env.cleanup()
 end)
 
@@ -4335,9 +4363,9 @@ test("an automatic start after the issuer left is issued by the lowest player id
   env.cleanup()
 end)
 
-test("a real round starts when the only connected player is player 7", function()
+test("a real round starts when the connected players are 7 and 9", function()
   local env = boot()
-  env.names = { [7] = "Ann" }
+  env.names = { [7] = "Ann", [9] = "Kim" }
   env.panel(7, "start Ann")
   assertEq(env.lastSent("cnr_pickVehicle").pid, 7)
   env.cleanup()

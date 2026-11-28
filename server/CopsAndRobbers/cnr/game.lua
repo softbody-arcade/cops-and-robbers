@@ -17,7 +17,7 @@ local M = {}
 
 function M.manifest(version)
   return {
-    id = "cnr", name = "Cops and Robbers", version = version, minPlayers = 1,
+    id = "cnr", name = "Cops and Robbers", version = version, minPlayers = 2,
     commands = panel.commands(), actions = { "build", "apply", "station", "stations" },
     clientEvents = {
       "cnr_startGridReady", "cnr_startGrid", "cnr_vehiclePicked", "cnr_stations", "cnr_myVehicle",

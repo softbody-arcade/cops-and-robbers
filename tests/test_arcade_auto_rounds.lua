@@ -17,11 +17,12 @@ end)
 
 test("the scheduled callback cancels the countdown and starts only an idle round", function()
   local a = autoRounds.new()
-  local active, starts = true, 0
+  local active, starts, sent = true, 0, {}
   local startScheduled = autoRounds.register({ command = function() end }, {
     a = a,
+    send = function(pid, event) sent[#sent + 1] = pid .. " " .. event end,
     isActive = function() return active end,
-    startNext = function() starts = starts + 1 end,
+    startNext = function() starts = starts + 1; return true end,
   })
   assertEq(type(startScheduled), "function")
   a:schedule(12)
@@ -34,6 +35,22 @@ test("the scheduled callback cancels the countdown and starts only an idle round
   startScheduled()
   assertEq(a:pending(), nil)
   assertEq(starts, 1)
+  assertEq(#sent, 0)
+end)
+
+test("a refused scheduled start withdraws every client's countdown", function()
+  local a = autoRounds.new()
+  local sent = {}
+  local startScheduled = autoRounds.register({ command = function() end }, {
+    a = a,
+    send = function(pid, event) sent[#sent + 1] = pid .. " " .. event end,
+    isActive = function() return false end,
+    startNext = function() return nil, "Not enough players" end,
+  })
+  a:schedule(12)
+  startScheduled()
+  assertEq(a:pending(), nil)
+  assertEq(table.concat(sent, ","), "-1 cnr_autoNext")
 end)
 
 test("auto during a chase toggles the live setting and clears the client countdown", function()

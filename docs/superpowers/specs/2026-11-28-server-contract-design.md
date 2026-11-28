@@ -51,7 +51,7 @@ The game is built with `cnr.game.new(ctx)` and returns an object. The manager ca
 
 | Hook | Arguments and return | Notes |
 |---|---|---|
-| `manifest(version)` (module function) | → `{ id, name, version, minPlayers, commands = { exact, prefixes }, actions, clientEvents }` | Read before anything is built. Cops and Robbers: `id = "cnr"`, `version` = the `VERSION` local `main.lua` passes, `minPlayers = 1`. The manager builds its panel allow-list and BeamMP registrations from `commands`, `actions` and `clientEvents` |
+| `manifest(version)` (module function) | → `{ id, name, version, minPlayers, commands = { exact, prefixes }, actions, clientEvents }` | Read before anything is built. Cops and Robbers: `id = "cnr"`, `version` = the `VERSION` local `main.lua` passes, `minPlayers = 2` (a maintainer decision of 2026-11-28; a round with one player had no cop). Practice is a solo start and skips the minimum. The manager builds its panel allow-list and BeamMP registrations from `commands`, `actions` and `clientEvents` |
 | `settingsDeclaration()` (module function) | → the game's declaration (`cnr.config.GAME`, functions-free) | The manager combines it with `arcade.settings.GLOBAL` and builds the settings service before the game |
 | `new(ctx)` (module function) | → the game instance | Every hook below is called on it through the one dispatch function |
 | `canStart(request)` | → `prepared` or `nil, reason` | A round starts only through `ctx.round:start(request)`: from a game start command, or from the manager for an automatic start with `command = "next"`. `ctx.round:start` runs `canStart`, the minimum-players check (`#prepared.participants`, a dense pid list, unless `prepared.solo`), the snapshot, then `start`. The game runs first and keeps today's start sequence and texts |
@@ -115,6 +115,8 @@ Fixes of obvious bugs that this refactor touches are also allowed. The maintaine
 - a failed `auto off` no longer cancels a pending countdown;
 - a build reset no longer reports success after its backup failed;
 - when a confirmed cop's re-setup fails and the round goes on, the round-car list drops their car at once, instead of at the next confirm, delete or disconnect.
+
+**A round needs two players** (maintainer decision, 2026-11-28). A normal start with fewer than two players who aren't sitting out is refused with "Not enough players"; practice still starts alone. When an automatic next round is due with fewer than two players left, it doesn't start: the issuer gets the refusal and every client's countdown is withdrawn (`cnr_autoNext`). The golden traces all start rounds with two or more players, so they stay identical.
 
 The golden traces don't edit `config.json` mid-round, so they stay identical. A regression test shows the edit surviving a mid-round toggle, the running round keeping its rules, and the next round using the edit. The PR and release notes mention both changes.
 
