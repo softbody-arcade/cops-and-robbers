@@ -2539,6 +2539,20 @@ test("round-car announcements wait for each driver's confirmed vehicle", functio
   env.cleanup()
 end)
 
+test("a failed reroll setup removes the cop's old car for current and joining clients", function()
+  local env = trafficBoot()
+  env.startRound()
+  placed(env, 1)
+  placed(env, 2)
+  env.panel(1, "reroll")
+  env.loading = { [2] = true }
+  env.call("cnr_vehiclePicked", 1, '{"model":"etk800","config":"vehicles/etk800/base.pc"}')
+  assertEq(table.concat(decodeJson(sentTo(env, "cnr_roundCars", -1)).keys, ","), "1-0")
+  env.call("onPlayerJoin", 3)
+  assertEq(table.concat(decodeJson(sentTo(env, "cnr_roundCars", 3)).keys, ","), "1-0")
+  env.cleanup()
+end)
+
 test("everyone learns the round cars, and they're cleared at round end", function()
   local env = trafficBoot()
   env.vehicles[2][3] = "round car"
@@ -2692,6 +2706,23 @@ end)
 test("How to play gets the effective traffic", function()
   local env = trafficBoot({ maxCars = 4 })
   assertEq(env.lastSent("cnr_rules").data:find('"trafficPerPlayer":3', 1, true) ~= nil, true)
+  env.cleanup()
+end)
+
+test("in driven practice a spawn before cnr_myVehicle doesn't release AI setup", function()
+  local env = trafficBoot({ maxCars = 4, vehicles = { [1] = {} } })
+  env.panel(1, "test runner")
+  env.call("cnr_vehiclePicked", 1, '{"model":"pickup","config":"vehicles/pickup/base.pc"}')
+  assert(env.lastSent("cnr_roundSetup"))
+  assertEq(env.call("onVehicleSpawn", 1, 4, spawnOf(1, 4, "pickup", "vehicles/pickup/base.pc")), 0)
+  env.vehicles[1][4] = "pickup"
+  env.clock = 0.25
+  env.call("cnr_tick")
+  assertEq(env.lastSent("cnr_setupAI"), nil)
+  env.call("cnr_myVehicle", 1, '{"vid":4}')
+  env.clock = 0.5
+  env.call("cnr_tick")
+  assertEq(env.lastSent("cnr_setupAI").pid, 1)
   env.cleanup()
 end)
 

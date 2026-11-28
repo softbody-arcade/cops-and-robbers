@@ -21,6 +21,8 @@ local sky = require("cnr.sky")
 local strikeSchedule = require("cnr.strikeSchedule")
 local traffic = require("arcade.traffic")
 local trafficService = traffic.new(roster, messages)
+local cars = require("arcade.cars").new(roster, messages, trafficService)
+local spectators = require("arcade.spectators").new(roster, messages)
 local trafficNote = require("cnr.traffic").note
 
 local VERSION = "2.16.0"
@@ -39,11 +41,6 @@ local current
 local board
 local mapName
 local stations = {}
-local activeVid = roster:perPlayer("activeVid", "late")
-local registeredRoundCar = roster:perPlayer("registeredRoundCar", "late")
-local allowRoundSpawn = roster:perPlayer("allowRoundSpawn", "late")
-local preRoundVehicles = roster:perPlayer("preRoundVehicles", "late")
-local lastRoundCars
 local stationsRequested = roster:perPlayer("stationsRequested", "early")
 local partsBaseline = {}
 local aiCars = {}
@@ -60,7 +57,6 @@ local lastIssuer
 local PARTS_PLACING_SECONDS, PARTS_SETTLE_SECONDS = 10, 3
 local REFUSAL_LOG_SECONDS = 10
 local refusalLoggedAt = roster:perPlayer("refusalLoggedAt", "early")
-local parkedBystanders = roster:perPlayer("parkedBystanders", "early")
 local aiSpawnsLeft = 0
 local pendingAISetup
 local AI_SETUP_WAIT_SECONDS = 15
@@ -202,64 +198,11 @@ local function parseVehicleData(data)
   return nil
 end
 
-local function firstVid(pid)
-  local vehicles = MP.GetPlayerVehicles(pid)
-  if type(vehicles) ~= "table" then return nil end
-  local best
-  for vid in pairs(vehicles) do
-    if not best or vid < best then best = vid end
-  end
-  return best
-end
-
-local function vidFor(pid)
-  local vid = activeVid[pid]
-  if vid then return vid end
-  if registeredRoundCar[pid] or trafficService:openCount(pid) then return nil end
-  vid = firstVid(pid)
-  activeVid[pid] = vid
-  return vid
-end
-
 local function openTraffic(pid)
   if not current:isActive() or current.players[pid] == nil or trafficService:openCount(pid) then return end
   local eligible = current.test or not cfg.trafficRunnerOnly or pid == current.runnerId
   local reserved = current.test and pid == current.issuerId and 3 or 1
   trafficService:open(pid, trafficService:allowance(cfg, reserved, eligible))
-end
-
-local function confirmedVid(pid)
-  return registeredRoundCar[pid] and activeVid[pid]
-end
-
-local function setRoundVid(pid, vid)
-  if registeredRoundCar[pid] and activeVid[pid] ~= vid then current:forgetVehicleSight(pid) end
-  activeVid[pid] = vid
-end
-
-local function roundCarKeys()
-  local keys = {}
-  for p in pairs(current.players) do
-    local vid = confirmedVid(p)
-    if vid then keys[#keys + 1] = p .. "-" .. vid end
-  end
-  table.sort(keys)
-  return keys
-end
-
-local function pushRoundCars(pid)
-  if not current:isActive() then return end
-  local keys = roundCarKeys()
-  if pid then return send(pid, "cnr_roundCars", { keys = keys }) end
-  local sig = table.concat(keys, ",")
-  if sig == lastRoundCars then return end
-  lastRoundCars = sig
-  send(-1, "cnr_roundCars", { keys = keys })
-end
-
-local function clearRoundCars()
-  if lastRoundCars and lastRoundCars ~= "" then send(-1, "cnr_roundCars", { keys = {} }) end
-  lastRoundCars = nil
 end
 
 local function aiSlotForVid(vid)
@@ -281,14 +224,9 @@ local function carFor(pid)
   if round.isAI(pid) then
     owner, vid = current.issuerId, aiCars[pid] and aiCars[pid].vid
   else
-    vid = vidFor(pid)
+    vid = cars:vidFor(pid)
   end
-  if not owner or not vid then return nil end
-  local raw, err = MP.GetPositionRaw(owner, vid)
-  if err and err ~= "" or type(raw) ~= "table" then return nil end
-  local pos, vel = vec.toVec(raw.pos), vec.toVec(raw.vel)
-  if not pos or not vel then return nil end
-  return { pos = pos, vel = vel }
+  return cars:position(owner, vid)
 end
 
 local function announceLightning(runner)
@@ -382,37 +320,23 @@ local function pushBoard()
 end
 
 local function parkBystander(pid)
-  if pid == current.issuerId or parkedBystanders[pid] then return end
-  if send(pid, "cnr_parkBystanderCars", { on = true }) ~= false then parkedBystanders[pid] = true end
-end
-
-local function rememberPreRoundVehicles(pid)
-  if registeredRoundCar[pid] or preRoundVehicles[pid] then return end
-  local existing = {}
-  local vehicles = MP.GetPlayerVehicles(pid)
-  if type(vehicles) == "table" then
-    for vid in pairs(vehicles) do existing[vid] = true end
-  end
-  preRoundVehicles[pid] = existing
+  if pid ~= current.issuerId then spectators:park(pid) end
 end
 
 local function dispatchAISetup()
   local setup = pendingAISetup
   if not setup then return end
   local pid, payload = setup.pid, setup.payload
-  if not payload.aiOnly and allowRoundSpawn[pid] then return end
+  if not payload.aiOnly and cars:placementPending(pid) then return end
   if setup.capacity then
-    local vehicles = MP.GetPlayerVehicles(pid)
     local occupied = 0
-    if type(vehicles) == "table" then
-      for _ in pairs(vehicles) do occupied = occupied + 1 end
-      if occupied + #payload.ai > setup.capacity then return end
-    end
+    for _ in pairs(cars:vehicles(pid)) do occupied = occupied + 1 end
+    if occupied + #payload.ai > setup.capacity then return end
   end
   pendingAISetup = nil
   aiSpawnsLeft = payload.aiOnly and #payload.ai or 0
   send(pid, "cnr_setupAI", payload)
-  if not payload.aiOnly and registeredRoundCar[pid] then openTraffic(pid) end
+  if not payload.aiOnly and cars:confirmed(pid) then openTraffic(pid) end
 end
 
 local lastRulesSignature
@@ -433,14 +357,14 @@ local function applyEffects(effects)
       if e.to then notify(e.to, e.msg, e.tone) else broadcast(e.msg, e.tone) end
     elseif e.kind == "pickVehicle" then
       pendingAISetup = nil
-      send(e.pid, "cnr_pickVehicle", { includeMods = cfg.includeModVehicles, excludedModels = cfg.excludedModels })
+      cars:requestPick(e.pid, { includeMods = cfg.includeModVehicles, excludedModels = cfg.excludedModels })
     elseif e.kind == "planStart" then
       send(e.pid, "cnr_planStart", { id = e.id, count = e.count, anchor = e.anchor,
         copSpawnMin = cfg.copSpawnMinMeters, copSpawnMax = cfg.copSpawnMaxMeters })
     elseif e.kind == "setup" then
       local anchor = e.startPose ~= nil and current.startGrid[1]
       local runnerCar = not anchor and carFor(current.runnerId)
-      local delivered, reason = send(e.pid, "cnr_roundSetup", {
+      local delivered, reason = cars:setup(e.pid, {
         startPose = e.startPose,
         runnerId = current.runnerId, runnerName = current:runnerName(), role = e.role, copIndex = e.copIndex,
         model = current.vehicle.model, config = current.vehicle.config,
@@ -456,12 +380,13 @@ local function applyEffects(effects)
       })
       if delivered == false then
         log(string.format("setup failed for %s: %s", MP.GetPlayerName(e.pid) or tostring(e.pid), tostring(reason)))
+        local removedVid = cars:confirmedVid(e.pid)
+        cars:removeParticipant(e.pid)
         applyEffects(current:setupFailed(now(), e.pid))
         if not current:isActive() then return end
+        if removedVid then cars:publish() end
       else
         placing(e.pid)
-        rememberPreRoundVehicles(e.pid)
-        allowRoundSpawn[e.pid] = true
         log(string.format("setup sent to %s: %s, %s", MP.GetPlayerName(e.pid) or tostring(e.pid), e.role, tostring(e.phase)))
         if e.role == "runner" and not current.test then
           local key = roster:key(e.pid)
@@ -471,20 +396,19 @@ local function applyEffects(effects)
         end
       end
     elseif e.kind == "spectate" then
-      log(string.format("%s spectates (%s)", MP.GetPlayerName(e.pid) or tostring(e.pid), tostring(e.phase)))
-      send(e.pid, "cnr_spectate", {
+      spectators:spectate(e.pid, {
         runnerId = current.runnerId, runnerName = current:runnerName(), phase = e.phase,
         countdownRemaining = e.countdownRemaining, headStartRemaining = e.headStartRemaining, chaseElapsed = e.chaseElapsed,
         heli = e.heli,
         sky = sky.payload(current.sky, cfg, current:clockSeconds(now())),
-      })
+      }, e.phase)
     elseif e.kind == "setupAI" then
       for pid in pairs(MP.GetPlayers() or {}) do parkBystander(pid) end
       local list = {}
       for _, a in ipairs(e.ai) do
         list[#list + 1] = { id = a.id, role = a.role, index = current.startGrid and a.index or #list + 1, startPose = a.startPose, name = a.name, color = colors.parseHex(a.colorHex) }
       end
-      if e.aiOnly then rememberPreRoundVehicles(e.pid) end
+      if e.aiOnly then cars:rememberPreRound(e.pid) end
       aiSpawnsLeft = 0
       local capacity = traffic.maxCars()
       local payload = {
@@ -524,23 +448,20 @@ local function applyEffects(effects)
     elseif e.kind == "state" then
       send(e.pid, "cnr_state", { resetAllowed = e.resetAllowed, resetHint = e.resetHint, catchProgress = e.catchProgress })
     elseif e.kind == "roundEnd" then
-      for pid in pairs(parkedBystanders) do send(pid, "cnr_parkBystanderCars", { on = false }) end
-      roster:clear("parkedBystanders")
+      spectators:releaseAll()
       local autoNext = settings:get("autoNextRound") and e.reason ~= "cancelled" and not e.to
       send(e.to or -1, "cnr_roundEnd", {
         runnerId = e.runnerId, runnerName = e.runnerName, survivedSeconds = e.survivedSeconds,
         reason = e.reason, explode = e.explode, catchers = e.catchers, message = e.message,
         autoNextSeconds = autoNext and cfg.autoNextDelaySeconds or nil,
       })
-      roster:clear("activeVid")
-      roster:clear("registeredRoundCar")
-      roster:clear("allowRoundSpawn")
-      roster:clear("preRoundVehicles")
+      cars:setPublishing(false)
+      cars:clearRound()
       roster:clear("trafficOpen")
       roster:clear("trafficVids")
       aiSpawnsLeft = 0
       pendingAISetup = nil
-      clearRoundCars()
+      cars:clearPublished()
       partsBaseline = {}
       missingCount = {}
       if not current.test and not e.to and e.reason ~= "cancelled" then
@@ -564,12 +485,14 @@ local function applyEffects(effects)
       send(e.pid, "cnr_requestSetup", {})
     elseif e.kind == "rebuild" then
       if pendingAISetup then pendingAISetup.payload.config = e.config end
+      local targets = {}
       for pid in pairs(current.players) do
         if not round.isAI(pid) then
           placing(pid)
-          send(pid, "cnr_rebuild", { model = current.vehicle.model, config = e.config, rebuild = e.id })
+          targets[#targets + 1] = pid
         end
       end
+      cars:rebuild(targets, { model = current.vehicle.model, config = e.config, rebuild = e.id }, e.id)
     elseif e.kind == "applied" then
       send(e.to or -1, "cnr_applied", {})
     elseif e.kind == "spotted" then
@@ -651,6 +574,12 @@ local function plannedRunner(players)
   return pid
 end
 
+local function startRound(runnerId, issuerId, players, opts)
+  local effects = current:start(now(), runnerId, issuerId, players, opts)
+  if current:isActive() then cars:setPublishing(true) end
+  applyEffects(effects)
+end
+
 panelService:command("start", function(pid, cmd)
   if current:isActive() and current.test then
     applyEffects(current:stop(now(), current.issuerId))
@@ -681,7 +610,7 @@ panelService:command("start", function(pid, cmd)
   if not runnerId then return refuse(pid, err) end
   if roster:sittingOut(runnerId) then return refuse(pid, string.format("%s is sitting out", players[runnerId] or tostring(runnerId))) end
   requestStations(pid)
-  roster:clear("activeVid")
+  cars:clearRound()
   roster:clear("trafficOpen")
   roster:clear("trafficVids")
   partsBaseline = {}
@@ -689,12 +618,12 @@ panelService:command("start", function(pid, cmd)
   lastResult = nil
   useConfig(settings:snapshot())
   local sittingOut = roster:sitOutSnapshot()
-  applyEffects(current:start(now(), runnerId, pid, players, { gridPlanner = gridClients[runnerId] and runnerId, build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random), traffic = traffic.perPlayer(cfg.trafficPerPlayer, traffic.maxCars(), 1), trafficRunnerOnly = cfg.trafficRunnerOnly == true, sittingOut = sittingOut }))
+  startRound(runnerId, pid, players, { gridPlanner = gridClients[runnerId] and runnerId, build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random), traffic = traffic.perPlayer(cfg.trafficPerPlayer, traffic.maxCars(), 1), trafficRunnerOnly = cfg.trafficRunnerOnly == true, sittingOut = sittingOut })
 end)
 
 panelService:command("test", function(pid, cmd)
   if current:isActive() then return refuse(pid, "A round is already running") end
-  roster:clear("activeVid")
+  cars:clearRound()
   roster:clear("trafficOpen")
   roster:clear("trafficVids")
   partsBaseline = {}
@@ -704,7 +633,7 @@ panelService:command("test", function(pid, cmd)
   if cfg.carMode == "evolving" and not currentBuild then return refuse(pid, "Start a new build first") end
   useConfig(settings:snapshot())
   local opts = { gridPlanner = gridClients[pid] and pid, test = true, role = role, aiOnly = roster:sittingOut(pid), build = cfg.carMode == "evolving" and buildOpts() or nil, sky = sky.pick(cfg, math.random) }
-  applyEffects(current:start(now(), nil, pid, MP.GetPlayers() or {}, opts))
+  startRound(nil, pid, roster:players(), opts)
 end)
 
 local function lobbyState()
@@ -1014,10 +943,10 @@ local function vehicleAllowed(pid, vid, data, isSpawn)
     if isSpawn then aiSpawnsLeft = aiSpawnsLeft - 1 end
     return true, decoded
   end
-  local own = activeVid[pid]
+  local own = cars:activeVid(pid)
   local trafficCount = trafficService:openCount(pid)
   local roundPlayer = roundCarActive() and current.players[pid] ~= nil
-  if isSpawn and roundPlayer and not current.test and (allowRoundSpawn[pid] or (registeredRoundCar[pid] and not own)) then
+  if isSpawn and roundPlayer and not current.test and (cars:permitted(pid) or cars:replacementAllowed(pid)) then
     local decoded = parseVehicleData(data)
     if matchesRoundVehicle(decoded) then return true, decoded, nil, true end
     if not own or not trafficCount then return false, decoded end
@@ -1030,7 +959,7 @@ local function vehicleAllowed(pid, vid, data, isSpawn)
   if not roundPlayer then return true end
   local decoded = parseVehicleData(data)
   if not matchesRoundVehicle(decoded) then return false, decoded end
-  if isSpawn and not current.test and firstVid(pid) then return false, decoded end
+  if isSpawn and not current.test and cars:firstVid(pid) then return false, decoded end
   return true, decoded
 end
 
@@ -1079,20 +1008,19 @@ function cnrOnVehicleSpawn(pid, vid, data)
     refuse(pid, why or "Only the round car is allowed")
     return 1
   end
-  if preRoundVehicles[pid] then preRoundVehicles[pid][vid] = nil end
+  cars:forgetPreRound(pid, vid)
   if roundSpawn then
-    setRoundVid(pid, vid)
-    allowRoundSpawn[pid] = nil
-    if registeredRoundCar[pid] then pushRoundCars() end
-  elseif tracksActive(pid) and not registeredRoundCar[pid] and not trafficService:openCount(pid) then
-    activeVid[pid] = vid
+    local _, replaced = cars:claim(pid, vid)
+    if replaced then current:forgetVehicleSight(pid) end
+  elseif tracksActive(pid) and not cars:confirmed(pid) and not trafficService:openCount(pid) then
+    cars:setActive(pid, vid)
   end
   return 0
 end
 
 function cnrOnVehicleEdited(pid, vid, data)
-  if preRoundVehicles[pid] and preRoundVehicles[pid][vid] then return 0 end
-  if registeredRoundCar[pid] and activeVid[pid] ~= vid then
+  if cars:isPreRound(pid, vid) then return 0 end
+  if cars:confirmed(pid) and cars:activeVid(pid) ~= vid then
     if pid ~= current.issuerId or not aiSlotForVid(vid) then return 0 end
   end
   local allowed, decoded, why = vehicleAllowed(pid, vid, data, false)
@@ -1101,23 +1029,26 @@ function cnrOnVehicleEdited(pid, vid, data)
     refuse(pid, why or "Only the round car is allowed")
     return 1
   end
-  local notOwn = vid ~= activeVid[pid] and (current.test or trafficService:openCount(pid))
+  local notOwn = vid ~= cars:activeVid(pid) and (current.test or trafficService:openCount(pid))
   if roundCarActive() and current.players[pid] and not notOwn then checkParts(pid, decoded) end
-  if tracksActive(pid) and not trafficService:openCount(pid) then activeVid[pid] = vid end
+  if tracksActive(pid) and not trafficService:openCount(pid) then
+    if cars:setActive(pid, vid) then current:forgetVehicleSight(pid) end
+  end
   return 0
 end
 
 function cnrOnVehicleDeleted(pid, vid)
   if pid == current.issuerId then removeAICar(aiSlotForVid(vid)) end
-  if preRoundVehicles[pid] then preRoundVehicles[pid][vid] = nil end
-  if activeVid[pid] == vid then
-    setRoundVid(pid, nil)
-    if registeredRoundCar[pid] then pushRoundCars() end
+  cars:forgetPreRound(pid, vid)
+  if cars:activeVid(pid) == vid and cars:setActive(pid, nil) then
+    current:forgetVehicleSight(pid)
+    cars:publish()
   end
 end
 
 function cnrOnVehicleReset(pid, vid)
-  if (activeVid[pid] or registeredRoundCar[pid] or trafficService:openCount(pid)) and activeVid[pid] ~= vid then return end
+  local own = cars:activeVid(pid)
+  if (own or cars:confirmed(pid) or trafficService:openCount(pid)) and own ~= vid then return end
   applyEffects(current:vehicleReset(now(), pid))
 end
 
@@ -1159,14 +1090,14 @@ function cnrOnPlayerJoin(pid)
   if current.evolving and current.state == "prep" and current.queued and current.players[pid] then
     send(pid, "cnr_queued", current.queued)
   end
-  if current:isActive() then pushRoundCars(pid) end
+  cars:publish(pid)
 end
 
 function cnrOnPlayerDisconnect(pid)
   roster:leaveEarly(pid)
   applyEffects(current:playerLeft(now(), pid))
   roster:leaveLate(pid)
-  pushRoundCars()
+  cars:publish()
 end
 
 function cnrOnStartGridReady(pid)
@@ -1195,14 +1126,13 @@ end
 
 local function plannerPosition(pid)
   if current.aiOnly then return nil end
-  local vehicles = MP.GetPlayerVehicles(pid)
-  if type(vehicles) ~= "table" then return nil end
+  local vehicles = cars:vehicles(pid)
   local vid, data = next(vehicles)
   if not vid or next(vehicles, vid) then return nil end
   local vehicle = parseVehicleData(data)
   if vehicle and vehicle.jbm == "unicycle" then return nil end
-  local raw, err = MP.GetPositionRaw(pid, vid)
-  if (not err or err == "") and type(raw) == "table" then return vec.toVec(raw.pos) end
+  local raw = cars:rawPosition(pid, vid)
+  if raw then return vec.toVec(raw.pos) end
 end
 
 local function startPose(p)
@@ -1257,24 +1187,23 @@ function cnrOnMyVehicle(pid, data)
   local ok, decoded = pcall(Util.JsonDecode, data)
   local vid = ok and type(decoded) == "table" and tonumber(decoded.vid)
   if not integer(vid) or vid < 0 or not roundCarActive() or current.players[pid] == nil then return end
-  local owned = MP.GetPlayerVehicles(pid)
-  if type(owned) ~= "table" or not owned[vid] or (pid == current.issuerId and aiSlotForVid(vid)) then return end
-  setRoundVid(pid, vid)
-  registeredRoundCar[pid] = true
-  preRoundVehicles[pid] = nil
-  allowRoundSpawn[pid] = nil
+  local owned = cars:vehicles(pid)
+  if not owned[vid] or (pid == current.issuerId and aiSlotForVid(vid)) then return end
+  if cars:confirm(pid, vid) then current:forgetVehicleSight(pid) end
   placed(pid)
   log(string.format("%s placed the round car (vid %s)", MP.GetPlayerName(pid) or tostring(pid), tostring(vid)))
-  applyEffects(current:vehicleReady(now(), pid, tonumber(decoded.rebuild)))
+  local rebuildId = tonumber(decoded.rebuild)
+  cars:acknowledgeRebuild(pid, rebuildId)
+  applyEffects(current:vehicleReady(now(), pid, rebuildId))
   if pendingAISetup then dispatchAISetup() else openTraffic(pid) end
-  pushRoundCars()
+  cars:publish()
 end
 
 function cnrOnTrafficCars(pid, data)
   if not trafficService:openCount(pid) then return end
   local ok, d = pcall(Util.JsonDecode, data)
   if not ok or type(d) ~= "table" or type(d.vids) ~= "table" then return end
-  trafficService:report(pid, d.vids, activeVid[pid], function(vid)
+  trafficService:report(pid, d.vids, cars:activeVid(pid), function(vid)
     return current.test and pid == current.issuerId and aiSlotForVid(vid)
   end)
 end
@@ -1283,7 +1212,7 @@ local function registerAICar(pid, a, owned)
   if type(a) ~= "table" then return end
   local id, vid, serial = a.id, a.vid, a.instance
   if not round.isAI(id) or not current.players[id] then return end
-  if not integer(vid) or vid < 0 or not owned[vid] or (registeredRoundCar[pid] and activeVid[pid] == vid) then return end
+  if not integer(vid) or vid < 0 or not owned[vid] or cars:confirmedVid(pid) == vid then return end
   if serial ~= nil then
     local latest = math.max(previousRoundSerial, aiSlotSerial[id] or 0, aiVidSerial[vid] or 0)
     if not integer(serial) or serial <= latest then return end
@@ -1295,7 +1224,7 @@ local function registerAICar(pid, a, owned)
   removeAICar(id)
   removeAICar(aiSlotForVid(vid))
   aiCars[id] = {vid=vid, instance=serial}
-  if preRoundVehicles[pid] then preRoundVehicles[pid][vid] = nil end
+  cars:forgetPreRound(pid, vid)
 end
 
 local function decodeObservationPacket(data)
@@ -1316,8 +1245,7 @@ function cnrOnAiVehicles(pid, data)
   if not current.test or pid ~= current.issuerId then return end
   local decoded = decodeObservationPacket(data)
   if not decoded or type(decoded.ai) ~= "table" then return end
-  local owned = MP.GetPlayerVehicles(pid)
-  if type(owned) ~= "table" then return end
+  local owned = cars:vehicles(pid)
   for _, a in ipairs(decoded.ai) do registerAICar(pid, a, owned) end
 end
 
@@ -1346,14 +1274,14 @@ end
 function cnrOnSight(pid, data)
   local d = decodeObservationPacket(data)
   if not d or type(d.seen) ~= "boolean" then return end
-  if not confirmedVid(current.runnerId) and not aiCars[current.runnerId] then return end
+  if not cars:confirmedVid(current.runnerId) and not aiCars[current.runnerId] then return end
   if d.aiId ~= nil or d.instance ~= nil then
     if not current.test or pid ~= current.issuerId or not round.isAI(d.aiId) or not integer(d.instance) then return end
     local car = aiCars[d.aiId]
     if not car or car.instance ~= d.instance then return end
-    local owned = MP.GetPlayerVehicles(pid)
-    if type(owned) == "table" and owned[car.vid] then current:aiSightReport(now(), pid, d.aiId, d.seen) end
-  elseif confirmedVid(pid) then
+    local owned = cars:vehicles(pid)
+    if owned[car.vid] then current:aiSightReport(now(), pid, d.aiId, d.seen) end
+  elseif cars:confirmedVid(pid) then
     current:sightReport(now(), pid, d.seen)
   end
 end
@@ -1411,16 +1339,16 @@ function cnrTick()
   dispatchAISetup()
   if pendingAISetup and now() >= pendingAISetup.deadline then
     local pid = pendingAISetup.pid
-    local waitingForCar = not pendingAISetup.payload.aiOnly and allowRoundSpawn[pid]
+    local waitingForCar = not pendingAISetup.payload.aiOnly and cars:placementPending(pid)
     applyEffects(current:stop(now(), pid))
     notify(pid, waitingForCar and "Practice cancelled: your round car did not register in time."
       or "Practice cancelled: too few free vehicle slots for the AI. Free a slot or increase MaxCars.", "warn")
     return
   end
-  local cars = {}
-  for pid in pairs(current.players) do cars[pid] = carFor(pid) end
-  announceLightning(cars[current.runnerId])
-  applyEffects(current:tick(now(), cars, stations, trafficService:cars()))
+  local positions = {}
+  for pid in pairs(current.players) do positions[pid] = carFor(pid) end
+  announceLightning(positions[current.runnerId])
+  applyEffects(current:tick(now(), positions, stations, trafficService:cars()))
 end
 
 FS.CreateDirectory(stationsDir)
