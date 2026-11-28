@@ -37,7 +37,7 @@ Then do the checks for whatever actually updated.
 
 ## BeamMP Server (plugin API)
 
-**Used in:** `server/CopsAndRobbers/main.lua` and the server services in `arcade/`.
+**Used in:** `server/CopsAndRobbers/main.lua`, the server services in `arcade/` and the game adapter in `cnr/game.lua`.
 
 **What we use:**
 - **Functions:**
@@ -59,12 +59,14 @@ Then do the checks for whatever actually updated.
 
 **On update, check:**
 - The server startup log line (step 2 above).
-- **Vehicle data format:** start a round. A car that's wrongly refused or deleted means the spawn or edit data format changed (`parseVehicleData`, `vehicleAllowed`).
-- **Parts edits:** during a round, change a part (through the console, since the menus are locked) and check that a yellow HUD notice shows `<name> changed parts during the round: <slots>`. If it shows up after a round setup, repaint or Apply, or when nothing changed, the `vcf.parts` shape changed or BeamMP reports it later than the quiet window in `main.lua` (`PARTS_SETTLE_SECONDS`).
+- **Vehicle data format:** start a round. A car that's wrongly refused or deleted means the spawn or edit data format changed (`arcade.cycle.parseVehicleData` and the game’s `checkVehicle` hook).
+- **Parts edits:** during a round, change a part (through the console, since the menus are locked) and check that a yellow HUD notice shows `<name> changed parts during the round: <slots>`. If it shows up after a round setup, repaint or Apply, or when nothing changed, the `vcf.parts` shape changed or BeamMP reports it later than the quiet window in `cnr/game.lua` (`PARTS_SETTLE_SECONDS`).
 - **Account identity:** play a round and check that the leaderboard shows the account names. If they're missing, the `GetPlayerIdentifiers` format changed.
 - **Positions and catching:** catching needs `GetPositionRaw`. If the catch bar never fills, check its return shape.
 
-**The arcade folder.** The generic server services moved from `main.lua` to [`server/CopsAndRobbers/arcade/`](../server/CopsAndRobbers/arcade/). They handle JSON storage and settings, client messages, the player roster and colours, traffic allowances and reported cars, panel subscriptions, commands and automatic rounds. `main.lua` connects these services to the chase rules in `cnr/` and creates fresh service instances on each load. The `cnr/*.lua` modules call no BeamMP API. Dependencies run from the game to the manager. For example, [cnr.config](../server/CopsAndRobbers/cnr/config.lua) uses `arcade.settings` to combine game and global settings.
+**The arcade folder.** The [server services](../server/CopsAndRobbers/arcade/) handle JSON storage and settings, messages, the player roster and colours, traffic, panel commands and automatic rounds. `cycle` runs the lobby, rounds and results and dispatches BeamMP callbacks to the game. `cars` tracks each player’s round vehicle, sends placements and rebuilds, and checks acknowledgements. `spectators` handles spectating and parked bystanders. `vec` provides position, distance and speed calculations.
+
+`main.lua` is wiring. On each load it builds fresh services and a `cnr.game` instance, loads saved data, binds the handlers, starts the 250 ms timer and sends the startup messages. The game declares its own client events in its manifest. Game modules can use manager services directly. For example, `cnr.config` uses `arcade.settings` to combine game and global settings. Grid and rebuild IDs survive a hot reload so replies from the previous round cannot complete the new setup.
 
 ## BeamMP Client (in-game Lua and launcher)
 

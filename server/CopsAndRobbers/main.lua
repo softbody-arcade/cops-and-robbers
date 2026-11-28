@@ -1,5 +1,8 @@
 local pluginDir = (debug.getinfo(1, "S").source:match("^@?(.*[/\\])") or "./")
-package.path = pluginDir .. "?.lua;" .. package.path
+local pluginPath = pluginDir .. "?.lua;"
+if package.path:sub(1, #pluginPath) ~= pluginPath then
+  package.path = pluginPath .. package.path
+end
 
 local store = require("arcade.store")
 local messages = require("arcade.messages").new({ prefix = "[CnR] " })
@@ -23,8 +26,7 @@ local spectators = require("arcade.spectators").new(roster, messages)
 local playerColors = require("arcade.playerColors").new(dataDir .. "colors.json", roster, messages)
 local panelService = require("arcade.panel").new(messages, roster)
 local nextRound = require("arcade.autoRounds").new()
-local cycleModule = require("arcade.cycle")
-local cycle = cycleModule.new({
+local cycle = require("arcade.cycle").new({
   messages = messages, roster = roster, store = store, clock = clock,
   settings = settings, traffic = trafficService, cars = cars, spectators = spectators,
   playerColors = playerColors, panel = panelService, autoRounds = nextRound,
@@ -38,6 +40,11 @@ cycle:attach(game)
 
 math.randomseed(os.time())
 
+game:loadLeaderboard()
+game:loadBuild()
+playerColors:load()
+game:loadStations()
+
 function cnrOnPanel(pid, data) return cycle:onPanel(pid, data) end
 function cnrOnVehicleSpawn(pid, vid, data) return cycle:onVehicleSpawn(pid, vid, data) end
 function cnrOnVehicleEdited(pid, vid, data) return cycle:onVehicleEdited(pid, vid, data) end
@@ -48,11 +55,6 @@ function cnrOnPlayerJoin(pid) return cycle:onPlayerJoin(pid) end
 function cnrOnPlayerDisconnect(pid) return cycle:onPlayerDisconnect(pid) end
 
 function cnrTick() cycle:tick() end
-
-game:loadLeaderboard()
-game:loadBuild()
-playerColors:load()
-game:loadStations()
 
 MP.RegisterEvent("onVehicleSpawn", "cnrOnVehicleSpawn")
 MP.RegisterEvent("onVehicleEdited", "cnrOnVehicleEdited")

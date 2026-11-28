@@ -244,6 +244,12 @@ test("a refused spawn replies each time but logs only once per ten seconds", fun
   assertEq(#f.events, 0)
 end)
 
+test("an explicitly non-round car refusal logs the model as unknown", function()
+  local f = vehicleFixture({ allow = false, roundCar = false })
+  assertEq(f.cycle:onVehicleSpawn(7, 4, vehiclePacket), 1)
+  assertEq(f.logs[1], "Ann spawned ? (vid 4): refused")
+end)
+
 test("a round car without a permit or replacement right is refused", function()
   local f = vehicleFixture({ allow = true, roundCar = true, notify = true })
   assertEq(f.cycle:onVehicleSpawn(7, 4, vehiclePacket), 1)
@@ -281,6 +287,7 @@ test("deleting a confirmed car allows one immediate replacement above the traffi
   f.owned = { [1] = "traffic", [2] = "spare" }
   assertEq(f.cycle:onVehicleDeleted(7, 0), nil)
   assertEq(f.events[1].kind, "replaced")
+  assertEq(f.events[1].vid, 0)
   assertEq(f.events[2].kind, "delete")
   assertEq(f.published[2], "")
   assertEq(f.cycle:onVehicleSpawn(7, 4, vehiclePacket), 0)

@@ -58,8 +58,8 @@ The game is built with `cnr.game.new(ctx)` and returns an object. The manager ca
 | `start(prepared, snapshot, now)` | → nothing | `snapshot` is the copied effective settings for this round |
 | `tick(now)` | → nothing | Every 250 ms while the manager is in a round |
 | `join(pid, name, now)` / `leave(pid, now)` | → nothing | `leave` sits at a fixed point in the disconnect order. In 2.x `join` drives the whole join sequence and calls the manager's services for the manager's parts |
-| `checkVehicle(kind, pid, vid, decoded, facts)` | → `{ allow, reason, roundCar, notify }` | Synchronous. The game decides the policy and matching; the manager owns the round-car permissions (one-use permit, replacement right), returns BeamMP's `0` or `1` and logs refusals |
-| `onVehicle(kind, pid, vid, decoded, facts, now)` | → nothing | `kind` is `spawn`, `edit`, `delete`, `reset` or `replaced`; called only when the verdict said `notify` (or for delete, reset and replaced) |
+| `checkVehicle(kind, pid, vid, decoded, facts)` | → `{ allow, reason, roundCar, notify }` | Synchronous. The game decides the policy and matching. The manager owns the round-car permissions (one-use permit, replacement right), returns BeamMP's `0` or `1` and logs refusals. On refusal, an explicit `roundCar = false` logs the model as `?`. Cops and Robbers uses this for an extra traffic car over the cap |
+| `onVehicle(kind, pid, vid, decoded, facts, now)` | → nothing | `kind` is `spawn`, `edit`, `delete`, `reset` or `replaced`. Spawn and edit call the hook when the verdict requests `notify`. Delete, reset and replaced call it unconditionally. For `replaced`, a successful claim passes the new car’s vid and a deletion passes the deleted car’s vid |
 | `panelState()` / `lobbyFields()` | → data | `panelState` only while someone has the panel open; `lobbyFields` every tick |
 | `panelAction(pid, action, payload)` | → nothing | A command that passes the allow-list, or an action named in `manifest.actions` |
 | `clientEvent(name, pid, data)` | → nothing | For each name in `manifest.clientEvents` |

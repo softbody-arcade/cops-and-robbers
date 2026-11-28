@@ -597,12 +597,25 @@ function M.new(ctx)
     end
   end
 
+  local function saveError(path, err)
+    local basename = path:match("[^/\\]+$")
+    log("could not save " .. basename .. ": " .. err)
+    return nil, "Could not save " .. basename
+  end
+
+  local function saveJson(path, value)
+    local ok, err = ctx.store.writeJson(path, value)
+    if not ok then return saveError(path, err) end
+    return true
+  end
+
   local function stationsPath() return ctx.dataDir .. "stations/" .. game.mapName .. ".json" end
 
   function game:loadStations()
     local decoded = ctx.store.decode(stationsPath())
     game.stations = {}
-    for _, s in ipairs(decoded and decoded.stations or {}) do
+    local stations = decoded and decoded.stations
+    for _, s in ipairs(type(stations) == "table" and stations or {}) do
       local v = vec.toVec(s)
       if v then
         v.r = tonumber(s.r) or 0
@@ -613,11 +626,8 @@ function M.new(ctx)
   end
 
   function game:saveStations(updated)
-    local ok, err = ctx.store.writeJson(stationsPath(), { stations = updated })
-    if not ok then
-      log("could not save " .. game.mapName .. ".json: " .. err)
-      return nil, err
-    end
+    local ok, err = saveJson(stationsPath(), { stations = updated })
+    if not ok then return nil, err end
     game.stations = updated
     return true
   end
@@ -746,17 +756,6 @@ function M.new(ctx)
     end
   end
 
-  local function saveError(path, err)
-    log("could not save " .. path:match("[^/\\]+$") .. ": " .. err)
-    return nil, err
-  end
-
-  local function saveJson(path, value)
-    local ok, err = ctx.store.writeJson(path, value)
-    if not ok then return saveError(path, err) end
-    return true
-  end
-
   local function backupBuild()
     if not FS.Exists(buildPath) then return true end
     local base = ctx.dataDir .. "build-" .. ctx.clock.unixTime()
@@ -789,8 +788,7 @@ function M.new(ctx)
         if aside then
           local restored, restoreErr = os.rename(aside, buildPath)
           if not restored then
-            err = string.format("%s; restore failed (%s), original kept at %s", err, tostring(restoreErr), aside)
-            saveError(buildPath, err)
+            log(string.format("could not restore build.json (%s), original kept at %s", tostring(restoreErr), aside))
           end
         end
         return answer(err, "warn")

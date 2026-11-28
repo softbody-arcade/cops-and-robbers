@@ -2198,7 +2198,8 @@ test("auto on with an unreadable config.json changes nothing and says so", funct
   assert(readError)
   env.sent = {}
   env.panel(1, "auto on")
-  assertEq(env.replyHas(readError), true)
+  assertEq(env.replyHas("Could not save config.json"), true)
+  assertEq(env.logHas(readError), true)
   assertEq(env.lastSent("cnr_rules"), nil)
   assertEq(env.lastSent("cnr_autoNext"), nil)
   local state = panelOf(env)
@@ -4145,28 +4146,44 @@ test("a malformed registration leaves valid siblings usable and quoted null text
   env.cleanup()
 end)
 
-local function denyRenameFrom(path)
+local function denyRenameFrom(path, reason)
   local rename = FS.Rename
   FS.Rename = function(from, to)
-    if from == path then return false, "rename denied" end
+    if from == path then return false, reason or "rename denied" end
     return rename(from, to)
   end
 end
 
-test("a panel save that can't be written keeps config.json and the live value", function()
-  local bytes = '{"headStartSeconds":3}'
-  local env = boot({ config = bytes })
-  denyRenameFrom(env.dir .. "config.json.tmp")
-  env.call("cnr_panel", 1, '{"action":"settings","id":7,"values":{"headStartSeconds":9}}')
-  local reply = decodeJson(env.lastSent("cnr_panelReply").data)
-  assertEq(reply.ok, false)
-  assertEq(reply.id, 7)
-  assertEq(reply.text, "rename denied")
-  assertEq(env.logHas("could not save config.json: rename denied"), true)
-  assertEq(readFileAt(env.dir .. "config.json"), bytes)
-  assertEq(panelOf(env).settings.headStartSeconds, 3)
-  env.cleanup()
-end)
+for _, action in ipairs({ "settings", "auto on" }) do
+  test("a failed " .. action .. " save shows the filename and logs the full error", function()
+    local bytes = '{"headStartSeconds":3,"autoNextRound":false}'
+    local env = boot({ config = bytes })
+    local path = env.dir .. "config.json"
+    FS.CreateDirectory(path .. ".tmp")
+    local file, openError = io.open(path .. ".tmp", "wb")
+    assertEq(file, nil)
+    assert(openError:find(path, 1, true))
+    if action == "settings" then
+      env.call("cnr_panel", 1, '{"action":"settings","id":7,"values":{"headStartSeconds":9}}')
+    else
+      env.panel(1, action)
+    end
+    local reply = decodeJson(env.lastSent("cnr_panelReply").data)
+    if action == "settings" then
+      assertEq(reply.ok, false)
+      assertEq(reply.id, 7)
+    else
+      assertEq(reply.tone, "warn")
+    end
+    assertEq(reply.text, "Could not save config.json")
+    assertEq(env.logHas("could not save config.json: " .. openError), true)
+    assertEq(readFileAt(path), bytes)
+    local settings = panelOf(env).settings
+    assertEq(settings.headStartSeconds, 3)
+    assertEq(settings.autoNextRound, false)
+    env.cleanup()
+  end)
+end
 
 for _, hex in ipairs({ "#00ff00", "" }) do
   test("a colour that can't be saved isn't applied (" .. hex .. ")", function()
@@ -4186,10 +4203,10 @@ local oldBuildBytes = '{"model":"pigeon","name":"Old build","parts":{},"step":3}
 test("a new build that can't be saved keeps the old build", function()
   local env = boot({ files = { ["data/build.json"] = oldBuildBytes } })
   local path = env.dir .. "data/build.json"
-  denyRenameFrom(path .. ".tmp")
+  denyRenameFrom(path .. ".tmp", path .. ".tmp: rename denied")
   newBuild(env)
-  assertEq(env.replyHas("rename denied"), true)
-  assertEq(env.logHas("could not save build.json: rename denied"), true)
+  assertEq(decodeJson(env.lastSent("cnr_panelReply").data).text, "Could not save build.json")
+  assertEq(env.logHas("could not save build.json: " .. path .. ".tmp: rename denied"), true)
   assertEq(readFileAt(path), oldBuildBytes)
   assertEq(panelOf(env).build.label, "Old build · change 3")
   env.cleanup()
@@ -4199,9 +4216,10 @@ for _, op in ipairs({ "new", "reset" }) do
   test("a failed build backup stops " .. op, function()
     local env = boot({ files = { ["data/build.json"] = oldBuildBytes } })
     local path = env.dir .. "data/build.json"
-    denyRenameFrom(path)
+    denyRenameFrom(path, path .. ": rename denied")
     if op == "new" then newBuild(env) else env.call("cnr_panel", 1, '{"action":"build","op":"reset"}') end
-    assertEq(env.replyHas("rename denied"), true)
+    assertEq(decodeJson(env.lastSent("cnr_panelReply").data).text, "Could not save build.json")
+    assertEq(env.logHas("could not save build.json: " .. path .. ": rename denied"), true)
     assertEq(readFileAt(path), oldBuildBytes)
     assertEq(panelOf(env).build.label, "Old build · change 3")
     env.cleanup()
@@ -4214,9 +4232,10 @@ test("an unsaved evolving setup keeps the build and its step", function()
   env.panel(2, "start rein")
   env.call("cnr_panel", 1, '{"action":"apply"}')
   local path = env.dir .. "data/build.json"
-  denyRenameFrom(path .. ".tmp")
+  denyRenameFrom(path .. ".tmp", path .. ".tmp: rename denied")
   env.call("cnr_setup", 1, '{"parts":{"engine":"v8"},"changes":[{"label":"Engine"}]}')
-  assertEq(env.logHas("could not save build.json: rename denied"), true)
+  assertEq(env.logHas("could not save build.json: " .. path .. ".tmp: rename denied"), true)
+  assertEq(decodeJson(env.lastSent("cnr_notice").data).msg, "Could not save build.json")
   assertEq(panelOf(env).build.step, 3)
   assertEq(readFileAt(path), oldBuildBytes)
   assertEq(env.lastSent("cnr_rebuild"), nil)
@@ -4230,9 +4249,10 @@ for _, op in ipairs({ "add", "remove" }) do
     env.positions[1] = 0
     if op == "remove" then env.call("cnr_panel", 1, '{"action":"station","op":"add"}') end
     local count, bytes = panelOf(env).stationCount, readFileAt(path)
-    denyRenameFrom(path .. ".tmp")
+    denyRenameFrom(path .. ".tmp", path .. ".tmp: rename denied")
     env.call("cnr_panel", 1, encode({ action = "station", op = op }))
-    assertEq(env.logHas("could not save west_coast_usa.json: rename denied"), true)
+    assertEq(decodeJson(env.lastSent("cnr_panelReply").data).text, "Could not save west_coast_usa.json")
+    assertEq(env.logHas("could not save west_coast_usa.json: " .. path .. ".tmp: rename denied"), true)
     assertEq(panelOf(env).stationCount, count)
     assertEq(readFileAt(path), bytes)
     env.cleanup()
@@ -4282,7 +4302,8 @@ test("an encoding error while replacing a build restores its file", function()
   local called, err = pcall(newBuild, env)
   Util.JsonEncode = encodeJson
   assert(called, err)
-  assertEq(env.replyHas("encoding failed"), true)
+  assertEq(env.replyHas("Could not save build.json"), true)
+  assertEq(env.logHas("could not save build.json: encoding failed"), true)
   assertEq(readFileAt(env.dir .. "data/build.json"), oldBuildBytes)
   assertEq(panelOf(env).build.label, "Old build · change 3")
   env.cleanup()
@@ -4422,4 +4443,26 @@ test("a temporary leaderboard read error at startup cannot replace earlier runs"
   assertEq(#rounds, 1)
   assertEq(rounds[1].player, "Reinder")
   assertEq(saved, bytes)
+end)
+
+test("a failed build restore keeps the backup path in the server log", function()
+  local env = boot({ files = { ["data/build.json"] = oldBuildBytes } })
+  local path = env.dir .. "data/build.json"
+  denyRenameFrom(path .. ".tmp", path .. ".tmp: rename denied")
+  local rename, backup = os.rename
+  os.rename = function(from, to)
+    if to == path then
+      backup = from
+      return nil, from .. ": restore denied"
+    end
+    return rename(from, to)
+  end
+  local ok, err = pcall(newBuild, env)
+  os.rename = rename
+  assert(ok, err)
+  assertEq(decodeJson(env.lastSent("cnr_panelReply").data).text, "Could not save build.json")
+  assertEq(env.logHas(path .. ".tmp: rename denied"), true)
+  assertEq(env.logHas(backup .. ": restore denied"), true)
+  assertEq(readFileAt(backup), oldBuildBytes)
+  env.cleanup()
 end)

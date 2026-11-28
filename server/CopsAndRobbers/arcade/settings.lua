@@ -271,9 +271,9 @@ function M.new(path, decl, log)
     live, warnings = M.merge(raw, decl)
   end
 
-  local function failed(err)
+  local function failed(err, reply)
     log("could not save " .. basename .. ": " .. err)
-    return nil, err
+    return nil, reply or ("Could not save " .. basename)
   end
 
   function s:load()
@@ -318,7 +318,10 @@ function M.new(path, decl, log)
   function s:apply(values)
     local disk, corrupt, bytes, err, code = store.decode(path)
     if not disk and code ~= 2 then
-      if corrupt or bytes == "" then err = basename .. " is not valid JSON" end
+      if corrupt or bytes == "" then
+        local reason = basename .. " is not valid JSON"
+        return failed(reason, reason)
+      end
       return failed(err or ("could not read " .. basename))
     end
     local updated, keys = M.applyValues(disk or {}, values, decl)

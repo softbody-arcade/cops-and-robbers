@@ -327,7 +327,11 @@ for _, action in ipairs({ "set", "apply" }) do
         assertEq(type(err), "string")
         assertEq(service:get("headStartSeconds"), 3)
         assertEq(store.read(path), bytes)
-        assertEq(logs[#logs], "could not save game.json: " .. err)
+        local reason = ({
+          corrupt = "game.json is not valid JSON", unreadable = "read denied", rename = "rename denied",
+        })[failure]
+        assertEq(err, failure == "corrupt" and reason or "Could not save game.json")
+        assertEq(logs[#logs], "could not save game.json: " .. reason)
       end)
     end)
   end

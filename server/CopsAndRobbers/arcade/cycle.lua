@@ -121,8 +121,8 @@ function M.new(services, manifest)
     local facts, at = vehicleFacts(pid, vid), now()
     local verdict = y:dispatch("checkVehicle", kind, pid, vid, decoded, facts)
     if not verdict.allow then
-      local extraTraffic = kind == "spawn" and facts.trafficOpen and verdict.roundCar == false
-      return refuseVehicle(kind, pid, vid, not extraTraffic and decoded and decoded.jbm, verdict.reason, at)
+      local model = verdict.roundCar ~= false and decoded and decoded.jbm
+      return refuseVehicle(kind, pid, vid, model, verdict.reason, at)
     end
     if kind == "spawn" then
       if verdict.roundCar then
