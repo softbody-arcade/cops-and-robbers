@@ -37,15 +37,15 @@ function autoRounds.register(p, ctx)
     m.reply(pid, "Automatic next round: " .. arg)
   end)
 
-  local function startScheduled()
+  local function startScheduled(caller)
     ctx.a:cancel()
     if ctx.isActive() then return end
-    if not ctx.startNext() then ctx.send(-1, "cnr_autoNext", {}) end
+    if not ctx.startNext(caller) then ctx.send(-1, "cnr_autoNext", {}) end
   end
 
   p:command("next", function(pid, cmd, m)
     if not ctx.a:pending() then return m.refuse(pid, "No round is scheduled") end
-    startScheduled()
+    startScheduled(pid)
   end)
 
   p:command("reload", function(pid, cmd, m)

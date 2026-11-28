@@ -3064,6 +3064,53 @@ test("A player alone can't start a round but can practise", function()
   alone.cleanup()
 end)
 
+test("a refused start keeps a running practice", function()
+  local env = boot()
+  env.names = { "Reinder" }
+  env.panel(1, "test runner")
+  env.call("cnr_vehiclePicked", 1, PICK)
+  env.sent = {}
+  env.panel(1, "start next")
+  assertEq(env.replyHas("Not enough players"), true)
+  assertEq(env.lastSent("cnr_roundEnd"), nil)
+  assertEq(env.lastSent("cnr_pickVehicle"), nil)
+  env.cleanup()
+end)
+
+test("a refused manual start keeps the pending automatic round", function()
+  local env = boot({ config = '{"autoNextRound": true, "autoNextDelaySeconds": 5}' })
+  env.panel(2, "start Bob")
+  env.call("cnr_vehiclePicked", 2, PICK)
+  env.go()
+  for _ = 1, 50 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.panel(2, "end")
+  sitOut(env, 1, true)
+  env.panel(2, "start next")
+  assertEq(env.replyHas("Not enough players"), true)
+  env.sent = {}
+  for _ = 1, 24 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  assertEq(sentTo(env, "cnr_autoNext", -1) ~= nil, true)
+  env.cleanup()
+end)
+
+test("a refused Next from the panel replies to the player who pressed it", function()
+  local env = boot({ config = '{"autoNextRound": true, "autoNextDelaySeconds": 5}' })
+  env.panel(2, "start Bob")
+  env.call("cnr_vehiclePicked", 2, PICK)
+  env.go()
+  for _ = 1, 50 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
+  env.panel(2, "end")
+  sitOut(env, 2, true)
+  env.sent = {}
+  env.panel(1, "next")
+  local reply = env.lastSent("cnr_panelReply")
+  assertEq(reply.pid, 1)
+  assertEq(decodeJson(reply.data).text, "Not enough players")
+  assertEq(sentTo(env, "cnr_notice", 2), nil)
+  assertEq(sentTo(env, "cnr_autoNext", -1) ~= nil, true)
+  env.cleanup()
+end)
+
 test("auto next round keeps going while two players aren't sitting out", function()
   local env = boot({ config = '{"autoNextRound": true, "autoNextDelaySeconds": 5}' })
   env.names = { "Reinder", "Bob", "Kim" }
@@ -3077,6 +3124,9 @@ test("auto next round keeps going while two players aren't sitting out", functio
   for _ = 1, 24 do env.clock = env.clock + 0.25; env.call("cnr_tick") end
   assertEq(env.lastSent("cnr_pickVehicle") ~= nil, true)
   assertEq(sentTo(env, "cnr_autoNext", -1), nil)
+  env.call("cnr_vehiclePicked", env.lastSent("cnr_pickVehicle").pid, PICK)
+  assertEq(decodeJson(sentTo(env, "cnr_roundSetup", 3)).role, "runner")
+  assertEq(sentTo(env, "cnr_spectate", 1) ~= nil, true)
   env.cleanup()
 end)
 

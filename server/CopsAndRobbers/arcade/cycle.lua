@@ -157,9 +157,10 @@ function M.new(services, manifest)
     if not prepared then return nil, reason end
     if not prepared.solo and #prepared.participants < manifest.minPlayers then
       reason = "Not enough players"
-      ctx.messages.refuse(request.issuer, reason)
+      ctx.messages.refuse(request.caller or request.issuer, reason)
       return nil, reason
     end
+    if game.beforeStart then y:dispatch("beforeStart", prepared, now()) end
     local snapshot = ctx.settings:snapshot()
     roundDelay = snapshot.autoNextDelaySeconds
     roundIssuer = request.issuer
@@ -189,7 +190,7 @@ function M.new(services, manifest)
     y:dispatch("roundFinished")
   end
 
-  function y:startNext()
+  function y:startNext(caller)
     local players = ctx.roster:players()
     local issuer = lastIssuer
     if not players[issuer] then
@@ -198,7 +199,7 @@ function M.new(services, manifest)
         if not issuer or pid < issuer then issuer = pid end
       end
     end
-    if issuer then return ctx.round:start({ issuer = issuer, command = "next" }) end
+    if issuer then return ctx.round:start({ issuer = issuer, caller = caller, command = "next" }) end
   end
 
   local function panelState() return y:dispatch("panelState") end
@@ -210,7 +211,7 @@ function M.new(services, manifest)
   local startScheduled = autoRounds.register(transport, {
     settings = ctx.settings, a = ctx.autoRounds, send = ctx.messages.send,
     isActive = function() return state == "round" end,
-    startNext = function() return y:startNext() end,
+    startNext = function(caller) return y:startNext(caller) end,
     reloadRound = function() ctx.settings:load() end,
     pushRules = function() y:dispatch("rulesChanged") end,
   })

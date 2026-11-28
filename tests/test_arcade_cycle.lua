@@ -82,6 +82,31 @@ test("a non-solo start needs the manifest's minimum before taking a snapshot", f
   assertEq(f.cycle:state(), "lobby")
 end)
 
+test("beforeStart runs only once the minimum passes, before the snapshot and the round state", function()
+  local f = fixture()
+  local seen = {}
+  f.game.beforeStart = function(_, prepared, now)
+    seen[#seen + 1] = { prepared = prepared, now = now, state = f.cycle:state(), snapshots = f.snapshots }
+  end
+  f.prepared.participants = { 7 }
+  assertEq(f.ctx.round:start({ issuer = 7 }), nil)
+  assertEq(#seen, 0)
+  f.prepared.participants = { 7, 9 }
+  assertEq(f.ctx.round:start({ issuer = 7 }), true)
+  assertEq(#seen, 1)
+  assertEq(seen[1].prepared, f.prepared)
+  assertEq(seen[1].now, 20)
+  assertEq(seen[1].state, "lobby")
+  assertEq(seen[1].snapshots, 0)
+end)
+
+test("a minimum refusal replies to the caller when one pressed the button", function()
+  local f = fixture()
+  f.prepared.participants = { 7 }
+  f.ctx.round:start({ issuer = 7, caller = 9 })
+  assertEq(f.refusedPid, 9)
+end)
+
 test("solo starts with no participants and receives the prepared data and time", function()
   local f = fixture()
   f.prepared = { solo = true, participants = {} }

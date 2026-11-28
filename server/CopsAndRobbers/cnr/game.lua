@@ -680,29 +680,26 @@ function M.new(ctx)
 
   function game:canStart(request)
     local pid, command = request.issuer, request.command
+    local replyTo = request.caller or pid
     local current = self.current
     local practice = command == "test"
-    if not practice and current:isActive() and current.test then
-      self:applyEffects(current:stop(now(), current.issuerId))
-    end
-    if current:isActive() then return reject(pid, "A round is already running") end
-    if current.cfg.carMode == "evolving" and not self.currentBuild then return reject(pid, "Start a new build first") end
+    if current:isActive() and (practice or not current.test) then return reject(replyTo, "A round is already running") end
+    if current.cfg.carMode == "evolving" and not self.currentBuild then return reject(replyTo, "Start a new build first") end
     local players = roster:players()
     if practice then
       local aiOnly = roster:sittingOut(pid)
       local role = request.text
-      if not aiOnly and role ~= "runner" and role ~= "cop" then return reject(pid, "Pick practice as runner or as cop") end
+      if not aiOnly and role ~= "runner" and role ~= "cop" then return reject(replyTo, "Pick practice as runner or as cop") end
       return { participants = aiOnly and {} or { pid }, solo = true, role = role, aiOnly = aiOnly, issuer = pid, players = players }
     end
-    ctx.autoRounds:cancel()
     local participants = roster:playingList(players)
-    if #participants == 0 then return reject(pid, "Everyone is sitting out") end
+    if #participants == 0 then return reject(replyTo, "Everyone is sitting out") end
     local candidates = roster:playing(players)
     local query = command == "next" and "next" or request.text
     local runnerId, err
     if query and query:lower() == "again" then
       runnerId = game.lastRunnerKey and roster:pidForKey(game.lastRunnerKey)
-      if not runnerId then return reject(pid, "No previous runner online") end
+      if not runnerId then return reject(replyTo, "No previous runner online") end
     else
       if query and query:lower() == "next" then
         runnerId = plannedRunner(candidates)
@@ -714,9 +711,18 @@ function M.new(ctx)
         if anyone and roster:sittingOut(anyone) then runnerId = anyone end
       end
     end
-    if not runnerId then return reject(pid, err) end
-    if roster:sittingOut(runnerId) then return reject(pid, string.format("%s is sitting out", players[runnerId] or tostring(runnerId))) end
+    if not runnerId then return reject(replyTo, err) end
+    if roster:sittingOut(runnerId) then return reject(replyTo, string.format("%s is sitting out", players[runnerId] or tostring(runnerId))) end
     return { participants = participants, issuer = pid, runnerId = runnerId, players = players }
+  end
+
+  function game:beforeStart(prepared, at)
+    if prepared.solo then return end
+    local current = self.current
+    if current:isActive() and current.test then
+      self:applyEffects(current:stop(at, current.issuerId))
+    end
+    ctx.autoRounds:cancel()
   end
 
   function game:start(prepared, snapshot, startedAt)
